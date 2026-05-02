@@ -24,12 +24,14 @@
   'use strict';
 
   // ── Constants ──────────────────────────────────────────────────────────────
-  const PANEL_ID      = 'va-panel';
-  const LANG_STORAGE  = 'va_lang';
-  const MUTE_STORAGE  = 'va_mute';
-  const DEBOUNCE_MS   = 1500;   // click-explain minimum gap
-  const MAX_HIGHLIGHT = 4000;   // ms to keep highlight ring visible
-  const VALID_LANGS   = ['en', 'es'];
+  const PANEL_ID              = 'va-panel';
+  const LANG_STORAGE          = 'va_lang';
+  const MUTE_STORAGE          = 'va_mute';
+  const CLICK_EXPLAIN_DEBOUNCE_MS = 1500;   // minimum gap between click-explain triggers
+  const MAX_HIGHLIGHT         = 4000;       // ms to keep highlight ring visible
+  const MAX_MODAL_WAIT_MS     = 60000;      // max ms to wait for a modal to open during tour
+  const TTS_CACHE_MAX         = 80;         // max cached TTS entries before eviction
+  const VALID_LANGS           = ['en', 'es'];
 
   // Keywords that indicate an element is actionable and worth explaining.
   // Matched case-insensitively against the button's cleaned label text.
@@ -143,7 +145,7 @@
   let tourStepIndex   = 0;
   let tourAborted     = false;
   let clickExplain    = false;    // context-aware click-explain toggle
-  let lastClickTime   = 0;        // debounce tracker
+  let lastClickTime   = 0;        // debounce tracker for click-explain
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
@@ -160,6 +162,13 @@
 
   function getAdminSecret() {
     return (typeof adminSecret !== 'undefined') ? adminSecret : '';
+  }
+
+  /** Evict the oldest TTS cache entry when capacity is reached. */
+  function evictOldestCacheEntry() {
+    if (ttsCache.size >= TTS_CACHE_MAX) {
+      ttsCache.delete(ttsCache.keys().next().value);
+    }
   }
 
   /** Returns the currently active section label (prefers an open modal). */
@@ -239,9 +248,7 @@
       });
       if (!res.ok) return;
       const buf = await res.arrayBuffer();
-      if (ttsCache.size >= 80) {
-        ttsCache.delete(ttsCache.keys().next().value);
-      }
+      evictOldestCacheEntry();
       ttsCache.set(cacheKey, buf);
     } catch (_) { /* ignore */ }
   }
@@ -294,9 +301,7 @@
         }
 
         audioBuffer = await res.arrayBuffer();
-        if (ttsCache.size >= 80) {
-          ttsCache.delete(ttsCache.keys().next().value);
-        }
+        evictOldestCacheEntry();
         ttsCache.set(cacheKey, audioBuffer);
       }
 
@@ -338,7 +343,7 @@
    * the class `open` added to it, or rejects after `timeoutMs`.
    * The tour calls this to pause until the user clicks "View" and the modal opens.
    */
-  function waitForModalOpen(selector, timeoutMs = 60000) {
+  function waitForModalOpen(selector, timeoutMs = MAX_MODAL_WAIT_MS) {
     return new Promise((resolve, reject) => {
       const el = document.querySelector(selector);
       if (!el) { reject(new Error(`Element not found: ${selector}`)); return; }
@@ -435,6 +440,9 @@
     const rawLabel = (el.getAttribute('data-explain') ||
                       el.textContent || el.title || el.ariaLabel || '')
       .trim()
+      // Keep printable ASCII, Latin-1 supplement, and extended Latin. Strip
+      // emojis, control characters, and other non-Latin Unicode to avoid
+      // sending unexpected characters to the TTS API.
       .replace(/[^\x20-\x7E\u00C0-\u024F\u00A0-\u00FF]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
@@ -499,7 +507,7 @@
 
     // Debounce
     const now = Date.now();
-    if (now - lastClickTime < DEBOUNCE_MS) return;
+    if (now - lastClickTime < CLICK_EXPLAIN_DEBOUNCE_MS) return;
     lastClickTime = now;
 
     const context = buildClickContext(e.target);
