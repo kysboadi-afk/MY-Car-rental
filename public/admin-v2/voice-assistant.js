@@ -118,90 +118,106 @@
     dashboard: [
       {
         sel: '#page-dashboard',
-        en:  'The Dashboard gives you a live overview: KPIs, revenue chart, ' +
-             'recent bookings, and any action items that need your attention.',
-        es:  'El Tablero le da una vista en vivo: KPIs, gráfico de ingresos, ' +
-             'reservas recientes y cualquier elemento de acción que requiera su atención.',
+        en:  'Welcome to the Dashboard — your command center. ' +
+             'At the top you will see live KPI tiles showing total revenue, active rentals, bookings this month, and more.',
+        es:  'Bienvenido al Tablero, su centro de mando. ' +
+             'En la parte superior verá los indicadores clave: ingresos totales, rentas activas, reservas del mes y más.',
+      },
+      {
+        sel: '#kpi-grid',
+        en:  'These KPI cards update in real time. Click any card to drill into the related section.',
+        es:  'Estas tarjetas de KPI se actualizan en tiempo real. Haga clic en cualquiera para ir a la sección relacionada.',
+      },
+      {
+        sel: '#action-required-card',
+        en:  'The Action Required panel shows items that need immediate attention: pending approvals, pickups today, returns today, and overdue rentals. ' +
+             'Tap any tile to jump straight to those bookings. The Refresh button reloads the counts.',
+        es:  'El panel de Acción Requerida muestra los elementos que necesitan atención inmediata: aprobaciones pendientes, recogidas hoy, devoluciones hoy y rentas vencidas. ' +
+             'Toque cualquier mosaico para ir directamente a esas reservas. El botón Actualizar recarga los conteos.',
+      },
+      {
+        sel: '.charts-grid',
+        en:  'Below the action tiles you have two charts: Revenue Over Time shows your monthly income trend, ' +
+             'and Bookings by Vehicle breaks down paid bookings per car.',
+        es:  'Debajo de los mosaicos de acción hay dos gráficos: Ingresos en el Tiempo muestra su tendencia de ingresos mensuales, ' +
+             'y Reservas por Vehículo desglosa las reservas pagadas por auto.',
+      },
+      {
+        sel: '.alerts-grid',
+        en:  'At the bottom you have the Alerts and Actions feed — live notifications requiring your input — ' +
+             'and the Recent Bookings list showing your latest reservations at a glance.',
+        es:  'En la parte inferior está el panel de Alertas y Acciones con notificaciones que requieren su intervención, ' +
+             'y la lista de Reservas Recientes con sus últimas reservaciones.',
       },
       {
         sel: null,
-        en:  'That is the Dashboard. Use Ask Assistant to ask any question, ' +
-             'or click Full Tour to walk through every section.',
-        es:  'Ese es el Tablero. Use Preguntar al Asistente para hacer cualquier pregunta, ' +
-             'o haga clic en Recorrido Completo para recorrer todas las secciones.',
-      },
-    ],
-    bookings: [
-      {
-        sel: '#page-bookings',
-        en:  'Welcome to the Bookings table. Here you can see every reservation, ' +
-             'filter by status or vehicle, and search by customer name or ID.',
-        es:  'Bienvenido a la tabla de Reservas. Aquí puede ver cada reserva, ' +
-             'filtrar por estado o vehículo, y buscar por nombre o ID del cliente.',
-      },
-      {
-        sel:          '#bookings-table-wrap',
-        waitForModal: '#booking-detail-modal',
-        en:  'Each row represents one booking. Please click the View button on any ' +
-             'row — the guide will continue once the booking detail panel opens.',
-        es:  'Cada fila representa una reserva. Haga clic en el botón Ver de cualquier ' +
-             'fila — el recorrido continuará cuando se abra el panel de detalle.',
-      },
-      {
-        sel:          '#booking-detail-modal',
-        skipIfHidden: true,
-        en:  'This is the Booking Detail panel. It shows customer information, ' +
-             'vehicle, dates, payment status, and all available actions.',
-        es:  'Este es el panel de Detalle de Reserva. Muestra la información del ' +
-             'cliente, vehículo, fechas, estado de pago y todas las acciones disponibles.',
-      },
-      {
-        sel:          '#booking-detail-actions',
-        skipIfHidden: true,
-        en:  'The action bar lets you mark a booking as active, return the vehicle, ' +
-             'extend the rental, or cancel the booking.',
-        es:  'La barra de acciones le permite marcar una reserva como activa, ' +
-             'devolver el vehículo, extender el alquiler o cancelar la reserva.',
-      },
-      {
-        sel: null,
-        en:  'That covers the Bookings section. Use Ask Assistant for follow-up questions.',
-        es:  'Eso cubre la sección de Reservas. Use Preguntar al Asistente para preguntas de seguimiento.',
-      },
-    ],
-    'bookings-raw': [
-      {
-        sel: '#page-bookings-raw',
-        en:  'Raw Bookings shows unprocessed booking records exactly as stored — ' +
-             'useful for auditing and debugging payment data.',
-        es:  'Reservas Sin Procesar muestra los registros sin procesar tal como fueron almacenados, ' +
-             'útil para auditoría y depuración de datos de pago.',
-      },
-      {
-        sel: null,
-        en:  'That is the Raw Bookings section.',
-        es:  'Esa es la sección de Reservas Sin Procesar.',
+        en:  'That is the full Dashboard overview.',
+        es:  'Eso es el resumen completo del Tablero.',
       },
     ],
     vehicles: [
       {
         sel: '#page-vehicles',
-        en:  'The Vehicles page lists all cars in your fleet. You can edit details, ' +
-             'upload photos, view the vehicle profile, and manage availability.',
-        es:  'La página de Vehículos lista todos los autos de su flota. Puede editar detalles, ' +
-             'subir fotos, ver el perfil del vehículo y administrar la disponibilidad.',
+        en:  'The Vehicles page lists every car in your fleet. ' +
+             'Each card shows the vehicle name, status, and quick-action buttons.',
+        es:  'La página de Vehículos lista todos los autos de su flota. ' +
+             'Cada tarjeta muestra el nombre del vehículo, estado y botones de acción rápida.',
+      },
+      {
+        sel: '#vehicles-content',
+        en:  'For each vehicle you have three actions: ' +
+             'Edit opens a form to update the vehicle name, year, license plate, and notes. ' +
+             'Upload Photo lets you replace the car image shown on the public website. ' +
+             'View Profile takes you to the full vehicle history and performance stats.',
+        es:  'Para cada vehículo tiene tres acciones: ' +
+             'Editar abre un formulario para actualizar el nombre, año, matrícula y notas. ' +
+             'Subir Foto permite reemplazar la imagen del auto en el sitio público. ' +
+             'Ver Perfil lo lleva al historial completo y estadísticas de rendimiento.',
       },
       {
         sel: null,
-        en:  'That is the Vehicles section. Ask the assistant anything about managing your fleet.',
-        es:  'Esa es la sección de Vehículos. Pregunte al asistente cualquier duda sobre la gestión de su flota.',
+        en:  'That is the Vehicles section.',
+        es:  'Esa es la sección de Vehículos.',
       },
     ],
     'vehicle-profile': [
       {
         sel: '#page-vehicle-profile',
-        en:  'The Vehicle Profile shows detailed stats, trip history, and settings for a single vehicle.',
-        es:  'El Perfil del Vehículo muestra estadísticas detalladas, historial de viajes y ajustes de un vehículo.',
+        en:  'The Vehicle Profile page shows the complete performance and maintenance record for one specific vehicle. ' +
+             'The Back to Vehicles button at the top returns you to the fleet list. ' +
+             'The Edit Vehicle button opens the edit form where you can update the name, type, status, year, purchase price, and Bouncie device ID.',
+        es:  'La página de Perfil del Vehículo muestra el rendimiento completo y el registro de mantenimiento de un vehículo específico. ' +
+             'El botón Regresar a Vehículos en la parte superior lo lleva de vuelta a la lista de flota. ' +
+             'El botón Editar Vehículo abre el formulario para actualizar el nombre, tipo, estado, año, precio de compra e ID del dispositivo Bouncie.',
+      },
+      {
+        sel: '#vehicle-profile-content',
+        en:  'The financial KPI cards show the vehicle\'s purchase price, total bookings completed, lifetime gross revenue, total expenses logged, net profit, and return on investment percentage — ' +
+             'giving you a clear picture of whether this vehicle is profitable.',
+        es:  'Las tarjetas de KPI financiero muestran el precio de compra del vehículo, reservas totales completadas, ingresos brutos de por vida, gastos totales registrados, ganancia neta y porcentaje de retorno de inversión, ' +
+             'dándole una imagen clara de si este vehículo es rentable.',
+      },
+      {
+        sel: '#vehicle-profile-content',
+        en:  'The GPS Tracking section shows the vehicle\'s linked Bouncie device ID, current odometer reading, and the last time GPS data was synced. ' +
+             'The Sync Now button forces an immediate GPS data pull from Bouncie for this vehicle.',
+        es:  'La sección de Rastreo GPS muestra el ID del dispositivo Bouncie vinculado, la lectura actual del odómetro y la última vez que se sincronizaron los datos GPS. ' +
+             'El botón Sincronizar Ahora fuerza una actualización inmediata de los datos GPS de Bouncie para este vehículo.',
+      },
+      {
+        sel: '#vehicle-profile-content',
+        en:  'The Maintenance Records table tracks three service types: Oil Change, Brake Inspection, and Tire Replacement. ' +
+             'Each row shows the last recorded mileage and miles driven since. ' +
+             'A yellow warning appears when a service is eighty percent due, and a red alert when it is overdue. ' +
+             'The Oil Done button records the current odometer as the last oil change. ' +
+             'Brakes Done records the last brake check. ' +
+             'Tires Done records the last tire replacement.',
+        es:  'La tabla de Registros de Mantenimiento rastrea tres tipos de servicio: Cambio de Aceite, Inspección de Frenos y Reemplazo de Llantas. ' +
+             'Cada fila muestra el último kilometraje registrado y los kilómetros recorridos desde entonces. ' +
+             'Aparece una advertencia amarilla cuando un servicio está al ochenta por ciento de su intervalo, y una alerta roja cuando está vencido. ' +
+             'El botón Aceite Listo registra el odómetro actual como el último cambio de aceite. ' +
+             'Frenos Listos registra la última revisión de frenos. ' +
+             'Llantas Listas registra el último reemplazo de llantas.',
       },
       {
         sel: null,
@@ -209,69 +225,145 @@
         es:  'Esa es la sección de Perfil del Vehículo.',
       },
     ],
-    expenses: [
+    bookings: [
       {
-        sel: '#page-expenses',
-        en:  'The Expenses page lets you log and track costs like maintenance, fuel, ' +
-             'insurance, and repairs. Filter by vehicle or category to review spending.',
-        es:  'La página de Gastos le permite registrar y rastrear costos como mantenimiento, combustible, ' +
-             'seguros y reparaciones. Filtre por vehículo o categoría para revisar el gasto.',
+        sel: '#page-bookings',
+        en:  'The Bookings section is the main hub for all reservations. ' +
+             'At the top you have filter dropdowns: filter by vehicle, status, payment type, risk level, or profitability. ' +
+             'Use the search box to find a booking by customer name or booking ID.',
+        es:  'La sección de Reservas es el centro principal de todas las reservaciones. ' +
+             'En la parte superior hay filtros: por vehículo, estado, tipo de pago, nivel de riesgo o rentabilidad. ' +
+             'Use la búsqueda para encontrar una reserva por nombre o ID.',
+      },
+      {
+        sel: '#bookings-table-wrap',
+        en:  'The table shows each booking with the customer name, vehicle, dates, financials, payment method, customer tier, and current status. ' +
+             'The View button on each row opens the full Booking Detail panel.',
+        es:  'La tabla muestra cada reserva con nombre del cliente, vehículo, fechas, finanzas, método de pago, nivel del cliente y estado actual. ' +
+             'El botón Ver en cada fila abre el panel completo de Detalle de Reserva.',
+      },
+      {
+        sel:          '#bookings-table-wrap',
+        waitForModal: '#booking-detail-modal',
+        en:  'Please click the View button on any booking row to open the Booking Detail panel — the guide will continue once it opens.',
+        es:  'Haga clic en el botón Ver de cualquier fila para abrir el panel de Detalle de Reserva. El recorrido continuará cuando se abra.',
+      },
+      {
+        sel:          '#booking-detail-modal',
+        skipIfHidden: true,
+        en:  'Inside the Booking Detail panel you can see the full customer info, vehicle assignment, rental dates, payment breakdown, and status history.',
+        es:  'Dentro del panel de Detalle de Reserva puede ver la información completa del cliente, vehículo, fechas de renta, desglose de pagos e historial de estados.',
+      },
+      {
+        sel:          '#booking-detail-actions',
+        skipIfHidden: true,
+        en:  'The primary action buttons depend on the booking status. ' +
+             'For a pending booking: Approve Booking confirms it as paid. ' +
+             'Mark as Active is pressed when the customer picks up the car and the rental begins. ' +
+             'Mark Returned ends the rental and logs the return time. ' +
+             'Extend Rental opens a form to add more days to an active booking. ' +
+             'Cancel Booking voids the reservation.',
+        es:  'Los botones de acción principales dependen del estado de la reserva. ' +
+             'Para una reserva pendiente: Aprobar Reserva la confirma como pagada. ' +
+             'Marcar como Activa se presiona cuando el cliente recoge el auto y comienza la renta. ' +
+             'Marcar como Devuelta termina la renta y registra la hora de devolución. ' +
+             'Extender Alquiler abre un formulario para agregar más días a una renta activa. ' +
+             'Cancelar Reserva anula la reservación.',
+      },
+      {
+        sel:          '#booking-detail-actions',
+        skipIfHidden: true,
+        en:  'Additional actions are always available regardless of status: ' +
+             'Flag Issue marks the booking for attention — for example if there is a dispute or suspicious activity. ' +
+             'Resend Email sends the customer a fresh confirmation email with their booking details. ' +
+             'Edit Booking opens a form to change the dates, amounts, or notes. ' +
+             'Delete Booking permanently removes the record — use only when absolutely necessary.',
+        es:  'Acciones adicionales siempre disponibles sin importar el estado: ' +
+             'Marcar Problema señala la reserva para atención, por ejemplo en caso de disputa o actividad sospechosa. ' +
+             'Reenviar Correo envía al cliente un nuevo correo de confirmación con los detalles de su reserva. ' +
+             'Editar Reserva abre un formulario para cambiar fechas, montos o notas. ' +
+             'Eliminar Reserva elimina permanentemente el registro — úselo solo cuando sea absolutamente necesario.',
       },
       {
         sel: null,
-        en:  'That is the Expenses section.',
-        es:  'Esa es la sección de Gastos.',
+        en:  'That covers the Bookings section.',
+        es:  'Eso cubre la sección de Reservas.',
       },
     ],
-    revenue: [
+    'bookings-raw': [
       {
-        sel: '#page-revenue',
-        en:  'The Revenue page tracks all income records. You can view, add, or edit entries, ' +
-             'reconcile Stripe payments, and filter by vehicle or date range.',
-        es:  'La página de Ingresos registra todos los registros de ingresos. Puede ver, agregar o editar entradas, ' +
-             'conciliar pagos de Stripe y filtrar por vehículo o rango de fechas.',
+        sel: '#page-bookings-raw',
+        en:  'Raw Bookings shows every booking record exactly as it is stored in the database — ' +
+             'no filters, no grouping. This is useful for auditing payment data or debugging webhook issues.',
+        es:  'Reservas Sin Procesar muestra cada registro exactamente como está almacenado en la base de datos, ' +
+             'sin filtros ni agrupaciones. Es útil para auditar pagos o depurar problemas con webhooks.',
+      },
+      {
+        sel: '#page-bookings-raw',
+        en:  'The table shows every booking with its reference ID, customer name, vehicle, pickup date, return date, amount paid, status, and data source — ' +
+             'whether it came from Supabase or a local JSON fallback. ' +
+             'The Refresh button reloads all records directly from the database.',
+        es:  'La tabla muestra cada reserva con su ID de referencia, nombre del cliente, vehículo, fecha de recogida, devolución, monto pagado, estado y fuente de datos, ' +
+             'ya sea Supabase o un respaldo JSON local. ' +
+             'El botón Actualizar recarga todos los registros directamente de la base de datos.',
       },
       {
         sel: null,
-        en:  'That is the Revenue section. Use Ask Assistant to diagnose any missing or mismatched records.',
-        es:  'Esa es la sección de Ingresos. Use Preguntar al Asistente para diagnosticar registros faltantes o incorrectos.',
+        en:  'That is the Raw Bookings section.',
+        es:  'Esa es la sección de Reservas Sin Procesar.',
       },
     ],
-    analytics: [
+    'manual-booking': [
       {
-        sel: '#page-analytics',
-        en:  'The Analytics page breaks down performance metrics: revenue trends, booking counts, ' +
-             'utilization rates, and top customers.',
-        es:  'La página de Analítica desglosa métricas de rendimiento: tendencias de ingresos, conteos de reservas, ' +
-             'tasas de utilización y principales clientes.',
+        sel: '#page-manual-booking',
+        en:  'Manual Booking lets you create a reservation directly without an online payment — ' +
+             'perfect for cash, Zelle, or phone-in reservations.',
+        es:  'Reserva Manual le permite crear una reservación directamente sin pago en línea, ' +
+             'ideal para pagos en efectivo, Zelle o reservas por teléfono.',
+      },
+      {
+        sel: '#manual-booking-form',
+        en:  'Fill in the Customer Information section with the renter\'s name, phone, and email. ' +
+             'Then select the vehicle, payment method — cash, Zelle, Stripe, or other — and set the pickup and return dates and times.',
+        es:  'Complete la sección de Información del Cliente con nombre, teléfono y correo del arrendatario. ' +
+             'Luego seleccione el vehículo, método de pago — efectivo, Zelle, Stripe u otro — y establezca las fechas y horas de recogida y devolución.',
+      },
+      {
+        sel: '#manual-booking-form',
+        en:  'The Pricing section shows the auto-calculated amount based on the vehicle and dates. ' +
+             'You can override that amount in the Amount Paid field if needed. ' +
+             'Add any notes — like a cash receipt number or agreement reference — in the Notes box.',
+        es:  'La sección de Precios muestra el monto calculado automáticamente según el vehículo y las fechas. ' +
+             'Puede sobrescribir ese monto en el campo de Monto Pagado si es necesario. ' +
+             'Agregue notas como número de recibo o referencia en el campo de Notas.',
+      },
+      {
+        sel: '#manual-booking-form',
+        en:  'The Clear Form button resets all fields if you need to start over. ' +
+             'The Save Booking button creates the reservation and adds it to the Bookings table immediately.',
+        es:  'El botón Limpiar Formulario restablece todos los campos si necesita empezar de nuevo. ' +
+             'El botón Guardar Reserva crea la reservación y la agrega inmediatamente a la tabla de Reservas.',
       },
       {
         sel: null,
-        en:  'That is the Analytics section.',
-        es:  'Esa es la sección de Analítica.',
-      },
-    ],
-    customers: [
-      {
-        sel: '#page-customers',
-        en:  'The Customers page shows every renter on record. You can search, view rental history, ' +
-             'flag or ban customers, and edit contact details.',
-        es:  'La página de Clientes muestra a todos los arrendatarios registrados. Puede buscar, ver historial de rentas, ' +
-             'marcar o prohibir clientes, y editar datos de contacto.',
-      },
-      {
-        sel: null,
-        en:  'That is the Customers section.',
-        es:  'Esa es la sección de Clientes.',
+        en:  'That is the Manual Booking section.',
+        es:  'Esa es la sección de Reserva Manual.',
       },
     ],
     'fleet-status': [
       {
         sel: '#page-fleet-status',
-        en:  'Fleet Status gives you a real-time view of each vehicle — ' +
-             'whether it is available, rented, overdue, or blocked.',
-        es:  'Estado de Flota le da una vista en tiempo real de cada vehículo: ' +
-             'si está disponible, rentado, vencido o bloqueado.',
+        en:  'Fleet Status shows the availability toggle for each vehicle. ' +
+             'When a vehicle is toggled ON, it appears on the public website and customers can book it online. ' +
+             'Toggle it OFF to hide it from bookings — useful during maintenance or when a car is out of service.',
+        es:  'Estado de Flota muestra el interruptor de disponibilidad de cada vehículo. ' +
+             'Cuando está activado, el vehículo aparece en el sitio público y los clientes pueden reservarlo. ' +
+             'Desactívelo para ocultarlo — útil durante mantenimiento o cuando el auto está fuera de servicio.',
+      },
+      {
+        sel: '#page-fleet-status',
+        en:  'The Refresh button reloads the current availability data from the database.',
+        es:  'El botón Actualizar recarga los datos actuales de disponibilidad desde la base de datos.',
       },
       {
         sel: null,
@@ -282,10 +374,26 @@
     gps: [
       {
         sel: '#page-gps',
-        en:  'GPS Tracking shows the live location of your vehicles via Bouncie integration. ' +
-             'You can sync, view odometer readings, and track trips.',
-        es:  'Rastreo GPS muestra la ubicación en vivo de sus vehículos mediante la integración con Bouncie. ' +
-             'Puede sincronizar, ver lecturas del odómetro y rastrear viajes.',
+        en:  'GPS Tracking shows the live location of each vehicle via Bouncie integration. ' +
+             'You will see a card for each car showing its last known address, odometer reading, and when it was last updated.',
+        es:  'Rastreo GPS muestra la ubicación en vivo de cada vehículo mediante la integración con Bouncie. ' +
+             'Verá una tarjeta por auto con su última dirección conocida, lectura del odómetro y la última actualización.',
+      },
+      {
+        sel: '#page-gps',
+        en:  'The Sync Now button pulls the latest GPS data from Bouncie immediately. ' +
+             'The Refresh button reloads the page data. ' +
+             'The Auto-Refresh toggle keeps the map and cards updating automatically every minute.',
+        es:  'El botón Sincronizar Ahora obtiene los datos GPS más recientes de Bouncie de inmediato. ' +
+             'El botón Actualizar recarga los datos de la página. ' +
+             'El interruptor Auto-Actualizar mantiene el mapa y las tarjetas actualizados automáticamente cada minuto.',
+      },
+      {
+        sel: '#page-gps',
+        en:  'If Bouncie is not yet connected, you will see a Connect Bouncie Now button. ' +
+             'Click it to link your Bouncie account, or go to System Settings to enter your credentials.',
+        es:  'Si Bouncie no está conectado todavía, verá el botón Conectar Bouncie Ahora. ' +
+             'Haga clic para vincular su cuenta de Bouncie, o vaya a Configuración del Sistema para ingresar sus credenciales.',
       },
       {
         sel: null,
@@ -296,10 +404,24 @@
     'block-dates': [
       {
         sel: '#page-block-dates',
-        en:  'Block Dates lets you mark specific date ranges as unavailable for a vehicle — ' +
-             'useful for maintenance windows or planned downtime.',
-        es:  'Bloquear Fechas le permite marcar rangos de fechas como no disponibles para un vehículo, ' +
-             'útil para mantenimiento o tiempos de inactividad planificados.',
+        en:  'Block Dates lets you prevent bookings on specific date ranges for any vehicle — ' +
+             'perfect for scheduled maintenance, inspections, or planned downtime.',
+        es:  'Bloquear Fechas le permite evitar reservas en rangos de fechas específicos para cualquier vehículo, ' +
+             'ideal para mantenimiento programado, inspecciones o tiempo de inactividad planificado.',
+      },
+      {
+        sel: '#page-block-dates',
+        en:  'On the left side, the Block Dates form: select a vehicle, choose a from-date and to-date, then click the Block Dates button to lock that range. ' +
+             'On the right side, the Unblock Dates form: select the vehicle and the same date range and click Unblock Dates to re-open availability.',
+        es:  'En el lado izquierdo, el formulario de Bloqueo: seleccione un vehículo, elija fecha de inicio y fin, luego haga clic en Bloquear Fechas para bloquear ese rango. ' +
+             'En el lado derecho, el formulario de Desbloqueo: seleccione el vehículo y el mismo rango de fechas y haga clic en Desbloquear para reabrir la disponibilidad.',
+      },
+      {
+        sel: '#page-block-dates',
+        en:  'The Current Blocked Date Ranges card at the bottom lists all active blocks. ' +
+             'Use the Refresh button to reload the list after making changes.',
+        es:  'La tarjeta de Rangos de Fechas Bloqueadas al fondo lista todos los bloqueos activos. ' +
+             'Use el botón Actualizar para recargar la lista después de hacer cambios.',
       },
       {
         sel: null,
@@ -307,97 +429,197 @@
         es:  'Esa es la sección de Bloquear Fechas.',
       },
     ],
-    sms: [
+    expenses: [
       {
-        sel: '#page-sms',
-        en:  'SMS Templates lets you customize the automated texts sent to customers — ' +
-             'booking confirmations, reminders, and late fee notices.',
-        es:  'Plantillas SMS le permite personalizar los mensajes automáticos enviados a clientes, ' +
-             'como confirmaciones de reserva, recordatorios y avisos de cargos por mora.',
+        sel: '#page-expenses',
+        en:  'The Expenses page lets you record and track all costs associated with running your fleet: ' +
+             'maintenance, fuel, insurance, repairs, registration fees, and more.',
+        es:  'La página de Gastos le permite registrar y rastrear todos los costos asociados con la operación de su flota: ' +
+             'mantenimiento, combustible, seguros, reparaciones, registros y más.',
+      },
+      {
+        sel: '#exp-kpi-grid',
+        en:  'At the top you will see KPI summary tiles showing your total expenses, broken down by vehicle and by category, ' +
+             'so you can instantly see where your money is going.',
+        es:  'En la parte superior verá mosaicos de resumen KPI que muestran el total de gastos, desglosados por vehículo y por categoría, ' +
+             'para que pueda ver de inmediato a dónde va su dinero.',
+      },
+      {
+        sel: '#page-expenses',
+        en:  'The Add Expense button at the top opens a form where you choose the vehicle, category, amount, date, and an optional note. ' +
+             'Categories include maintenance, insurance, repair, fuel, registration, and other. ' +
+             'Once saved, the expense immediately affects your profit calculations in Fleet Analytics.',
+        es:  'El botón Agregar Gasto en la parte superior abre un formulario para elegir el vehículo, categoría, monto, fecha y nota opcional. ' +
+             'Las categorías incluyen mantenimiento, seguros, reparación, combustible, registro y otro. ' +
+             'Una vez guardado, el gasto afecta inmediatamente los cálculos de ganancia en Analítica de Flota.',
+      },
+      {
+        sel: '#page-expenses',
+        en:  'Use the filter dropdowns below the add button to narrow the expense list by vehicle or category. ' +
+             'Each expense row has an Edit button to update the details and a Delete button to permanently remove it.',
+        es:  'Use los filtros debajo del botón agregar para reducir la lista de gastos por vehículo o categoría. ' +
+             'Cada fila de gasto tiene un botón Editar para actualizar los detalles y un botón Eliminar para removerlo permanentemente.',
       },
       {
         sel: null,
-        en:  'That is the SMS Templates section.',
-        es:  'Esa es la sección de Plantillas SMS.',
+        en:  'That is the Expenses section.',
+        es:  'Esa es la sección de Gastos.',
       },
     ],
-    'late-fees': [
+    revenue: [
       {
-        sel: '#page-late-fees',
-        en:  'Late Fees shows all overdue charges. You can approve, adjust, waive, ' +
-             'or charge late fees directly from this page.',
-        es:  'Cargos por Mora muestra todos los cargos vencidos. Puede aprobar, ajustar, eximir ' +
-             'o cobrar cargos por mora directamente desde esta página.',
+        sel: '#page-revenue',
+        en:  'The Revenue page tracks every income record in the system. ' +
+             'Each row shows the customer, vehicle, dates, gross amount, Stripe fees, refunds, net revenue, payment method, and status.',
+        es:  'La página de Ingresos rastrea cada registro de ingreso en el sistema. ' +
+             'Cada fila muestra el cliente, vehículo, fechas, monto bruto, comisiones de Stripe, reembolsos, ingreso neto, método de pago y estado.',
+      },
+      {
+        sel: '#page-revenue',
+        en:  'The filter row at the top has two dropdowns — filter by vehicle or by status — to narrow down the records you see.',
+        es:  'La fila de filtros en la parte superior tiene dos menús desplegables: filtrar por vehículo o por estado, para reducir los registros visibles.',
+      },
+      {
+        sel: '#btn-stripe-reconcile',
+        en:  'Sync from Stripe pulls in any payments from Stripe that are not yet recorded in the system — ' +
+             'use this after a payment appears in Stripe but is missing here.',
+        es:  'Sincronizar desde Stripe importa los pagos de Stripe que aún no están registrados en el sistema. ' +
+             'Úselo cuando un pago aparezca en Stripe pero falte aquí.',
+      },
+      {
+        sel: '#btn-dedup',
+        en:  'Fix Duplicates removes any duplicate revenue records that may have been created during a Stripe sync. ' +
+             'Run this if you notice the same booking appearing twice in the revenue list.',
+        es:  'Corregir Duplicados elimina los registros de ingreso duplicados creados durante una sincronización de Stripe. ' +
+             'Úselo si nota que la misma reserva aparece dos veces en la lista de ingresos.',
+      },
+      {
+        sel: '#btn-cleanup-orphans',
+        en:  'Fix Unknown resolves revenue records that have a missing or unrecognized vehicle — ' +
+             'it tries to match them to bookings and corrects the vehicle assignment automatically.',
+        es:  'Corregir Desconocidos resuelve los registros de ingresos con vehículo faltante o no reconocido, ' +
+             'intentando emparejarlos con reservas y corrigiendo la asignación de vehículo automáticamente.',
+      },
+      {
+        sel: '#btn-revenue-heal',
+        en:  'Relink Orphans reconnects revenue records that lost their link to a booking, ' +
+             'fixing undercounts you might see in Fleet Analytics or the Revenue Tracker.',
+        es:  'Revincular Huérfanos reconecta los registros de ingresos que perdieron su vínculo con una reserva, ' +
+             'corrigiendo los conteos bajos que puede ver en Analítica de Flota o en el Rastreador de Ingresos.',
+      },
+      {
+        sel: '#page-revenue',
+        en:  'The Add Record button lets you manually create an income entry — useful for recording cash payments or off-system transactions.',
+        es:  'El botón Agregar Registro permite crear manualmente una entrada de ingreso, útil para registrar pagos en efectivo o transacciones fuera del sistema.',
       },
       {
         sel: null,
-        en:  'That is the Late Fees section.',
-        es:  'Esa es la sección de Cargos por Mora.',
+        en:  'That is the Revenue section.',
+        es:  'Esa es la sección de Ingresos.',
       },
     ],
-    ai: [
+    analytics: [
       {
-        sel: '#page-ai',
-        en:  'The AI Assistant lets you type any question or command and get an intelligent response — ' +
-             'from looking up a booking to creating one or diagnosing issues.',
-        es:  'El Asistente IA le permite escribir cualquier pregunta o comando y obtener una respuesta inteligente, ' +
-             'desde buscar una reserva hasta crear una o diagnosticar problemas.',
+        sel: '#page-analytics',
+        en:  'Fleet Analytics gives you a complete financial performance overview of your entire operation.',
+        es:  'Analítica de Flota le brinda una visión completa del rendimiento financiero de toda su operación.',
+      },
+      {
+        sel: '#analytics-kpi-grid',
+        en:  'The KPI cards at the top summarize total bookings, gross revenue, net revenue after fees, total expenses, and overall profit.',
+        es:  'Las tarjetas KPI en la parte superior resumen el total de reservas, ingresos brutos, ingresos netos después de comisiones, gastos totales y ganancia general.',
+      },
+      {
+        sel: '.charts-grid',
+        en:  'The Revenue Trend chart shows your monthly income over the last twelve months. ' +
+             'The Fleet Utilization chart shows the percentage of available days each vehicle was rented.',
+        es:  'El gráfico de Tendencia de Ingresos muestra sus ingresos mensuales de los últimos doce meses. ' +
+             'El gráfico de Utilización de Flota muestra el porcentaje de días disponibles que fue rentado cada vehículo.',
+      },
+      {
+        sel: '#analytics-tbody',
+        en:  'The Vehicle Performance table breaks down every vehicle individually: bookings count, gross and net revenue, expenses, profit, return on investment, monthly profit, payback period, utilization rate, and average revenue per booking.',
+        es:  'La tabla de Rendimiento por Vehículo desglosa cada vehículo individualmente: conteo de reservas, ingresos brutos y netos, gastos, ganancia, retorno de inversión, ganancia mensual, período de recuperación, tasa de utilización e ingreso promedio por reserva.',
       },
       {
         sel: null,
-        en:  'That is the AI Assistant page. You can also use Ask Assistant in the Voice Panel for spoken replies.',
-        es:  'Esa es la página del Asistente IA. También puede usar Preguntar al Asistente en el Panel de Voz para respuestas habladas.',
+        en:  'That is the Fleet Analytics section.',
+        es:  'Esa es la sección de Analítica de Flota.',
       },
     ],
-    'system-health': [
+    customers: [
       {
-        sel: '#page-system-health',
-        en:  'System Health shows diagnostic checks, webhook logs, SMS delivery logs, ' +
-             'and any issues that need attention.',
-        es:  'Salud del Sistema muestra verificaciones de diagnóstico, registros de webhooks, ' +
-             'registros de entrega de SMS y cualquier problema que necesite atención.',
+        sel: '#page-customers',
+        en:  'The Customers page shows every renter who has ever booked with you. ' +
+             'Use the search bar at the top to find someone by name, phone, or email.',
+        es:  'La página de Clientes muestra a todos los arrendatarios que alguna vez han reservado con usted. ' +
+             'Use la barra de búsqueda en la parte superior para encontrar a alguien por nombre, teléfono o correo.',
+      },
+      {
+        sel: '#page-customers',
+        en:  'The filter row has four controls: a status filter to show all customers or narrow to flagged, banned, or active only; ' +
+             'a risk level filter to view low, medium, or high risk renters; ' +
+             'and a sort dropdown to order the list by total spent, profit, number of bookings, last booking date, no-show count, or name.',
+        es:  'La fila de filtros tiene cuatro controles: un filtro de estado para ver todos los clientes o reducir a marcados, prohibidos o activos; ' +
+             'un filtro de nivel de riesgo para ver arrendatarios de bajo, medio o alto riesgo; ' +
+             'y un menú de ordenación para clasificar por total gastado, ganancia, número de reservas, última reserva, conteo de no-shows o nombre.',
+      },
+      {
+        sel: '#page-customers',
+        en:  'The Recompute Totals button recalculates all customer KPI figures — total spent, profit, bookings count — from the revenue records. ' +
+             'Run this after syncing revenue to make sure the customer stats are up to date. ' +
+             'The Add Customer button lets you manually create a customer record without requiring them to book first.',
+        es:  'El botón Recalcular Totales recalcula todas las cifras KPI de los clientes — total gastado, ganancia, conteo de reservas — a partir de los registros de ingresos. ' +
+             'Úselo después de sincronizar ingresos para asegurar que las estadísticas estén actualizadas. ' +
+             'El botón Agregar Cliente le permite crear manualmente un registro de cliente sin necesidad de que hagan una reserva primero.',
+      },
+      {
+        sel: '#cust-kpi-grid',
+        en:  'The KPI tiles below the toolbar summarize fleet-wide customer metrics: total customers, average revenue per customer, total flagged, and total banned.',
+        es:  'Los mosaicos KPI debajo de la barra de herramientas resumen las métricas de clientes de toda la flota: clientes totales, ingreso promedio por cliente, total marcados y total prohibidos.',
+      },
+      {
+        sel: '#page-customers',
+        en:  'The customer table shows name, contact info, total bookings, total spent, profit generated, no-show count, last booking date, customer tier, and status. ' +
+             'Each row has four action buttons: ' +
+             'View opens a detailed profile with full booking history. ' +
+             'Bookings jumps directly to that customer\'s bookings in the Bookings section. ' +
+             'Edit opens a form to update their contact details. ' +
+             'Flag marks them for closer monitoring. ' +
+             'Ban blocks them from making any future bookings.',
+        es:  'La tabla de clientes muestra nombre, información de contacto, reservas totales, total gastado, ganancia generada, conteo de no-shows, última reserva, nivel de cliente y estado. ' +
+             'Cada fila tiene cuatro botones de acción: ' +
+             'Ver abre un perfil detallado con historial completo de reservas. ' +
+             'Reservas salta directamente a las reservas de ese cliente en la sección de Reservas. ' +
+             'Editar abre un formulario para actualizar sus datos de contacto. ' +
+             'Marcar los señala para mayor supervisión. ' +
+             'Prohibir los bloquea de futuras reservas.',
       },
       {
         sel: null,
-        en:  'That is the System Health section.',
-        es:  'Esa es la sección de Salud del Sistema.',
-      },
-    ],
-    'system-settings': [
-      {
-        sel: '#page-system-settings',
-        en:  'System Settings lets you configure global options like tax rates, automation toggles, ' +
-             'notification settings, Bouncie GPS connection, and pricing tiers.',
-        es:  'Configuración del Sistema le permite configurar opciones globales como tasas de impuestos, ' +
-             'interruptores de automatización, ajustes de notificación, conexión GPS de Bouncie y niveles de precios.',
-      },
-      {
-        sel: null,
-        en:  'That is the System Settings section.',
-        es:  'Esa es la sección de Configuración del Sistema.',
-      },
-    ],
-    'manual-booking': [
-      {
-        sel: '#page-manual-booking',
-        en:  'Manual Booking lets you create a reservation directly — useful for cash payments, ' +
-             'phone bookings, or customers whose online booking was not recorded.',
-        es:  'Reserva Manual le permite crear una reserva directamente, útil para pagos en efectivo, ' +
-             'reservas por teléfono o clientes cuya reserva en línea no fue registrada.',
-      },
-      {
-        sel: null,
-        en:  'That is the Manual Booking section.',
-        es:  'Esa es la sección de Reserva Manual.',
+        en:  'That is the Customers section.',
+        es:  'Esa es la sección de Clientes.',
       },
     ],
     'protection-plans': [
       {
         sel: '#page-protection-plans',
         en:  'Protection Plans lets you configure the insurance and coverage options ' +
-             'offered to customers during checkout.',
+             'offered to customers during the booking checkout.',
         es:  'Planes de Protección le permite configurar las opciones de seguro y cobertura ' +
-             'ofrecidas a los clientes durante el pago.',
+             'ofrecidas a los clientes durante el proceso de reserva.',
+      },
+      {
+        sel: '#page-protection-plans',
+        en:  'The Add Plan button at the top opens a form where you can define a plan name, description, daily price, and what is covered. ' +
+             'Customers will see these plans and can select one when booking a vehicle.',
+        es:  'El botón Agregar Plan en la parte superior abre un formulario para definir nombre del plan, descripción, precio diario y cobertura. ' +
+             'Los clientes verán estos planes y podrán seleccionar uno al reservar un vehículo.',
+      },
+      {
+        sel: '#page-protection-plans',
+        en:  'Each existing plan has an Edit button to update its details and a Delete button to remove it from the checkout options.',
+        es:  'Cada plan existente tiene un botón Editar para actualizar sus detalles y un botón Eliminar para quitarlo de las opciones de reserva.',
       },
       {
         sel: null,
@@ -408,10 +630,21 @@
     'vehicle-pricing': [
       {
         sel: '#page-vehicle-pricing',
-        en:  'Vehicle Pricing lets you set daily rates, weekly rates, deposits, ' +
-             'and tax for each vehicle in your fleet.',
-        es:  'Precios de Vehículos le permite establecer tarifas diarias, semanales, depósitos ' +
-             'e impuestos para cada vehículo de su flota.',
+        en:  'Vehicle Pricing is where you control exactly what customers pay. ' +
+             'For each vehicle you can set the daily rate, the weekly rate, the security deposit amount, and the tax rate.',
+        es:  'Precios de Vehículos es donde controla exactamente lo que pagan los clientes. ' +
+             'Para cada vehículo puede establecer la tarifa diaria, tarifa semanal, monto del depósito y tasa de impuesto.',
+      },
+      {
+        sel: '#page-vehicle-pricing',
+        en:  'Each vehicle has its own pricing card with editable fields — each vehicle is saved individually. ' +
+             'After updating the values for a vehicle, click the Save Pricing button on that specific vehicle\'s card to apply the changes for that car. ' +
+             'The new rates take effect immediately on the very next booking — no restart needed. ' +
+             'All four booking paths — online, manual, extensions, and balance payments — pull from these saved values.',
+        es:  'Cada vehículo tiene su propia tarjeta de precios con campos editables — cada vehículo se guarda de forma individual. ' +
+             'Después de actualizar los valores de un vehículo, haga clic en el botón Guardar Precios en la tarjeta de ese vehículo específico para aplicar los cambios de ese auto. ' +
+             'Las nuevas tarifas surten efecto inmediatamente en la próxima reserva, sin necesidad de reinicio. ' +
+             'Las cuatro rutas de reserva — en línea, manual, extensiones y pagos de saldo — utilizan estos valores guardados.',
       },
       {
         sel: null,
@@ -419,33 +652,287 @@
         es:  'Esa es la sección de Precios de Vehículos.',
       },
     ],
-    settings: [
+    'system-settings': [
       {
-        sel: '#page-settings',
-        en:  'Site Settings lets you update your business name, phone number, logo, ' +
-             'about text, and other public-facing content on the website.',
-        es:  'Configuración del Sitio le permite actualizar el nombre de su negocio, número de teléfono, ' +
-             'logo, texto de descripción y otro contenido público del sitio web.',
+        sel: '#page-system-settings',
+        en:  'System Settings is where you configure the global behavior of the entire platform. ' +
+             'It is organized into several sections that control automation, notifications, integrations, and more.',
+        es:  'Configuración del Sistema es donde configura el comportamiento global de toda la plataforma. ' +
+             'Está organizada en varias secciones que controlan automatización, notificaciones, integraciones y más.',
+      },
+      {
+        sel: '#sys-settings-content',
+        en:  'In the automation section you can toggle whether the system automatically sends booking confirmation SMS messages, ' +
+             'pickup reminders, return reminders, and late fee alerts.',
+        es:  'En la sección de automatización puede activar o desactivar el envío automático de SMS de confirmación de reserva, ' +
+             'recordatorios de recogida, recordatorios de devolución y alertas de cargo por mora.',
+      },
+      {
+        sel: '#sys-settings-content',
+        en:  'The tax and fee settings let you set the default sales tax rate applied to all bookings, ' +
+             'and configure late fee amounts and grace periods.',
+        es:  'Los ajustes de impuestos y tarifas permiten establecer la tasa de impuesto predeterminada aplicada a todas las reservas ' +
+             'y configurar los montos y períodos de gracia de los cargos por mora.',
+      },
+      {
+        sel: '#bouncie-auth-content',
+        en:  'The Bouncie GPS section lets you connect your Bouncie account using your client ID and secret. ' +
+             'Once connected, GPS Tracking will show live vehicle locations.',
+        es:  'La sección de GPS Bouncie le permite conectar su cuenta de Bouncie usando su ID de cliente y clave secreta. ' +
+             'Una vez conectado, el Rastreo GPS mostrará las ubicaciones en vivo de los vehículos.',
       },
       {
         sel: null,
-        en:  'That is the Site Settings section.',
-        es:  'Esa es la sección de Configuración del Sitio.',
+        en:  'That is the System Settings section.',
+        es:  'Esa es la sección de Configuración del Sistema.',
+      },
+    ],
+    'late-fees': [
+      {
+        sel: '#page-late-fees',
+        en:  'The Late Fees section tracks all overdue charges automatically calculated when a rental runs past its return date.',
+        es:  'La sección de Cargos por Mora rastrea todos los cargos de vencimiento calculados automáticamente cuando una renta supera su fecha de devolución.',
+      },
+      {
+        sel: '#page-late-fees',
+        en:  'Use the filter dropdowns at the top to view fees by status — Pending, Approved, Paid, Failed, or Dismissed — ' +
+             'and by vehicle. The search box finds fees by customer name or booking ID.',
+        es:  'Use los filtros en la parte superior para ver cargos por estado — Pendiente, Aprobado, Pagado, Fallido o Descartado — ' +
+             'y por vehículo. La búsqueda encuentra cargos por nombre de cliente o ID de reserva.',
+      },
+      {
+        sel: '#page-late-fees',
+        en:  'Each row has action buttons: ' +
+             'Approve marks the fee as approved and ready to collect. ' +
+             'Charge attempts to bill the customer\'s card on file via Stripe. ' +
+             'Waive cancels the fee with no charge. ' +
+             'Edit lets you adjust the amount. ' +
+             'Dismiss removes the fee from the active list.',
+        es:  'Cada fila tiene botones de acción: ' +
+             'Aprobar marca el cargo como aprobado y listo para cobrar. ' +
+             'Cobrar intenta cargar la tarjeta del cliente en Stripe. ' +
+             'Eximir cancela el cargo sin cobro. ' +
+             'Editar permite ajustar el monto. ' +
+             'Descartar elimina el cargo de la lista activa.',
+      },
+      {
+        sel: null,
+        en:  'That is the Late Fees section.',
+        es:  'Esa es la sección de Cargos por Mora.',
+      },
+    ],
+    sms: [
+      {
+        sel: '#page-sms',
+        en:  'SMS Automation shows all the automated text message templates sent to customers throughout their rental journey.',
+        es:  'Automatización de SMS muestra todas las plantillas de mensajes de texto automáticos enviados a los clientes durante su proceso de renta.',
+      },
+      {
+        sel: '#page-sms',
+        en:  'Each template has a specific purpose: ' +
+             'the booking confirmation SMS is sent immediately after a successful payment. ' +
+             'The pickup reminder goes out the day before the rental starts. ' +
+             'The return reminder is sent the day before the scheduled return date. ' +
+             'The late fee notice is sent when the vehicle is overdue.',
+        es:  'Cada plantilla tiene un propósito específico: ' +
+             'el SMS de confirmación de reserva se envía inmediatamente después de un pago exitoso. ' +
+             'El recordatorio de recogida se envía el día anterior al inicio de la renta. ' +
+             'El recordatorio de devolución se envía el día antes de la fecha de devolución programada. ' +
+             'El aviso de cargo por mora se envía cuando el vehículo está vencido.',
+      },
+      {
+        sel: '#page-sms',
+        en:  'Each template has an Edit button that opens a panel where you can rewrite the message text and use placeholder variables ' +
+             'like the customer name, vehicle name, pickup date, or return date — these are filled in automatically when the SMS is sent.',
+        es:  'Cada plantilla tiene un botón Editar que abre un panel donde puede reescribir el texto del mensaje y usar variables de marcador ' +
+             'como nombre del cliente, nombre del vehículo, fecha de recogida o devolución — estas se completan automáticamente al enviar el SMS.',
+      },
+      {
+        sel: null,
+        en:  'That is the SMS Automation section.',
+        es:  'Esa es la sección de Automatización de SMS.',
+      },
+    ],
+    ai: [
+      {
+        sel: '#page-ai',
+        en:  'The AI Assistant is a full conversational interface powered by artificial intelligence. ' +
+             'Type any question or command in the chat box and the assistant responds with detailed, intelligent answers.',
+        es:  'El Asistente IA es una interfaz conversacional completa impulsada por inteligencia artificial. ' +
+             'Escriba cualquier pregunta o comando en el cuadro de chat y el asistente responde con respuestas detalladas e inteligentes.',
+      },
+      {
+        sel: '#ai-chips',
+        en:  'The quick-action chips above the input box give you one-tap shortcuts to common questions: ' +
+             'This week\'s revenue, Booking analysis to understand why bookings may be low, ' +
+             'Active rentals, Fraud check on recent bookings, and Fleet mileage and maintenance status. ' +
+             'Tap any chip and the AI answers immediately.',
+        es:  'Los chips de acceso rápido encima del cuadro de entrada dan atajos de un toque para preguntas comunes: ' +
+             'Ingresos de esta semana, Análisis de reservas para entender por qué pueden ser bajas, ' +
+             'Rentas activas, Verificación de fraude en reservas recientes y Estado de kilometraje y mantenimiento de la flota. ' +
+             'Toque cualquier chip y la IA responde de inmediato.',
+      },
+      {
+        sel: '#page-ai',
+        en:  'In the chat input row there are three controls: ' +
+             'The paperclip Attach button lets you upload an image — for example a photo of damage or a document — and ask the AI about it. ' +
+             'The text input box is where you type your question or command. ' +
+             'The Send button submits your message. You can also press Enter to send.',
+        es:  'En la fila de entrada del chat hay tres controles: ' +
+             'El botón de Adjuntar con ícono de clip le permite subir una imagen, por ejemplo una foto de daño o un documento, y preguntarle a la IA sobre ella. ' +
+             'El cuadro de texto es donde escribe su pregunta o comando. ' +
+             'El botón Enviar envía su mensaje. También puede presionar Enter para enviar.',
+      },
+      {
+        sel: '#page-ai',
+        en:  'In the top-right of the chat header you have two more controls: ' +
+             'New Chat clears the conversation history so you can start a fresh session. ' +
+             'The Auto Mode toggle enables the AI to take actions automatically without asking for confirmation — ' +
+             'for example creating a booking or updating a record directly. Turn it off if you want the AI to ask before acting.',
+        es:  'En la parte superior derecha del encabezado del chat hay dos controles más: ' +
+             'Nuevo Chat limpia el historial de conversación para comenzar una sesión nueva. ' +
+             'El interruptor de Modo Automático permite a la IA tomar acciones automáticamente sin pedir confirmación, ' +
+             'por ejemplo crear una reserva o actualizar un registro directamente. Desactívelo si prefiere que la IA pregunte antes de actuar.',
+      },
+      {
+        sel: '#ai-side-panel',
+        en:  'On the right side of the AI page are three auto-loading insight panels. ' +
+             'Revenue Snapshot shows a quick summary of this week\'s income. ' +
+             'Detected Problems automatically scans your data for anomalies like missing revenue records, overdue bookings, or booking integrity issues. ' +
+             'Fraud Monitor scans recent bookings for suspicious patterns such as duplicate contacts, unusually short rentals, or high-risk indicators.',
+        es:  'En el lado derecho de la página de IA hay tres paneles de insights que se cargan automáticamente. ' +
+             'Resumen de Ingresos muestra un resumen rápido de los ingresos de esta semana. ' +
+             'Problemas Detectados escanea automáticamente sus datos en busca de anomalías como registros de ingresos faltantes, reservas vencidas o problemas de integridad. ' +
+             'Monitor de Fraude escanea las reservas recientes en busca de patrones sospechosos como contactos duplicados, rentas inusualmente cortas o indicadores de alto riesgo.',
+      },
+      {
+        sel: null,
+        en:  'That is the AI Assistant section.',
+        es:  'Esa es la sección del Asistente IA.',
+      },
+    ],
+    'system-health': [
+      {
+        sel: '#page-system-health',
+        en:  'System Health is your diagnostic center. It verifies the integrity of your entire platform: ' +
+             'payments, bookings, revenue records, agreement PDFs, and active rental counts.',
+        es:  'Salud del Sistema es su centro de diagnóstico. Verifica la integridad de toda la plataforma: ' +
+             'pagos, reservas, registros de ingresos, PDFs de acuerdos y conteos de rentas activas.',
+      },
+      {
+        sel: '#page-system-health',
+        en:  'The Run Checks button at the top triggers all diagnostic checks at once. ' +
+             'Each check shows either a green pass, a yellow warning, or a red failure with a description of the issue.',
+        es:  'El botón Ejecutar Comprobaciones en la parte superior activa todos los diagnósticos a la vez. ' +
+             'Cada comprobación muestra un resultado verde de aprobado, amarillo de advertencia, o rojo de falla con descripción del problema.',
+      },
+      {
+        sel: '#page-system-health',
+        en:  'At the bottom of System Health is the SMS Logs section. ' +
+             'It shows the last one hundred SMS delivery attempts with time, booking reference, vehicle, phone number, message type, delivery status, and any error message. ' +
+             'The Refresh button reloads the logs, and the Clear button removes old entries.',
+        es:  'En la parte inferior de Salud del Sistema está la sección de Registros de SMS. ' +
+             'Muestra los últimos cien intentos de entrega de SMS con hora, referencia de reserva, vehículo, teléfono, tipo de mensaje, estado de entrega y cualquier error. ' +
+             'El botón Actualizar recarga los registros y el botón Limpiar elimina entradas antiguas.',
+      },
+      {
+        sel: null,
+        en:  'That is the System Health section.',
+        es:  'Esa es la sección de Salud del Sistema.',
+      },
+    ],
+    settings: [
+      {
+        sel: '#page-settings',
+        en:  'The Settings page has three main sections: Admin Access, Site Content, and System Diagnostics.',
+        es:  'La página de Configuración tiene tres secciones principales: Acceso de Administrador, Contenido del Sitio y Diagnósticos del Sistema.',
+      },
+      {
+        sel: '#page-settings',
+        en:  'The Admin Access section explains how to change your admin password. ' +
+             'Because the password is an environment variable, you update it in your Vercel dashboard — ' +
+             'the form here is a reference guide to remind you where to go.',
+        es:  'La sección de Acceso de Administrador explica cómo cambiar su contraseña de administrador. ' +
+             'Como la contraseña es una variable de entorno, la actualiza en su panel de Vercel — ' +
+             'el formulario aquí es una guía de referencia.',
+      },
+      {
+        sel: '#site-content-form',
+        en:  'The Site Content section controls everything visible on your public website. ' +
+             'You can update your business name, phone, WhatsApp, and email. ' +
+             'You can also upload or change your logo — the new logo appears on every public page immediately.',
+        es:  'La sección de Contenido del Sitio controla todo lo visible en su sitio web público. ' +
+             'Puede actualizar el nombre del negocio, teléfono, WhatsApp y correo electrónico. ' +
+             'También puede subir o cambiar su logo, que aparece en cada página pública de inmediato.',
+      },
+      {
+        sel: '#site-content-form',
+        en:  'Further down in Site Content you can edit the hero title and subtitle that appear on the homepage, ' +
+             'the About Us paragraph, social media links for Instagram, Facebook, TikTok, and Twitter, ' +
+             'a promotional banner that can be toggled on or off, ' +
+             'and your cancellation, damage, fuel, and age policies.',
+        es:  'Más abajo en Contenido del Sitio puede editar el título y subtítulo del hero de la página principal, ' +
+             'el párrafo de Acerca de Nosotros, enlaces de redes sociales para Instagram, Facebook, TikTok y Twitter, ' +
+             'un banner promocional que se puede activar o desactivar, ' +
+             'y sus políticas de cancelación, daños, combustible y edad.',
+      },
+      {
+        sel: '#site-content-form',
+        en:  'The Save All Changes button publishes all your site content edits to the live website instantly. ' +
+             'The Refresh button reloads the current saved values.',
+        es:  'El botón Guardar Todos los Cambios publica todas sus ediciones de contenido al sitio web en vivo de inmediato. ' +
+             'El botón Actualizar recarga los valores guardados actualmente.',
+      },
+      {
+        sel: '#run-diagnostics-btn',
+        en:  'The System Diagnostics section at the bottom has a Run Check button that verifies all required environment variables are configured ' +
+             'and that all necessary Supabase database tables exist. Run this if you ever see errors in the admin panel.',
+        es:  'La sección de Diagnósticos del Sistema al fondo tiene un botón Ejecutar Comprobación que verifica que todas las variables de entorno requeridas estén configuradas ' +
+             'y que todas las tablas de base de datos de Supabase necesarias existan. Úselo si ve errores en el panel de administración.',
+      },
+      {
+        sel: null,
+        en:  'That is the Settings section.',
+        es:  'Esa es la sección de Configuración.',
       },
     ],
   };
 
   // Pages visited (in order) during the Full System Tour.
+  // Matches the sidebar order: Dashboard → Vehicles → Bookings → Raw Bookings →
+  // Manual Booking → Fleet Status → GPS → Block Dates → Expenses → Revenue →
+  // Fleet Analytics → Customers → Protection Plans → Vehicle Pricing →
+  // System Settings → Late Fees → SMS Automation → AI Assistant →
+  // System Health → Settings
   const FULL_TOUR_PAGES = [
-    'dashboard', 'bookings', 'vehicles', 'customers', 'revenue', 'analytics',
+    'dashboard',
+    'vehicles',
+    'bookings',
+    'bookings-raw',
+    'manual-booking',
+    'fleet-status',
+    'gps',
+    'block-dates',
+    'expenses',
+    'revenue',
+    'analytics',
+    'customers',
+    'protection-plans',
+    'vehicle-pricing',
+    'system-settings',
+    'late-fees',
+    'sms',
+    'ai',
+    'system-health',
+    'settings',
   ];
 
   // Closing line spoken at the end of the Full System Tour.
   const FULL_TOUR_CLOSING = {
-    en: 'That completes the full system tour. You can start any page guide from the ' +
-        'Voice Assistant panel, or ask a question using Ask Assistant.',
-    es: 'Eso completa el recorrido completo del sistema. Puede iniciar la guía de cualquier ' +
-        'página desde el panel del Asistente de Voz, o hacer una pregunta usando Preguntar al Asistente.',
+    en: `That completes the full system tour — all ${FULL_TOUR_PAGES.length} sections covered, from Dashboard to Settings. ` +
+        'You can revisit any section guide from the Voice Assistant panel, or ask a question using Ask Assistant.',
+    es: `Eso completa el recorrido completo del sistema — las ${FULL_TOUR_PAGES.length} secciones cubiertas, desde el Tablero hasta Configuración. ` +
+        'Puede revisar la guía de cualquier sección desde el Panel del Asistente de Voz, o hacer una pregunta usando Preguntar al Asistente.',
   };
 
   // ── Runtime state ─────────────────────────────────────────────────────────
