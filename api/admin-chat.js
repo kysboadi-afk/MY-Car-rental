@@ -766,14 +766,16 @@ function normalizeClientMessages(input) {
 
     // For user messages, allow a valid vision content array (text + image_url blocks)
     // to pass through as-is so OpenAI can process attached images.
-    const VALID_CONTENT_TYPES = new Set(["text", "image_url"]);
     const isVisionArray =
       m.role === "user" &&
       Array.isArray(m.content) &&
       m.content.length > 0 &&
-      m.content.every(
-        (b) => b && typeof b === "object" && VALID_CONTENT_TYPES.has(b.type)
-      );
+      m.content.every((b) => {
+        if (!b || typeof b !== "object") return false;
+        if (b.type === "text") return typeof b.text === "string";
+        if (b.type === "image_url") return typeof b.image_url?.url === "string";
+        return false;
+      });
     out.push({
       role: m.role,
       content: isVisionArray ? m.content : toText(m.content),
