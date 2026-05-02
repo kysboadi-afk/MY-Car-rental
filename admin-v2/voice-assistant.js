@@ -1324,6 +1324,8 @@
     }
 
     panel.querySelector('#va-hide-btn').addEventListener('click', () => setPanelHidden(true));
+
+    panel.querySelector('#va-tour-btn').addEventListener('click', () => {
       if (tourActive) stopTour();
       else            startTour();
     });
