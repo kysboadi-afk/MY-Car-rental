@@ -2137,6 +2137,28 @@
         <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
       </div>
       <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Pricing</div>
+        <div class="form-hint" style="margin-bottom:12px;">Set the rental rates for this vehicle. These values control what renters are charged and what appears on the booking page.</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Daily Rate ($)</label>
+            <input type="number" class="form-input" id="ev-daily-rate" min="0" step="1" placeholder="e.g. 60">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Weekly Rate ($)</label>
+            <input type="number" class="form-input" id="ev-weekly-rate" min="0" step="1" placeholder="e.g. 400">
+          </div>
+          <div class="form-group">
+            <label class="form-label">2-Week Rate ($)</label>
+            <input type="number" class="form-input" id="ev-biweekly-rate" min="0" step="1" placeholder="e.g. 800">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Monthly Rate ($)</label>
+            <input type="number" class="form-input" id="ev-monthly-rate" min="0" step="1" placeholder="e.g. 1500">
+          </div>
+        </div>
+      </div>
+      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Earnings Block (Booking Page)</div>
         <div class="form-hint" style="margin-bottom:12px;">These lines appear in the gold earnings box on the booking page. Leave blank to use the default text. The "Weekly rental" and "Estimated take-home" rows are always auto-calculated from the vehicle's weekly rate.</div>
         <div class="form-group full">
@@ -3365,6 +3387,10 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-earnings-title').value   = v.earnings_title   || '';
   document.getElementById('ev-earnings-row1').value    = v.earnings_row1    || '';
   document.getElementById('ev-earnings-cta').value     = v.earnings_cta     || '';
+  document.getElementById('ev-daily-rate').value    = v.daily_price    || '';
+  document.getElementById('ev-weekly-rate').value   = v.weekly_price   || '';
+  document.getElementById('ev-biweekly-rate').value = v.biweekly_price || '';
+  document.getElementById('ev-monthly-rate').value  = v.monthly_price  || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
   renderGallery('ev', Array.isArray(v.gallery_images) ? v.gallery_images : []);
@@ -3391,6 +3417,12 @@ async function saveVehicle() {
     earnings_row1:     document.getElementById('ev-earnings-row1').value.trim()    || null,
     earnings_cta:      document.getElementById('ev-earnings-cta').value.trim()     || null,
   };
+
+  const dailyRate    = parseFloat(document.getElementById('ev-daily-rate').value)    || null;
+  const weeklyRate   = parseFloat(document.getElementById('ev-weekly-rate').value)   || null;
+  const biweeklyRate = parseFloat(document.getElementById('ev-biweekly-rate').value) || null;
+  const monthlyRate  = parseFloat(document.getElementById('ev-monthly-rate').value)  || null;
+  const hasPricing   = dailyRate && weeklyRate && biweeklyRate && monthlyRate;
 
   const btn = document.querySelector('#edit-vehicle-modal .modal-footer .btn-primary');
   const origText = btn ? btn.textContent : '';
@@ -3421,6 +3453,19 @@ async function saveVehicle() {
       secret: adminSecret, action: 'update', vehicleId: editingVehicleId, updates,
     });
 
+    // Save pricing to vehicle_pricing table if all four rates are provided.
+    if (hasPricing) {
+      await apiPost('/api/admin-update-pricing', {
+        secret: adminSecret,
+        action: 'update',
+        vehicle_id:    editingVehicleId,
+        daily_price:   dailyRate,
+        weekly_price:  weeklyRate,
+        biweekly_price: biweeklyRate,
+        monthly_price: monthlyRate,
+      });
+    }
+
     closeModal('edit-vehicle-modal');
     showToast('Vehicle updated.', 'success');
 
@@ -3429,6 +3474,14 @@ async function saveVehicle() {
     allVehicles[editingVehicleId] = {
       ...allVehicles[editingVehicleId],
       ...(result.vehicle || updates),
+      // Include pricing in the local cache so the Edit modal pre-fills correctly
+      // on the next open without needing a full reload.
+      ...(hasPricing ? {
+        daily_price:    dailyRate,
+        weekly_price:   weeklyRate,
+        biweekly_price: biweeklyRate,
+        monthly_price:  monthlyRate,
+      } : {}),
     };
     // Re-render immediately from the confirmed-saved cache rather than issuing
     // a full re-fetch via loadVehicles(). A re-fetch can return a stale value

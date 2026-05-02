@@ -88,13 +88,21 @@ export default async function handler(req, res) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
-        const { data: rows, error } = await supabase
-          .from("vehicles")
-          .select("*");
+        const [{ data: rows, error }, { data: pricingRows }] = await Promise.all([
+          supabase.from("vehicles").select("*"),
+          supabase.from("vehicle_pricing").select("vehicle_id, daily_price, weekly_price, biweekly_price, monthly_price"),
+        ]);
 
         if (error) {
           console.error("Supabase error:", error);
           throw error;
+        }
+
+        // Build a lookup of the authoritative pricing keyed by UI vehicle ID
+        const pricingById = {};
+        for (const p of pricingRows || []) {
+          const pid = uiVehicleId(p.vehicle_id) || p.vehicle_id;
+          pricingById[pid] = p;
         }
 
         const vehiclesById = {};
@@ -121,6 +129,15 @@ export default async function handler(req, res) {
             tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
             vehicle_id: id,
           };
+          // Overlay vehicle_pricing table values so the booking page always
+          // reflects the latest rates set via the Vehicle Pricing admin page.
+          const p = pricingById[id];
+          if (p) {
+            if (p.daily_price    != null) obj.daily_price    = p.daily_price;
+            if (p.weekly_price   != null) obj.weekly_price   = p.weekly_price;
+            if (p.biweekly_price != null) obj.biweekly_price = p.biweekly_price;
+            if (p.monthly_price  != null) obj.monthly_price  = p.monthly_price;
+          }
           if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
           vehiclesById[id] = mergeVehicleRecords(vehiclesById[id], obj);
         }
@@ -182,11 +199,19 @@ export default async function handler(req, res) {
       };
 
       if (supabase) {
-        const { data: rows, error } = await supabase
-          .from("vehicles")
-          .select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage");
+        const [{ data: rows, error }, { data: pricingRows }] = await Promise.all([
+          supabase.from("vehicles").select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage"),
+          supabase.from("vehicle_pricing").select("vehicle_id, daily_price, weekly_price, biweekly_price, monthly_price"),
+        ]);
 
         if (!error) {
+          // Build a lookup of the authoritative pricing keyed by UI vehicle ID
+          const pricingById = {};
+          for (const p of pricingRows || []) {
+            const pid = uiVehicleId(p.vehicle_id) || p.vehicle_id;
+            pricingById[pid] = p;
+          }
+
           const vehicles = {};
           for (const row of rows || []) {
             const type = row.data?.type || row.data?.vehicle_type || "";
@@ -203,6 +228,15 @@ export default async function handler(req, res) {
               tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
               vehicle_id: id,
             };
+            // Overlay vehicle_pricing table values so the admin cache and booking
+            // page always reflect the latest rates from the Vehicle Pricing admin.
+            const p = pricingById[id];
+            if (p) {
+              if (p.daily_price    != null) next.daily_price    = p.daily_price;
+              if (p.weekly_price   != null) next.weekly_price   = p.weekly_price;
+              if (p.biweekly_price != null) next.biweekly_price = p.biweekly_price;
+              if (p.monthly_price  != null) next.monthly_price  = p.monthly_price;
+            }
             if (next.cover_image) next.cover_image = normalizeCoverImage(next.cover_image);
             vehicles[id] = mergeVehicleRecords(vehicles[id], next);
           }
