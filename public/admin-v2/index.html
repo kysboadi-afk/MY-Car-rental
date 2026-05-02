@@ -7248,11 +7248,6 @@ async function clearSmsLogs() {
 document.getElementById('mb-pickup-date').min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
-const FLEET_VEHICLES = [
-  { id: 'camry',      name: 'Camry 2012' },
-  { id: 'camry2013',  name: 'Camry 2013 SE' },
-  { id: 'fusion2017', name: 'Ford Fusion 2017' },
-];
 let fleetStatusData = {};
 
 function loadFleetStatusPage() {
@@ -7278,20 +7273,26 @@ function loadFleetStatusPage() {
 function renderFleetStatus() {
   const list = document.getElementById('fleet-status-list');
   if (!list) return;
-  list.innerHTML = FLEET_VEHICLES.map((v) => {
-    const available = fleetStatusData[v.id]?.available ?? true;
+  const vehicleIds = Object.keys(fleetStatusData);
+  if (vehicleIds.length === 0) {
+    list.innerHTML = '<p style="padding:20px;color:var(--muted);">No vehicles found.</p>';
+    return;
+  }
+  list.innerHTML = vehicleIds.map((id) => {
+    const available = fleetStatusData[id]?.available ?? true;
+    const name = getVehicleLabel(id);
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);"
-           data-vehicle-id="${esc(v.id)}">
+           data-vehicle-id="${esc(id)}">
         <div>
-          <div style="font-weight:600;font-size:14px;">${esc(v.name)}</div>
-          <div id="fleet-status-label-${esc(v.id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
+          <div style="font-weight:600;font-size:14px;">${esc(name)}</div>
+          <div id="fleet-status-label-${esc(id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
             ${available ? '● Available for booking' : '● Unavailable (hidden from renters)'}
           </div>
         </div>
         <label class="toggle-switch" title="${available ? 'Click to mark unavailable' : 'Click to mark available'}">
-          <input type="checkbox" id="fleet-toggle-${esc(v.id)}" ${available ? 'checked' : ''}
-            data-vehicle-id="${esc(v.id)}" onchange="handleFleetToggle(this)">
+          <input type="checkbox" id="fleet-toggle-${esc(id)}" ${available ? 'checked' : ''}
+            data-vehicle-id="${esc(id)}" onchange="handleFleetToggle(this)">
           <span class="toggle-track"></span>
         </label>
       </div>`;
