@@ -2480,6 +2480,81 @@ async function toolOpenDates({ vehicleId, from, to }) {
   };
 }
 
+// ── Site content tools ────────────────────────────────────────────────────────
+
+const SITE_CONTENT_ALLOWED_KEYS = new Set([
+  "business_name", "logo_url", "phone", "whatsapp", "email",
+  "instagram_url", "facebook_url", "tiktok_url", "twitter_url",
+  "promo_banner_enabled", "promo_banner_text",
+  "hero_title", "hero_subtitle", "about_text",
+  "policies_cancellation", "policies_damage", "policies_fuel",
+  "policies_age", "service_area_notes", "pickup_instructions",
+]);
+
+async function toolGetSiteContent() {
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return {
+      source: "default",
+      message: "Supabase not configured — returning default settings.",
+      settings: {
+        business_name: "SLY Transportation Services",
+        logo_url: "",
+        phone: "",
+        email: "",
+        hero_title: "Explore LA in Style",
+        hero_subtitle: "Affordable car rentals in Los Angeles",
+        about_text: "",
+      },
+    };
+  }
+  const { data, error } = await sb.from("site_settings").select("key, value").order("key");
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  const settings = {};
+  for (const row of (data || [])) {
+    if (SITE_CONTENT_ALLOWED_KEYS.has(row.key)) settings[row.key] = row.value;
+  }
+  return { source: "supabase", settings };
+}
+
+async function toolUpdateSiteContent({ settings }) {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    throw new Error("settings must be a non-null object of key-value pairs.");
+  }
+
+  // Filter to allowed keys only
+  const safe = {};
+  for (const [k, v] of Object.entries(settings)) {
+    if (SITE_CONTENT_ALLOWED_KEYS.has(k)) safe[k] = v;
+  }
+  if (Object.keys(safe).length === 0) {
+    throw new Error(
+      `No valid setting keys provided. Allowed: ${[...SITE_CONTENT_ALLOWED_KEYS].join(", ")}`
+    );
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot save site content.");
+
+  const now = new Date().toISOString();
+  const rows = Object.entries(safe).map(([key, value]) => ({
+    key,
+    value: value === null || value === undefined ? "" : String(value),
+    updated_at: now,
+  }));
+
+  const { error } = await sb
+    .from("site_settings")
+    .upsert(rows, { onConflict: "key" });
+  if (error) throw new Error(`Supabase upsert failed: ${error.message}`);
+
+  return {
+    success: true,
+    updated: Object.keys(safe),
+    message: `Updated ${Object.keys(safe).length} site setting(s): ${Object.keys(safe).join(", ")}. Changes are live on the public website.`,
+  };
+}
+
 async function toolUpdateSystemSetting({ key, value, description, category }) {
   if (!key || value === undefined || value === null) throw new Error("key and value are required");
   const sb = getSupabaseAdmin();
@@ -3669,6 +3744,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "update_customer",
   "charge_customer_fee",
   "record_extension_payment",
+  "update_site_content",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -3741,6 +3817,8 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_charges":                   result = await toolGetCharges(args);                   break;
       case "record_extension_payment":      result = await toolRecordExtensionPayment(args);       break;
       case "reconcile_stripe":              result = await toolReconcileStripe(args);              break;
+      case "get_site_content":              result = await toolGetSiteContent();                  break;
+      case "update_site_content":           result = await toolUpdateSiteContent(args);           break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

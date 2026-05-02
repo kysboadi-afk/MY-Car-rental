@@ -13,6 +13,7 @@ const CACHE_SECONDS   = 60; // public CDN/browser cache
 
 const DEFAULT_SETTINGS = {
   business_name:          "SLY Transportation Services",
+  logo_url:               "",
   phone:                  "",
   whatsapp:              "",
   email:                 "",
