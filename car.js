@@ -107,6 +107,8 @@ function clearPayError() {
             ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
             : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day");
         }
+        // Also refresh the earnings block in case the weekly rate changed.
+        updateEarningsBlock();
       }
     })
     .catch(function(err) {
@@ -152,7 +154,82 @@ function normalizeApiVehicle(v) {
     vin:           v.vin   || "",
     color:         v.color || "",
     scarcity_text: v.scarcity_text || "",
+    earnings_tagline: v.earnings_tagline || "",
+    earnings_title:   v.earnings_title   || "",
+    earnings_row1:    v.earnings_row1    || "",
+    earnings_cta:     v.earnings_cta     || "",
   };
+}
+
+// Average weekly rideshare earnings range used in the earnings example block.
+const EARNINGS_EXAMPLE_LOW  = 1200;  // $1,200 low-end weekly rideshare earnings (Los Angeles)
+const EARNINGS_EXAMPLE_HIGH = 1600;  // $1,600 high-end weekly rideshare earnings (Los Angeles)
+
+// ----- Earnings block updater -----
+// Updates the earnings block on the booking page with per-vehicle text and
+// computed prices.  Called from initCarDisplay() and re-called after every
+// language switch so the amounts stay correct.
+// Per-vehicle values stored on carData (earnings_tagline, earnings_title,
+// earnings_row1, earnings_cta) take priority over lang.js defaults.
+function updateEarningsBlock() {
+  if (!carData) return;
+  const weekly = carData.weekly;
+
+  // Update static text rows with per-vehicle override or fall back to i18n default.
+  const taglineEl = document.querySelector("[data-i18n='booking.earningsTagline']");
+  if (taglineEl && carData.earnings_tagline) {
+    taglineEl.textContent = carData.earnings_tagline;
+    taglineEl.removeAttribute("data-i18n");
+  }
+  const titleEl = document.querySelector("[data-i18n='booking.earningsTitle']");
+  if (titleEl && carData.earnings_title) {
+    titleEl.textContent = carData.earnings_title;
+    titleEl.removeAttribute("data-i18n");
+  }
+  const row1El = document.querySelector("[data-i18n='booking.earningsRow1']");
+  if (row1El && carData.earnings_row1) {
+    row1El.textContent = carData.earnings_row1;
+    row1El.removeAttribute("data-i18n");
+  }
+  const ctaEl = document.querySelector("[data-i18n-html='booking.earningsCtaHtml']");
+  if (ctaEl && carData.earnings_cta) {
+    ctaEl.textContent = carData.earnings_cta;
+    ctaEl.removeAttribute("data-i18n-html");
+  }
+
+  if (!weekly) return;
+  const takeHomeLow  = EARNINGS_EXAMPLE_LOW  - weekly;
+  const takeHomeHigh = EARNINGS_EXAMPLE_HIGH - weekly;
+  const row2 = document.getElementById("earningsRow2");
+  const row3 = document.getElementById("earningsRow3");
+  if (row2) {
+    // Get translated label ("Weekly rental: …" or "Alquiler semanal: …") and
+    // swap the hardcoded amount for the vehicle's actual weekly rate.
+    const tmpl2 = _t("booking.earningsRow2Html",
+      `Weekly rental: <span class="earnings-yellow">$${weekly}</span>`);
+    row2.innerHTML = tmpl2.replace(/\$[\d,]+/, `$${weekly}`);
+  }
+  if (row3) {
+    // Swap the hardcoded take-home range with values computed from this vehicle's rate.
+    const tmpl3 = _t("booking.earningsRow3Html",
+      `<span class="earnings-green">Estimated take-home:</span> $${takeHomeLow} \u2013 $${takeHomeHigh}`);
+    row3.innerHTML = tmpl3.replace(/\$[\d,]+\s*[\u2013\-]\s*\$[\d,]+/,
+      `$${takeHomeLow} \u2013 $${takeHomeHigh}`);
+  }
+}
+
+// Wrap slyI18n.applyTranslations once so the earnings block is refreshed on every
+// language switch.  Called once after carData is first loaded.
+let _earningsHookInstalled = false;
+function installEarningsTranslationHook() {
+  if (_earningsHookInstalled) return;
+  if (!window.slyI18n || !window.slyI18n.applyTranslations) return;
+  const _origApply = window.slyI18n.applyTranslations;
+  window.slyI18n.applyTranslations = function() {
+    _origApply.call(window.slyI18n);
+    updateEarningsBlock();
+  };
+  _earningsHookInstalled = true;
 }
 
 // ----- Page display initializer -----
@@ -170,6 +247,11 @@ function initCarDisplay() {
   document.getElementById("carPrice").textContent = carData.weekly
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+  // Populate the earnings block with this vehicle's actual weekly rate and install
+  // the translation hook so language switches keep it correct.
+  updateEarningsBlock();
+  installEarningsTranslationHook();
 
   if (IS_TEST_MODE_OVERRIDE) {
     const bookingSection = document.querySelector(".booking");
@@ -247,7 +329,7 @@ if (!vehicleId) {
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = `car.html?vehicle=${vehicleId}`;
+  window.location.href = "cars.html";
 });
 
 // ----- Booking Form Automation -----
