@@ -522,7 +522,7 @@
    * Reads the `currentPage` global first; falls back to inspecting the active .page element.
    */
   function getActivePage() {
-    if (typeof currentPage !== 'undefined' && currentPage) return currentPage;
+    if (typeof currentPage !== 'undefined' && currentPage && currentPage !== 'undefined') return currentPage;
     const active = document.querySelector('.page.active');
     if (active && active.id) return active.id.replace(/^page-/, '');
     return 'dashboard';
