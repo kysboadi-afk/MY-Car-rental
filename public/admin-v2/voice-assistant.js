@@ -4,7 +4,10 @@
  *
  * Features:
  *  • speak(text, lang, priority) — TTS via /api/tts (cached, cancelable, priority-gated)
- *  • Guided Tour                — step-by-step onboarding with element highlights
+ *  • Page Guide                 — speaks tour steps for whichever page is currently visible;
+ *                                  no forced navigation; skips invisible elements automatically
+ *  • Full System Tour           — navigates dashboard → bookings → vehicles → customers →
+ *                                  revenue → analytics; ideal for demos and onboarding
  *  • Ask Assistant              — text Q&A via /api/admin-chat, response spoken aloud
  *  • Context-Aware Click-Explain — opt-in; explains any actionable element with full
  *                                  section + session context; covers every page/modal
@@ -105,57 +108,343 @@
     'revenue-modal':          { en: 'Revenue Record modal',     es: 'modal de Registro de Ingresos' },
   };
 
-  // Fixed tour scripts (EN / ES).  Stored separately from runtime state so that
-  // prewarmTourCache() can enqueue TTS fetches before the tour begins.
-  const TOUR_STEPS = [
-    {
-      sel:  '#page-bookings',
-      en:   'Welcome to the Bookings table. Here you can see every reservation, ' +
-            'filter by status or vehicle, and search by customer name or ID.',
-      es:   'Bienvenido a la tabla de Reservas. Aquí puede ver cada reserva, ' +
-            'filtrar por estado o vehículo, y buscar por nombre o ID del cliente.',
-    },
-    {
-      // After speaking, tour PAUSES and waits for the booking-detail-modal to open.
-      sel:          '#bookings-table-wrap',
-      waitForModal: '#booking-detail-modal',
-      en:   'Each row represents one booking. Please click the View button on any ' +
-            'row — the guide will continue once the booking detail panel opens.',
-      es:   'Cada fila representa una reserva. Haga clic en el botón Ver de cualquier ' +
-            'fila — el recorrido continuará cuando se abra el panel de detalle.',
-    },
-    {
-      sel:          '#booking-detail-modal',
-      skipIfHidden: true,
-      en:   'This is the Booking Detail panel. It shows customer information, ' +
-            'vehicle, dates, payment status, and all available actions.',
-      es:   'Este es el panel de Detalle de Reserva. Muestra la información del ' +
-            'cliente, vehículo, fechas, estado de pago y todas las acciones disponibles.',
-    },
-    {
-      sel:          '#booking-detail-actions',
-      skipIfHidden: true,
-      en:   'The action bar lets you mark a booking as active, return the vehicle, ' +
-            'extend the rental, or cancel the booking.',
-      es:   'La barra de acciones le permite marcar una reserva como activa, ' +
-            'devolver el vehículo, extender el alquiler o cancelar la reserva.',
-    },
-    {
-      sel:  '#page-dashboard',
-      en:   'The Dashboard gives you a live overview: KPIs, revenue chart, ' +
-            'recent bookings, and any action items that need your attention.',
-      es:   'El Tablero le da una vista en vivo: KPIs, gráfico de ingresos, ' +
-            'reservas recientes y cualquier elemento de acción que requiera su atención.',
-    },
-    {
-      sel:  null,
-      en:   'That completes the guided tour. You can start the tour again any time ' +
-            'from the Voice Assistant panel, or ask a question using Ask Assistant.',
-      es:   'Eso completa el recorrido guiado. Puede iniciar el recorrido de nuevo ' +
-            'en cualquier momento desde el panel del Asistente de Voz, o hacer una ' +
-            'pregunta usando Preguntar al Asistente.',
-    },
+  // Per-page tour scripts (EN / ES).
+  // Each key maps to the page name used in navigate() / currentPage.
+  // Steps are spoken only for the page that is currently visible,
+  // so the guide always matches the UI in real time.
+  const PAGE_TOUR_STEPS = {
+    dashboard: [
+      {
+        sel: '#page-dashboard',
+        en:  'The Dashboard gives you a live overview: KPIs, revenue chart, ' +
+             'recent bookings, and any action items that need your attention.',
+        es:  'El Tablero le da una vista en vivo: KPIs, gráfico de ingresos, ' +
+             'reservas recientes y cualquier elemento de acción que requiera su atención.',
+      },
+      {
+        sel: null,
+        en:  'That is the Dashboard. Use Ask Assistant to ask any question, ' +
+             'or click Full Tour to walk through every section.',
+        es:  'Ese es el Tablero. Use Preguntar al Asistente para hacer cualquier pregunta, ' +
+             'o haga clic en Recorrido Completo para recorrer todas las secciones.',
+      },
+    ],
+    bookings: [
+      {
+        sel: '#page-bookings',
+        en:  'Welcome to the Bookings table. Here you can see every reservation, ' +
+             'filter by status or vehicle, and search by customer name or ID.',
+        es:  'Bienvenido a la tabla de Reservas. Aquí puede ver cada reserva, ' +
+             'filtrar por estado o vehículo, y buscar por nombre o ID del cliente.',
+      },
+      {
+        sel:          '#bookings-table-wrap',
+        waitForModal: '#booking-detail-modal',
+        en:  'Each row represents one booking. Please click the View button on any ' +
+             'row — the guide will continue once the booking detail panel opens.',
+        es:  'Cada fila representa una reserva. Haga clic en el botón Ver de cualquier ' +
+             'fila — el recorrido continuará cuando se abra el panel de detalle.',
+      },
+      {
+        sel:          '#booking-detail-modal',
+        skipIfHidden: true,
+        en:  'This is the Booking Detail panel. It shows customer information, ' +
+             'vehicle, dates, payment status, and all available actions.',
+        es:  'Este es el panel de Detalle de Reserva. Muestra la información del ' +
+             'cliente, vehículo, fechas, estado de pago y todas las acciones disponibles.',
+      },
+      {
+        sel:          '#booking-detail-actions',
+        skipIfHidden: true,
+        en:  'The action bar lets you mark a booking as active, return the vehicle, ' +
+             'extend the rental, or cancel the booking.',
+        es:  'La barra de acciones le permite marcar una reserva como activa, ' +
+             'devolver el vehículo, extender el alquiler o cancelar la reserva.',
+      },
+      {
+        sel: null,
+        en:  'That covers the Bookings section. Use Ask Assistant for follow-up questions.',
+        es:  'Eso cubre la sección de Reservas. Use Preguntar al Asistente para preguntas de seguimiento.',
+      },
+    ],
+    'bookings-raw': [
+      {
+        sel: '#page-bookings-raw',
+        en:  'Raw Bookings shows unprocessed booking records exactly as stored — ' +
+             'useful for auditing and debugging payment data.',
+        es:  'Reservas Sin Procesar muestra los registros sin procesar tal como fueron almacenados, ' +
+             'útil para auditoría y depuración de datos de pago.',
+      },
+      {
+        sel: null,
+        en:  'That is the Raw Bookings section.',
+        es:  'Esa es la sección de Reservas Sin Procesar.',
+      },
+    ],
+    vehicles: [
+      {
+        sel: '#page-vehicles',
+        en:  'The Vehicles page lists all cars in your fleet. You can edit details, ' +
+             'upload photos, view the vehicle profile, and manage availability.',
+        es:  'La página de Vehículos lista todos los autos de su flota. Puede editar detalles, ' +
+             'subir fotos, ver el perfil del vehículo y administrar la disponibilidad.',
+      },
+      {
+        sel: null,
+        en:  'That is the Vehicles section. Ask the assistant anything about managing your fleet.',
+        es:  'Esa es la sección de Vehículos. Pregunte al asistente cualquier duda sobre la gestión de su flota.',
+      },
+    ],
+    'vehicle-profile': [
+      {
+        sel: '#page-vehicle-profile',
+        en:  'The Vehicle Profile shows detailed stats, trip history, and settings for a single vehicle.',
+        es:  'El Perfil del Vehículo muestra estadísticas detalladas, historial de viajes y ajustes de un vehículo.',
+      },
+      {
+        sel: null,
+        en:  'That is the Vehicle Profile section.',
+        es:  'Esa es la sección de Perfil del Vehículo.',
+      },
+    ],
+    expenses: [
+      {
+        sel: '#page-expenses',
+        en:  'The Expenses page lets you log and track costs like maintenance, fuel, ' +
+             'insurance, and repairs. Filter by vehicle or category to review spending.',
+        es:  'La página de Gastos le permite registrar y rastrear costos como mantenimiento, combustible, ' +
+             'seguros y reparaciones. Filtre por vehículo o categoría para revisar el gasto.',
+      },
+      {
+        sel: null,
+        en:  'That is the Expenses section.',
+        es:  'Esa es la sección de Gastos.',
+      },
+    ],
+    revenue: [
+      {
+        sel: '#page-revenue',
+        en:  'The Revenue page tracks all income records. You can view, add, or edit entries, ' +
+             'reconcile Stripe payments, and filter by vehicle or date range.',
+        es:  'La página de Ingresos registra todos los registros de ingresos. Puede ver, agregar o editar entradas, ' +
+             'conciliar pagos de Stripe y filtrar por vehículo o rango de fechas.',
+      },
+      {
+        sel: null,
+        en:  'That is the Revenue section. Use Ask Assistant to diagnose any missing or mismatched records.',
+        es:  'Esa es la sección de Ingresos. Use Preguntar al Asistente para diagnosticar registros faltantes o incorrectos.',
+      },
+    ],
+    analytics: [
+      {
+        sel: '#page-analytics',
+        en:  'The Analytics page breaks down performance metrics: revenue trends, booking counts, ' +
+             'utilization rates, and top customers.',
+        es:  'La página de Analítica desglosa métricas de rendimiento: tendencias de ingresos, conteos de reservas, ' +
+             'tasas de utilización y principales clientes.',
+      },
+      {
+        sel: null,
+        en:  'That is the Analytics section.',
+        es:  'Esa es la sección de Analítica.',
+      },
+    ],
+    customers: [
+      {
+        sel: '#page-customers',
+        en:  'The Customers page shows every renter on record. You can search, view rental history, ' +
+             'flag or ban customers, and edit contact details.',
+        es:  'La página de Clientes muestra a todos los arrendatarios registrados. Puede buscar, ver historial de rentas, ' +
+             'marcar o prohibir clientes, y editar datos de contacto.',
+      },
+      {
+        sel: null,
+        en:  'That is the Customers section.',
+        es:  'Esa es la sección de Clientes.',
+      },
+    ],
+    'fleet-status': [
+      {
+        sel: '#page-fleet-status',
+        en:  'Fleet Status gives you a real-time view of each vehicle — ' +
+             'whether it is available, rented, overdue, or blocked.',
+        es:  'Estado de Flota le da una vista en tiempo real de cada vehículo: ' +
+             'si está disponible, rentado, vencido o bloqueado.',
+      },
+      {
+        sel: null,
+        en:  'That is the Fleet Status section.',
+        es:  'Esa es la sección de Estado de Flota.',
+      },
+    ],
+    gps: [
+      {
+        sel: '#page-gps',
+        en:  'GPS Tracking shows the live location of your vehicles via Bouncie integration. ' +
+             'You can sync, view odometer readings, and track trips.',
+        es:  'Rastreo GPS muestra la ubicación en vivo de sus vehículos mediante la integración con Bouncie. ' +
+             'Puede sincronizar, ver lecturas del odómetro y rastrear viajes.',
+      },
+      {
+        sel: null,
+        en:  'That is the GPS Tracking section.',
+        es:  'Esa es la sección de Rastreo GPS.',
+      },
+    ],
+    'block-dates': [
+      {
+        sel: '#page-block-dates',
+        en:  'Block Dates lets you mark specific date ranges as unavailable for a vehicle — ' +
+             'useful for maintenance windows or planned downtime.',
+        es:  'Bloquear Fechas le permite marcar rangos de fechas como no disponibles para un vehículo, ' +
+             'útil para mantenimiento o tiempos de inactividad planificados.',
+      },
+      {
+        sel: null,
+        en:  'That is the Block Dates section.',
+        es:  'Esa es la sección de Bloquear Fechas.',
+      },
+    ],
+    sms: [
+      {
+        sel: '#page-sms',
+        en:  'SMS Templates lets you customize the automated texts sent to customers — ' +
+             'booking confirmations, reminders, and late fee notices.',
+        es:  'Plantillas SMS le permite personalizar los mensajes automáticos enviados a clientes, ' +
+             'como confirmaciones de reserva, recordatorios y avisos de cargos por mora.',
+      },
+      {
+        sel: null,
+        en:  'That is the SMS Templates section.',
+        es:  'Esa es la sección de Plantillas SMS.',
+      },
+    ],
+    'late-fees': [
+      {
+        sel: '#page-late-fees',
+        en:  'Late Fees shows all overdue charges. You can approve, adjust, waive, ' +
+             'or charge late fees directly from this page.',
+        es:  'Cargos por Mora muestra todos los cargos vencidos. Puede aprobar, ajustar, eximir ' +
+             'o cobrar cargos por mora directamente desde esta página.',
+      },
+      {
+        sel: null,
+        en:  'That is the Late Fees section.',
+        es:  'Esa es la sección de Cargos por Mora.',
+      },
+    ],
+    ai: [
+      {
+        sel: '#page-ai',
+        en:  'The AI Assistant lets you type any question or command and get an intelligent response — ' +
+             'from looking up a booking to creating one or diagnosing issues.',
+        es:  'El Asistente IA le permite escribir cualquier pregunta o comando y obtener una respuesta inteligente, ' +
+             'desde buscar una reserva hasta crear una o diagnosticar problemas.',
+      },
+      {
+        sel: null,
+        en:  'That is the AI Assistant page. You can also use Ask Assistant in the Voice Panel for spoken replies.',
+        es:  'Esa es la página del Asistente IA. También puede usar Preguntar al Asistente en el Panel de Voz para respuestas habladas.',
+      },
+    ],
+    'system-health': [
+      {
+        sel: '#page-system-health',
+        en:  'System Health shows diagnostic checks, webhook logs, SMS delivery logs, ' +
+             'and any issues that need attention.',
+        es:  'Salud del Sistema muestra verificaciones de diagnóstico, registros de webhooks, ' +
+             'registros de entrega de SMS y cualquier problema que necesite atención.',
+      },
+      {
+        sel: null,
+        en:  'That is the System Health section.',
+        es:  'Esa es la sección de Salud del Sistema.',
+      },
+    ],
+    'system-settings': [
+      {
+        sel: '#page-system-settings',
+        en:  'System Settings lets you configure global options like tax rates, automation toggles, ' +
+             'notification settings, Bouncie GPS connection, and pricing tiers.',
+        es:  'Configuración del Sistema le permite configurar opciones globales como tasas de impuestos, ' +
+             'interruptores de automatización, ajustes de notificación, conexión GPS de Bouncie y niveles de precios.',
+      },
+      {
+        sel: null,
+        en:  'That is the System Settings section.',
+        es:  'Esa es la sección de Configuración del Sistema.',
+      },
+    ],
+    'manual-booking': [
+      {
+        sel: '#page-manual-booking',
+        en:  'Manual Booking lets you create a reservation directly — useful for cash payments, ' +
+             'phone bookings, or customers whose online booking was not recorded.',
+        es:  'Reserva Manual le permite crear una reserva directamente, útil para pagos en efectivo, ' +
+             'reservas por teléfono o clientes cuya reserva en línea no fue registrada.',
+      },
+      {
+        sel: null,
+        en:  'That is the Manual Booking section.',
+        es:  'Esa es la sección de Reserva Manual.',
+      },
+    ],
+    'protection-plans': [
+      {
+        sel: '#page-protection-plans',
+        en:  'Protection Plans lets you configure the insurance and coverage options ' +
+             'offered to customers during checkout.',
+        es:  'Planes de Protección le permite configurar las opciones de seguro y cobertura ' +
+             'ofrecidas a los clientes durante el pago.',
+      },
+      {
+        sel: null,
+        en:  'That is the Protection Plans section.',
+        es:  'Esa es la sección de Planes de Protección.',
+      },
+    ],
+    'vehicle-pricing': [
+      {
+        sel: '#page-vehicle-pricing',
+        en:  'Vehicle Pricing lets you set daily rates, weekly rates, deposits, ' +
+             'and tax for each vehicle in your fleet.',
+        es:  'Precios de Vehículos le permite establecer tarifas diarias, semanales, depósitos ' +
+             'e impuestos para cada vehículo de su flota.',
+      },
+      {
+        sel: null,
+        en:  'That is the Vehicle Pricing section.',
+        es:  'Esa es la sección de Precios de Vehículos.',
+      },
+    ],
+    settings: [
+      {
+        sel: '#page-settings',
+        en:  'Site Settings lets you update your business name, phone number, logo, ' +
+             'about text, and other public-facing content on the website.',
+        es:  'Configuración del Sitio le permite actualizar el nombre de su negocio, número de teléfono, ' +
+             'logo, texto de descripción y otro contenido público del sitio web.',
+      },
+      {
+        sel: null,
+        en:  'That is the Site Settings section.',
+        es:  'Esa es la sección de Configuración del Sitio.',
+      },
+    ],
+  };
+
+  // Pages visited (in order) during the Full System Tour.
+  const FULL_TOUR_PAGES = [
+    'dashboard', 'bookings', 'vehicles', 'customers', 'revenue', 'analytics',
   ];
+
+  // Closing line spoken at the end of the Full System Tour.
+  const FULL_TOUR_CLOSING = {
+    en: 'That completes the full system tour. You can start any page guide from the ' +
+        'Voice Assistant panel, or ask a question using Ask Assistant.',
+    es: 'Eso completa el recorrido completo del sistema. Puede iniciar la guía de cualquier ' +
+        'página desde el panel del Asistente de Voz, o hacer una pregunta usando Preguntar al Asistente.',
+  };
 
   // ── Runtime state ─────────────────────────────────────────────────────────
   let currentAudio    = null;     // HTMLAudioElement currently playing
@@ -229,6 +518,27 @@
   }
 
   /**
+   * Return the currently active page key (matches navigate() / currentPage global).
+   * Reads the `currentPage` global first; falls back to inspecting the active .page element.
+   */
+  function getActivePage() {
+    if (typeof currentPage !== 'undefined' && currentPage) return currentPage;
+    const active = document.querySelector('.page.active');
+    if (active && active.id) return active.id.replace(/^page-/, '');
+    return 'dashboard';
+  }
+
+  /**
+   * Returns true when `el` exists and has a non-zero bounding box.
+   * Used to skip tour steps whose target element is not rendered yet.
+   */
+  function isElementVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0;
+  }
+
+  /**
    * Scrape vehicle name and booking status from the open booking-detail-modal.
    * Returns an object with `vehicle` and/or `status` strings, or null if the
    * modal is not open or the detail grid cannot be found.
@@ -293,15 +603,19 @@
     const panel = document.getElementById(PANEL_ID);
     if (!panel) return;
 
-    const langBtn  = panel.querySelector('#va-lang-btn');
-    const muteBtn  = panel.querySelector('#va-mute-btn');
-    const explBtn  = panel.querySelector('#va-expl-btn');
-    const stopBtn  = panel.querySelector('#va-stop-btn');
+    const langBtn      = panel.querySelector('#va-lang-btn');
+    const muteBtn      = panel.querySelector('#va-mute-btn');
+    const explBtn      = panel.querySelector('#va-expl-btn');
+    const stopBtn      = panel.querySelector('#va-stop-btn');
+    const tourBtn      = panel.querySelector('#va-tour-btn');
+    const fullTourBtn  = panel.querySelector('#va-fulltour-btn');
 
-    if (langBtn)  langBtn.textContent   = lang === 'en' ? '🌎 EN' : '🌎 ES';
-    if (muteBtn)  muteBtn.textContent   = muted ? '🔇 Muted' : '🔊 Sound On';
-    if (explBtn)  explBtn.style.opacity = clickExplain ? '1' : '0.55';
-    if (stopBtn)  stopBtn.disabled      = !isSpeaking && !tourActive;
+    if (langBtn)     langBtn.textContent     = lang === 'en' ? '🌎 EN' : '🌎 ES';
+    if (muteBtn)     muteBtn.textContent     = muted ? '🔇 Muted' : '🔊 Sound On';
+    if (explBtn)     explBtn.style.opacity   = clickExplain ? '1' : '0.55';
+    if (stopBtn)     stopBtn.disabled        = !isSpeaking && !tourActive;
+    if (tourBtn)     tourBtn.textContent     = tourActive ? '⏹ Stop Guide'  : '📍 Page Guide';
+    if (fullTourBtn) fullTourBtn.textContent = tourActive ? '⏹ Stop Tour'   : '🚀 Full Tour';
   }
 
   // ── Audio stop ─────────────────────────────────────────────────────────────
@@ -344,17 +658,35 @@
   }
 
   /**
-   * Pre-warm the TTS cache for all fixed tour step scripts in both languages.
-   * Called eagerly on init so tour playback is nearly instant.
+   * Pre-warm the TTS cache for the current page's tour steps and all Full Tour
+   * step scripts in both languages.  Called eagerly on init so tour playback
+   * is nearly instant.
    */
   async function prewarmTourCache() {
     const secret = getAdminSecret();
     if (!secret) return; // not authenticated yet; tour will fetch live
     const texts = [];
-    for (const step of TOUR_STEPS) {
+
+    // Pre-warm steps for the page the admin is currently on
+    const pageSteps = PAGE_TOUR_STEPS[getActivePage()] || [];
+    for (const step of pageSteps) {
       if (step.en) texts.push([step.en, 'en']);
       if (step.es) texts.push([step.es, 'es']);
     }
+
+    // Pre-warm first step of each Full Tour page (the introductory line)
+    for (const page of FULL_TOUR_PAGES) {
+      const steps = PAGE_TOUR_STEPS[page] || [];
+      if (steps.length) {
+        if (steps[0].en) texts.push([steps[0].en, 'en']);
+        if (steps[0].es) texts.push([steps[0].es, 'es']);
+      }
+    }
+
+    // Pre-warm the Full Tour closing line
+    if (FULL_TOUR_CLOSING.en) texts.push([FULL_TOUR_CLOSING.en, 'en']);
+    if (FULL_TOUR_CLOSING.es) texts.push([FULL_TOUR_CLOSING.es, 'es']);
+
     // Fire all fetches concurrently; failures are silently ignored
     await Promise.allSettled(texts.map(([t, l]) => prefetchTts(t, l)));
   }
@@ -476,7 +808,13 @@
     });
   }
 
-  // ── Guided Tour ────────────────────────────────────────────────────────────
+  // ── Guided Tour (current page) ─────────────────────────────────────────────
+  /**
+   * Start a guide for the page the admin is currently viewing.
+   * No forced navigation — the tour always matches the visible UI.
+   * For each step: the target element must exist and be visible; otherwise the
+   * step is skipped automatically.
+   */
   async function startTour() {
     if (tourActive) return;
     tourActive    = true;
@@ -484,21 +822,18 @@
     tourStepIndex = 0;
     updatePanelState();
 
-    // Navigate to bookings page to anchor the tour
-    if (typeof navigate === 'function') navigate('bookings');
+    const page  = getActivePage();
+    const steps = PAGE_TOUR_STEPS[page] || buildGenericPageSteps(page);
 
-    for (let i = 0; i < TOUR_STEPS.length; i++) {
+    for (let i = 0; i < steps.length; i++) {
       if (tourAborted) break;
       tourStepIndex = i;
 
-      const step = TOUR_STEPS[i];
+      const step = steps[i];
       const el   = step.sel ? document.querySelector(step.sel) : null;
 
-      // Skip hidden steps
-      if (step.skipIfHidden && el) {
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) continue;
-      }
+      // Skip any step whose target element is specified but not visible
+      if (step.sel && !isElementVisible(el)) continue;
 
       if (el) highlightElement(el);
       await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
@@ -522,6 +857,96 @@
     tourActive    = false;
     tourStepIndex = 0;
     updatePanelState();
+  }
+
+  // ── Full System Tour ───────────────────────────────────────────────────────
+  /**
+   * Navigate through all major pages in order, speaking each page's tour steps.
+   * Designed for demos and onboarding.  The tour moves to the next page once all
+   * visible steps for the current page have been spoken.
+   */
+  async function startFullTour() {
+    if (tourActive) return;
+    tourActive    = true;
+    tourAborted   = false;
+    tourStepIndex = 0;
+    updatePanelState();
+
+    // Opening announcement
+    await speak(
+      lang === 'es'
+        ? 'Iniciando el Recorrido Completo. Navegando por todas las secciones principales.'
+        : 'Starting the Full System Tour. Navigating through all major sections.',
+      undefined,
+      PRIORITY.guide
+    );
+
+    for (let p = 0; p < FULL_TOUR_PAGES.length; p++) {
+      if (tourAborted) break;
+      const page = FULL_TOUR_PAGES[p];
+
+      // Navigate to this page and give the DOM a moment to render
+      if (typeof navigate === 'function') navigate(page);
+      await new Promise(r => setTimeout(r, 500));
+      if (tourAborted) break;
+
+      const steps = PAGE_TOUR_STEPS[page] || [];
+      for (let i = 0; i < steps.length; i++) {
+        if (tourAborted) break;
+        tourStepIndex = i;
+
+        const step = steps[i];
+
+        // In the full tour, skip the per-page closing null-sel step so transitions
+        // feel fluid (the next page's intro immediately follows).
+        if (!step.sel && i === steps.length - 1 && p < FULL_TOUR_PAGES.length - 1) continue;
+
+        const el = step.sel ? document.querySelector(step.sel) : null;
+        if (step.sel && !isElementVisible(el)) continue;
+
+        if (el) highlightElement(el);
+        await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
+        if (tourAborted) break;
+
+        if (step.waitForModal && !tourAborted) {
+          try {
+            await waitForModalOpen(step.waitForModal);
+          } catch (_) {
+            // Timeout or missing — advance anyway
+          }
+          if (tourAborted) break;
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
+    }
+
+    // Closing words
+    if (!tourAborted) {
+      await speak(
+        lang === 'es' ? FULL_TOUR_CLOSING.es : FULL_TOUR_CLOSING.en,
+        undefined,
+        PRIORITY.guide
+      );
+    }
+
+    tourActive    = false;
+    tourStepIndex = 0;
+    updatePanelState();
+  }
+
+  /**
+   * Build a minimal one-step tour for pages not listed in PAGE_TOUR_STEPS.
+   * Always matches whatever section the admin is on.
+   */
+  function buildGenericPageSteps(page) {
+    const label = (SECTION_LABELS[page] && SECTION_LABELS[page][lang]) || page;
+    return [
+      {
+        sel: `#page-${page}`,
+        en:  `You are currently in the ${label} section.`,
+        es:  `Actualmente se encuentra en la sección de ${label}.`,
+      },
+    ];
   }
 
   function stopTour() {
@@ -815,8 +1240,11 @@
                   text-transform:uppercase;margin-bottom:2px;">
         Voice Assistant
       </div>
-      <button id="va-tour-btn"  style="${btnStyle}background:#2563eb;color:#fff;">
-        🔊 Start Guide
+      <button id="va-tour-btn"     style="${btnStyle}background:#2563eb;color:#fff;">
+        📍 Page Guide
+      </button>
+      <button id="va-fulltour-btn" style="${btnStyle}background:#1d4ed8;color:#fff;">
+        🚀 Full Tour
       </button>
       <button id="va-ask-btn"   style="${btnStyle}background:#374151;color:#fff;">
         🎙️ Ask Assistant
@@ -846,6 +1274,11 @@
     panel.querySelector('#va-tour-btn').addEventListener('click', () => {
       if (tourActive) stopTour();
       else            startTour();
+    });
+
+    panel.querySelector('#va-fulltour-btn').addEventListener('click', () => {
+      if (tourActive) stopTour();
+      else            startFullTour();
     });
 
     panel.querySelector('#va-ask-btn').addEventListener('click', openAskDialog);
