@@ -154,6 +154,10 @@ function normalizeApiVehicle(v) {
     vin:           v.vin   || "",
     color:         v.color || "",
     scarcity_text: v.scarcity_text || "",
+    earnings_tagline: v.earnings_tagline || "",
+    earnings_title:   v.earnings_title   || "",
+    earnings_row1:    v.earnings_row1    || "",
+    earnings_cta:     v.earnings_cta     || "",
   };
 }
 
@@ -162,14 +166,38 @@ const EARNINGS_EXAMPLE_LOW  = 1200;  // $1,200 low-end weekly rideshare earnings
 const EARNINGS_EXAMPLE_HIGH = 1600;  // $1,600 high-end weekly rideshare earnings (Los Angeles)
 
 // ----- Earnings block updater -----
-// Replaces the hardcoded $350 weekly rental and $850–$1,250 take-home estimates
-// with the actual prices for the loaded vehicle.  Called from initCarDisplay() and
-// re-called after every language switch so the amounts stay correct.
-// Uses the existing i18n translation strings as templates, substituting only the
-// dollar amounts so all translated labels remain correct.
+// Updates the earnings block on the booking page with per-vehicle text and
+// computed prices.  Called from initCarDisplay() and re-called after every
+// language switch so the amounts stay correct.
+// Per-vehicle values stored on carData (earnings_tagline, earnings_title,
+// earnings_row1, earnings_cta) take priority over lang.js defaults.
 function updateEarningsBlock() {
-  if (!carData || !carData.weekly) return;
+  if (!carData) return;
   const weekly = carData.weekly;
+
+  // Update static text rows with per-vehicle override or fall back to i18n default.
+  const taglineEl = document.querySelector("[data-i18n='booking.earningsTagline']");
+  if (taglineEl && carData.earnings_tagline) {
+    taglineEl.textContent = carData.earnings_tagline;
+    taglineEl.removeAttribute("data-i18n");
+  }
+  const titleEl = document.querySelector("[data-i18n='booking.earningsTitle']");
+  if (titleEl && carData.earnings_title) {
+    titleEl.textContent = carData.earnings_title;
+    titleEl.removeAttribute("data-i18n");
+  }
+  const row1El = document.querySelector("[data-i18n='booking.earningsRow1']");
+  if (row1El && carData.earnings_row1) {
+    row1El.textContent = carData.earnings_row1;
+    row1El.removeAttribute("data-i18n");
+  }
+  const ctaEl = document.querySelector("[data-i18n-html='booking.earningsCtaHtml']");
+  if (ctaEl && carData.earnings_cta) {
+    ctaEl.textContent = carData.earnings_cta;
+    ctaEl.removeAttribute("data-i18n-html");
+  }
+
+  if (!weekly) return;
   const takeHomeLow  = EARNINGS_EXAMPLE_LOW  - weekly;
   const takeHomeHigh = EARNINGS_EXAMPLE_HIGH - weekly;
   const row2 = document.getElementById("earningsRow2");

@@ -241,6 +241,7 @@ export default async function handler(req, res) {
         "purchase_price", "purchase_date", "status",
         "vehicle_name", "vehicle_year", "type", "cover_image", "gallery_images",
         "bouncie_device_id", "vin", "scarcity_text",
+        "earnings_tagline", "earnings_title", "earnings_row1", "earnings_cta",
       ];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
@@ -284,6 +285,8 @@ export default async function handler(req, res) {
               return res.status(400).json({ error: "bouncie_device_id must be a 15-digit IMEI or empty" });
             }
             safeUpdates[f] = trimmed || null;
+          } else if (["earnings_tagline", "earnings_title", "earnings_row1", "earnings_cta"].includes(f)) {
+            safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : (val || null);
           } else {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 200) : val;
           }
@@ -384,7 +387,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -455,6 +458,10 @@ export default async function handler(req, res) {
         ...(vin           ? { vin:           String(vin).trim().slice(0, 50) }         : {}),
         ...(scarcityText  ? { scarcity_text: String(scarcityText).trim().slice(0, 200) } : {}),
         ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
+        ...(earningsTagline ? { earnings_tagline: String(earningsTagline).trim().slice(0, 500) } : {}),
+        ...(earningsTitle   ? { earnings_title:   String(earningsTitle).trim().slice(0, 500) }   : {}),
+        ...(earningsRow1    ? { earnings_row1:    String(earningsRow1).trim().slice(0, 500) }    : {}),
+        ...(earningsCta     ? { earnings_cta:     String(earningsCta).trim().slice(0, 500) }     : {}),
         // Store pricing in the data blob so GET /api/v2-vehicles returns it and
         // the booking page (car.js) can display the correct rates immediately.
         ...(parsedDaily    ? { daily_price:    parsedDaily }    : {}),
