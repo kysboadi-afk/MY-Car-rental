@@ -365,10 +365,7 @@
     <div class="form-group">
       <label for="vehicleSelect">Vehicle</label>
       <select id="vehicleSelect">
-        <option value="camry">Camry 2012</option>
-        <option value="camry2013">Camry 2013 SE</option>
-
-
+        <!-- Populated dynamically by loadAndInitVehicles() -->
       </select>
     </div>
 
@@ -400,29 +397,8 @@
       <p class="subtitle">Toggle a vehicle's availability. Changes appear on the website immediately.</p>
 
       <div id="fleetVehicles">
-        <!-- Camry 2012 -->
-        <div class="fleet-vehicle-row" id="fleet-row-camry">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Camry 2012</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-camry">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Camry 2012 availability">
-            <input type="checkbox" id="toggle-camry" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Camry 2013 SE -->
-        <div class="fleet-vehicle-row" id="fleet-row-camry2013">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Camry 2013 SE</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-camry2013">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Camry 2013 SE availability">
-            <input type="checkbox" id="toggle-camry2013" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
+        <!-- Fleet rows are rendered dynamically by loadAndInitVehicles() below -->
+        <div id="fleet-loading" style="color:#888;font-size:13px;font-style:italic">Loading fleet…</div>
       </div>
 
       <div id="fleetStatusMsg"></div>
@@ -437,10 +413,7 @@
         <div class="form-group">
           <label for="mbVehicle">Vehicle</label>
           <select id="mbVehicle">
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
-
-
+            <!-- Populated dynamically by loadAndInitVehicles() -->
           </select>
         </div>
 
@@ -795,10 +768,8 @@
   <script>
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
-      var VEHICLES = [
-        { id: "camry",      name: "Camry 2012" },
-        { id: "camry2013",  name: "Camry 2013 SE" },
-      ];
+      // Populated from the API — no hardcoded vehicle list.
+      var VEHICLES = [];
 
       function getAdminSecret() {
         return document.getElementById("adminSecret").value;
@@ -827,29 +798,10 @@
         }
       }
 
-      // Load current fleet status and reflect in toggles
-      function loadFleetStatus() {
-        fetch(API_BASE + "/api/fleet-status")
-          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-          .then(function (data) {
-            VEHICLES.forEach(function (v) {
-              var status = data[v.id];
-              var available = status ? status.available !== false : true;
-              applyStatus(v.id, available);
-            });
-          })
-          .catch(function () {
-            // Leave toggles as default (all available) on error
-          });
-      }
-
-      // Wire up each toggle
-      VEHICLES.forEach(function (v) {
+      function wireToggle(v) {
         var input = document.getElementById("toggle-" + v.id);
         if (!input) return;
-
         function revertToggle() { input.checked = !input.checked; }
-
         input.addEventListener("change", function () {
           var secret = getAdminSecret();
           if (!secret) {
@@ -860,7 +812,6 @@
           var available = input.checked;
           setToggleDisabled(v.id, true);
           showFleetMsg("Updating " + v.name + "…", "info");
-
           fetch(API_BASE + "/api/update-fleet-status", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -886,9 +837,74 @@
               revertToggle();
             });
         });
-      });
+      }
 
-      loadFleetStatus();
+      // Load current fleet status and reflect in toggles
+      function loadFleetStatus() {
+        fetch(API_BASE + "/api/fleet-status")
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (data) {
+            VEHICLES.forEach(function (v) {
+              var status = data[v.id];
+              var available = status ? status.available !== false : true;
+              applyStatus(v.id, available);
+            });
+          })
+          .catch(function () {
+            // Leave toggles as default (all available) on error
+          });
+      }
+
+      // Render fleet toggle rows dynamically and wire up event listeners.
+      function renderFleetRows(vehicles) {
+        var container = document.getElementById("fleetVehicles");
+        var html = vehicles.map(function (v) {
+          return '<div class="fleet-vehicle-row" id="fleet-row-' + v.id + '">'
+            + '<div class="fleet-vehicle-info">'
+            + '<div class="fleet-vehicle-name">' + v.name + '</div>'
+            + '<span class="fleet-vehicle-status available" id="fleet-status-text-' + v.id + '">● Available</span>'
+            + '</div>'
+            + '<label class="toggle-switch" aria-label="Toggle ' + v.name + ' availability">'
+            + '<input type="checkbox" id="toggle-' + v.id + '" checked>'
+            + '<span class="toggle-slider"></span>'
+            + '</label>'
+            + '</div>';
+        }).join('');
+        container.innerHTML = html || '<div style="color:#888;font-size:13px;font-style:italic">No vehicles found.</div>';
+        vehicles.forEach(wireToggle);
+      }
+
+      // Populate both vehicle dropdowns from the live vehicle list.
+      function populateVehicleDropdowns(vehicles) {
+        var opts = vehicles.map(function (v) {
+          return '<option value="' + v.id + '">' + v.name + '</option>';
+        }).join('');
+        var sel1 = document.getElementById("vehicleSelect");
+        var sel2 = document.getElementById("mbVehicle");
+        if (sel1) sel1.innerHTML = opts;
+        if (sel2) sel2.innerHTML = opts;
+      }
+
+      // Fetch vehicles from the API, build the fleet UI, then load current status.
+      function loadAndInitVehicles() {
+        fetch(API_BASE + "/api/v2-vehicles?scope=car")
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (data) {
+            if (!Array.isArray(data) || data.length === 0) throw new Error("empty");
+            VEHICLES = data.map(function (v) {
+              return { id: v.vehicle_id, name: v.vehicle_name || v.vehicle_id };
+            });
+            renderFleetRows(VEHICLES);
+            populateVehicleDropdowns(VEHICLES);
+            loadFleetStatus();
+          })
+          .catch(function () {
+            var container = document.getElementById("fleetVehicles");
+            if (container) container.innerHTML = '<div style="color:#c00;font-size:13px">Could not load vehicles. Check your connection.</div>';
+          });
+      }
+
+      loadAndInitVehicles();
     })();
   </script>
   <!-- Vehicle Tracking & Profit Dashboard Script -->
@@ -936,9 +952,8 @@
       // ── Render vehicle cards ───────────────────────────────────────────────
       function renderCards(stats) {
         var container = document.getElementById("vehicleCards");
-        var VEHICLE_ORDER = ["camry", "camry2013"];
         var html = "";
-        VEHICLE_ORDER.forEach(function (vid) {
+        Object.keys(stats).forEach(function (vid) {
           var s = stats[vid];
           if (!s) return;
           var v = s.vehicle;

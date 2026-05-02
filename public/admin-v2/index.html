@@ -1012,8 +1012,6 @@
         <div class="filters-row">
           <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
             <option value="">All Statuses</option>
@@ -1135,8 +1133,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012 ($55/day)</option>
-                  <option value="camry2013">Camry 2013 SE ($55/day)</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1228,8 +1224,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="bd-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012</option>
-                  <option value="camry2013">Camry 2013 SE</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1253,8 +1247,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="ub-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012</option>
-                  <option value="camry2013">Camry 2013 SE</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1298,8 +1290,6 @@
         <div class="filters-row">
           <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="expense-filter-category" onchange="applyExpenseFilters()">
             <option value="">All Categories</option>
@@ -1512,8 +1502,6 @@
         <div class="filters-row">
           <select class="filter-select" id="rev-filter-vehicle" onchange="applyRevenueFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="rev-filter-status" onchange="applyRevenueFilters()">
             <option value="">All Statuses</option>
@@ -1828,8 +1816,6 @@
           </select>
           <select class="filter-select" id="lf-filter-vehicle" onchange="applyLateFeeFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <input type="text" class="filter-input" id="lf-search" placeholder="Search name or ID…" oninput="applyLateFeeFilters()">
         </div>
@@ -1957,8 +1943,6 @@
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="exp-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group">
@@ -2257,8 +2241,6 @@
       <div class="form-group" style="grid-column:1/-1;min-width:0;">
         <label class="form-label">Vehicle</label>
         <select class="form-input" id="be-vehicle">
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group" style="min-width:0;">
@@ -2352,16 +2334,10 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   ? ''
   : 'https://sly-rides.vercel.app'; // Adjust if deployed to different Vercel URL
 
-const VEHICLE_NAMES = {
-  camry:      'Camry 2012',
-  camry2013:  'Camry 2013 SE',
-};
-
-const VEHICLE_LABELS = {
-  ...VEHICLE_NAMES,
-  'Camry 2012':    'Camry 2012',
-  'Camry 2013 SE': 'Camry 2013 SE',
-};
+// Vehicle name/label lookups are populated dynamically from the API in
+// loadVehiclesFromApi() → VEHICLE_NAMES_DYNAMIC.  No hardcoded entries needed.
+const VEHICLE_NAMES  = {};
+const VEHICLE_LABELS = {};
 
 function getVehicleLabel(id) {
   const key = String(id || '').trim();
@@ -2399,8 +2375,12 @@ function vehicleImgPlaceholder() {
 let VEHICLE_NAMES_DYNAMIC  = {};
 let VEHICLE_IMAGES_DYNAMIC = {};
 
+// The vehicle_id of the first active vehicle returned by the API.
+// Used by openPreviewModal so the preview link is always valid.
+let _firstVehicleId = '';
+
 // Load vehicles from the Supabase-backed API and build dynamic name/image maps.
-// Fails silently so the admin remains usable with hard-coded fallbacks.
+// Fails silently so the admin remains usable.
 // Expected response: array of { vehicle_id, vehicle_name, cover_image, ... }
 // cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
 async function loadVehiclesFromApi() {
@@ -2422,11 +2402,15 @@ async function loadVehiclesFromApi() {
         }
       }
     });
+    // Track first vehicle for preview link
+    if (vehicles.length > 0 && vehicles[0].vehicle_id) {
+      _firstVehicleId = vehicles[0].vehicle_id;
+    }
     // Populate all vehicle <select> dropdowns from the live list
     populateVehicleFilters(vehicles);
   } catch (err) {
-    // Network/parse error — continue with hard-coded fallbacks
-    console.error('admin-v2: failed to load vehicles from API, using fallback values', err);
+    // Network/parse error — admin remains usable, dropdowns may be empty
+    console.error('admin-v2: failed to load vehicles from API', err);
   }
 }
 
@@ -2482,10 +2466,8 @@ function populateVehicleFilters(vehicles) {
 // Kick off the fetch immediately; UI functions consume the maps whenever they run
 loadVehiclesFromApi();
 
-const VEHICLE_RATES = {
-  camry:      { perDay: 55,  perWeek: 350  },
-  camry2013:  { perDay: 55,  perWeek: 350  },
-};
+// Per-vehicle day/week rates — populated dynamically from loadVehiclesFromApi().
+const VEHICLE_RATES = {};
 
 // ── State ──────────────────────────────────────────────────────────────────
 let adminSecret   = '';
@@ -5210,9 +5192,10 @@ function openPreviewModal(mode) {
   const iframe = document.getElementById('preview-iframe');
   const isTestMode = mode === 'test';
   const liveUrl = 'https://www.slytrans.com';
+  const vehicleParam = _firstVehicleId || 'camry';
   const previewUrl = isTestMode
-    ? `${liveUrl}/car.html?vehicle=camry&admin_override=true&test_mode=true`
-    : `${liveUrl}/car.html?vehicle=camry`;
+    ? `${liveUrl}/car.html?vehicle=${vehicleParam}&admin_override=true&test_mode=true`
+    : `${liveUrl}/car.html?vehicle=${vehicleParam}`;
   iframe.src = previewUrl;
   const openLink = document.getElementById('preview-open-link');
   if (openLink) openLink.href = previewUrl;
@@ -7791,8 +7774,6 @@ async function loadAiInsights() {
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="rev-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group">

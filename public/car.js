@@ -14,40 +14,10 @@ const LA_TAX_RATE = 0.1025;
 function getTaxRate() { return window._dynamicTaxRate || LA_TAX_RATE; }
 
 // ----- Car Data -----
-const cars = {
-  camry: {
-    name: "Camry 2012",
-    subtitle: "",
-    subtitleKey: "fleet.sedan5seater",
-    pricePerDay: 55,
-    minRentalDays: 1,
-    weekly: 350,
-    biweekly: 650,
-    monthly: 1300,
-    images: ["images/IMG_0046.png","images/IMG_4486.jpeg"],
-    make: "Toyota",
-    model: "Camry",
-    year: 2012,
-    vin: "4T1BF1FK5CU063142",
-    color: "Grey"
-  },
-  camry2013: {
-    name: "Camry 2013 SE",
-    subtitle: "",
-    subtitleKey: "fleet.sedan5seater",
-    pricePerDay: 55,
-    minRentalDays: 1,
-    weekly: 350,
-    biweekly: 650,
-    monthly: 1300,
-    images: ["images/IMG_5144.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg", "images/IMG_5145.png"],
-    make: "Toyota",
-    model: "Camry SE",
-    year: 2013,
-    vin: "4T1BF1FK9DU678911",
-    color: "Charcoal Grey"
-  }
-};
+// Vehicle data is loaded dynamically from /api/v2-vehicles so adding a new
+// vehicle in the admin panel automatically makes it bookable — no code change
+// needed.  buildCarDataFromAPI() below maps the API response into this object.
+const cars = {};
 
 // ----- Insurance / Protection Plan -----
 // Economy car protection plan tiers (flat daily rates — must mirror api/_pricing.js).
@@ -110,11 +80,8 @@ function clearPayError() {
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
       // Apply economy-wide pricing to all vehicles currently in `cars`.
-      // Vehicles loaded dynamically from the API (non-static) already have their
-      // own per-vehicle pricing from the DB stored in cars[vid]; the economy
-      // global rates only update the original static entries (camry, camry2013)
-      // and any future vehicle that has been cached into `cars` before this
-      // callback fires.
+      // All vehicles are loaded from the API; the economy-wide rates from
+      // system_settings override any per-vehicle defaults set by buildCarDataFromAPI.
       Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
@@ -180,8 +147,8 @@ function buildCarDataFromAPI(v) {
   };
 }
 
-// Initializes all DOM content that depends on carData.  Called synchronously for
-// the hardcoded vehicles and from the .then() callback for API-loaded vehicles.
+// Initializes all DOM content that depends on carData.  Called from the .then()
+// callback once vehicle data has been loaded from the API.
 function initCarPage() {
   document.getElementById("carName").textContent = carData.name;
   document.getElementById("carSubtitle").textContent =
@@ -235,27 +202,21 @@ document.getElementById("nextSlide").addEventListener("click", nextSlide);
 document.getElementById("prevSlide").addEventListener("click", prevSlide);
 function goToSlide(idx){ showSlide(idx); }
 
-// Initialize page: synchronous path for hardcoded vehicles, async API fetch for new ones.
-if (cars[vehicleId]) {
-  carData = cars[vehicleId];
-  initCarPage();
-} else {
-  // Show a loading indicator while the vehicle data is fetched from the API.
-  sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
-  fetch(API_BASE + "/api/v2-vehicles")
-    .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
-    .then(function(vehicles) {
-      var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;
-      if (!v) throw new Error("not found");
-      carData = cars[vehicleId] = buildCarDataFromAPI(v);
-      sliderContainer.innerHTML = "";
-      initCarPage();
-    })
-    .catch(function() {
-      alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
-      window.location.href = "index.html";
-    });
-}
+// Initialize page: fetch vehicle data from the API for all vehicles.
+sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
+fetch(API_BASE + "/api/v2-vehicles")
+  .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+  .then(function(vehicles) {
+    var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;
+    if (!v) throw new Error("not found");
+    carData = cars[vehicleId] = buildCarDataFromAPI(v);
+    sliderContainer.innerHTML = "";
+    initCarPage();
+  })
+  .catch(function() {
+    alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
+    window.location.href = "index.html";
+  });
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{

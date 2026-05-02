@@ -73,11 +73,30 @@ function getChatPricing() {
   };
 }
 
-var KNOWN_VEHICLE_META = {
-  camry:      { name: "Camry 2012", icon: "🔵", type: "economy" },
-  camry2013:  { name: "Camry 2013 SE", icon: "🟢", type: "economy" }
-};
+var KNOWN_VEHICLE_META = {};
 var fleetVehicleIdsCache = { key: "", ids: [] };
+
+// Fetch the live vehicle list to populate KNOWN_VEHICLE_META so new vehicles
+// registered in the admin portal are automatically included in chatbot responses.
+(function fetchChatbotVehicles() {
+  fetch(CHATBOT_API_BASE + "/api/v2-vehicles?scope=car")
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (!Array.isArray(data)) return;
+      var icons = ["🔵","🟢","🟡","🟠","🔴","🟣","⚪"];
+      data.forEach(function(v, i) {
+        if (!v.vehicle_id) return;
+        KNOWN_VEHICLE_META[v.vehicle_id] = {
+          name: v.vehicle_name || v.vehicle_id,
+          icon: icons[i % icons.length],
+          type: "economy",
+        };
+      });
+      // Invalidate cache so next call to getFleetVehicleIds() rebuilds from new meta
+      fleetVehicleIdsCache = { key: "", ids: [] };
+    })
+    .catch(function() { /* fail silently — prettifyVehicleId fallback used */ });
+}());
 
 function prettifyVehicleId(vehicleId) {
   return String(vehicleId || "")
@@ -126,36 +145,33 @@ function getFleetVehicleIds() {
 /** Build the general pricing message for all vehicles in the given language. */
 function buildChatPricingText(lang) {
   var p = getChatPricing(), e = p.economy;
-  if (lang === "es") {
-    return "Aquí están nuestras tarifas actuales 🚗\n\n" +
-      "🔵 Camry 2012\n" +
-      "  • Diario    — $" + e.daily + " / día\n" +
-      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
-      "  • Sin depósito\n\n" +
-      "🟢 Camry 2013 SE\n" +
-      "  • Diario    — $" + e.daily + " / día\n" +
-      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
-      "  • Sin depósito\n\n" +
-      "¡Pregúntame sobre un auto específico para más detalles!";
+  var ids = Object.keys(KNOWN_VEHICLE_META).length
+    ? Object.keys(KNOWN_VEHICLE_META)
+    : getFleetVehicleIds();
+
+  function vehicleBlock(id) {
+    var meta = getVehicleMeta(id);
+    if (lang === "es") {
+      return meta.icon + " " + meta.name + "\n" +
+        "  • Diario    — $" + e.daily + " / día\n" +
+        "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
+        "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
+        "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
+        "  • Sin depósito";
+    }
+    return meta.icon + " " + meta.name + "\n" +
+      "  • Daily     — $" + e.daily + " / day\n" +
+      "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
+      "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
+      "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
+      "  • No deposit required";
   }
-  return "Here are our current rates 🚗\n\n" +
-    "🔵 Camry 2012\n" +
-    "  • Daily     — $" + e.daily + " / day\n" +
-    "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
-    "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
-    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
-    "  • No deposit required\n\n" +
-    "🟢 Camry 2013 SE\n" +
-    "  • Daily     — $" + e.daily + " / day\n" +
-    "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
-    "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
-    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
-    "  • No deposit required\n\n" +
-    "Ask me about a specific car for more details!";
+
+  var blocks = ids.map(vehicleBlock).join("\n\n");
+  if (lang === "es") {
+    return "Aquí están nuestras tarifas actuales 🚗\n\n" + blocks + "\n\n¡Pregúntame sobre un auto específico para más detalles!";
+  }
+  return "Here are our current rates 🚗\n\n" + blocks + "\n\nAsk me about a specific car for more details!";
 }
 
 /** Build the Camry-only pricing message. */
@@ -195,12 +211,10 @@ function buildChatCamryPricingText(lang) {
 function buildChatDepositText(lang) {
   if (lang === "es") {
     return "Información sobre depósito 💰\n\n" +
-      "🔵🟢 Camry 2012 / Camry 2013 SE\n\n" +
       "✅ No se requiere depósito de seguridad para nuestros vehículos de economía.\n\n" +
       "💡 El pago completo se cobra al momento de reservar.";
   }
   return "Deposit info 💰\n\n" +
-    "🔵🟢 Camry 2012 / Camry 2013 SE\n\n" +
     "✅ No security deposit required for our economy vehicles.\n\n" +
     "💡 Full payment is charged at the time of booking.";
 }

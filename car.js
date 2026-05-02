@@ -14,40 +14,10 @@ const LA_TAX_RATE = 0.1025;
 function getTaxRate() { return window._dynamicTaxRate || LA_TAX_RATE; }
 
 // ----- Car Data -----
-const cars = {
-  camry: {
-    name: "Camry 2012",
-    subtitle: "",
-    subtitleKey: "fleet.sedan5seater",
-    pricePerDay: 55,
-    minRentalDays: 1,
-    weekly: 350,
-    biweekly: 650,
-    monthly: 1300,
-    images: ["images/IMG_0046.png","images/IMG_4486.jpeg"],
-    make: "Toyota",
-    model: "Camry",
-    year: 2012,
-    vin: "4T1BF1FK5CU063142",
-    color: "Grey"
-  },
-  camry2013: {
-    name: "Camry 2013 SE",
-    subtitle: "",
-    subtitleKey: "fleet.sedan5seater",
-    pricePerDay: 55,
-    minRentalDays: 1,
-    weekly: 350,
-    biweekly: 650,
-    monthly: 1300,
-    images: ["images/IMG_5144.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg", "images/IMG_5145.png"],
-    make: "Toyota",
-    model: "Camry SE",
-    year: 2013,
-    vin: "4T1BF1FK9DU678911",
-    color: "Charcoal Grey"
-  }
-};
+// Vehicle data is loaded dynamically from /api/v2-vehicles so adding a new
+// vehicle in the admin panel automatically makes it bookable — no code change
+// needed.  buildCarDataFromAPI() below maps the API response into this object.
+const cars = {};
 
 // ----- Insurance / Protection Plan -----
 // Economy car protection plan tiers (flat daily rates — must mirror api/_pricing.js).
@@ -110,11 +80,8 @@ function clearPayError() {
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
       // Apply economy-wide pricing to all vehicles currently in `cars`.
-      // Vehicles loaded dynamically from the API (non-static) already have their
-      // own per-vehicle pricing from the DB stored in cars[vid]; the economy
-      // global rates only update the original static entries (camry, camry2013)
-      // and any future vehicle that has been cached into `cars` before this
-      // callback fires.
+      // All vehicles are loaded from the API; the economy-wide rates from
+      // system_settings override any per-vehicle defaults set by buildCarDataFromAPI.
       Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
@@ -150,8 +117,7 @@ function clearPayError() {
 
 const vehicleId = getVehicleFromURL();
 
-// carData is populated either immediately (for known static vehicles) or after
-// an async API fetch (for vehicles created through the admin portal).
+// carData is populated asynchronously after fetching from the API.
 // All event handlers below reference carData via closure — they are only
 // triggered by user interaction, which always happens after initialization.
 let carData = null;
@@ -245,18 +211,11 @@ function initCarDisplay() {
 }
 
 // ----- Vehicle lookup -----
-// Fast path: vehicle is in the static cars object (camry, camry2013).
-// Slow path: unknown vehicle ID → fetch from /api/v2-vehicles (admin-created vehicles).
+// All vehicles are fetched from /api/v2-vehicles (single source of truth).
 if (!vehicleId) {
   alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
   window.location.href = "index.html";
-} else if (cars[vehicleId]) {
-  carData = cars[vehicleId];
-  initCarDisplay();
 } else {
-  // Vehicle is not in the static list — ask the API.
-  // The page skeleton is already visible; initCarDisplay() will populate it once
-  // the response arrives (typically < 200 ms on a warm Vercel function).
   (async function fetchAndInitVehicle() {
     try {
       const resp = await fetch(API_BASE + "/api/v2-vehicles");
