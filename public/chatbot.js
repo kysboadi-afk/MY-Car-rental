@@ -173,39 +173,6 @@ function buildChatPricingText(lang) {
   return "Here are our current rates 🚗\n\n" + blocks + "\n\nAsk me about a specific car for more details!";
 }
 
-/** Build the Camry-only pricing message. */
-function buildChatCamryPricingText(lang) {
-  var e = getChatPricing().economy;
-  if (lang === "es") {
-    return "Aquí están las tarifas del Camry 🔵🟢\n\n" +
-      "🔵 Camry 2012\n" +
-      "  • Diario    — $" + e.daily + " / día\n" +
-      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n\n" +
-      "🟢 Camry 2013 SE\n" +
-      "  • Diario    — $" + e.daily + " / día\n" +
-      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
-      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n\n" +
-      "✅ No se requiere depósito de seguridad\n\n" +
-      "¿Listo para reservar?\n\n📋 ¿Tienes una licencia de conducir válida?";
-  }
-  return "Here are the Camry rates 🔵🟢\n\n" +
-    "🔵 Camry 2012\n" +
-    "  • Daily       — $" + e.daily + " / day\n" +
-    "  • 1 Week    — $" + e.weekly + " 🚗 Unlimited Miles\n" +
-    "  • 2 Weeks  — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
-    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n\n" +
-    "🟢 Camry 2013 SE\n" +
-    "  • Daily       — $" + e.daily + " / day\n" +
-    "  • 1 Week    — $" + e.weekly + " 🚗 Unlimited Miles\n" +
-    "  • 2 Weeks  — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
-    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n\n" +
-    "✅ No security deposit required\n\n" +
-    "Ready to book? Visit our Cars page!\n\n📋 Do you have a valid driving license?";
-}
-
 /** Build the deposit info message. */
 function buildChatDepositText(lang) {
   if (lang === "es") {
@@ -427,11 +394,14 @@ var botResponses = {
   en: [
     {
       patterns: ["hello","hi","hey","howdy","sup","what's up"],
-      reply: "Hey! 👋 Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$350/week with unlimited miles</strong>. I can help you get approved quickly.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Click here to apply and get approved</a>"
+      reply: function() {
+        var w = getChatPricing().economy.weekly;
+        return "Hey! 👋 Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$" + w + "/week with unlimited miles</strong>. I can help you get approved quickly.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Click here to apply and get approved</a>";
+      }
     },
     {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
-      reply: function() { return buildChatCamryPricingText("en"); }
+      reply: function() { return buildChatPricingText("en"); }
     },
     {
       patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
@@ -439,7 +409,10 @@ var botResponses = {
     },
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
-      reply: "💰 Earning Potential with SLY Rides\n\nOur delivery drivers typically earn:\n  • $800 – $1,500 per week\n\nworking on apps like DoorDash, Uber Eats, Instacart, and Amazon Flex.\n\nFor just $350/week with unlimited miles, that's a great return!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Apply now to get approved</a>"
+      reply: function() {
+        var w = getChatPricing().economy.weekly;
+        return "💰 Earning Potential with SLY Rides\n\nOur delivery drivers typically earn:\n  • $800 – $1,500 per week\n\nworking on apps like DoorDash, Uber Eats, Instacart, and Amazon Flex.\n\nFor just $" + w + "/week with unlimited miles, that's a great return!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Apply now to get approved</a>";
+      }
     },
     {
       patterns: ["car","cars","vehicle","vehicles","available","fleet","camry"],
@@ -463,9 +436,7 @@ var botResponses = {
       patterns: ["when is camry","camry available","camry booked","camry rented","how long camry","camry free","camry status","camry availability"],
       reply: function() {
         var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-        return "Here's the status of both Camry vehicles:\n\n" +
-          getVehicleBookingInfo("camry", lang) + "\n\n────────────────────\n\n" +
-          getVehicleBookingInfo("camry2013", lang);
+        return buildAvailabilityMessage(lang);
       }
     },
     {
@@ -523,11 +494,14 @@ var botResponses = {
   es: [
     {
       patterns: ["hola","buenos días","buenas tardes","buenas noches","buenas","qué tal","qué onda","saludos"],
-      reply: "¡Hola! 👋 ¿Quieres alquilar un auto para DoorDash, Uber Eats u otras aplicaciones de entrega?\n\nNuestros autos son <strong>$350/semana con millaje ilimitado</strong>. Puedo ayudarte a obtener aprobación rápidamente.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Haz clic aquí para solicitar y obtener aprobación</a>"
+      reply: function() {
+        var w = getChatPricing().economy.weekly;
+        return "¡Hola! 👋 ¿Quieres alquilar un auto para DoorDash, Uber Eats u otras aplicaciones de entrega?\n\nNuestros autos son <strong>$" + w + "/semana con millaje ilimitado</strong>. Puedo ayudarte a obtener aprobación rápidamente.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Haz clic aquí para solicitar y obtener aprobación</a>";
+      }
     },
     {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
-      reply: function() { return buildChatCamryPricingText("es"); }
+      reply: function() { return buildChatPricingText("es"); }
     },
     {
       patterns: ["precio","costo","cuánto cuesta","cuanto cuesta","cuánto es","cuanto es","tarifa","tarifas","cobran","cobras","diario","semanal","mensual"],
@@ -535,7 +509,10 @@ var botResponses = {
     },
     {
       patterns: ["ganar","ganancias","ingresos","cuánto puedo ganar","cuanto puedo ganar","dinero"],
-      reply: "💰 Potencial de Ganancias con SLY Rides\n\nNuestros conductores de entrega típicamente ganan:\n  • $800 – $1,500 por semana\n\ntrabajando en apps como DoorDash, Uber Eats, Instacart y Amazon Flex.\n\n¡Por solo $350/semana con millaje ilimitado, es un excelente retorno!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Solicita ahora para obtener aprobación</a>"
+      reply: function() {
+        var w = getChatPricing().economy.weekly;
+        return "💰 Potencial de Ganancias con SLY Rides\n\nNuestros conductores de entrega típicamente ganan:\n  • $800 – $1,500 por semana\n\ntrabajando en apps como DoorDash, Uber Eats, Instacart y Amazon Flex.\n\n¡Por solo $" + w + "/semana con millaje ilimitado, es un excelente retorno!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Solicita ahora para obtener aprobación</a>";
+      }
     },
     {
       patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","camry"],
@@ -552,9 +529,7 @@ var botResponses = {
     {
       patterns: ["cuando camry","camry disponible","camry reservado","camry alquilado","camry libre","disponibilidad camry"],
       reply: function() {
-        return "Aquí está el estado de los dos vehículos Camry:\n\n" +
-          getVehicleBookingInfo("camry", "es") + "\n\n────────────────────\n\n" +
-          getVehicleBookingInfo("camry2013", "es");
+        return buildAvailabilityMessage("es");
       }
     },
     {
@@ -656,7 +631,7 @@ function buildChatbot() {
     // Reminder popup (shown 12 s after badge appears with no interaction)
     '<div id="chat-reminder" hidden role="alertdialog" aria-label="Chat reminder">' +
       '<button id="chat-reminder-close" aria-label="Dismiss reminder">\u2715</button>' +
-      '<p>\uD83D\uDE97 <strong>$350/week \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
+      '<p>\uD83D\uDE97 <strong>$' + getChatPricing().economy.weekly + '/week \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
     '</div>'
   );
 
@@ -1183,6 +1158,10 @@ function buildChatbot() {
     // Show reminder 12 s after badge if user hasn't interacted yet
     reminderTimer = setTimeout(function() {
       if (!userInteracted && chatBox.hidden && !userDismissed) {
+        // Update the weekly rate in the reminder text from live pricing (should be
+        // loaded by now — fetch completes well within the 12-second window).
+        var reminderPrice = reminder.querySelector("strong");
+        if (reminderPrice) reminderPrice.textContent = "$" + getChatPricing().economy.weekly + "/week \u2014 Unlimited Miles!";
         reminder.hidden = false;
       }
     }, 12000);

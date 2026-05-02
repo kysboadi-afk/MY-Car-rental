@@ -6,8 +6,10 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
-// Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
-const CAMRY_BOOKING_DEPOSIT = 50;
+// Fallback deposit amount used only if neither the vehicle record nor the
+// system settings supply a booking_deposit value (prevents a broken button
+// if both async fetches are unexpectedly slow).
+const FALLBACK_BOOKING_DEPOSIT = 50;
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
 // Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
@@ -90,6 +92,18 @@ function clearPayError() {
         if (ecMonthly > 0) cars[vid].monthly     = ecMonthly;
       });
 
+      // ── Booking deposit ───────────────────────────────────────────────────
+      // Apply the system-wide booking_deposit to any vehicle that doesn't have
+      // a per-vehicle deposit configured (v.booking_deposit from v2-vehicles).
+      var ecDeposit = (pricing.economy && pricing.economy.booking_deposit) ? Number(pricing.economy.booking_deposit) : 0;
+      Object.keys(cars).forEach(function(vid) {
+        if (!cars[vid] || cars[vid].booking_deposit) return; // don't overwrite per-vehicle value
+        if (ecDeposit > 0) cars[vid].booking_deposit = ecDeposit;
+      });
+      // Re-render the deposit button in case the vehicle data loaded first and
+      // booking_deposit was null at initCarPage() time.
+      updateDepositButton();
+
       // ── Tax rate ─────────────────────────────────────────────────────────
       // (already set as a module-level const; we update the global so
       //  any later calculation that references LA_TAX_RATE by closure reads
@@ -137,6 +151,10 @@ function buildCarDataFromAPI(v) {
     biweekly:      v.biweekly_price || 650,
     monthly:       v.monthly_price  || 1300,
     minRentalDays: 1,
+    // Per-vehicle booking deposit (e.g. $50 reserve-now option). null means the
+    // deposit button is hidden. loadDynamicPricing() fills this from the system-wide
+    // setting when no per-vehicle value is present.
+    booking_deposit: Number(v.booking_deposit) > 0 ? Number(v.booking_deposit) : null,
     images:        (function() {
       var imgs = v.cover_image ? [v.cover_image] : [];
       if (Array.isArray(v.gallery_images)) {
@@ -150,6 +168,26 @@ function buildCarDataFromAPI(v) {
     vin:           v.vin           || "",
     color:         v.color         || "",
   };
+}
+
+// Shows or hides the "Reserve with Deposit" button and the deposit notice based on
+// whether the loaded vehicle supports a booking deposit. Called from both
+// initCarPage() (after vehicle data loads) and loadDynamicPricing() (after system
+// settings load) so the button appears correctly regardless of fetch order.
+function updateDepositButton() {
+  if (!carData) return;
+  const reserveBtnEl   = document.getElementById("reserveBtn");
+  const depositNotice  = document.getElementById("camryDepositNotice");
+  if (carData.booking_deposit > 0) {
+    if (reserveBtnEl) {
+      reserveBtnEl.textContent = "\uD83D\uDD12 Reserve with $" + carData.booking_deposit + " Deposit";
+      reserveBtnEl.style.display = "";
+    }
+    if (depositNotice) depositNotice.style.display = "";
+  } else {
+    if (reserveBtnEl)  reserveBtnEl.style.display  = "none";
+    if (depositNotice) depositNotice.style.display = "none";
+  }
 }
 
 // Initializes all DOM content that depends on carData.  Called from the .then()
@@ -187,6 +225,10 @@ function initCarPage() {
     dot.addEventListener("click", () => goToSlide(idx));
     sliderDots.appendChild(dot);
   });
+
+  // Show or hide the "Reserve with Deposit" option based on this vehicle's config.
+  // loadDynamicPricing() may also call updateDepositButton() once system settings load.
+  updateDepositButton();
 }
 
 const sliderContainer = document.getElementById("sliderContainer");
@@ -252,18 +294,6 @@ let _pendingPaymentMode = null;
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
 
-
-// Show the "Reserve with Deposit" button and deposit notice so renters can choose
-// between paying a $50 deposit now (rest at pickup) or paying in full today.
-{
-  const reserveBtnEl = document.getElementById("reserveBtn");
-  if (reserveBtnEl) {
-    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
-    reserveBtnEl.style.display = "";
-  }
-  const camryDepNotice = document.getElementById("camryDepositNotice");
-  if (camryDepNotice) camryDepNotice.style.display = "";
-}
 
 // ----- Name Field Validation & Auto-correction -----
 
@@ -1671,16 +1701,18 @@ stripeBtn.addEventListener("click", async () => {
   if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
   if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
   if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
-  const isCamryDepositMode = paymentMode === 'deposit';
-  const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
+  const isDepositMode = paymentMode === 'deposit';
+  // Use per-vehicle booking_deposit (set by loadDynamicPricing from system settings if not
+  // in the vehicle record). Fall back to the module-level constant only as a last resort.
+  const depositAmount = (carData && carData.booking_deposit) || FALLBACK_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
-  const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
-  // For Camry deposit mode, compute the balance the renter still owes at pickup so
+  const displayPayNow = isDepositMode ? depositAmount.toFixed(2) : totalEl.textContent;
+  // For deposit mode, compute the balance the renter still owes at pickup so
   // the confirmation email can display the exact amount (full after-tax total minus deposit).
-  if (isCamryDepositMode) {
+  if (isDepositMode) {
     const fullAmtFloat = parseFloat(totalEl.textContent);
-    if (isFinite(fullAmtFloat) && fullAmtFloat > camryDepositAmount) {
-      carData._balanceAtPickup = (fullAmtFloat - camryDepositAmount).toFixed(2);
+    if (isFinite(fullAmtFloat) && fullAmtFloat > depositAmount) {
+      carData._balanceAtPickup = (fullAmtFloat - depositAmount).toFixed(2);
     }
   }
 
@@ -1807,14 +1839,14 @@ stripeBtn.addEventListener("click", async () => {
     // before mounting the button — this is what prevents the "Unable to show
     // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
     // browsers or when the domain association file has not yet been verified.
-    const totalCents = isCamryDepositMode
-        ? Math.round(camryDepositAmount * 100)
+    const totalCents = isDepositMode
+        ? Math.round(depositAmount * 100)
         : Math.round(parseFloat(totalEl.textContent) * 100);
     const paymentReq = stripe.paymentRequest({
       country: "US",
       currency: "usd",
       total: {
-        label: isCamryDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
+        label: isDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
         amount: totalCents,
       },
       requestPayerName: true,
