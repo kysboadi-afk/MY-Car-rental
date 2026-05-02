@@ -56,10 +56,13 @@ function buildEconomyCard(v, pricing) {
   const subtitle = esc(v.subtitle || t("fleet.sedan5seater", "Sedan • 5 Seater"));
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 
-  const daily    = pricing ? fmtMoney(pricing.economy.daily)    : "$55";
-  const weekly   = pricing ? fmtMoney(pricing.economy.weekly)   : "$350";
-  const biweekly = pricing ? fmtMoney(pricing.economy.biweekly) : "$650";
-  const monthly  = pricing ? fmtMoney(pricing.economy.monthly)  : "$1,300";
+  // Per-vehicle pricing takes priority over global economy pricing so that
+  // newly added vehicles with custom rates display correctly. Falls back to
+  // the global economy rate, then to hard-coded defaults if both are absent.
+  const daily    = fmtMoney(v.daily_price    ?? v.pricePerDay  ?? pricing?.economy?.daily    ?? 55);
+  const weekly   = fmtMoney(v.weekly_price   ?? v.weekly       ?? pricing?.economy?.weekly   ?? 350);
+  const biweekly = fmtMoney(v.biweekly_price ?? v.biweekly     ?? pricing?.economy?.biweekly ?? 650);
+  const monthly  = fmtMoney(v.monthly_price  ?? v.monthly      ?? pricing?.economy?.monthly  ?? 1300);
 
   return `<div class="car-card" data-category="economy" data-vehicle="${vid}">
     <img src="${img}" alt="${name}" loading="lazy">
@@ -247,11 +250,15 @@ async function loadFleet() {
     return;
   }
 
-  grid.innerHTML = active.map(v => buildCardHTML(v, pricing)).join("");
-  captureButtonKeys();
-
-  // Fetch and apply live availability badges
-  loadFleetStatus();
+  try {
+    grid.innerHTML = active.map(v => buildCardHTML(v, pricing)).join("");
+    captureButtonKeys();
+    // Fetch and apply live availability badges
+    loadFleetStatus();
+  } catch (err) {
+    console.error("[loadFleet] error rendering car cards:", err);
+    // Keep whatever HTML is already in the grid (static fallback cards stay visible).
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

@@ -2496,6 +2496,10 @@ let bookingsChart = null;
 // Cache the last vehicleStats per vehicle so that sync re-renders don't need
 // to re-fetch the expensive v2-dashboard endpoint.
 let cachedVehicleStats = {};
+// Last known vehicle stats fetched by loadVehicles(); used to re-render the
+// vehicles grid immediately after a save without issuing a new network request
+// (which could return stale data and make a just-saved status appear to revert).
+let lastVehicleStats = {};
 
 // AI assistant state
 const AI_HISTORY_KEY = 'sly_ai_history';
@@ -2997,7 +3001,8 @@ function loadVehicles() {
       }
     }
     allVehicles = freshVehicles;
-    renderVehicles(allVehicles, dash.vehicleStats || {});
+    lastVehicleStats = dash.vehicleStats || {};
+    renderVehicles(allVehicles, lastVehicleStats);
   }).catch((err) => {
     document.getElementById('vehicles-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
   });
@@ -3321,7 +3326,12 @@ async function saveVehicle() {
       ...allVehicles[editingVehicleId],
       ...(result.vehicle || updates),
     };
-    if (currentPage === 'vehicles') loadVehicles();
+    // Re-render immediately from the confirmed-saved cache rather than issuing
+    // a full re-fetch via loadVehicles(). A re-fetch can return a stale value
+    // from Supabase or the GitHub fallback and overwrite the status the admin
+    // just saved, making it appear to revert. Uses lastVehicleStats cached from
+    // the most recent loadVehicles() call.
+    if (currentPage === 'vehicles') renderVehicles(allVehicles, lastVehicleStats);
     else if (currentPage === 'vehicle-profile') showVehicleProfile(editingVehicleId);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
