@@ -7088,9 +7088,17 @@ function scPreviewHeroImage() {
   const preview = document.getElementById('sc-hero-preview');
   const img     = document.getElementById('sc-hero-preview-img');
   if (!preview || !img) return;
-  const url = /^https?:\/\//i.test(raw) || raw.startsWith('/') ? raw : '';
-  if (url) {
-    img.src = url;
+  let safeUrl = '';
+  try {
+    const parsed = new URL(raw, window.location.href);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      safeUrl = parsed.href;
+    }
+  } catch (_) { /* invalid URL — keep empty */ }
+  // Also accept root-relative paths (no protocol)
+  if (!safeUrl && raw.startsWith('/')) safeUrl = raw;
+  if (safeUrl) {
+    img.src = safeUrl;
     preview.style.display = '';
     img.onerror = () => { preview.style.display = 'none'; };
     img.onload  = () => { preview.style.display = ''; img.onerror = null; };
