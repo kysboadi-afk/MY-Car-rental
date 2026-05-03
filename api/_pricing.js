@@ -232,11 +232,13 @@ export async function getVehiclePricing(supabase, vehicleId) {
   }
 
   // Fallback: read pricing from vehicles.data JSONB (populated by v2-vehicles create).
+  // Use .maybeSingle() so 0 rows returns { data: null, error: null } instead of
+  // a PGRST116 error that would prevent the system_settings fallback from running.
   const { data: vehicleRow, error: vehicleErr } = await supabase
     .from('vehicles')
     .select('data')
     .eq('vehicle_id', vehicleId)
-    .single();
+    .maybeSingle();
 
   if (!vehicleErr && vehicleRow?.data) {
     const vdata = vehicleRow.data;

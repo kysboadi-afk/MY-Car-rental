@@ -162,19 +162,28 @@ export async function getVehicleById(vehicleId) {
   }
 
   // ── 2. Supabase vehicles table ───────────────────────────────────────────
+  // NOTE: Do NOT select `rental_status` here — that column stores booking-state
+  // values ('available', 'rented', 'reserved', 'maintenance') which are never
+  // "active", so mixing it into the status check would make every admin-created
+  // vehicle that has no explicit `data.status` field appear inactive.
+  // isVehicleAvailable() handles the rental_status check separately with
+  // fail-open semantics.  We also use .maybeSingle() instead of .single() so
+  // that 0 matching rows returns { data: null, error: null } instead of a
+  // PGRST116 error that would be silently swallowed and send us to the
+  // vehicles.json fallback even when the vehicle IS in Supabase.
   const sb = getSupabaseAdmin();
   if (sb) {
     try {
       const { data, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, data, rental_status")
+        .select("vehicle_id, data")
         .eq("vehicle_id", vehicleId)
-        .single();
+        .maybeSingle();
       if (!error && data) {
-        const vdata  = data.data || {};
-        const status = vdata.status || data.rental_status;
-        // Only active vehicles are bookable
-        if (status && status !== "active") return null;
+        const vdata = data.data || {};
+        // Only block vehicles explicitly marked inactive or maintenance
+        // in the admin-managed status field.  An absent status means active.
+        if (vdata.status && vdata.status !== "active") return null;
         return normalizeVehicleData(vehicleId, vdata);
       }
     } catch {
