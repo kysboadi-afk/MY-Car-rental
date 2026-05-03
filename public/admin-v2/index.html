@@ -1436,6 +1436,20 @@
             <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Hero Section</div>
             <div class="form-grid one">
               <div class="form-group">
+                <label class="form-label">Hero Image URL <span style="font-weight:400;color:var(--text-sub)">(banner photo on homepage)</span></label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input type="text" class="form-input" id="sc-hero_image_url" placeholder="https://… or /images/sly-hero.jpg" style="flex:1;min-width:200px;" oninput="scPreviewHeroImage()">
+                  <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;" title="Upload a new hero image">
+                    📁 Upload
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="scHeroImageUpload(this)">
+                  </label>
+                </div>
+                <div id="sc-hero-preview" style="display:none;margin-top:8px;">
+                  <img id="sc-hero-preview-img" src="" alt="Hero image preview" style="max-height:80px;max-width:240px;border-radius:6px;border:1px solid var(--border);object-fit:cover;">
+                  <span id="sc-hero-upload-msg" style="font-size:12px;color:var(--text-sub);margin-left:8px;"></span>
+                </div>
+              </div>
+              <div class="form-group">
                 <label class="form-label">Hero Title</label>
                 <input type="text" class="form-input" id="sc-hero_title" placeholder="Explore LA in Style">
               </div>
@@ -2474,12 +2488,9 @@ function getVehicleLabel(id) {
 }
 
 
-// Hard-coded local fallback images — used when the API/DB doesn't provide a cover URL
-// or when the stored URL fails to load. Root-relative so they work from any page depth.
-const VEHICLE_IMAGES_LOCAL = {
-  camry:      '/images/IMG_0046.png',
-  camry2013:  '/images/IMG_5144.png',
-};
+// Local fallback images are intentionally empty — vehicle images are loaded
+// from /api/v2-vehicles (VEHICLE_IMAGES_DYNAMIC) so nothing is hardcoded here.
+const VEHICLE_IMAGES_LOCAL = {};
 
 // Normalize a cover_image path to root-relative or absolute form, mirroring the
 // server-side normalizeCoverImage helper in api/v2-vehicles.js.
@@ -6935,7 +6946,7 @@ function renderBouncieAuthSection(status) {
 
 const SITE_CONTENT_FIELDS = [
   'business_name', 'logo_url', 'phone', 'whatsapp', 'email',
-  'hero_title', 'hero_subtitle', 'about_text',
+  'hero_image_url', 'hero_title', 'hero_subtitle', 'about_text',
   'instagram_url', 'facebook_url', 'tiktok_url', 'twitter_url',
   'promo_banner_enabled', 'promo_banner_text',
   'policies_cancellation', 'policies_damage', 'policies_fuel',
@@ -6963,8 +6974,9 @@ function loadSiteContent() {
           el.value = s[key] != null ? String(s[key]) : '';
         }
       }
-      // Trigger logo preview if a URL is already saved
+      // Trigger logo/hero preview if a URL is already saved
       scPreviewLogo();
+      scPreviewHeroImage();
       loading.style.display = 'none';
       form.style.display = '';
       if (data.source === 'default' || !data.source) {
@@ -7060,6 +7072,64 @@ async function scLogoUpload(fileInput) {
       if (urlInput) {
         urlInput.value = data.url || '';
         scPreviewLogo();
+      }
+      if (msgEl) { msgEl.style.color = 'var(--success)'; msgEl.textContent = '✓ Uploaded'; }
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Upload failed: ' + err.message; }
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Hero image field helpers (Site Content / Settings page) ───────────────
+
+function scPreviewHeroImage() {
+  const raw     = (document.getElementById('sc-hero_image_url')?.value || '').trim();
+  const preview = document.getElementById('sc-hero-preview');
+  const img     = document.getElementById('sc-hero-preview-img');
+  if (!preview || !img) return;
+  let safeUrl = '';
+  try {
+    const parsed = new URL(raw, window.location.href);
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      safeUrl = parsed.href;
+    }
+  } catch (_) { /* invalid URL — keep empty */ }
+  // Also accept root-relative paths (no protocol)
+  if (!safeUrl && raw.startsWith('/')) safeUrl = raw;
+  if (safeUrl) {
+    img.src = safeUrl;
+    preview.style.display = '';
+    img.onerror = () => { preview.style.display = 'none'; };
+    img.onload  = () => { preview.style.display = ''; img.onerror = null; };
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+async function scHeroImageUpload(fileInput) {
+  const file = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  if (!file) return;
+
+  const msgEl = document.getElementById('sc-hero-upload-msg');
+  if (msgEl) { msgEl.style.color = 'var(--text-sub)'; msgEl.textContent = 'Uploading…'; }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const imageData = e.target.result;
+    try {
+      const data = await apiPost('/api/upload-vehicle-image', {
+        secret:    adminSecret,
+        vehicleId: 'site-hero',
+        imageData,
+        mimeType:  file.type,
+        fileName:  file.name,
+      });
+      const urlInput = document.getElementById('sc-hero_image_url');
+      if (urlInput) {
+        urlInput.value = data.url || '';
+        scPreviewHeroImage();
       }
       if (msgEl) { msgEl.style.color = 'var(--success)'; msgEl.textContent = '✓ Uploaded'; }
     } catch (err) {

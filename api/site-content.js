@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS = {
   twitter_url:           "",
   promo_banner_enabled:  false,
   promo_banner_text:     "",
+  hero_image_url:        "",
   hero_title:            "Explore LA in Style",
   hero_subtitle:         "Affordable car rentals in Los Angeles",
   about_text:            "",
