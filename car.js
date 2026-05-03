@@ -144,11 +144,12 @@ function normalizeApiVehicle(v) {
     biweekly:      toNum(v.biweekly_price !== undefined ? v.biweekly_price : v.biweekly),
     monthly:       toNum(v.monthly_price  !== undefined ? v.monthly_price  : v.monthly),
     deposit:       toNum(v.deposit),
-    // True when the vehicle has explicit per-vehicle rates from the vehicle_pricing DB table
-    // (indicated by daily_price or weekly_price being present in the API response).
+    // True when the vehicle has its own per-vehicle rates — either from the
+    // vehicle_pricing DB table (daily_price/weekly_price) or from the legacy
+    // JSONB/CARS fields (pricePerDay/weekly).
     // loadDynamicPricing() skips vehicles with _hasOwnPricing so the economy-wide
     // camry rates never overwrite a vehicle's own authoritative pricing.
-    _hasOwnPricing: v.daily_price != null || v.weekly_price != null,
+    _hasOwnPricing: v.daily_price != null || v.weekly_price != null || v.pricePerDay != null || v.weekly != null,
     images:        (function() {
       if (Array.isArray(v.images) && v.images.length) return v.images;
       var imgs = v.cover_image ? [v.cover_image] : [];
