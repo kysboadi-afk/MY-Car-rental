@@ -271,16 +271,16 @@ export async function getVehiclePricing(supabase, vehicleId) {
       .select('key, value')
       .in('key', ['camry_daily_rate', 'camry_weekly_rate', 'camry_biweekly_rate', 'camry_monthly_rate']);
 
-    const sm = {};
+    const settingsMap = {};
     for (const row of settingsRows || []) {
       const n = Number(row.value);
-      if (Number.isFinite(n) && n > 0) sm[row.key] = n;
+      if (Number.isFinite(n) && n > 0) settingsMap[row.key] = n;
     }
 
-    const fallbackDaily    = sm.camry_daily_rate    || CARS.camry.pricePerDay;
-    const fallbackWeekly   = sm.camry_weekly_rate   || CARS.camry.weekly;
-    const fallbackBiweekly = sm.camry_biweekly_rate || CARS.camry.biweekly;
-    const fallbackMonthly  = sm.camry_monthly_rate  || CARS.camry.monthly;
+    const fallbackDaily    = settingsMap.camry_daily_rate    || CARS.camry.pricePerDay;
+    const fallbackWeekly   = settingsMap.camry_weekly_rate   || CARS.camry.weekly;
+    const fallbackBiweekly = settingsMap.camry_biweekly_rate || CARS.camry.biweekly;
+    const fallbackMonthly  = settingsMap.camry_monthly_rate  || CARS.camry.monthly;
 
     if (fallbackDaily) {
       console.warn('[pricing] applying economy fallback pricing from system_settings/defaults', { vehicleId, fallbackDaily });
