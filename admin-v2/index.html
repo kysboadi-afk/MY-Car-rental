@@ -1421,19 +1421,19 @@
             <div class="form-grid">
               <div class="form-group">
                 <label class="form-label">Business Name</label>
-                <input type="text" class="form-input" id="sc-business_name" placeholder="SLY Transportation Services">
+                <input type="text" class="form-input" id="sc-business_name" placeholder="Your Business Name">
               </div>
               <div class="form-group">
                 <label class="form-label">Phone Number</label>
-                <input type="text" class="form-input" id="sc-phone" placeholder="+1 (213) 555-0100">
+                <input type="text" class="form-input" id="sc-phone" placeholder="+1 (555) 000-0000">
               </div>
               <div class="form-group">
                 <label class="form-label">WhatsApp</label>
-                <input type="text" class="form-input" id="sc-whatsapp" placeholder="+1 (213) 555-0100">
+                <input type="text" class="form-input" id="sc-whatsapp" placeholder="+1 (555) 000-0000">
               </div>
               <div class="form-group">
                 <label class="form-label">Email</label>
-                <input type="text" class="form-input" id="sc-email" placeholder="info@slytrans.com">
+                <input type="text" class="form-input" id="sc-email" placeholder="contact@yourbusiness.com">
               </div>
             </div>
 
@@ -1462,7 +1462,7 @@
               <div class="form-group">
                 <label class="form-label">Hero Image URL <span style="font-weight:400;color:var(--text-sub)">(banner photo on homepage)</span></label>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                  <input type="text" class="form-input" id="sc-hero_image_url" placeholder="https://… or /images/sly-hero.jpg" style="flex:1;min-width:200px;" oninput="scPreviewHeroImage()">
+                  <input type="text" class="form-input" id="sc-hero_image_url" placeholder="https://…" style="flex:1;min-width:200px;" oninput="scPreviewHeroImage()">
                   <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;" title="Upload a new hero image">
                     📁 Upload
                     <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="scHeroImageUpload(this)">
@@ -1475,11 +1475,11 @@
               </div>
               <div class="form-group">
                 <label class="form-label">Hero Title</label>
-                <input type="text" class="form-input" id="sc-hero_title" placeholder="Explore LA in Style">
+                <input type="text" class="form-input" id="sc-hero_title" placeholder="Your hero headline">
               </div>
               <div class="form-group">
                 <label class="form-label">Hero Subtitle</label>
-                <input type="text" class="form-input" id="sc-hero_subtitle" placeholder="Affordable car rentals in Los Angeles">
+                <input type="text" class="form-input" id="sc-hero_subtitle" placeholder="Your tagline">
               </div>
               <div class="form-group">
                 <label class="form-label">About Us Text</label>
@@ -2397,7 +2397,7 @@
       </div>
       <div class="form-group" style="min-width:0;">
         <label class="form-label">Phone</label>
-        <input type="tel" class="form-input" id="be-phone" placeholder="(310) 555-0100">
+        <input type="tel" class="form-input" id="be-phone" placeholder="(555) 000-0000">
       </div>
       <div class="form-group" style="min-width:0;">
         <label class="form-label">Email</label>
@@ -5576,6 +5576,7 @@ function statusBadge(status) {
 
 // ── Preview Site Modal ─────────────────────────────────────────────────────
 function openPreviewModal(mode) {
+  if (window.DEMO_MODE) { showToast('Site preview is not available in demo mode.', 'info'); return; }
   const iframe = document.getElementById('preview-iframe');
   const isTestMode = mode === 'test';
   const liveUrl = 'https://www.slytrans.com';
@@ -8910,7 +8911,7 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/v2-fleet-status'))    return Promise.resolve({ fleet: [] });
   if (p.endsWith('/api/admin-chat'))         return Promise.resolve({ reply: '👋 This is **demo mode**. In the live system, I can query real bookings, revenue, customer data, and execute actions. Ask me anything — I\'ll show you what I can do!', messages: [], tool_calls: [] });
   if (p.endsWith('/api/tts'))                return Promise.reject(new Error('TTS disabled in demo'));
-  if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: 'Fleet Control Demo', phone: '(310) 555-0100', logo_url: '' });
+  if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: '', phone: '', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });
   if (p.endsWith('/api/get-expenses'))       return Promise.resolve({ expenses: window.DEMO_EXPENSES });
   if (p.endsWith('/api/add-expense'))        return Promise.resolve({ ok: true, expense: { id: Date.now() } });
@@ -8940,6 +8941,22 @@ function initDemoMode() {
   document.getElementById('auth-screen').style.display = 'none';
   adminSecret = 'demo';
   document.getElementById('app').classList.add('ready');
+
+  // Strip all SLY-specific branding so demo visitors can't identify the seller
+  document.title = 'Fleet Control — Demo';
+  const _demoFavicon = document.querySelector('link[rel="icon"]');
+  if (_demoFavicon) _demoFavicon.remove();
+  document.querySelectorAll('.auth-logo img, .sidebar-logo img').forEach(function(img) { img.style.display = 'none'; });
+  const _demoAuthBrand = document.querySelector('.auth-logo span');
+  if (_demoAuthBrand) _demoAuthBrand.textContent = 'Fleet Control';
+  const _demoSidebarBrand = document.querySelector('.sidebar-logo .brand-name');
+  if (_demoSidebarBrand) _demoSidebarBrand.textContent = 'Fleet Control';
+  const _demoAiTitle = document.querySelector('.ai-chat-title');
+  if (_demoAiTitle) _demoAiTitle.textContent = 'AI Assistant';
+  const _demoPreviewStrong = document.querySelector('#preview-topbar strong');
+  if (_demoPreviewStrong) _demoPreviewStrong.textContent = 'demo';
+  const _demoPreviewLink = document.getElementById('preview-open-link');
+  if (_demoPreviewLink) _demoPreviewLink.style.display = 'none';
 
   // Populate vehicle maps from demo data so dropdowns and labels work
   Object.entries(window.DEMO_VEHICLES).forEach(([id, v]) => {
