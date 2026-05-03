@@ -8,8 +8,6 @@ const SlyLA = window.SlyLA;
 
 // Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
 const CAMRY_BOOKING_DEPOSIT = 50;
-// Vehicle IDs that support the "Reserve with Deposit" option.
-const CAMRY_VEHICLE_IDS = ['camry', 'camry2013'];
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
 // Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
@@ -368,10 +366,9 @@ let _pendingPaymentMode = null;
 let selectedProtectionTier = "standard";
 
 
-// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
+// Show the "Reserve with Deposit" button and deposit notice for all vehicles so renters
 // can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
-// Only applicable to CAMRY_VEHICLE_IDS — other vehicles (e.g. fusion2017) do not use deposit mode.
-if (CAMRY_VEHICLE_IDS.includes(vehicleId)) {
+{
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) {
     reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
