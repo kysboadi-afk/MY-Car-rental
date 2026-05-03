@@ -693,8 +693,8 @@ async function toolCreateVehicle({ vehicle_id: requestedVehicleId, name, type, p
     // without relying on the JSONB fallback.
     const pricingRow = {
       vehicle_id:     vehicleId,
-      daily_price:    dailyRate,
-      weekly_price:   weeklyRate   || null,
+      daily_price:    Number(dailyRate),
+      weekly_price:   weeklyRate != null ? Number(weeklyRate) : null,
       biweekly_price: null,
       monthly_price:  null,
       updated_at:     new Date().toISOString(),
