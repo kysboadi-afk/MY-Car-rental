@@ -455,6 +455,7 @@
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       #kpi-grid { grid-template-columns: 1fr 1fr; }
       .vehicles-grid { grid-template-columns: 1fr; }
+      /* Keep bottom padding large enough to clear the bottom nav bar */
       .content { padding: 12px; }
       .block-dates-grid { grid-template-columns: 1fr !important; }
       /* fin-grid collapses to single column */
@@ -773,6 +774,85 @@
 
     /* ── Wizard & Onboarding Buttons ─────────────────────────────── */
     #onboarding-modal .btn { display: flex; }
+
+    /* ── Comprehensive Mobile Polish ─────────────────────────────── */
+
+    /* Toast: float above the bottom nav bar on mobile */
+    @media (max-width: 900px) {
+      #toast-container { bottom: calc(var(--mobile-nav-h) + 8px); right: 12px; }
+    }
+
+    /* Auth card: less padding on phones */
+    @media (max-width: 480px) {
+      .auth-card { padding: 28px 20px; }
+    }
+
+    /* KPI cards: tighter layout + smaller numbers at 600px */
+    @media (max-width: 600px) {
+      .kpi-card { padding: 14px 12px; }
+      .kpi-value { font-size: 22px; }
+      /* Hide the float icon so numbers don't wrap */
+      .kpi-icon { display: none; }
+      /* Secondary KPI grid (has inline repeat(3,1fr)) → 2 cols */
+      #kpi-grid-secondary { grid-template-columns: 1fr 1fr !important; }
+      /* Vehicle profile finance numbers */
+      .fin-value { font-size: 18px; }
+    }
+
+    /* Revenue page action buttons: horizontal scroll row on mobile
+       to avoid stacking 6+ buttons and losing vertical space */
+    @media (max-width: 600px) {
+      #page-revenue .filters-row {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px;
+        gap: 8px;
+      }
+      #page-revenue .filters-row .filter-select,
+      #page-revenue .filters-row .filter-input,
+      #page-revenue .filters-row .btn {
+        flex-shrink: 0;
+        width: auto;
+        min-width: unset;
+      }
+    }
+
+    /* Table column hiding on small screens */
+    @media (max-width: 600px) {
+      /* Bookings table: hide "Customer Tier" (col 6) — least actionable on mobile */
+      #page-bookings .table-wrap th:nth-child(6),
+      #page-bookings .table-wrap td:nth-child(6) { display: none; }
+      /* Late fees table: hide "Rental Dates" (col 3) to save width */
+      #page-late-fees .table-wrap th:nth-child(3),
+      #page-late-fees .table-wrap td:nth-child(3) { display: none; }
+    }
+
+    /* Form section title: allow wrapping when title + subtitle + button overflow */
+    @media (max-width: 600px) {
+      .form-section-title { flex-wrap: wrap; gap: 6px; }
+    }
+
+    /* GPS map: shorter on mobile to keep it usable without huge scroll */
+    @media (max-width: 600px) {
+      #gps-map { height: 260px !important; }
+    }
+
+    /* AI chat panel: fill available viewport height on mobile */
+    @media (max-width: 900px) {
+      .ai-chat-panel {
+        height: calc(100vh - var(--topbar-h) - var(--mobile-nav-h) - 40px);
+        height: calc(100dvh - var(--topbar-h) - var(--mobile-nav-h) - 40px);
+        min-height: 380px;
+      }
+    }
+
+    /* Expenses / customers pages: action button rows above tables */
+    @media (max-width: 600px) {
+      #page-expenses > div:first-child,
+      #page-customers > div:first-child { flex-wrap: wrap; }
+    }
 
   </style>
 </head>
