@@ -32,8 +32,12 @@
   const MUTE_STORAGE          = 'va_mute';
   const HIDE_STORAGE          = 'va_hidden';
   const CLICK_EXPLAIN_DEBOUNCE_MS = 1500;   // minimum gap between click-explain triggers
-  const MAX_HIGHLIGHT         = 4000;       // ms to keep highlight ring visible
   const MAX_MODAL_WAIT_MS     = 60000;      // max ms to wait for a modal to open during tour
+  const STEP_GAP_MS           = 350;        // breathing-room pause between tour steps
+  const SCROLL_SETTLE_MS      = 450;        // ms to wait after scrollIntoView before spotlighting
+  const PAGE_SETTLE_MS        = 800;        // ms to wait for DOM after navigate() in full tour
+  const SPOTLIGHT_ID          = 'va-spotlight-ring';
+  const SPOTLIGHT_CSS_ID      = 'va-spotlight-css';
   const TTS_CACHE_MAX         = 80;         // max cached TTS entries before eviction
   const VALID_LANGS           = ['en', 'es'];
 
@@ -1296,18 +1300,115 @@
     }
   }
 
-  // ── Highlight helper ───────────────────────────────────────────────────────
-  function highlightElement(el) {
+  // ── Presentation Spotlight ─────────────────────────────────────────────────
+  /**
+   * Inject the CSS keyframes and shared spotlight styles once per page load.
+   * The spotlight ring dims everything outside the target element and pulses
+   * gently to draw the presenter's audience attention to the right UI element.
+   */
+  function injectSpotlightStyles() {
+    if (document.getElementById(SPOTLIGHT_CSS_ID)) return;
+    const style = document.createElement('style');
+    style.id = SPOTLIGHT_CSS_ID;
+    style.textContent = `
+      @keyframes va-spotlight-pulse {
+        0%, 100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55),
+                               0 0 0 2px #2563eb,
+                               0 0 18px rgba(37,99,235,0.55); }
+        50%       { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55),
+                               0 0 0 3px #60a5fa,
+                               0 0 32px rgba(96,165,250,0.85); }
+      }
+      #${SPOTLIGHT_ID} {
+        position:       fixed;
+        border-radius:  8px;
+        pointer-events: none;
+        z-index:        100000;
+        opacity:        0;
+        transition:     opacity 0.25s ease,
+                        top    0.3s  ease,
+                        left   0.3s  ease,
+                        width  0.3s  ease,
+                        height 0.3s  ease;
+        animation:      va-spotlight-pulse 2s ease-in-out infinite;
+      }
+      #${SPOTLIGHT_ID}.va-visible { opacity: 1; }
+      #va-step-label {
+        text-align:    center;
+        font-size:     10px;
+        color:         #6b7280;
+        padding-top:   2px;
+        display:       none;
+        font-variant-numeric: tabular-nums;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Show a pulsing spotlight ring around `el` that dims everything outside it.
+   * The ring persists until `clearSpotlight()` is called — it stays visible for
+   * the ENTIRE duration of the spoken audio for each tour step, keeping cursor
+   * and voice perfectly in sync.
+   *
+   * @param {Element} el         — DOM element to spotlight
+   * @param {string}  [caption]  — optional "Step X of Y" label shown below ring
+   */
+  function showSpotlight(el, caption) {
     if (!el) return;
+    injectSpotlightStyles();
+
+    const PAD  = 10;
+    const rect = el.getBoundingClientRect();
+
+    let ring = document.getElementById(SPOTLIGHT_ID);
+    if (!ring) {
+      ring = document.createElement('div');
+      ring.id = SPOTLIGHT_ID;
+      document.body.appendChild(ring);
+    }
+
+    // Position ring to exactly surround the target element
+    ring.style.top    = `${rect.top    - PAD}px`;
+    ring.style.left   = `${rect.left   - PAD}px`;
+    ring.style.width  = `${rect.width  + PAD * 2}px`;
+    ring.style.height = `${rect.height + PAD * 2}px`;
+
+    // Optional step badge below the ring
+    const oldBadge = ring.querySelector('.va-step-badge');
+    if (oldBadge) oldBadge.remove();
+    if (caption) {
+      const badge = document.createElement('div');
+      badge.className = 'va-step-badge';
+      badge.style.cssText =
+        'position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);' +
+        'background:#2563eb;color:#fff;font-size:10px;font-family:system-ui,sans-serif;' +
+        'font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;' +
+        'pointer-events:none;letter-spacing:0.3px;';
+      badge.textContent = caption;
+      ring.appendChild(badge);
+    }
+
+    // Trigger fade-in via class (transition is on #va-spotlight-ring base rule)
+    requestAnimationFrame(() => requestAnimationFrame(() => ring.classList.add('va-visible')));
+  }
+
+  /** Fade out and remove the spotlight ring. */
+  function clearSpotlight() {
+    const ring = document.getElementById(SPOTLIGHT_ID);
+    if (!ring) return;
+    ring.classList.remove('va-visible');
+    setTimeout(() => { if (ring.parentNode) ring.remove(); }, 260);
+  }
+
+  /**
+   * Scroll `el` smoothly into the viewport center and wait for the scroll to settle.
+   * Returns a Promise that resolves after SCROLL_SETTLE_MS.
+   */
+  function scrollAndSettle(el) {
+    if (!el) return Promise.resolve();
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.style.outline       = '3px solid #2563eb';
-    el.style.outlineOffset = '3px';
-    el.style.borderRadius  = '6px';
-    el.style.transition    = 'outline 0.3s';
-    setTimeout(() => {
-      el.style.outline       = '';
-      el.style.outlineOffset = '';
-    }, MAX_HIGHLIGHT);
+    return new Promise(r => setTimeout(r, SCROLL_SETTLE_MS));
   }
 
   // ── Modal wait helper (MutationObserver) ───────────────────────────────────
@@ -1353,8 +1454,13 @@
   /**
    * Start a guide for the page the admin is currently viewing.
    * No forced navigation — the tour always matches the visible UI.
-   * For each step: the target element must exist and be visible; otherwise the
-   * step is skipped automatically.
+   *
+   * Presentation sequencing per step:
+   *   1. Clear previous spotlight (fade-out)
+   *   2. Scroll target element into view and wait for settle
+   *   3. Show spotlight (ring persists for entire audio duration)
+   *   4. Speak the step text (spotlight stays on element while voice is active)
+   *   5. Brief inter-step pause before moving on
    */
   async function startTour() {
     if (tourActive) return;
@@ -1365,6 +1471,8 @@
 
     const page  = getActivePage();
     const steps = PAGE_TOUR_STEPS[page] || buildGenericPageSteps(page);
+    const total = steps.filter(s => !s.sel || isElementVisible(document.querySelector(s.sel))).length;
+    let   shown = 0;
 
     for (let i = 0; i < steps.length; i++) {
       if (tourAborted) break;
@@ -1376,13 +1484,25 @@
       // Skip any step whose target element is specified but not visible
       if (step.sel && !isElementVisible(el)) continue;
 
-      if (el) highlightElement(el);
-      await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
+      shown++;
 
+      // Clear previous spotlight before moving to the next element
+      clearSpotlight();
+
+      // Scroll to element and wait for viewport to settle
+      if (el) await scrollAndSettle(el);
+      if (tourAborted) break;
+
+      // Show spotlight ring (stays on for full audio duration of this step)
+      const caption = lang === 'es' ? `Paso ${shown} / ${total}` : `Step ${shown} / ${total}`;
+      if (el) showSpotlight(el, caption);
+      updateStepLabel(shown, total);
+
+      await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
       if (tourAborted) break;
 
       // If this step requires a user action (e.g. click View to open modal),
-      // pause here and wait for the target modal to gain the .open class.
+      // keep the spotlight on the element and wait for the modal to open.
       if (step.waitForModal && !tourAborted) {
         try {
           await waitForModalOpen(step.waitForModal);
@@ -1390,13 +1510,18 @@
           // Timeout or element missing — continue tour anyway
         }
         if (tourAborted) break;
-        // Small delay so the modal animation finishes before highlighting
+        // Small delay so the modal animation finishes before spotlighting next element
         await new Promise(r => setTimeout(r, 400));
       }
+
+      // Breathing-room pause between steps
+      if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
     }
 
+    clearSpotlight();
     tourActive    = false;
     tourStepIndex = 0;
+    updateStepLabel(0, 0);
     updatePanelState();
   }
 
@@ -1405,6 +1530,9 @@
    * Navigate through all major pages in order, speaking each page's tour steps.
    * Designed for demos and onboarding.  The tour moves to the next page once all
    * visible steps for the current page have been spoken.
+   *
+   * Presentation sequencing per step (same as startTour):
+   *   clear spotlight → scroll + settle → showSpotlight → speak → gap → next
    */
   async function startFullTour() {
     if (tourActive) return;
@@ -1412,6 +1540,14 @@
     tourAborted   = false;
     tourStepIndex = 0;
     updatePanelState();
+
+    // Pre-compute total step count for the global progress badge
+    let globalTotal = 0;
+    for (const pg of FULL_TOUR_PAGES) {
+      const s = PAGE_TOUR_STEPS[pg] || [];
+      globalTotal += s.length;
+    }
+    let globalStep = 0;
 
     // Opening announcement
     await speak(
@@ -1426,15 +1562,17 @@
       if (tourAborted) break;
       const page = FULL_TOUR_PAGES[p];
 
-      // Navigate to this page and give the DOM a moment to render
+      // Navigate to this page and give the DOM time to render
+      clearSpotlight();
       if (typeof navigate === 'function') navigate(page);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, PAGE_SETTLE_MS));
       if (tourAborted) break;
 
       const steps = PAGE_TOUR_STEPS[page] || [];
       for (let i = 0; i < steps.length; i++) {
         if (tourAborted) break;
         tourStepIndex = i;
+        globalStep++;
 
         const step = steps[i];
 
@@ -1442,35 +1580,54 @@
         // feel fluid (the next page's intro immediately follows).
         if (!step.sel && i === steps.length - 1 && p < FULL_TOUR_PAGES.length - 1) continue;
 
-        // In the full tour, steps that require user interaction (waitForModal) are
-        // replaced by their fullTourEn/fullTourEs text if available, then skipped.
-        // This keeps the automated demo flowing without dead silence or user prompts.
+        // Steps that require user interaction (waitForModal) are replaced by their
+        // fullTourEn/fullTourEs narration text so the automated tour flows hands-free.
+        // We still spotlight the step's sel element while speaking the alternate text.
         if (step.waitForModal) {
           const fullText = lang === 'es' ? step.fullTourEs : step.fullTourEn;
-          if (fullText) await speak(fullText, undefined, PRIORITY.guide);
+          if (fullText) {
+            clearSpotlight();
+            const el = step.sel ? document.querySelector(step.sel) : null;
+            if (el && isElementVisible(el)) {
+              await scrollAndSettle(el);
+              if (!tourAborted) {
+                const caption = lang === 'es'
+                  ? `Paso ${globalStep} / ${globalTotal}`
+                  : `Step ${globalStep} / ${globalTotal}`;
+                showSpotlight(el, caption);
+                updateStepLabel(globalStep, globalTotal);
+              }
+            }
+            if (!tourAborted) await speak(fullText, undefined, PRIORITY.guide);
+            if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
+          }
           continue;
         }
 
         const el = step.sel ? document.querySelector(step.sel) : null;
         if (step.sel && !isElementVisible(el)) continue;
 
-        if (el) highlightElement(el);
+        // Presentation sequence: clear → scroll → spotlight → speak → pause
+        clearSpotlight();
+        if (el) {
+          await scrollAndSettle(el);
+          if (tourAborted) break;
+          const caption = lang === 'es'
+            ? `Paso ${globalStep} / ${globalTotal}`
+            : `Step ${globalStep} / ${globalTotal}`;
+          showSpotlight(el, caption);
+          updateStepLabel(globalStep, globalTotal);
+        }
+
         await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
         if (tourAborted) break;
 
-        if (step.waitForModal && !tourAborted) {
-          try {
-            await waitForModalOpen(step.waitForModal);
-          } catch (_) {
-            // Timeout or missing — advance anyway
-          }
-          if (tourAborted) break;
-          await new Promise(r => setTimeout(r, 400));
-        }
+        if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
       }
     }
 
     // Closing words
+    clearSpotlight();
     if (!tourAborted) {
       await speak(
         lang === 'es' ? FULL_TOUR_CLOSING.es : FULL_TOUR_CLOSING.en,
@@ -1481,6 +1638,7 @@
 
     tourActive    = false;
     tourStepIndex = 0;
+    updateStepLabel(0, 0);
     updatePanelState();
   }
 
@@ -1504,9 +1662,23 @@
     // Immediately release any pending waitForModalOpen so the tour loop exits
     // without waiting up to MAX_MODAL_WAIT_MS.
     if (tourWaitResolve) { tourWaitResolve(); tourWaitResolve = null; }
+    clearSpotlight();
     stopAudio();
     tourActive  = false;
+    updateStepLabel(0, 0);
     updatePanelState();
+  }
+
+  /** Show or hide the step-progress label inside the panel. */
+  function updateStepLabel(current, total) {
+    const el = document.getElementById('va-step-label');
+    if (!el) return;
+    if (total > 0 && current > 0) {
+      el.textContent  = lang === 'es' ? `Paso ${current} / ${total}` : `Step ${current} / ${total}`;
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
   }
 
   // ── Context-Aware Click-Explain ────────────────────────────────────────────
@@ -1816,6 +1988,9 @@
       <button id="va-pause-btn" style="${btnStyle}background:#374151;color:#9ca3af;" disabled>
         ⏸ Pause
       </button>
+      <div id="va-step-label" style="text-align:center;font-size:10px;color:#6b7280;
+                                     padding:2px 0;display:none;font-variant-numeric:tabular-nums;">
+      </div>
       <div style="display:flex;gap:6px;margin-top:2px;">
         <button id="va-lang-btn"
           style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
