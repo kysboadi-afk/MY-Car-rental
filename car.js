@@ -8,6 +8,8 @@ const SlyLA = window.SlyLA;
 
 // Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
 const CAMRY_BOOKING_DEPOSIT = 50;
+// Vehicle IDs that support the "Reserve with Deposit" option.
+const CAMRY_VEHICLE_IDS = ['camry', 'camry2013'];
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
 // Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
@@ -79,11 +81,14 @@ function clearPayError() {
       var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
-      // Apply economy-wide pricing to all vehicles currently in `cars`.
-      // All vehicles are loaded from the API; the economy-wide rates from
-      // system_settings override any per-vehicle defaults set by buildCarDataFromAPI.
+      // Apply economy-wide pricing ONLY to vehicles that do not have their own
+      // per-vehicle rates loaded from the DB (i.e. _hasOwnPricing is false).
+      // Vehicles like fusion2017 that have explicit rates in vehicle_pricing must
+      // NOT be overwritten with the camry economy rates — that is what caused
+      // fusion2017 to flip between $350 (economy) and $400 (its actual rate).
       Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
+        if (cars[vid]._hasOwnPricing) return; // already has authoritative per-vehicle pricing
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
         if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
         if (ecBiWeek  > 0) cars[vid].biweekly    = ecBiWeek;
@@ -99,8 +104,9 @@ function clearPayError() {
         window._dynamicTaxRate = Number(pricing.tax_rate);
       }
 
-      // Refresh the displayed price for the current vehicle
-      if (carData) {
+      // Refresh the displayed price for the current vehicle only when economy
+      // rates were actually applied (i.e. the vehicle has no own pricing).
+      if (carData && !carData._hasOwnPricing) {
         var priceEl = document.getElementById("carPrice");
         if (priceEl) {
           priceEl.textContent = carData.weekly
@@ -140,6 +146,11 @@ function normalizeApiVehicle(v) {
     biweekly:      toNum(v.biweekly_price !== undefined ? v.biweekly_price : v.biweekly),
     monthly:       toNum(v.monthly_price  !== undefined ? v.monthly_price  : v.monthly),
     deposit:       toNum(v.deposit),
+    // True when the vehicle has explicit per-vehicle rates from the vehicle_pricing DB table
+    // (indicated by daily_price or weekly_price being present in the API response).
+    // loadDynamicPricing() skips vehicles with _hasOwnPricing so the economy-wide
+    // camry rates never overwrite a vehicle's own authoritative pricing.
+    _hasOwnPricing: v.daily_price != null || v.weekly_price != null,
     images:        (function() {
       if (Array.isArray(v.images) && v.images.length) return v.images;
       var imgs = v.cover_image ? [v.cover_image] : [];
@@ -359,7 +370,8 @@ let selectedProtectionTier = "standard";
 
 // For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
 // can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
-{
+// Only applicable to CAMRY_VEHICLE_IDS — other vehicles (e.g. fusion2017) do not use deposit mode.
+if (CAMRY_VEHICLE_IDS.includes(vehicleId)) {
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) {
     reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
