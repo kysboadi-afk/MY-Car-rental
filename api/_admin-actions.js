@@ -776,6 +776,25 @@ async function toolUpdateVehicle({ vehicleId, updates = {} }) {
     if (error && !error.message?.includes("relation")) {
       throw new Error(`Supabase update failed: ${error.message}`);
     }
+
+    // Keep vehicle_pricing in sync when daily_rate is updated so that
+    // getVehiclePricing (which checks vehicle_pricing FIRST) returns the
+    // correct price. Without this, price changes via the AI chat are silently
+    // ignored at payment time because the old vehicle_pricing row wins.
+    if (sanitized.daily_rate !== undefined) {
+      const newDailyPrice = Number(sanitized.daily_rate);
+      if (!isNaN(newDailyPrice) && newDailyPrice > 0) {
+        const { error: pricingErr } = await sb
+          .from("vehicle_pricing")
+          .upsert(
+            { vehicle_id: vehicleId, daily_price: newDailyPrice, updated_at: new Date().toISOString() },
+            { onConflict: "vehicle_id" }
+          );
+        if (pricingErr) {
+          console.warn("toolUpdateVehicle: vehicle_pricing sync failed (non-fatal):", pricingErr.message);
+        }
+      }
+    }
   }
 
   // Also update vehicles.json

@@ -3,7 +3,7 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeBreakdownLines, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeBreakdownLines, CAMRY_BOOKING_DEPOSIT, computeAmountFromPricing } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -212,4 +212,63 @@ test("Camry 1-week rental minus deposit = balance at pickup in Reserve mode", ()
 test("Camry 30-day rental minus deposit = balance at pickup in Reserve mode", () => {
   // 30-day Camry = $1300; minus $50 deposit = $1250 balance due at pickup
   assert.equal(computeAmount("camry", "2025-07-01", "2025-07-31") - CAMRY_BOOKING_DEPOSIT, 1250);
+});
+
+// ─── computeAmountFromPricing — new-vehicle payment hardening ────────────────
+
+test("computeAmountFromPricing: basic daily pricing, 3 days", () => {
+  const pricing = { daily_price: 60, weekly_price: null, biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 3), 180);
+});
+
+test("computeAmountFromPricing: weekly tier used when exactly 7 days", () => {
+  const pricing = { daily_price: 60, weekly_price: 350, biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 7), 350);
+});
+
+test("computeAmountFromPricing: biweekly tier used when exactly 14 days", () => {
+  const pricing = { daily_price: 60, weekly_price: 350, biweekly_price: 650, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 14), 650);
+});
+
+test("computeAmountFromPricing: monthly tier used when 28 or more days", () => {
+  const pricing = { daily_price: 60, weekly_price: 350, biweekly_price: 650, monthly_price: 1300 };
+  assert.equal(computeAmountFromPricing(pricing, 28), 1300);
+  assert.equal(computeAmountFromPricing(pricing, 30), 1300);
+});
+
+test("computeAmountFromPricing: zero weekly_price is NOT used — falls through to daily × days", () => {
+  // Admin sets weekly_price=0 meaning "we don't offer a weekly flat rate".
+  // A $0 tier must NOT be treated as free — daily × 7 should be charged instead.
+  const pricing = { daily_price: 60, weekly_price: 0, biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 7), 60 * 7);
+});
+
+test("computeAmountFromPricing: zero biweekly_price is NOT used — falls through to daily × days", () => {
+  const pricing = { daily_price: 60, weekly_price: 0, biweekly_price: 0, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 14), 60 * 14);
+});
+
+test("computeAmountFromPricing: zero monthly_price is NOT used — falls through to daily × days", () => {
+  const pricing = { daily_price: 60, weekly_price: 0, biweekly_price: 0, monthly_price: 0 };
+  assert.equal(computeAmountFromPricing(pricing, 28), 60 * 28);
+});
+
+test("computeAmountFromPricing: string prices are coerced to numbers", () => {
+  // Supabase TEXT columns can return strings instead of numbers.
+  const pricing = { daily_price: "60", weekly_price: "350", biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 7), 350);
+  assert.equal(computeAmountFromPricing(pricing, 3), 180);
+});
+
+test("computeAmountFromPricing: null daily_price with weekly_price derives daily from weekly", () => {
+  // Vehicle created with only a weekly rate — daily is derived as weeklyPrice / 7.
+  const pricing = { daily_price: null, weekly_price: 350, biweekly_price: null, monthly_price: null };
+  // 5-day rental falls through to derived daily: round(350/7 * 100)/100 = 50, total = 250
+  assert.equal(computeAmountFromPricing(pricing, 5), Math.round(350 / 7 * 5 * 100) / 100);
+});
+
+test("computeAmountFromPricing: all null prices returns null", () => {
+  const pricing = { daily_price: null, weekly_price: null, biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 3), null);
 });

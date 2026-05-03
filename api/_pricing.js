@@ -290,9 +290,12 @@ export function computeAmountFromPricing(pricing, days) {
   const m  = toFinite(pricing.monthly_price);
   const d  = toFinite(pricing.daily_price);
 
-  if (days === 7  && w  != null) return w;
-  if (days === 14 && bw != null) return bw;
-  if (days >= 28  && m  != null) return m;
+  // Only apply a tier when its price is strictly positive (> 0).
+  // A price of $0 means "this tier is not offered" and falls through to
+  // daily × days — it does NOT mean the rental is free.
+  if (days === 7  && w  != null && w  > 0) return w;
+  if (days === 14 && bw != null && bw > 0) return bw;
+  if (days >= 28  && m  != null && m  > 0) return m;
   // Derive daily_price from weekly when it is not explicitly stored.
   const daily = d != null ? d : (w != null ? deriveDaily(w) : null);
   return daily != null ? Math.round(daily * days * 100) / 100 : null;
