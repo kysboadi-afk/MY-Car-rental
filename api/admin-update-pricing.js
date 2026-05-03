@@ -83,8 +83,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: `${field} is required.` });
       }
       const val = Number(raw);
+      // Required fields must be positive (> 0); $0 would cause a $0 payment intent.
+      // Optional fields reaching this point have a non-empty, non-zero value — validate
+      // it is a positive number (leave empty to clear an optional rate instead of using $0).
+      const errorMsg = OPTIONAL_PRICE_FIELDS.has(field)
+        ? `${field} must be a positive number greater than $0, or left empty to remove this rate.`
+        : `${field} must be a positive number greater than $0.`;
       if (isNaN(val) || val <= 0) {
-        return res.status(400).json({ error: `${field} must be a positive number greater than $0.` });
+        return res.status(400).json({ error: errorMsg });
       }
       patch[field] = val;
     }

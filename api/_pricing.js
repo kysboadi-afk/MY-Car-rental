@@ -353,7 +353,10 @@ export function computeAmountFromPricing(pricing, days) {
   // Derive daily_price from weekly when it is not explicitly stored, or when
   // daily_price is 0 (consistent with the > 0 tier checks above — $0 means
   // "this rate is not configured", not "free").
-  const daily = (d != null && d > 0) ? d : (w != null && w > 0 ? deriveDaily(w) : null);
+  // deriveDaily(w) is guaranteed > 0 when w > 0 (it's round(w/7 * 100)/100),
+  // so the explicit positivity check on w ensures the derived rate is also valid.
+  const derived = (w != null && w > 0) ? deriveDaily(w) : null;
+  const daily = (d != null && d > 0) ? d : derived;
   return daily != null ? Math.round(daily * days * 100) / 100 : null;
 }
 
