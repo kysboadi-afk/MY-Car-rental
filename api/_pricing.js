@@ -198,20 +198,26 @@ function deriveDaily(weeklyPrice) {
  * @returns {Promise<object>} a pricing object compatible with computeAmountFromPricing()
  */
 export async function getVehiclePricing(supabase, vehicleId) {
-  const { data, error } = await supabase
+  // Use .limit(1) + order instead of .single() so that:
+  //   • 0 matching rows  → { data: [], error: null }  → fall through to JSONB
+  //   • 1 matching row   → { data: [row], error: null } → return row[0]
+  //   • N matching rows  → { data: [row], error: null } → return most-recent row[0]
+  // With .single() a table that has no UNIQUE constraint on vehicle_id (manually
+  // created in Supabase without the constraint) would accumulate duplicate rows on
+  // every upsert, making .single() always return PGRST116 ("multiple rows").
+  const { data: rows, error } = await supabase
     .from('vehicle_pricing')
     .select('*')
     .eq('vehicle_id', vehicleId)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1);
 
-  // Happy path — vehicle_pricing row exists.
-  if (!error) return data;
+  // Happy path — at least one vehicle_pricing row found.
+  if (!error && rows && rows.length > 0) return rows[0];
 
-  // PGRST116 = "no rows" — try the vehicle's own JSONB data blob as a fallback.
-  // Any other error (network, schema, etc.) should still be surfaced immediately.
-  if (error.code !== 'PGRST116') {
-    console.error('[pricing] fetch failed', { vehicleId, error });
-    throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
+  // Real error (not an empty result) — log and fall through to JSONB fallback.
+  if (error) {
+    console.warn('[pricing] vehicle_pricing query failed, trying JSONB fallback', { vehicleId, code: error.code, message: error.message });
   }
 
   // Fallback: read pricing from vehicles.data JSONB (populated by v2-vehicles create).
@@ -272,14 +278,24 @@ export async function getVehiclePricing(supabase, vehicleId) {
  * @returns {number} rental cost in dollars (pre-tax, no DPP)
  */
 export function computeAmountFromPricing(pricing, days) {
-  if (days === 7  && pricing.weekly_price   != null) return pricing.weekly_price;
-  if (days === 14 && pricing.biweekly_price != null) return pricing.biweekly_price;
-  if (days >= 28  && pricing.monthly_price  != null) return pricing.monthly_price;
+  // Coerce all values to numbers — Supabase TEXT columns and string payloads are
+  // safely handled; null/undefined/non-finite values become null.
+  function toFinite(v) {
+    if (v == null) return null;
+    const n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  const w  = toFinite(pricing.weekly_price);
+  const bw = toFinite(pricing.biweekly_price);
+  const m  = toFinite(pricing.monthly_price);
+  const d  = toFinite(pricing.daily_price);
+
+  if (days === 7  && w  != null) return w;
+  if (days === 14 && bw != null) return bw;
+  if (days >= 28  && m  != null) return m;
   // Derive daily_price from weekly when it is not explicitly stored.
-  const daily = pricing.daily_price !== null && pricing.daily_price !== undefined
-    ? pricing.daily_price
-    : (pricing.weekly_price !== null && pricing.weekly_price !== undefined ? deriveDaily(pricing.weekly_price) : null);
-  return daily !== null ? Math.round(daily * days * 100) / 100 : null;
+  const daily = d != null ? d : (w != null ? deriveDaily(w) : null);
+  return daily != null ? Math.round(daily * days * 100) / 100 : null;
 }
 
 /**
