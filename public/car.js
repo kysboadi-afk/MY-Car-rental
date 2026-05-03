@@ -182,16 +182,12 @@ function updateDepositButton() {
   if (!carData) return;
   const reserveBtnEl   = document.getElementById("reserveBtn");
   const depositNotice  = document.getElementById("camryDepositNotice");
-  if (carData.booking_deposit > 0) {
-    if (reserveBtnEl) {
-      reserveBtnEl.textContent = "\uD83D\uDD12 Reserve with $" + carData.booking_deposit + " Deposit";
-      reserveBtnEl.style.display = "";
-    }
-    if (depositNotice) depositNotice.style.display = "";
-  } else {
-    if (reserveBtnEl)  reserveBtnEl.style.display  = "none";
-    if (depositNotice) depositNotice.style.display = "none";
+  const depositAmt = carData.booking_deposit > 0 ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
+  if (reserveBtnEl) {
+    reserveBtnEl.textContent = "\uD83D\uDD12 Reserve with $" + depositAmt + " Deposit";
+    reserveBtnEl.style.display = "";
   }
+  if (depositNotice) depositNotice.style.display = "";
 }
 
 // Initializes all DOM content that depends on carData.  Called from the .then()
