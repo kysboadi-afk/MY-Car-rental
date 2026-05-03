@@ -1312,7 +1312,7 @@
     const ripple = document.getElementById('va-cursor-ripple');
     if (!ripple) return;
     ripple.classList.remove('va-clicking');
-    void ripple.offsetWidth; // force reflow
+    void ripple.offsetWidth; // force reflow to restart CSS animation
     ripple.classList.add('va-clicking');
   }
 
@@ -1390,7 +1390,7 @@
 
       // Programmatic action (e.g. open a modal) — fires after speaking
       if (step.action && !tourAborted) {
-        try { step.action(); } catch (_) { /* ignore */ }
+        try { step.action(); } catch (err) { console.warn('[VoiceAssistant] tour action failed:', err); }
         await new Promise(r => setTimeout(r, step.actionDelay ?? 500));
         if (tourAborted) break;
       }
@@ -1398,7 +1398,7 @@
       // Auto-close a modal after explaining it, then wait for animation
       if (step.closeModal && !tourAborted) {
         if (typeof closeModal === 'function') {
-          try { closeModal(step.closeModal); } catch (_) { /* ignore */ }
+          try { closeModal(step.closeModal); } catch (err) { console.warn('[VoiceAssistant] closeModal failed:', err); }
         }
         await new Promise(r => setTimeout(r, 650));
         if (tourAborted) break;
@@ -1475,7 +1475,7 @@
 
         // Programmatic action (e.g. open a modal)
         if (step.action && !tourAborted) {
-          try { step.action(); } catch (_) { /* ignore */ }
+          try { step.action(); } catch (err) { console.warn('[VoiceAssistant] tour action failed:', err); }
           await new Promise(r => setTimeout(r, step.actionDelay ?? 500));
           if (tourAborted) break;
         }
@@ -1483,7 +1483,7 @@
         // Auto-close a modal after explaining it
         if (step.closeModal && !tourAborted) {
           if (typeof closeModal === 'function') {
-            try { closeModal(step.closeModal); } catch (_) { /* ignore */ }
+            try { closeModal(step.closeModal); } catch (err) { console.warn('[VoiceAssistant] closeModal failed:', err); }
           }
           await new Promise(r => setTimeout(r, 650));
           if (tourAborted) break;
