@@ -247,6 +247,18 @@
         waitForModal: '#booking-detail-modal',
         en:  'Please click the View button on any booking row to open the Booking Detail panel — the guide will continue once it opens.',
         es:  'Haga clic en el botón Ver de cualquier fila para abrir el panel de Detalle de Reserva. El recorrido continuará cuando se abra.',
+        // fullTourText: used by the Full System Tour instead of the interactive
+        // waitForModal prompt, so the tour can cover this content hands-free.
+        fullTourEn:
+          'Each booking row has a View button that opens the full Booking Detail panel. ' +
+          'Inside you can see complete customer info, vehicle assignment, rental dates, payment breakdown, and status history. ' +
+          'Action buttons let you Approve, Mark as Active, Mark Returned, Extend, or Cancel the booking. ' +
+          'Additional actions include Flag Issue, Resend Email, Edit Booking, and Delete Booking.',
+        fullTourEs:
+          'Cada fila tiene un botón Ver que abre el panel completo de Detalle de Reserva. ' +
+          'Dentro puede ver información del cliente, vehículo, fechas, desglose de pagos e historial. ' +
+          'Los botones de acción permiten Aprobar, Marcar como Activa, Marcar como Devuelta, Extender o Cancelar la reserva. ' +
+          'Acciones adicionales incluyen Marcar Problema, Reenviar Correo, Editar y Eliminar Reserva.',
       },
       {
         sel:          '#booking-detail-modal',
@@ -939,6 +951,7 @@
   let currentAudio    = null;     // HTMLAudioElement currently playing
   let currentBlobUrl  = null;     // blob URL for the current audio (to revoke)
   let isSpeaking      = false;
+  let isPaused        = false;
   let tourActive      = false;
   let tourStepIndex   = 0;
   let tourAborted     = false;
@@ -1106,6 +1119,7 @@
     const muteBtn      = panel.querySelector('#va-mute-btn');
     const explBtn      = panel.querySelector('#va-expl-btn');
     const stopBtn      = panel.querySelector('#va-stop-btn');
+    const pauseBtn     = panel.querySelector('#va-pause-btn');
     const tourBtn      = panel.querySelector('#va-tour-btn');
     const fullTourBtn  = panel.querySelector('#va-fulltour-btn');
 
@@ -1113,6 +1127,11 @@
     if (muteBtn)     muteBtn.textContent     = muted ? '🔇 Muted' : '🔊 Sound On';
     if (explBtn)     explBtn.style.opacity   = clickExplain ? '1' : '0.55';
     if (stopBtn)     stopBtn.disabled        = !isSpeaking && !tourActive;
+    if (pauseBtn) {
+      pauseBtn.disabled    = !isSpeaking;
+      pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+      pauseBtn.style.color = isSpeaking ? '#fff' : '#9ca3af';
+    }
     if (tourBtn)     tourBtn.textContent     = tourActive ? '⏹ Stop Guide'  : '📍 Page Guide';
     if (fullTourBtn) fullTourBtn.textContent = tourActive ? '⏹ Stop Tour'   : '🚀 Full Tour';
   }
@@ -1129,8 +1148,31 @@
       currentBlobUrl = null;
     }
     isSpeaking = false;
+    isPaused   = false;
     currentSpeakPriority = 0;
     updatePanelState();
+  }
+
+  // ── Audio pause / resume ───────────────────────────────────────────────────
+  function pauseAudio() {
+    if (currentAudio && isSpeaking && !isPaused) {
+      currentAudio.pause();
+      isPaused = true;
+      updatePanelState();
+    }
+  }
+
+  function resumeAudio() {
+    if (currentAudio && isSpeaking && isPaused) {
+      currentAudio.play().catch(() => {});
+      isPaused = false;
+      updatePanelState();
+    }
+  }
+
+  function togglePause() {
+    if (isPaused) resumeAudio();
+    else          pauseAudio();
   }
 
   // ── Core TTS ───────────────────────────────────────────────────────────────
@@ -1399,6 +1441,15 @@
         // In the full tour, skip the per-page closing null-sel step so transitions
         // feel fluid (the next page's intro immediately follows).
         if (!step.sel && i === steps.length - 1 && p < FULL_TOUR_PAGES.length - 1) continue;
+
+        // In the full tour, steps that require user interaction (waitForModal) are
+        // replaced by their fullTourEn/fullTourEs text if available, then skipped.
+        // This keeps the automated demo flowing without dead silence or user prompts.
+        if (step.waitForModal) {
+          const fullText = lang === 'es' ? step.fullTourEs : step.fullTourEn;
+          if (fullText) await speak(fullText, undefined, PRIORITY.guide);
+          continue;
+        }
 
         const el = step.sel ? document.querySelector(step.sel) : null;
         if (step.sel && !isElementVisible(el)) continue;
@@ -1762,6 +1813,9 @@
       <button id="va-stop-btn"  style="${btnStyle}background:#374151;color:#9ca3af;" disabled>
         ⏹ Stop
       </button>
+      <button id="va-pause-btn" style="${btnStyle}background:#374151;color:#9ca3af;" disabled>
+        ⏸ Pause
+      </button>
       <div style="display:flex;gap:6px;margin-top:2px;">
         <button id="va-lang-btn"
           style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
@@ -1833,6 +1887,8 @@
       stopTour();
       stopAudio();
     });
+
+    panel.querySelector('#va-pause-btn').addEventListener('click', togglePause);
 
     panel.querySelector('#va-lang-btn').addEventListener('click', () => {
       setLang(lang === 'en' ? 'es' : 'en');
