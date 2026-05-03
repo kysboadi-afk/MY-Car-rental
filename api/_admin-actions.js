@@ -2534,7 +2534,8 @@ async function toolAddExpense({ vehicle_id, date, category_id, category, amount,
     notes:       typeof notes === "string" ? notes.trim().slice(0, 500) : "",
     created_at:  new Date().toISOString(),
   };
-  if (resolvedCategoryId) expense.category_id = resolvedCategoryId;
+  // Only include category_id when it was actually resolved
+  if (resolvedCategoryId !== null) expense.category_id = resolvedCategoryId;
 
   let useGitHub = !sb;
   if (sb) {

@@ -111,8 +111,8 @@ export default async function handler(req, res) {
     notes:       typeof notes === "string" ? notes.trim().slice(0, 500) : "",
     created_at:  new Date().toISOString(),
   };
-  // Remove undefined fields so they don't confuse Supabase / JSON serialisation
-  if (!expense.category_id) delete expense.category_id;
+  // Remove category_id if it wasn't resolved, so the field is absent rather than null/undefined
+  if (expense.category_id === undefined || expense.category_id === null) delete expense.category_id;
 
   try {
     let useGitHub = !sb;

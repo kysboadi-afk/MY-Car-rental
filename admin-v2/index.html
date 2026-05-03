@@ -5078,9 +5078,21 @@ function applyExpenseFilters() {
   const vFilter = document.getElementById('expense-filter-vehicle').value;
   const cFilter = document.getElementById('expense-filter-category').value;
 
+  // When cFilter is a UUID from the new system, also resolve it to a category_name
+  // so legacy expenses (which have no category_id) can still be matched by name.
+  let cFilterName = null;
+  if (cFilter) {
+    const cat = allExpenseCategories.find((c) => c.id === cFilter);
+    if (cat) cFilterName = cat.name;
+  }
+
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
-    if (cFilter && e.category_id !== cFilter && e.category !== cFilter) return false;
+    if (cFilter) {
+      const matchById   = e.category_id === cFilter;
+      const matchByName = cFilterName && (e.category_name === cFilterName || e.category === cFilterName);
+      if (!matchById && !matchByName) return false;
+    }
     return true;
   });
 

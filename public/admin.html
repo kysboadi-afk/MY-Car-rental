@@ -1232,8 +1232,8 @@
         var secret = getSecret();
         if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
 
-        var date        = document.getElementById("expDate").value;
-        var category_id = document.getElementById("expCategory").value;
+        var date            = document.getElementById("expDate").value;
+        var selectedCatId   = document.getElementById("expCategory").value;
         var amount   = parseFloat(document.getElementById("expAmount").value);
         var notes    = document.getElementById("expNotes").value.trim();
 
@@ -1245,7 +1245,7 @@
         showProfitMsg("Adding expense…", "info");
         fetch(API_BASE + "/api/add-expense", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category_id: category_id, amount: amount, notes: notes }),
+          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category_id: selectedCatId, amount: amount, notes: notes }),
         })
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
           .then(function (result) {
