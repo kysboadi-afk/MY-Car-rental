@@ -173,6 +173,16 @@ export async function getAllVehicleIds(supabase) {
 }
 
 /**
+ * Derive a per-day rate from a weekly price, rounded to the nearest cent.
+ * Used when daily_price is absent but weekly_price is available.
+ * @param {number} weeklyPrice
+ * @returns {number}
+ */
+function deriveDaily(weeklyPrice) {
+  return Math.round(weeklyPrice / 7 * 100) / 100;
+}
+
+/**
  * Fetch pricing data for a single vehicle.
  *
  * Resolution order:
@@ -226,14 +236,18 @@ export async function getVehiclePricing(supabase, vehicleId) {
     const monthlyPrice  = vdata.monthly_price  ? Number(vdata.monthly_price)  :
                           vdata.monthly        ? Number(vdata.monthly)        : null;
 
-    if (dailyPrice) {
+    // Derive a daily_price from weekly when only weekly is provided (e.g. a vehicle
+    // created without an explicit daily rate).
+    const effectiveDaily = dailyPrice || (weeklyPrice ? deriveDaily(weeklyPrice) : null);
+
+    if (effectiveDaily || weeklyPrice || biweeklyPrice || monthlyPrice) {
       console.warn('[pricing] vehicle_pricing row missing — falling back to vehicles.data JSONB', { vehicleId });
       return {
         vehicle_id:     vehicleId,
-        daily_price:    dailyPrice,
-        weekly_price:   weeklyPrice   || dailyPrice * 7,
-        biweekly_price: biweeklyPrice || dailyPrice * 14,
-        monthly_price:  monthlyPrice  || dailyPrice * 28,
+        daily_price:    effectiveDaily,
+        weekly_price:   weeklyPrice   || (effectiveDaily ? Math.round(effectiveDaily * 7  * 100) / 100 : null),
+        biweekly_price: biweeklyPrice || (effectiveDaily ? Math.round(effectiveDaily * 14 * 100) / 100 : null),
+        monthly_price:  monthlyPrice  || (effectiveDaily ? Math.round(effectiveDaily * 28 * 100) / 100 : null),
       };
     }
   }
@@ -250,15 +264,22 @@ export async function getVehiclePricing(supabase, vehicleId) {
  *   ≥28 days → monthly_price
  *   else    → daily_price × days
  *
+ * When a tier price is null (e.g. only weekly was set but no daily), a daily
+ * rate is derived from the weekly price so that all day counts remain bookable.
+ *
  * @param {object} pricing  - vehicle_pricing row from getVehiclePricing()
  * @param {number} days     - number of rental days (min 1)
  * @returns {number} rental cost in dollars (pre-tax, no DPP)
  */
 export function computeAmountFromPricing(pricing, days) {
-  if (days === 7)       return pricing.weekly_price;
-  if (days === 14)      return pricing.biweekly_price;
-  if (days >= 28)       return pricing.monthly_price;
-  return pricing.daily_price * days;
+  if (days === 7  && pricing.weekly_price   != null) return pricing.weekly_price;
+  if (days === 14 && pricing.biweekly_price != null) return pricing.biweekly_price;
+  if (days >= 28  && pricing.monthly_price  != null) return pricing.monthly_price;
+  // Derive daily_price from weekly when it is not explicitly stored.
+  const daily = pricing.daily_price !== null && pricing.daily_price !== undefined
+    ? pricing.daily_price
+    : (pricing.weekly_price !== null && pricing.weekly_price !== undefined ? deriveDaily(pricing.weekly_price) : null);
+  return daily !== null ? Math.round(daily * days * 100) / 100 : null;
 }
 
 /**

@@ -215,6 +215,10 @@ export default async function handler(req, res) {
     const days = computeRentalDays(pickup, returnDate);
     const computedFullRental = computeAmountFromPricing(pricing, days);
     console.log('[pricing-booking]', { vehicle: vehicleId, days, pricing, price: computedFullRental });
+    if (computedFullRental === null || computedFullRental === undefined || !isFinite(computedFullRental) || computedFullRental < 0) {
+      console.error('[pricing-booking] could not compute rental amount', { vehicleId, days, pricing });
+      return res.status(500).json({ error: "Could not compute rental amount for this vehicle. Please contact support." });
+    }
     const tier = protectionPlanTier || null;
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
 
