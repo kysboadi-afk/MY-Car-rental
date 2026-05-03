@@ -35,6 +35,7 @@ import { hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, parseTime12h } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
+import { executeBackfillStripeCards } from "./backfill-stripe-card.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -3091,6 +3092,18 @@ async function toolGetCharges({ booking_id, limit = 50 } = {}) {
   };
 }
 
+async function toolBackfillStripeCards({ action = "preview", confirmed } = {}) {
+  // Preview is always safe (read-only). Backfill requires explicit confirmation.
+  if (action === "backfill" && !confirmed) {
+    return {
+      requires_confirmation: true,
+      action,
+      message: "Running the backfill will write stripe_customer_id and stripe_payment_method_id to all affected bookings. Confirm to proceed (retry with confirmed:true).",
+    };
+  }
+  return await executeBackfillStripeCards(action);
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
@@ -4064,6 +4077,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "reconcile_stripe":              result = await toolReconcileStripe(args);              break;
       case "get_site_content":              result = await toolGetSiteContent();                  break;
       case "update_site_content":           result = await toolUpdateSiteContent(args);           break;
+      case "backfill_stripe_cards":         result = await toolBackfillStripeCards(args);         break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
