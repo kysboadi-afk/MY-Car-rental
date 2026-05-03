@@ -213,10 +213,18 @@ export async function getVehiclePricing(supabase, vehicleId) {
 
   if (!vehicleErr && vehicleRow?.data) {
     const vdata = vehicleRow.data;
-    const dailyPrice    = vdata.daily_price    ? Number(vdata.daily_price)    : null;
-    const weeklyPrice   = vdata.weekly_price   ? Number(vdata.weekly_price)   : null;
-    const biweeklyPrice = vdata.biweekly_price ? Number(vdata.biweekly_price) : null;
-    const monthlyPrice  = vdata.monthly_price  ? Number(vdata.monthly_price)  : null;
+    // Support both v2-vehicles field names (daily_price, weekly_price, …) and
+    // AI-tool field names (daily_rate, weekly, biweekly, monthly) so that
+    // vehicles created via toolCreateVehicle/toolAddVehicle work without a
+    // separate vehicle_pricing row being present.
+    const dailyPrice    = vdata.daily_price    ? Number(vdata.daily_price)    :
+                          vdata.daily_rate     ? Number(vdata.daily_rate)     : null;
+    const weeklyPrice   = vdata.weekly_price   ? Number(vdata.weekly_price)   :
+                          vdata.weekly         ? Number(vdata.weekly)         : null;
+    const biweeklyPrice = vdata.biweekly_price ? Number(vdata.biweekly_price) :
+                          vdata.biweekly       ? Number(vdata.biweekly)       : null;
+    const monthlyPrice  = vdata.monthly_price  ? Number(vdata.monthly_price)  :
+                          vdata.monthly        ? Number(vdata.monthly)        : null;
 
     if (dailyPrice) {
       console.warn('[pricing] vehicle_pricing row missing — falling back to vehicles.data JSONB', { vehicleId });
