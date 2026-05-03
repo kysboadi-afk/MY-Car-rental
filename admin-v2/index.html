@@ -785,6 +785,9 @@
     /* Auth card: less padding on phones */
     @media (max-width: 480px) {
       .auth-card { padding: 28px 20px; }
+      /* Topbar: hide the two "Open Site" preview buttons on very small
+         phones so the title + Refresh + New Booking row doesn't overflow */
+      .btn-hide-xs { display: none !important; }
     }
 
     /* KPI cards: tighter layout + smaller numbers at 600px */
@@ -1043,11 +1046,11 @@
       </button>
       <div class="topbar-page-title" id="page-title">Dashboard</div>
       <div class="topbar-actions">
-        <button class="btn btn-secondary btn-sm" onclick="openPreviewModal('live')" title="Open live booking site">
+        <button class="btn btn-secondary btn-sm btn-hide-xs" onclick="openPreviewModal('live')" title="Open live booking site">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           <span class="btn-label">Open Live Site</span>
         </button>
-        <button class="btn btn-secondary btn-sm" onclick="openPreviewModal('test')" title="Open test booking site with availability override">
+        <button class="btn btn-secondary btn-sm btn-hide-xs" onclick="openPreviewModal('test')" title="Open test booking site with availability override">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           <span class="btn-label">Open Test Site</span>
         </button>

@@ -1121,16 +1121,26 @@
 
   // ── Audio pause / resume ───────────────────────────────────────────────────
   function pauseAudio() {
-    if (currentAudio && isSpeaking && !isPaused) {
-      currentAudio.pause();
+    if (isSpeaking && !isPaused) {
+      if (currentAudio) {
+        currentAudio.pause();
+      } else if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        // Demo-mode fallback: TTS uses SpeechSynthesis instead of the API
+        window.speechSynthesis.pause();
+      }
       isPaused = true;
       updatePanelState();
     }
   }
 
   function resumeAudio() {
-    if (currentAudio && isSpeaking && isPaused) {
-      currentAudio.play().catch(() => {});
+    if (isSpeaking && isPaused) {
+      if (currentAudio) {
+        currentAudio.play().catch(() => {});
+      } else if (window.speechSynthesis && window.speechSynthesis.paused) {
+        // Demo-mode fallback: resume SpeechSynthesis
+        window.speechSynthesis.resume();
+      }
       isPaused = false;
       updatePanelState();
     }

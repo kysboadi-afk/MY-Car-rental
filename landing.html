@@ -284,6 +284,29 @@
       .demo-frame-inner { height: 420px; }
       footer { flex-direction: column; align-items: flex-start; }
     }
+    /* ── Small-phone polish (≤480px) ─────────────────────────────── */
+    @media (max-width: 480px) {
+      /* Nav: tighten padding and hide text-only anchor links so the
+         brand + Sign In button never overflow on narrow screens */
+      .nav { padding: 0 4%; }
+      .nav-link { display: none; }
+      /* Hero: less top/bottom breathing room */
+      .hero { padding: 96px 4% 56px; }
+      .hero-stats { gap: 24px; margin-top: 56px; }
+      .hero-stat-val { font-size: 26px; }
+      /* Sections: tighter vertical padding */
+      section { padding: 52px 4%; }
+      /* Demo iframe: shorter so it doesn't eat the whole phone screen */
+      .demo-frame-inner { height: 320px; }
+      /* Pricing & proof cards: reduce inner padding */
+      .pricing-card { padding: 28px 20px; }
+      .proof-card { padding: 20px; }
+      /* Final CTA: tighter gap */
+      .final-cta-btns { gap: 10px; }
+      .final-cta-btns .btn-lg { padding: 12px 20px; font-size: 14px; }
+      /* Footer: smaller gaps */
+      footer { gap: 10px; }
+    }
   </style>
 </head>
 <body>
