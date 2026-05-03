@@ -119,10 +119,10 @@ function normalizeVehicleData(vehicleId, vdata) {
     name:        vdata.vehicle_name || vdata.name || vehicleId,
     type,
     hourlyTiers,
-    pricePerDay: toNum(vdata.daily_rate  ?? vdata.pricePerDay),
-    weekly:      toNum(vdata.weekly      ?? vdata.weekly_rate),
-    biweekly:    toNum(vdata.biweekly    ?? vdata.biweekly_rate),
-    monthly:     toNum(vdata.monthly     ?? vdata.monthly_rate),
+    pricePerDay: toNum(vdata.daily_price  ?? vdata.daily_rate  ?? vdata.pricePerDay),
+    weekly:      toNum(vdata.weekly_price ?? vdata.weekly      ?? vdata.weekly_rate),
+    biweekly:    toNum(vdata.biweekly_price ?? vdata.biweekly  ?? vdata.biweekly_rate),
+    monthly:     toNum(vdata.monthly_price  ?? vdata.monthly   ?? vdata.monthly_rate),
     deposit:     toNum(vdata.deposit),
   };
 }
@@ -179,14 +179,25 @@ export async function getVehicleById(vehicleId) {
         .select("vehicle_id, data")
         .eq("vehicle_id", vehicleId)
         .maybeSingle();
-      if (!error && data) {
+      if (error) {
+        console.error("[getVehicleById] Supabase query error for vehicle:", vehicleId, error.code, error.message);
+        // fall through to vehicles.json
+      } else if (data) {
         const vdata = data.data || {};
         // Only block vehicles explicitly marked inactive or maintenance
         // in the admin-managed status field.  An absent status means active.
-        if (vdata.status && vdata.status !== "active") return null;
+        if (vdata.status && vdata.status !== "active") {
+          console.warn("[getVehicleById] Vehicle is inactive/maintenance:", vehicleId, vdata.status);
+          return null;
+        }
         return normalizeVehicleData(vehicleId, vdata);
+      } else {
+        // 0 rows returned — vehicle not found in Supabase
+        console.warn("[getVehicleById] Vehicle not found in Supabase vehicles table:", vehicleId);
+        // fall through to vehicles.json
       }
-    } catch {
+    } catch (sbErr) {
+      console.error("[getVehicleById] Supabase threw for vehicle:", vehicleId, sbErr?.message || sbErr);
       // fall through to vehicles.json
     }
   }

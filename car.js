@@ -1873,6 +1873,13 @@ stripeBtn.addEventListener("click", async () => {
       idMimeType = uploadedFile.type;
     } catch (err) {
       console.error("ID encoding error:", err);
+      stripeBtn.disabled = false;
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      const _reserveBtnFileErr = document.getElementById("reserveBtn");
+      if (_reserveBtnFileErr) _reserveBtnFileErr.disabled = false;
+      _pendingPaymentMode = null;
+      showPayError("Could not read your ID file. Please try re-uploading it and try again.");
+      return;
     }
   }
 
@@ -2301,15 +2308,10 @@ stripeBtn.addEventListener("click", async () => {
       initDatePickers(); // reload availability so the calendar reflects the new booking
       return;
     }
-    // Show detailed message only for known setup/config errors; generic message otherwise
-    const isSetupError = err.message && (
-      err.message.includes("STRIPE_SECRET_KEY") ||
-      err.message.includes("STRIPE_PUBLISHABLE_KEY") ||
-      err.message.includes("clientSecret") ||
-      err.message.includes("publishableKey")
-    );
-    const userMessage = isSetupError
-      ? "Payment setup error:\n\n" + err.message
+    // Always surface the server's error message so the issue is diagnosable.
+    // Fall back to the generic i18n string only when no specific message is available.
+    const userMessage = (err && err.message)
+      ? err.message
       : window.slyI18n.t("booking.loadError");
     showPayError(userMessage);
   }
