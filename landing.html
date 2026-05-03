@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fleet Control — Run Your Rental Business Without the Headaches</title>
+  <meta name="description" content="Fleet Control is the all-in-one admin system for independent car rental operators. Manage bookings, track revenue, automate late fees, and run your fleet from one place.">
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary:   #2563eb;
+      --primary-d: #1d4ed8;
+      --success:   #16a34a;
+      --dark:      #0f1117;
+      --dark2:     #1a1d27;
+      --text:      #111827;
+      --text-sub:  #6b7280;
+      --border:    #e5e7eb;
+      --bg:        #f5f6fa;
+      --radius:    12px;
+      --font:      'Inter', system-ui, sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: var(--font); color: var(--text); background: #fff; line-height: 1.6; }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+
+    /* ── Nav ─────────────────────────────────────────────────────── */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(255,255,255,0.95); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6%; height: 64px;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 17px; font-weight: 800; color: var(--dark);
+    }
+    .nav-brand img {
+      width: 32px; height: 32px; border-radius: 8px; object-fit: cover;
+    }
+    .nav-links { display: flex; align-items: center; gap: 16px; }
+    .nav-link {
+      font-size: 14px; font-weight: 500; color: var(--text-sub);
+      transition: color 0.15s;
+    }
+    .nav-link:hover { color: var(--text); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 10px 20px; border-radius: 8px; font-size: 14px;
+      font-weight: 600; cursor: pointer; transition: all 0.15s;
+      border: none; font-family: var(--font);
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-d); }
+    .btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
+    .btn-outline:hover { border-color: #9ca3af; background: var(--bg); }
+    .btn-lg { padding: 14px 28px; font-size: 16px; border-radius: 10px; }
+    .btn-dark { background: var(--dark); color: #fff; }
+    .btn-dark:hover { background: #1a1d27; }
+
+    /* ── Hero ────────────────────────────────────────────────────── */
+    .hero {
+      padding: 140px 6% 100px;
+      background: linear-gradient(135deg, #0f1117 0%, #1e2130 50%, #111827 100%);
+      color: #fff; text-align: center; position: relative; overflow: hidden;
+    }
+    .hero::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(37,99,235,0.15), transparent);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.3);
+      color: #93c5fd; font-size: 12px; font-weight: 600;
+      padding: 5px 14px; border-radius: 20px; margin-bottom: 28px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 72px); font-weight: 900;
+      line-height: 1.1; letter-spacing: -1.5px;
+      max-width: 800px; margin: 0 auto 24px;
+    }
+    .hero h1 span { color: #60a5fa; }
+    .hero p {
+      font-size: clamp(16px, 2.5vw, 20px); color: #9ca3af;
+      max-width: 560px; margin: 0 auto 44px; font-weight: 400;
+    }
+    .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .hero-stats {
+      display: flex; justify-content: center; gap: 48px; flex-wrap: wrap;
+      margin-top: 80px; padding-top: 40px; border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .hero-stat-val { font-size: 32px; font-weight: 800; color: #fff; }
+    .hero-stat-lbl { font-size: 13px; color: #6b7280; margin-top: 2px; }
+
+    /* ── Sections ────────────────────────────────────────────────── */
+    section { padding: 100px 6%; }
+    .section-label {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--primary); margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(28px, 4vw, 44px); font-weight: 800;
+      letter-spacing: -0.8px; line-height: 1.15; margin-bottom: 16px;
+    }
+    .section-sub {
+      font-size: 17px; color: var(--text-sub); max-width: 520px;
+    }
+    .section-header { margin-bottom: 64px; }
+    .section-header.center { text-align: center; }
+    .section-header.center .section-sub { margin: 0 auto; }
+
+    /* ── Demo Section ────────────────────────────────────────────── */
+    .demo-section { background: var(--bg); text-align: center; }
+    .demo-frame-wrap {
+      margin-top: 52px; border-radius: 16px; overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.15);
+      border: 1px solid var(--border);
+      position: relative; background: #fff;
+    }
+    .demo-frame-bar {
+      background: #f3f4f6; border-bottom: 1px solid var(--border);
+      padding: 10px 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .demo-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .demo-url {
+      flex: 1; background: #fff; border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 12px; font-size: 12px;
+      color: var(--text-sub); text-align: left;
+    }
+    .demo-frame-overlay {
+      position: absolute; inset: 0; top: 38px;
+      background: rgba(15,17,23,0.7); backdrop-filter: blur(4px);
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 16px; cursor: pointer;
+      transition: opacity 0.25s;
+    }
+    .demo-frame-overlay:hover { background: rgba(15,17,23,0.6); }
+    .demo-play-btn {
+      width: 72px; height: 72px; background: var(--primary); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 12px rgba(37,99,235,0.15);
+    }
+    .demo-play-btn svg { width: 28px; height: 28px; fill: #fff; margin-left: 4px; }
+    .demo-frame-overlay p { color: #fff; font-size: 16px; font-weight: 600; }
+    .demo-preview-img {
+      width: 100%; height: 480px; object-fit: cover; object-position: top;
+      display: block;
+    }
+    .demo-frame-overlay.hidden { display: none; }
+    .demo-frame-inner {
+      width: 100%; height: 600px; border: none; display: none;
+    }
+    .demo-frame-inner.visible { display: block; }
+
+    /* ── Benefits ────────────────────────────────────────────────── */
+    .benefits-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 28px;
+    }
+    .benefit-card {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .benefit-card:hover { box-shadow: 0 8px 32px rgba(0,0,0,0.08); transform: translateY(-2px); }
+    .benefit-icon {
+      width: 48px; height: 48px; background: #eff6ff; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px; font-size: 22px;
+    }
+    .benefit-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .benefit-desc { font-size: 14px; color: var(--text-sub); line-height: 1.6; }
+
+    /* ── Feature List ────────────────────────────────────────────── */
+    .features-section { background: var(--dark); color: #fff; }
+    .features-section .section-title { color: #fff; }
+    .features-section .section-sub { color: #6b7280; }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .feature-item {
+      background: #1a1d27; border: 1px solid #2a2d3a;
+      border-radius: var(--radius); padding: 24px;
+    }
+    .feature-item-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .feature-number {
+      width: 28px; height: 28px; background: var(--primary); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .feature-item-title { font-size: 14px; font-weight: 700; color: #fff; }
+    .feature-item-desc { font-size: 13px; color: #6b7280; line-height: 1.5; }
+
+    /* ── Pricing ─────────────────────────────────────────────────── */
+    .pricing-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px; max-width: 960px; margin: 0 auto;
+    }
+    .pricing-card {
+      background: #fff; border: 1.5px solid var(--border);
+      border-radius: 16px; padding: 36px 32px;
+      transition: box-shadow 0.2s, transform 0.2s;
+      position: relative;
+    }
+    .pricing-card:hover { box-shadow: 0 12px 40px rgba(0,0,0,0.1); }
+    .pricing-card.popular {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(37,99,235,0.08);
+    }
+    .popular-badge {
+      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+      background: var(--primary); color: #fff; font-size: 11px; font-weight: 700;
+      padding: 4px 14px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .pricing-tier { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-sub); margin-bottom: 10px; }
+    .pricing-price { font-size: 48px; font-weight: 900; letter-spacing: -1.5px; line-height: 1; margin-bottom: 4px; }
+    .pricing-period { font-size: 14px; color: var(--text-sub); margin-bottom: 24px; }
+    .pricing-desc { font-size: 14px; color: var(--text-sub); margin-bottom: 28px; line-height: 1.5; }
+    .pricing-features { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+    .pricing-features li { font-size: 14px; display: flex; align-items: center; gap: 10px; }
+    .pricing-features li::before { content: '✓'; font-size: 13px; font-weight: 700; color: var(--success); flex-shrink: 0; }
+    .pricing-cta { width: 100%; }
+
+    /* ── Testimonial / Social Proof ──────────────────────────────── */
+    .proof-section { background: var(--bg); text-align: center; }
+    .proof-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px; max-width: 960px; margin: 0 auto;
+    }
+    .proof-card {
+      background: #fff; border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px; text-align: left;
+    }
+    .proof-stars { font-size: 16px; margin-bottom: 14px; }
+    .proof-quote { font-size: 14px; line-height: 1.65; color: var(--text); margin-bottom: 18px; font-style: italic; }
+    .proof-author { display: flex; align-items: center; gap: 10px; }
+    .proof-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .proof-name { font-size: 13px; font-weight: 700; }
+    .proof-role { font-size: 12px; color: var(--text-sub); }
+
+    /* ── Final CTA ───────────────────────────────────────────────── */
+    .final-cta {
+      background: linear-gradient(135deg, #1e2130, #0f1117);
+      color: #fff; text-align: center;
+    }
+    .final-cta .section-title { color: #fff; }
+    .final-cta p { color: #9ca3af; font-size: 18px; margin-bottom: 40px; }
+    .final-cta-btns { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Footer ──────────────────────────────────────────────────── */
+    footer {
+      background: var(--dark); color: #6b7280;
+      padding: 40px 6%; display: flex; align-items: center;
+      justify-content: space-between; flex-wrap: wrap; gap: 16px;
+      font-size: 13px;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: #fff; }
+    .footer-brand img { width: 28px; height: 28px; border-radius: 6px; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { transition: color 0.15s; }
+    .footer-links a:hover { color: #fff; }
+
+    /* ── Responsive ──────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .nav-links .btn-outline { display: none; }
+      .hero { padding: 120px 5% 72px; }
+      .hero-stats { gap: 32px; }
+      section { padding: 72px 5%; }
+      .demo-preview-img { height: 280px; }
+      .demo-frame-inner { height: 420px; }
+      footer { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-brand">
+    <img src="images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+    Fleet Control
+  </div>
+  <div class="nav-links">
+    <a href="#pricing" class="nav-link">Pricing</a>
+    <a href="#features" class="nav-link">Features</a>
+    <a href="admin-v2/?demo=1" class="btn btn-outline" target="_blank" rel="noopener">Watch Demo</a>
+    <a href="admin-v2/" class="btn btn-primary">Sign In →</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">🚗 Built for independent rental operators</div>
+  <h1>Run Your Rental Business<br><span>Without the Headaches</span></h1>
+  <p>One system to manage bookings, track revenue, automate late fees, and run your entire fleet — from your phone or desktop.</p>
+  <div class="hero-ctas">
+    <a href="#demo" class="btn btn-primary btn-lg">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>
+      Watch Demo
+    </a>
+    <a href="admin-v2/" class="btn btn-outline btn-lg" style="color:#fff;border-color:rgba(255,255,255,0.2);">
+      Start Free Trial
+    </a>
+  </div>
+  <div class="hero-stats">
+    <div>
+      <div class="hero-stat-val">$0</div>
+      <div class="hero-stat-lbl">Setup cost</div>
+    </div>
+    <div>
+      <div class="hero-stat-val">2 min</div>
+      <div class="hero-stat-lbl">To go live</div>
+    </div>
+    <div>
+      <div class="hero-stat-val">100%</div>
+      <div class="hero-stat-lbl">Your data</div>
+    </div>
+    <div>
+      <div class="hero-stat-val">24/7</div>
+      <div class="hero-stat-lbl">Automated alerts</div>
+    </div>
+  </div>
+</section>
+
+<!-- Demo Section -->
+<section class="demo-section" id="demo">
+  <div class="section-header center">
+    <div class="section-label">Live Demo</div>
+    <h2 class="section-title">See it in action</h2>
+    <p class="section-sub">Click the button below to take a full guided tour — the system explains itself in under 90 seconds.</p>
+  </div>
+  <div class="demo-frame-wrap">
+    <div class="demo-frame-bar">
+      <span class="demo-dot" style="background:#ef4444;"></span>
+      <span class="demo-dot" style="background:#f59e0b;"></span>
+      <span class="demo-dot" style="background:#22c55e;"></span>
+      <span class="demo-url">fleet-control.app/admin · Demo Mode</span>
+    </div>
+    <div class="demo-frame-overlay" id="demo-overlay" onclick="launchDemo()">
+      <div class="demo-play-btn">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </div>
+      <p>Click to launch the interactive demo</p>
+    </div>
+    <iframe
+      id="demo-iframe"
+      class="demo-frame-inner"
+      src=""
+      title="Fleet Control Demo"
+      allow="autoplay"
+    ></iframe>
+  </div>
+  <p style="margin-top:20px;font-size:13px;color:var(--text-sub);">
+    All data in the demo is simulated — no real bookings or payments.
+    <a href="admin-v2/?demo=1" target="_blank" rel="noopener" style="color:var(--primary);font-weight:600;">Open in full screen ↗</a>
+  </p>
+</section>
+
+<!-- Benefits -->
+<section id="benefits">
+  <div class="section-header">
+    <div class="section-label">Why Fleet Control</div>
+    <h2 class="section-title">Everything a rental operator needs</h2>
+    <p class="section-sub">Stop juggling spreadsheets, texts, and cash. Fleet Control puts everything in one place.</p>
+  </div>
+  <div class="benefits-grid">
+    <div class="benefit-card">
+      <div class="benefit-icon">🧠</div>
+      <div class="benefit-title">No training needed</div>
+      <div class="benefit-desc">The built-in AI voice assistant tours you through every section. Your team is productive from day one.</div>
+    </div>
+    <div class="benefit-card">
+      <div class="benefit-icon">⏱️</div>
+      <div class="benefit-title">Automates extensions &amp; late fees</div>
+      <div class="benefit-desc">When a renter goes overdue, the system calculates the fee, notifies you, and charges their card — all automatically.</div>
+    </div>
+    <div class="benefit-card">
+      <div class="benefit-icon">📊</div>
+      <div class="benefit-title">Tracks revenue in real time</div>
+      <div class="benefit-desc">Every Stripe payment, Zelle transfer, and cash deal flows into your revenue dashboard instantly. Know your profit at a glance.</div>
+    </div>
+    <div class="benefit-card">
+      <div class="benefit-icon">🚗</div>
+      <div class="benefit-title">Manages your entire fleet</div>
+      <div class="benefit-desc">GPS tracking, maintenance alerts, odometer history, per-vehicle ROI — manage 1 car or 50 from one screen.</div>
+    </div>
+    <div class="benefit-card">
+      <div class="benefit-icon">📱</div>
+      <div class="benefit-title">Built for mobile</div>
+      <div class="benefit-desc">Full functionality on any device. Approve bookings, check GPS, and review revenue from your phone while you're on the go.</div>
+    </div>
+    <div class="benefit-card">
+      <div class="benefit-icon">💬</div>
+      <div class="benefit-title">Automated SMS reminders</div>
+      <div class="benefit-desc">Pickup reminders, return alerts, late fee warnings — sent automatically so you spend less time chasing customers.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features-section" id="features">
+  <div class="section-header">
+    <div class="section-label" style="color:#60a5fa;">Full Feature List</div>
+    <h2 class="section-title">Everything included. No add-ons.</h2>
+    <p class="section-sub">Every plan includes the complete system — no features gated behind upgrades.</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">1</div><div class="feature-item-title">Booking Management</div></div>
+      <div class="feature-item-desc">Full lifecycle tracking: reserved → active → returned. Approve, edit, cancel, and flag bookings in one click.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">2</div><div class="feature-item-title">Revenue Tracker</div></div>
+      <div class="feature-item-desc">Every transaction — Stripe, cash, Zelle — recorded automatically. Grouped by vehicle, customer, and date range.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">3</div><div class="feature-item-title">Fleet Analytics</div></div>
+      <div class="feature-item-desc">Utilization rates, ROI per vehicle, payback periods, and monthly profit trends — all in one dashboard.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">4</div><div class="feature-item-title">Late Fee Automation</div></div>
+      <div class="feature-item-desc">Overdue alerts sent automatically. One-click charge via saved card. Or adjust, waive, or dismiss — your choice.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">5</div><div class="feature-item-title">Customer Management</div></div>
+      <div class="feature-item-desc">Lifetime spend, rental history, risk scoring, and fraud flags — know your customers before you hand over the keys.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">6</div><div class="feature-item-title">AI Assistant</div></div>
+      <div class="feature-item-desc">Ask anything: "How much did I make this week?" "Show overdue rentals." "Flag this customer." The AI executes it.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">7</div><div class="feature-item-title">GPS Tracking</div></div>
+      <div class="feature-item-desc">Live vehicle locations, odometer sync, and mileage-based maintenance alerts via Bouncie integration.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">8</div><div class="feature-item-title">SMS Automation</div></div>
+      <div class="feature-item-desc">Booking confirmations, pickup reminders, return alerts, and late fee warnings — sent automatically, fully customizable.</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-item-top"><div class="feature-number">9</div><div class="feature-item-title">Stripe Payments</div></div>
+      <div class="feature-item-desc">Accept deposits, full payments, and extensions online. Automatic reconciliation with your revenue dashboard.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Social Proof -->
+<section class="proof-section">
+  <div class="section-header center">
+    <div class="section-label">Operators Love It</div>
+    <h2 class="section-title">Built by operators, for operators</h2>
+    <p class="section-sub">Designed with real rental business workflows — not generic SaaS features.</p>
+  </div>
+  <div class="proof-grid">
+    <div class="proof-card">
+      <div class="proof-stars">⭐⭐⭐⭐⭐</div>
+      <p class="proof-quote">"I used to track everything in a spreadsheet and chase people by text. Now I just open the dashboard and everything is there. The late fee automation alone saves me hours every month."</p>
+      <div class="proof-author">
+        <div class="proof-avatar">D</div>
+        <div>
+          <div class="proof-name">David R.</div>
+          <div class="proof-role">4-car fleet · Los Angeles</div>
+        </div>
+      </div>
+    </div>
+    <div class="proof-card">
+      <div class="proof-stars">⭐⭐⭐⭐⭐</div>
+      <p class="proof-quote">"The AI voice tour blew my mind. I clicked demo and it literally walked me through the whole system explaining every button. I was live in the same afternoon."</p>
+      <div class="proof-author">
+        <div class="proof-avatar">M</div>
+        <div>
+          <div class="proof-name">Marcus T.</div>
+          <div class="proof-role">7-car fleet · Atlanta</div>
+        </div>
+      </div>
+    </div>
+    <div class="proof-card">
+      <div class="proof-stars">⭐⭐⭐⭐⭐</div>
+      <p class="proof-quote">"Revenue tracking used to be a nightmare — cash here, Stripe there, Zelle somewhere else. Fleet Control pulls it all together. I finally know my real profit."</p>
+      <div class="proof-author">
+        <div class="proof-avatar">K</div>
+        <div>
+          <div class="proof-name">Keisha B.</div>
+          <div class="proof-role">2-car fleet · Houston</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing">
+  <div class="section-header center">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Simple, honest pricing</h2>
+    <p class="section-sub">Every plan includes all features. Pay based on the size of your fleet.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <div class="pricing-tier">Starter</div>
+      <div class="pricing-price">$49</div>
+      <div class="pricing-period">per month · up to 2 vehicles</div>
+      <div class="pricing-desc">Perfect for owner-operators just getting organized with their first 1–2 cars.</div>
+      <ul class="pricing-features">
+        <li>Full booking management</li>
+        <li>Revenue &amp; expense tracking</li>
+        <li>SMS automation</li>
+        <li>Late fee automation</li>
+        <li>AI assistant</li>
+        <li>Customer management</li>
+      </ul>
+      <a href="admin-v2/" class="btn btn-outline btn-lg pricing-cta" style="justify-content:center;">Get Started</a>
+    </div>
+    <div class="pricing-card popular">
+      <div class="popular-badge">Most Popular</div>
+      <div class="pricing-tier">Pro</div>
+      <div class="pricing-price">$99</div>
+      <div class="pricing-period">per month · up to 8 vehicles</div>
+      <div class="pricing-desc">For growing operators who need fleet analytics, GPS tracking, and full automation.</div>
+      <ul class="pricing-features">
+        <li>Everything in Starter</li>
+        <li>GPS tracking (Bouncie)</li>
+        <li>Fleet analytics &amp; ROI</li>
+        <li>Maintenance alerts</li>
+        <li>Stripe payments integration</li>
+        <li>Protection plans</li>
+      </ul>
+      <a href="admin-v2/" class="btn btn-primary btn-lg pricing-cta" style="justify-content:center;">Start Free Trial</a>
+    </div>
+    <div class="pricing-card">
+      <div class="pricing-tier">Scale</div>
+      <div class="pricing-price">$199</div>
+      <div class="pricing-period">per month · unlimited vehicles</div>
+      <div class="pricing-desc">For established operators with large fleets who need white-label and multi-user access.</div>
+      <ul class="pricing-features">
+        <li>Everything in Pro</li>
+        <li>Unlimited vehicles</li>
+        <li>Multi-user access</li>
+        <li>White-label branding</li>
+        <li>Priority support</li>
+        <li>Custom integrations</li>
+      </ul>
+      <a href="admin-v2/" class="btn btn-dark btn-lg pricing-cta" style="justify-content:center;">Contact Sales</a>
+    </div>
+  </div>
+  <p style="text-align:center;margin-top:32px;font-size:14px;color:var(--text-sub);">
+    🔒 No credit card required to start. 5-day free trial on all plans.
+  </p>
+</section>
+
+<!-- Final CTA -->
+<section class="final-cta">
+  <h2 class="section-title">Start Running Your Rental Business Smarter Today</h2>
+  <p>Join operators who replaced spreadsheets and guesswork with a real system.</p>
+  <div class="final-cta-btns">
+    <a href="admin-v2/?demo=1" target="_blank" rel="noopener" class="btn btn-outline btn-lg" style="color:#fff;border-color:rgba(255,255,255,0.25);">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>
+      Watch Demo First
+    </a>
+    <a href="admin-v2/" class="btn btn-primary btn-lg">
+      Start Free Trial — No Card Required
+    </a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-brand">
+    <img src="images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+    Fleet Control
+  </div>
+  <div class="footer-links">
+    <a href="privacy-policy.html">Privacy</a>
+    <a href="admin-v2/">Admin Login</a>
+    <a href="admin-v2/?demo=1" target="_blank" rel="noopener">Live Demo</a>
+  </div>
+  <div>© 2026 Fleet Control. All rights reserved.</div>
+</footer>
+
+<script>
+  function launchDemo() {
+    const overlay = document.getElementById('demo-overlay');
+    const iframe  = document.getElementById('demo-iframe');
+    overlay.classList.add('hidden');
+    iframe.src = 'admin-v2/?demo=1';
+    iframe.classList.add('visible');
+  }
+</script>
+</body>
+</html>
