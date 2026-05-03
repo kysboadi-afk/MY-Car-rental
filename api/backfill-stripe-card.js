@@ -27,30 +27,23 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // Bookings in these statuses are still "live" — prioritise them but process all.
 const ACTIVE_STATUSES = new Set(["reserved", "pending", "active_rental", "overdue"]);
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+/**
+ * Core backfill logic — shared by the HTTP endpoint and the AI tool.
+ *
+ * @param {"preview"|"backfill"} action
+ * @returns {Promise<object>} result summary
+ */
+export async function executeBackfillStripeCards(action = "preview") {
+  if (action !== "preview" && action !== "backfill") {
+    throw new Error("action must be 'preview' or 'backfill'");
+  }
 
-  if (!process.env.ADMIN_SECRET)
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-  if (!process.env.STRIPE_SECRET_KEY)
-    return res.status(500).json({ error: "Server configuration error: STRIPE_SECRET_KEY is not set." });
-
-  const body = req.body || {};
-  const { secret, action = "preview" } = body;
-
-  if (!secret || secret !== process.env.ADMIN_SECRET)
-    return res.status(401).json({ error: "Unauthorized" });
-
-  if (action !== "preview" && action !== "backfill")
-    return res.status(400).json({ error: "action must be 'preview' or 'backfill'" });
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
 
   const sb = getSupabaseAdmin();
-  if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
+  if (!sb) throw new Error("Supabase is not configured");
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -64,11 +57,11 @@ export default async function handler(req, res) {
     .order("created_at", { ascending: false });
 
   if (fetchErr) {
-    return res.status(500).json({ error: `Supabase query failed: ${fetchErr.message}` });
+    throw new Error(`Supabase query failed: ${fetchErr.message}`);
   }
 
   if (!rows || rows.length === 0) {
-    return res.status(200).json({
+    return {
       action,
       total: 0,
       recovered: 0,
@@ -76,7 +69,7 @@ export default async function handler(req, res) {
       unchanged: 0,
       message: "No bookings found with missing Stripe card fields — nothing to backfill.",
       rows: [],
-    });
+    };
   }
 
   // Sort: active bookings first so they are patched even if rate limits hit.
@@ -181,7 +174,7 @@ export default async function handler(req, res) {
     results.push(result);
   }
 
-  return res.status(200).json({
+  return {
     action,
     total: rows.length,
     recovered,
@@ -191,5 +184,35 @@ export default async function handler(req, res) {
       ? `${recovered} of ${rows.length} bookings would be patched (run with action='backfill' to apply).`
       : `${recovered} of ${rows.length} bookings patched. ${skipped} skipped (Stripe had no card or fetch failed). ${unchanged} already complete.`,
     rows: results,
-  });
+  };
+}
+
+export default async function handler(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  if (!process.env.ADMIN_SECRET)
+    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
+  if (!process.env.STRIPE_SECRET_KEY)
+    return res.status(500).json({ error: "Server configuration error: STRIPE_SECRET_KEY is not set." });
+
+  const body = req.body || {};
+  const { secret, action = "preview" } = body;
+
+  if (!secret || secret !== process.env.ADMIN_SECRET)
+    return res.status(401).json({ error: "Unauthorized" });
+
+  if (action !== "preview" && action !== "backfill")
+    return res.status(400).json({ error: "action must be 'preview' or 'backfill'" });
+
+  try {
+    const result = await executeBackfillStripeCards(action);
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 }

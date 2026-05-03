@@ -726,6 +726,10 @@ export async function autoUpsertBooking(booking, opts = {}) {
       payment_intent_id:         booking.paymentIntentId   || null,
       stripe_customer_id:        booking.stripeCustomerId       || null,
       stripe_payment_method_id:  booking.stripePaymentMethodId  || null,
+      // Extension card fields — stored separately so the original booking card
+      // is never overwritten when a renter pays with a different card to extend.
+      extension_stripe_customer_id:       booking.extensionStripeCustomerId       || null,
+      extension_stripe_payment_method_id: booking.extensionStripePaymentMethodId  || null,
       customer_name:             normalizeCustomerName(booking.name) || null,
       customer_email:            normalizedEmail                || null,
       customer_phone:            booking.phone                  || null,
@@ -780,6 +784,9 @@ export async function autoUpsertBooking(booking, opts = {}) {
       // values written by the initial payment_intent.succeeded webhook.
       if (!patchRecord.stripe_customer_id)      delete patchRecord.stripe_customer_id;
       if (!patchRecord.stripe_payment_method_id) delete patchRecord.stripe_payment_method_id;
+      // Same COALESCE rule for extension card fields.
+      if (!patchRecord.extension_stripe_customer_id)       delete patchRecord.extension_stripe_customer_id;
+      if (!patchRecord.extension_stripe_payment_method_id) delete patchRecord.extension_stripe_payment_method_id;
       if (fixBookingRef) patchRecord.booking_ref = booking.bookingId;
       const { error } = await sb
         .from("bookings")

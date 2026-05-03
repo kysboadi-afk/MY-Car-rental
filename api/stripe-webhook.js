@@ -1714,9 +1714,13 @@ export default async function handler(req, res) {
             returnTime:             resolvedReturnTime,
             extensionCount:         (Number(sbExtRow.extension_count) || 0) + (alreadyApplied ? 0 : 1),
             amountPaid:             Math.round(((Number(sbExtRow.deposit_paid) || 0) + extensionAmountDollars) * 100) / 100,
-            // Preserve saved-card references so autoUpsertBooking does not wipe them.
+            // Preserve original saved-card references so autoUpsertBooking does not wipe them.
             stripeCustomerId:       sbExtRow.stripe_customer_id      || null,
             stripePaymentMethodId:  sbExtRow.stripe_payment_method_id || null,
+            // Save the card used for THIS extension separately so charge-fee can
+            // fall back to it when the original booking card is absent/declined.
+            extensionStripeCustomerId:      paymentIntent.customer       || sbExtRow.extension_stripe_customer_id      || null,
+            extensionStripePaymentMethodId: paymentIntent.payment_method || sbExtRow.extension_stripe_payment_method_id || null,
           };
 
           if (invalidStatus) {
@@ -1866,6 +1870,19 @@ export default async function handler(req, res) {
                 })
                 .eq("booking_ref", bookingRef)
                 .or("late_fee_status.eq.pending_approval,late_fee_status.is.null");
+
+              // Mark a deferred late fee as paid: if the fee was flagged as
+              // 'pending_collection' (no card at assessment time), the renter
+              // has now paid via this extension — transition it to 'paid'.
+              await sbExt
+                .from("bookings")
+                .update({
+                  late_fee_status:      "paid",
+                  late_fee_approved_at: new Date().toISOString(),
+                  late_fee_approved_by: "auto_extension_collection",
+                })
+                .eq("booking_ref", bookingRef)
+                .eq("late_fee_status", "pending_collection");
             }
           } catch (extClrErr) {
             console.error("stripe-webhook: Supabase extension field clear error (non-fatal):", extClrErr.message);
@@ -2698,9 +2715,10 @@ export default async function handler(req, res) {
               totalPrice:             normalizeCurrency(meta.full_rental_amount || Number(sbBalRow.total_price) || existingDeposit + paidAmount),
               paymentStatus:          "paid",
               status:                 "active_rental",
-              // Preserve saved-card references so autoUpsertBooking does not wipe them.
-              stripeCustomerId:       sbBalRow.stripe_customer_id       || null,
-              stripePaymentMethodId:  sbBalRow.stripe_payment_method_id  || null,
+              // Prefer the card from this balance payment PI; fall back to the
+              // previously-saved card so off-session charges always have a method.
+              stripeCustomerId:       paymentIntent.customer        || sbBalRow.stripe_customer_id       || null,
+              stripePaymentMethodId:  paymentIntent.payment_method  || sbBalRow.stripe_payment_method_id  || null,
             };
           } else {
             // Booking not found in Supabase — build from metadata.
@@ -2717,8 +2735,10 @@ export default async function handler(req, res) {
               returnTime:  meta.return_time || DEFAULT_RETURN_TIME,
               amountPaid:  paidAmount,
               totalPrice:  normalizeCurrency(meta.full_rental_amount || paidAmount),
-              paymentStatus: "paid",
-              status:        "active_rental",
+              paymentStatus:        "paid",
+              status:               "active_rental",
+              stripeCustomerId:     paymentIntent.customer       || null,
+              stripePaymentMethodId: paymentIntent.payment_method || null,
             };
           }
 

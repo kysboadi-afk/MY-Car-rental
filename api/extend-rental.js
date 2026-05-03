@@ -105,6 +105,7 @@ export default async function handler(req, res) {
     let sbReturnTime = null;       // HH:MM from Supabase
     let sbActiveBookingRef = null; // canonical booking_ref from Supabase (used for conflict-skip)
     let sbWaivedAmount = 0;        // admin-applied late-fee waiver (subtracted from late fee below)
+    let sbDeferredLateFee = 0;     // late fee flagged as 'pending_collection' — added to this PI
 
     if (sb) {
       try {
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
           if (bookingRef) {
             const { data: sbRow } = await sb
               .from("bookings")
-              .select("booking_ref, return_date, return_time, status, late_fee_waived_amount")
+              .select("booking_ref, return_date, return_time, status, late_fee_waived_amount, late_fee_status, late_fee_amount")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
             if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
@@ -138,6 +139,12 @@ export default async function handler(req, res) {
               if (sbRow.late_fee_waived_amount) {
                 sbWaivedAmount = Math.max(0, Number(sbRow.late_fee_waived_amount) || 0);
               }
+              // Collect a deferred late fee: if admin flagged the fee as
+              // 'pending_collection' (no card at assessment time), add it to
+              // this extension PI so the renter pays it on their next payment.
+              if (sbRow.late_fee_status === "pending_collection" && sbRow.late_fee_amount) {
+                sbDeferredLateFee = Math.max(0, Number(sbRow.late_fee_amount) || 0);
+              }
             }
           }
         } else {
@@ -146,7 +153,7 @@ export default async function handler(req, res) {
           // directly, matching by vehicle_id + email or phone + active status.
           const { data: sbActive } = await sb
             .from("bookings")
-            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount")
+            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount, late_fee_status, late_fee_amount")
             .eq("vehicle_id", vehicleId)
             .in("status", ["active", "active_rental", "overdue"]);
 
@@ -190,6 +197,9 @@ export default async function handler(req, res) {
                 if (row.late_fee_waived_amount) {
                   sbWaivedAmount = Math.max(0, Number(row.late_fee_waived_amount) || 0);
                 }
+                if (row.late_fee_status === "pending_collection" && row.late_fee_amount) {
+                  sbDeferredLateFee = Math.max(0, Number(row.late_fee_amount) || 0);
+                }
                 break;
               }
             }
@@ -217,7 +227,7 @@ export default async function handler(req, res) {
       try {
         let refQuery = sb
           .from("bookings")
-          .select("booking_ref, return_date, return_time, late_fee_waived_amount")
+          .select("booking_ref, return_date, return_time, late_fee_waived_amount, late_fee_status, late_fee_amount")
           .eq("vehicle_id", vehicleId)
           .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
@@ -239,6 +249,9 @@ export default async function handler(req, res) {
           }
           if (!sbWaivedAmount && refRow.late_fee_waived_amount) {
             sbWaivedAmount = Math.max(0, Number(refRow.late_fee_waived_amount) || 0);
+          }
+          if (!sbDeferredLateFee && refRow.late_fee_status === "pending_collection" && refRow.late_fee_amount) {
+            sbDeferredLateFee = Math.max(0, Number(refRow.late_fee_amount) || 0);
           }
         }
       } catch (refFallbackErr) {
@@ -503,18 +516,33 @@ export default async function handler(req, res) {
         });
       }
 
+      // ── Collect deferred late fee ──────────────────────────────────────────
+      // If the admin flagged a previously-assessed late fee as 'pending_collection'
+      // (e.g. no card was on file at the time), collect it now by adding it to
+      // this extension total.  The deferred fee is separate from the time-based
+      // late fee above and is never waived by sbWaivedAmount (waiver only applies
+      // to the new time-based fee).
+      const deferredFeeIncluded = sbDeferredLateFee;
+      if (deferredFeeIncluded > 0) {
+        console.log('[pricing-extension-deferred-fee]', {
+          vehicle:        vehicleId,
+          deferred_fee:   deferredFeeIncluded,
+        });
+      }
+
       console.log('[pricing-extension]', {
         vehicle: vehicleId,
         days,
         pricing,
         price,
         late_fee:       lateFeeIncluded,
+        deferred_fee:   deferredFeeIncluded,
         waived_amount:  sbWaivedAmount,
         grace_end_iso:  new Date(graceEndMs).toISOString(),
         reset_time_iso: new Date(resetTimeMs).toISOString(),
       });
 
-      extensionAmountPreTax = price + lateFeeIncluded;
+      extensionAmountPreTax = price + lateFeeIncluded + deferredFeeIncluded;
       extensionDays = days;
       pricePerDay   = pricing.daily_price;
     }
@@ -564,6 +592,9 @@ export default async function handler(req, res) {
         late_fee_included:     String(lateFeeIncluded),
         // Amount of late fee waived by admin (0 when no waiver applied).
         late_fee_waived:       String(sbWaivedAmount),
+        // Previously-assessed late fee that was deferred because no card was on
+        // file; now collected as part of this extension.
+        deferred_late_fee:     String(sbDeferredLateFee),
       },
     });
 
@@ -576,13 +607,14 @@ export default async function handler(req, res) {
         await updateBooking(vehicleId, bookingId, {
           ...(needsReturnTimePersist ? { returnTime: resolvedReturnTime } : {}),
           extensionPendingPayment: {
-            label:           extensionLabel,
-            price:           extensionAmount,
+            label:               extensionLabel,
+            price:               extensionAmount,
             lateFeeIncluded,
+            deferredLateFee:     sbDeferredLateFee,
             newReturnDate,
-            newReturnTime:   resolvedReturnTime,
-            paymentIntentId: pi.id,
-            createdAt:       new Date().toISOString(),
+            newReturnTime:       resolvedReturnTime,
+            paymentIntentId:     pi.id,
+            createdAt:           new Date().toISOString(),
           },
         });
       } catch (updateErr) {
@@ -598,6 +630,7 @@ export default async function handler(req, res) {
       extensionAmount:   extensionAmount.toFixed(2),
       extensionLabel,
       lateFeeIncluded,
+      deferredLateFee:   sbDeferredLateFee,
       lateFeeWaived:     sbWaivedAmount,
       newReturnDate,
       newReturnTime:     resolvedReturnTime,
