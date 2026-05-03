@@ -739,12 +739,26 @@
       .ai-side-panel { display: none; }
     }
 
+    /* ── Demo Mode Layout Adjustment ─────────────────────────────── */
+    body.demo-mode-active { padding-top: 44px; }
+    body.demo-mode-active .sidebar  { top: 44px; }
+    body.demo-mode-active .topbar   { top: 0; /* stays sticky within the offset main */ }
+
+    /* ── Wizard & Onboarding Buttons ─────────────────────────────── */
+    #onboarding-modal .btn { display: flex; }
+
   </style>
 </head>
 <body>
 
 <!-- Multi-tab conflict warning -->
 <div id="multi-tab-warning">⚠ Another admin tab is open — concurrent edits may conflict. Please close the other tab.</div>
+
+<!-- Demo Mode Banner -->
+<div id="demo-mode-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:600;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:16px;font-size:13px;font-weight:600;text-align:center;flex-wrap:wrap;">
+  <span>🎯 Demo Mode — All actions are simulated. No real data is changed.</span>
+  <a href="../landing.html" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Start Your Own System →</a>
+</div>
 
 <!-- Preview Site Modal (full-screen iframe) -->
 <div id="preview-modal-overlay">
@@ -1018,6 +1032,18 @@
               <div id="recent-bookings-list"></div>
             </div>
           </div>
+
+          <!-- Getting Started Checklist (hidden when all done or dismissed) -->
+          <div class="card" id="checklist-card" style="display:none;margin-top:16px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">✅ Getting Started</div>
+                <div class="card-sub">Complete these steps to set up your system</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="dismissChecklist()">Dismiss</button>
+            </div>
+            <div id="checklist-items" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:4px 0;"></div>
+          </div>
         </div>
       </div>
 
@@ -1089,7 +1115,7 @@
           </div>
           <div id="bookings-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-            <p>No bookings found.</p>
+            <p>No bookings yet — <a href="#" onclick="navigate('manual-booking');return false;" style="color:var(--primary);font-weight:600;">create your first booking</a></p>
           </div>
         </div>
       </div>
@@ -2484,6 +2510,9 @@
 <div id="toast-container"></div>
 
 <script>
+// ── Demo Mode Detection (must be set before any async calls below) ──────────
+window.DEMO_MODE = new URLSearchParams(window.location.search).has('demo');
+
 // ── Configuration ──────────────────────────────────────────────────────────
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? ''
@@ -2536,6 +2565,7 @@ let _firstVehicleId = '';
 // Expected response: array of { vehicle_id, vehicle_name, cover_image, ... }
 // cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
 async function loadVehiclesFromApi() {
+  if (window.DEMO_MODE) return; // demo data is loaded by initDemoMode()
   try {
     const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=car');
     if (!res.ok) return;
@@ -2764,6 +2794,7 @@ function signIn() {
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
       aiRestoreHistory();
+      checkFirstTimeUser(data);
 
       // Handle return from Bouncie OAuth callback
       const params = new URLSearchParams(window.location.search);
@@ -2814,6 +2845,7 @@ function logout() {
 
 // ── API ────────────────────────────────────────────────────────────────────
 async function apiPost(path, body, signal = undefined) {
+  if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
   const resp = await fetch(url, {
     method: 'POST',
@@ -2951,7 +2983,7 @@ function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
   apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
-    .then((data) => { dashboardData = data; renderDashboard(data); })
+    .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
     .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
 }
 
@@ -3507,6 +3539,16 @@ function loadGpsTracking() {
   notConn.style.display      = 'none';
   cards.style.display        = 'none';
 
+  // In demo mode, GPS is always "not connected"
+  if (window.DEMO_MODE) {
+    loading.style.display = 'none';
+    notConn.style.display = '';
+    document.getElementById('gps-not-connected-msg').textContent = 'GPS tracking is not available in demo mode.';
+    const hintEl = document.getElementById('gps-not-connected-hint');
+    if (hintEl) hintEl.style.display = 'none';
+    return;
+  }
+
   fetch(`${API_BASE}/api/bouncie-location?secret=${encodeURIComponent(adminSecret)}`)
     .then((r) => r.json())
     .then((data) => {
@@ -3889,6 +3931,7 @@ async function saveNewVehicle() {
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
+    localStorage.setItem('sly_checklist_vehicle', '1');
     allVehicles = {};
     if (currentPage === 'vehicles') loadVehicles();
   } catch (err) {
@@ -4945,6 +4988,7 @@ async function submitManualBooking(e) {
     });
 
     showToast('Booking saved successfully.', 'success');
+    localStorage.setItem('sly_checklist_booking', '1');
     clearManualBookingForm();
     allBookings = []; // Force refresh on next visit
   } catch (err) {
@@ -8687,7 +8731,464 @@ async function loadAiInsights() {
   </div>
 </div>
 
+<!-- Onboarding Welcome Modal -->
+<div class="modal-overlay" id="onboarding-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title">👋 Welcome to Fleet Control!</div>
+    </div>
+    <div style="text-align:center;padding:8px 0 16px;">
+      <div style="font-size:48px;margin-bottom:16px;">🚗</div>
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:10px;">Set up your system in 2 minutes</h3>
+      <p style="font-size:14px;color:var(--text-sub);line-height:1.6;margin-bottom:24px;">
+        It looks like you're just getting started. Add your first vehicle and you'll be ready to take bookings.
+        Or explore with sample data to see how everything works.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:360px;margin:0 auto;">
+        <button class="btn btn-primary" style="padding:16px;flex-direction:column;height:auto;gap:6px;" onclick="startSetupWizard()">
+          <span style="font-size:24px;">🚀</span>
+          <span style="font-size:14px;font-weight:700;">Start Setup</span>
+          <span style="font-size:11px;opacity:0.85;font-weight:400;">Add your first vehicle</span>
+        </button>
+        <button class="btn btn-secondary" style="padding:16px;flex-direction:column;height:auto;gap:6px;" onclick="loadDemoDataAndClose()">
+          <span style="font-size:24px;">👁</span>
+          <span style="font-size:14px;font-weight:700;">Load Demo Data</span>
+          <span style="font-size:11px;color:var(--text-sub);font-weight:400;">Explore with samples</span>
+        </button>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:center;border-top:none;padding-top:0;">
+      <button class="btn btn-secondary" onclick="closeModal('onboarding-modal');localStorage.setItem('sly_onboarding_done','1')">Skip for now</button>
+    </div>
+  </div>
+</div>
+
+<!-- Setup Wizard Modal -->
+<div class="modal-overlay" id="setup-wizard-modal">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title" id="wizard-title">Quick Setup</div>
+      <div style="display:flex;gap:6px;margin-left:auto;">
+        <span id="wizard-step-1-dot" style="width:8px;height:8px;border-radius:50%;background:var(--primary);display:inline-block;"></span>
+        <span id="wizard-step-2-dot" style="width:8px;height:8px;border-radius:50%;background:var(--border);display:inline-block;"></span>
+        <span id="wizard-step-3-dot" style="width:8px;height:8px;border-radius:50%;background:var(--border);display:inline-block;"></span>
+      </div>
+      <button class="modal-close" style="margin-left:8px;" onclick="closeModal('setup-wizard-modal')">✕</button>
+    </div>
+    <div id="wizard-content" style="padding:4px 0 8px;"></div>
+  </div>
+</div>
+
 <script>
+// ═══════════════════════════════════════════════════════════════════════════
+// PRODUCTIZATION LAYER — Demo Mode · Onboarding · Setup Wizard · Checklist
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Demo Data ──────────────────────────────────────────────────────────────
+(function buildDemoData() {
+  const today = new Date();
+  const fmt   = (d) => d.toISOString().slice(0, 10);
+  const ago   = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return fmt(d); };
+  const fwd   = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return fmt(d); };
+  const mo    = (n) => { const d = new Date(today); d.setMonth(d.getMonth() - n); return fmt(d).slice(0,7); };
+
+  window.DEMO_VEHICLES = {
+    camry:     { vehicle_name: 'Camry 2012',            type: 'economy', status: 'active',      vehicle_year: 2012, purchase_price: 8500,  cover_image: '/images/car2.jpg', daily_rate: 55, weekly_rate: 350 },
+    civic:     { vehicle_name: 'Honda Civic 2016',      type: 'economy', status: 'active',      vehicle_year: 2016, purchase_price: 9200,  cover_image: '',                daily_rate: 55, weekly_rate: 350 },
+    rav4:      { vehicle_name: 'Toyota RAV4 2018',      type: 'suv',     status: 'active',      vehicle_year: 2018, purchase_price: 14000, cover_image: '',                daily_rate: 80, weekly_rate: 499 },
+    slingshot: { vehicle_name: 'Polaris Slingshot 2021',type: 'other',   status: 'maintenance', vehicle_year: 2021, purchase_price: 22000, cover_image: '',                daily_rate: 120, weekly_rate: 699 },
+  };
+
+  window.DEMO_BOOKINGS = [
+    { bookingId: 'bk-demo-001', booking_ref: 'bk-demo-001', name: 'James Thornton',   phone: '(310) 555-0191', email: 'james.thornton@example.com', vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: ago(7), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', status: 'overdue',           amountPaid: 350, paymentMethod: 'stripe', paymentStatus: 'paid' },
+    { bookingId: 'bk-demo-002', booking_ref: 'bk-demo-002', name: 'Sofia Reyes',       phone: '(213) 555-0142', email: 'sofia.reyes@example.com',    vehicleId: 'civic',     vehicle_id: 'civic',     pickupDate: ago(4), returnDate: fwd(3), pickupTime: '9:00 AM',  returnTime: '6:00 PM', status: 'active_rental',     amountPaid: 350, paymentMethod: 'cash',   paymentStatus: 'paid' },
+    { bookingId: 'bk-demo-003', booking_ref: 'bk-demo-003', name: 'Aisha Williams',    phone: '(323) 555-0178', email: 'aisha.williams@example.com', vehicleId: 'rav4',      vehicle_id: 'rav4',      pickupDate: fwd(2), returnDate: fwd(9), pickupTime: '11:00 AM', returnTime: '4:00 PM', status: 'booked_paid',       amountPaid: 499, paymentMethod: 'stripe', paymentStatus: 'paid' },
+    { bookingId: 'bk-demo-004', booking_ref: 'bk-demo-004', name: 'Carlos Medina',     phone: '(424) 555-0163', email: 'carlos.medina@example.com',  vehicleId: 'slingshot', vehicle_id: 'slingshot', pickupDate: ago(14),returnDate: ago(7), pickupTime: '10:00 AM', returnTime: '5:00 PM', status: 'completed_rental',  amountPaid: 550, paymentMethod: 'zelle',  paymentStatus: 'paid' },
+    { bookingId: 'bk-demo-005', booking_ref: 'bk-demo-005', name: 'Rachel Kim',        phone: '(818) 555-0109', email: 'rachel.kim@example.com',     vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '2:00 PM',  returnTime: '2:00 PM', status: 'reserved_unpaid',   amountPaid: 0,   paymentMethod: 'stripe', paymentStatus: 'unpaid' },
+  ];
+
+  window.DEMO_EXPENSES = [
+    { id: 1, vehicleId: 'camry',     vehicle_id: 'camry',     date: ago(30), category: 'maintenance', amount: 120, notes: 'Oil change + tire rotation' },
+    { id: 2, vehicleId: 'rav4',      vehicle_id: 'rav4',      date: ago(15), category: 'insurance',   amount: 280, notes: 'Monthly insurance premium' },
+    { id: 3, vehicleId: 'civic',     vehicle_id: 'civic',     date: ago(8),  category: 'repair',      amount: 85,  notes: 'Brake pad replacement' },
+    { id: 4, vehicleId: 'slingshot', vehicle_id: 'slingshot', date: ago(5),  category: 'maintenance', amount: 220, notes: 'Belt inspection + fluid change' },
+  ];
+
+  window.DEMO_REVENUE = [
+    { id: 1, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(7),  amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
+    { id: 2, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(4),  amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
+    { id: 3, booking_ref: 'bk-demo-003', vehicle_id: 'rav4',      date: ago(2),  amount_gross: 499, stripe_fee: 17, amount_net: 482, payment_type: 'reservation_deposit' },
+    { id: 4, booking_ref: 'bk-demo-004', vehicle_id: 'slingshot', date: ago(14), amount_gross: 550, stripe_fee: 0,  amount_net: 550, payment_type: 'zelle' },
+    { id: 5, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(60), amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
+    { id: 6, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(45), amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
+    { id: 7, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(90), amount_gross: 700, stripe_fee: 24, amount_net: 676, payment_type: 'reservation_deposit' },
+    { id: 8, booking_ref: 'bk-demo-004', vehicle_id: 'slingshot', date: ago(75), amount_gross: 550, stripe_fee: 0,  amount_net: 550, payment_type: 'zelle' },
+  ];
+
+  window.DEMO_CUSTOMERS = [
+    { id: 1, name: 'James Thornton', phone: '(310) 555-0191', email: 'james.thornton@example.com', total_bookings: 3, total_spent: 1050, risk_level: 'medium', last_booking: ago(7) },
+    { id: 2, name: 'Sofia Reyes',    phone: '(213) 555-0142', email: 'sofia.reyes@example.com',    total_bookings: 5, total_spent: 1750, risk_level: 'low',    last_booking: ago(4) },
+    { id: 3, name: 'Aisha Williams', phone: '(323) 555-0178', email: 'aisha.williams@example.com', total_bookings: 2, total_spent: 998,  risk_level: 'low',    last_booking: ago(2) },
+    { id: 4, name: 'Carlos Medina',  phone: '(424) 555-0163', email: 'carlos.medina@example.com',  total_bookings: 8, total_spent: 4400, risk_level: 'low',    last_booking: ago(14) },
+    { id: 5, name: 'Rachel Kim',     phone: '(818) 555-0109', email: 'rachel.kim@example.com',     total_bookings: 1, total_spent: 0,    risk_level: 'low',    last_booking: fwd(1) },
+  ];
+
+  const revChart = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today); d.setMonth(d.getMonth() - (6 - i));
+    const label = d.toLocaleString('default', { month: 'short' });
+    const amounts = [2800, 3100, 2450, 3200, 3700, 2980, 8420];
+    return { month: label, amount: amounts[i] };
+  });
+
+  window.DEMO_DASHBOARD = {
+    kpis: {
+      totalRevenue: 8420, netRevenue: 8181, totalExpenses: 705,
+      pendingApprovals: 1, activeBookings: 2, availableVehicles: 2,
+      operationalROI: 21.4, pickupsToday: 1, returnsToday: 0, overdueCount: 1,
+      bookingsLast7Days: 4, bookingsLast30Days: 12,
+    },
+    revenueChart: revChart,
+    bookingsPerVehicle: { camry: 12, civic: 8, rav4: 5, slingshot: 3 },
+    vehicleStats: {
+      camry:     { revenue: 3200, netProfit: 2100, bookingCount: 12, expenses: 340, roi: 8.2 },
+      civic:     { revenue: 2800, netProfit: 1900, bookingCount: 8,  expenses: 280, roi: 7.1 },
+      rav4:      { revenue: 1820, netProfit: 1100, bookingCount: 5,  expenses: 420, roi: 5.4 },
+      slingshot: { revenue: 600,  netProfit: 380,  bookingCount: 3,  expenses: 200, roi: 3.2 },
+    },
+    alerts: [
+      { type: 'warning', message: 'James Thornton\'s Camry rental is 2 days overdue — contact customer.' },
+      { type: 'info',    message: 'Toyota RAV4 oil change due in ~200 miles.' },
+      { type: 'success', message: 'Honda Civic returned on time — great customer.' },
+    ],
+    recentBookings: [
+      { name: 'James Thornton', vehicleId: 'camry',     pickupDate: ago(7),  returnDate: ago(2),  pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 350, status: 'overdue' },
+      { name: 'Sofia Reyes',    vehicleId: 'civic',     pickupDate: ago(4),  returnDate: fwd(3),  pickupTime: '9:00 AM',  returnTime: '6:00 PM', amountPaid: 350, status: 'active_rental' },
+      { name: 'Aisha Williams', vehicleId: 'rav4',      pickupDate: fwd(2),  returnDate: fwd(9),  pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 499, status: 'booked_paid' },
+      { name: 'Carlos Medina',  vehicleId: 'slingshot', pickupDate: ago(14), returnDate: ago(7),  pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 550, status: 'completed_rental' },
+    ],
+  };
+
+  window.DEMO_ANALYTICS = {
+    vehicles: Object.entries(window.DEMO_VEHICLES).map(([id, v]) => ({
+      vehicle_id: id, vehicle_name: v.vehicle_name,
+      utilization: Math.round(60 + Math.random() * 30),
+      revenue: window.DEMO_DASHBOARD.vehicleStats[id]?.revenue || 0,
+      roi: window.DEMO_DASHBOARD.vehicleStats[id]?.roi || 0,
+    })),
+  };
+
+  window.DEMO_LATE_FEES = [
+    { id: 1, booking_ref: 'bk-demo-001', customer_name: 'James Thornton', vehicle_id: 'camry', days_overdue: 2, fee_amount: 110, status: 'pending', created_at: ago(1) },
+  ];
+})();
+
+// ── Demo API Interceptor ────────────────────────────────────────────────────
+function getDemoResponse(path, body) {
+  const p = path.split('?')[0];
+  const action = (body && body.action) || '';
+
+  if (p.endsWith('/api/v2-dashboard'))       return Promise.resolve(window.DEMO_DASHBOARD);
+  if (p.endsWith('/api/v2-vehicles')) {
+    if (!action || action === 'list')        return Promise.resolve({ vehicles: window.DEMO_VEHICLES });
+    if (action === 'update')                 return Promise.resolve({ ok: true, vehicle: window.DEMO_VEHICLES[body.vehicleId] || {} });
+    if (action === 'create')                 return Promise.resolve({ ok: true, vehicle: {} });
+    return Promise.resolve({ ok: true });
+  }
+  if (p.endsWith('/api/v2-bookings'))        return Promise.resolve({ bookings: window.DEMO_BOOKINGS });
+  if (p.endsWith('/api/v2-revenue'))         return Promise.resolve({ records: window.DEMO_REVENUE, groups: [], kpi: { gross: 8420, net: 8181, stripe_fees: 239, count: 28 } });
+  if (p.endsWith('/api/v2-expenses'))        return Promise.resolve({ expenses: window.DEMO_EXPENSES });
+  if (p.endsWith('/api/v2-analytics'))       return Promise.resolve(window.DEMO_ANALYTICS);
+  if (p.endsWith('/api/v2-customers'))       return Promise.resolve({ customers: window.DEMO_CUSTOMERS });
+  if (p.endsWith('/api/v2-late-fees'))       return Promise.resolve({ fees: window.DEMO_LATE_FEES });
+  if (p.endsWith('/api/v2-mileage'))         return Promise.resolve({ vehicles: [], alerts: [] });
+  if (p.endsWith('/api/v2-system-health'))   return Promise.resolve({ checks: [], status: 'ok', issues: [] });
+  if (p.endsWith('/api/v2-sms-templates'))   return Promise.resolve({ templates: [] });
+  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [] });
+  if (p.endsWith('/api/v2-protection-plans'))return Promise.resolve({ plans: [] });
+  if (p.endsWith('/api/v2-pricing'))         return Promise.resolve({ pricing: {} });
+  if (p.endsWith('/api/v2-block-dates'))     return Promise.resolve({ blocked: [] });
+  if (p.endsWith('/api/v2-fleet-status'))    return Promise.resolve({ fleet: [] });
+  if (p.endsWith('/api/admin-chat'))         return Promise.resolve({ reply: '👋 This is **demo mode**. In the live system, I can query real bookings, revenue, customer data, and execute actions. Ask me anything — I\'ll show you what I can do!', messages: [], tool_calls: [] });
+  if (p.endsWith('/api/tts'))                return Promise.reject(new Error('TTS disabled in demo'));
+  if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: 'Fleet Control Demo', phone: '(310) 555-0100', logo_url: '' });
+  if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });
+  if (p.endsWith('/api/get-expenses'))       return Promise.resolve({ expenses: window.DEMO_EXPENSES });
+  if (p.endsWith('/api/add-expense'))        return Promise.resolve({ ok: true, expense: { id: Date.now() } });
+  if (p.endsWith('/api/delete-expense'))     return Promise.resolve({ ok: true });
+  if (p.endsWith('/api/admin-update-pricing'))  return Promise.resolve({ ok: true, pricing: {} });
+  if (p.endsWith('/api/admin-ai-insights'))  return Promise.resolve({ summary: 'Demo mode — live AI insights are not available.', problems: [], metrics: {} });
+  if (p.endsWith('/api/v2-diagnostics'))     return Promise.resolve({ checks: [], status: 'ok' });
+  if (p.endsWith('/api/v2-sms-logs'))        return Promise.resolve({ logs: [] });
+  if (p.endsWith('/api/bouncie-location'))   return Promise.resolve({ connected: false, message: 'GPS tracking not configured in demo mode.' });
+
+  // Catch-all — return silent success for any unmatched write
+  return Promise.resolve({ ok: true, _demo: true });
+}
+
+// ── Demo Mode Initializer ──────────────────────────────────────────────────
+function initDemoMode() {
+  if (!window.DEMO_MODE) return;
+
+  // Adjust topbar position to account for demo banner height
+  const banner = document.getElementById('demo-mode-banner');
+  if (banner) {
+    banner.style.display = 'flex';
+    document.body.classList.add('demo-mode-active');
+  }
+
+  // Bypass auth
+  document.getElementById('auth-screen').style.display = 'none';
+  adminSecret = 'demo';
+  document.getElementById('app').classList.add('ready');
+
+  // Populate vehicle maps from demo data so dropdowns and labels work
+  Object.entries(window.DEMO_VEHICLES).forEach(([id, v]) => {
+    VEHICLE_NAMES_DYNAMIC[id] = v.vehicle_name;
+    if (v.cover_image) VEHICLE_IMAGES_DYNAMIC[id] = v.cover_image;
+    VEHICLE_RATES[id] = { perDay: v.daily_rate || 55, perWeek: v.weekly_rate || 350 };
+  });
+  const vList = Object.entries(window.DEMO_VEHICLES).map(([id, v]) => ({
+    vehicle_id: id, vehicle_name: v.vehicle_name,
+    cover_image: v.cover_image || '',
+    daily_price: v.daily_rate || 55,
+    weekly_price: v.weekly_rate || 350,
+  }));
+  if (typeof populateVehicleFilters === 'function') populateVehicleFilters(vList);
+
+  // Render dashboard with demo data
+  dashboardData = window.DEMO_DASHBOARD;
+  renderDashboard(window.DEMO_DASHBOARD);
+
+  // Disable AI input in demo (graceful degradation — just show a note)
+  const aiInput = document.getElementById('ai-input');
+  if (aiInput) {
+    aiInput.placeholder = 'Demo mode — AI responses are simulated…';
+  }
+
+  // Auto-start full tour after 800ms (gives voice-assistant.js time to load)
+  setTimeout(function() {
+    if (typeof startFullTour === 'function') {
+      startFullTour();
+    } else if (typeof startTour === 'function') {
+      startTour();
+    }
+  }, 800);
+}
+
+// Run demo init once DOM is fully parsed
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDemoMode);
+} else {
+  initDemoMode();
+}
+
+// ── First-Time User Onboarding ─────────────────────────────────────────────
+function checkFirstTimeUser(data) {
+  if (window.DEMO_MODE) return;
+  if (localStorage.getItem('sly_onboarding_done')) { renderChecklist(); return; }
+  const kpi = (data && data.kpis) || {};
+  const isNew = (kpi.availableVehicles === 0) ||
+                (!data.recentBookings || data.recentBookings.length === 0);
+  if (isNew) {
+    setTimeout(function() { openModal('onboarding-modal'); }, 600);
+  } else {
+    localStorage.setItem('sly_onboarding_done', '1');
+  }
+  renderChecklist();
+}
+
+function loadDemoDataAndClose() {
+  closeModal('onboarding-modal');
+  localStorage.setItem('sly_onboarding_done', '1');
+  showToast('Demo data loaded — explore the system!', 'success');
+  // Navigate to demo URL so the full demo mode kicks in
+  window.location.href = window.location.pathname + '?demo=1';
+}
+
+// ── Setup Wizard ───────────────────────────────────────────────────────────
+let _wizardVehicleName = '';
+let _wizardDailyRate   = 0;
+let _wizardWeeklyRate  = 0;
+let _wizardPayment     = 'cash';
+
+const WIZARD_STEP_HTML = {
+  1: `
+    <div style="padding:4px 0;">
+      <p style="font-size:13px;color:var(--text-sub);margin-bottom:20px;">Step 1 of 3 — Add your first vehicle</p>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Vehicle Name *</label>
+        <input type="text" class="form-input" id="wiz-vname" placeholder="e.g. Camry 2022 SE" maxlength="100" autofocus>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Daily Rate ($) *</label>
+          <input type="number" class="form-input" id="wiz-daily" placeholder="55" min="1" step="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Weekly Rate ($)</label>
+          <input type="number" class="form-input" id="wiz-weekly" placeholder="350" min="1" step="1">
+        </div>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal('setup-wizard-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="wizardStep1Next()">Next →</button>
+      </div>
+    </div>`,
+  2: `
+    <div style="padding:4px 0;">
+      <p style="font-size:13px;color:var(--text-sub);margin-bottom:20px;">Step 2 of 3 — How will customers pay?</p>
+      <div style="display:grid;gap:12px;">
+        <button class="btn btn-outline" style="padding:18px;justify-content:flex-start;gap:14px;text-align:left;" onclick="wizardStep2Next('cash')">
+          <span style="font-size:28px;">💵</span>
+          <div><div style="font-weight:700;font-size:14px;">Cash / Zelle / Venmo</div><div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Collect payments yourself — no processing fees</div></div>
+        </button>
+        <button class="btn btn-outline" style="padding:18px;justify-content:flex-start;gap:14px;text-align:left;opacity:0.6;" title="Stripe integration coming soon" onclick="wizardStep2Next('stripe')">
+          <span style="font-size:28px;">💳</span>
+          <div><div style="font-weight:700;font-size:14px;">Stripe (Online Payments)</div><div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Accept cards online — requires Stripe account setup</div></div>
+        </button>
+      </div>
+      <div style="margin-top:20px;display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="showWizardStep(1)">← Back</button>
+      </div>
+    </div>`,
+  3: `
+    <div style="padding:4px 0;text-align:center;">
+      <div style="font-size:56px;margin-bottom:16px;">🎉</div>
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:8px;">You're ready to go!</h3>
+      <p style="font-size:14px;color:var(--text-sub);line-height:1.6;margin-bottom:24px;" id="wizard-summary"></p>
+      <div style="display:flex;flex-direction:column;gap:10px;max-width:300px;margin:0 auto;">
+        <button class="btn btn-primary btn-lg" onclick="wizardComplete()">Go to Dashboard →</button>
+        <button class="btn btn-secondary" onclick="wizardTakeTour()">🗺 Take the Guided Tour</button>
+      </div>
+    </div>`,
+};
+
+function startSetupWizard() {
+  closeModal('onboarding-modal');
+  showWizardStep(1);
+  openModal('setup-wizard-modal');
+}
+
+function showWizardStep(n) {
+  const titleEl = document.getElementById('wizard-title');
+  const contentEl = document.getElementById('wizard-content');
+  if (titleEl) titleEl.textContent = n === 1 ? 'Add Your Vehicle' : n === 2 ? 'Payment Setup' : 'All Set!';
+  if (contentEl) contentEl.innerHTML = WIZARD_STEP_HTML[n] || '';
+  [1, 2, 3].forEach(function(i) {
+    const dot = document.getElementById('wizard-step-' + i + '-dot');
+    if (dot) dot.style.background = i <= n ? 'var(--primary)' : 'var(--border)';
+  });
+}
+
+function wizardStep1Next() {
+  const name   = (document.getElementById('wiz-vname')  || {}).value || '';
+  const daily  = parseFloat((document.getElementById('wiz-daily') || {}).value) || 0;
+  const weekly = parseFloat((document.getElementById('wiz-weekly') || {}).value) || 0;
+  if (!name.trim()) { showToast('Please enter a vehicle name.', 'error'); return; }
+  if (!daily)       { showToast('Please enter a daily rate.', 'error'); return; }
+  _wizardVehicleName = name.trim();
+  _wizardDailyRate   = daily;
+  _wizardWeeklyRate  = weekly || Math.round(daily * 7 * 0.9);
+  showWizardStep(2);
+}
+
+function wizardStep2Next(method) {
+  _wizardPayment = method;
+  const summary = document.getElementById('wizard-summary');
+  if (summary) {
+    summary.textContent = `Your vehicle "${_wizardVehicleName}" has been set up at $${_wizardDailyRate}/day. ` +
+      (method === 'cash' ? 'You\'ve chosen cash/Zelle payments.' : 'Stripe integration is ready to configure in System Settings.');
+  }
+  showWizardStep(3);
+}
+
+async function wizardComplete() {
+  const btn = document.querySelector('#setup-wizard-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Setting up…'; }
+  try {
+    const vId = _wizardVehicleName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 50) || 'vehicle-1';
+    await apiPost('/api/v2-vehicles', {
+      secret: adminSecret, action: 'create',
+      vehicleId: vId, vehicleName: _wizardVehicleName,
+      type: 'economy', status: 'active',
+      daily_price: _wizardDailyRate, weekly_price: _wizardWeeklyRate,
+    });
+    localStorage.setItem('sly_onboarding_done', '1');
+    localStorage.setItem('sly_checklist_vehicle', '1');
+    closeModal('setup-wizard-modal');
+    navigate('dashboard');
+    showToast('🚗 Vehicle added! Your system is ready.', 'success');
+    renderChecklist();
+    // Offer the tour
+    setTimeout(function() {
+      if (typeof startTour === 'function') startTour();
+    }, 1200);
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Go to Dashboard →'; }
+  }
+}
+
+function wizardTakeTour() {
+  closeModal('setup-wizard-modal');
+  localStorage.setItem('sly_onboarding_done', '1');
+  if (typeof startTour === 'function') {
+    setTimeout(startTour, 400);
+  } else if (typeof startFullTour === 'function') {
+    setTimeout(startFullTour, 400);
+  }
+}
+
+// ── Getting-Started Checklist ──────────────────────────────────────────────
+const CHECKLIST_ITEMS = [
+  { key: 'sly_checklist_vehicle', icon: '🚗', label: 'Add your first vehicle',   action: 'openAddVehicle' },
+  { key: 'sly_checklist_pricing',  icon: '💲', label: 'Set rental pricing',        action: 'nav_vehicle-pricing' },
+  { key: 'sly_checklist_booking',  icon: '📋', label: 'Create your first booking', action: 'nav_manual-booking' },
+  { key: 'sly_checklist_payment',  icon: '💳', label: 'Configure payments',        action: 'nav_system-settings' },
+];
+
+function renderChecklist() {
+  const card = document.getElementById('checklist-card');
+  const list = document.getElementById('checklist-items');
+  if (!card || !list) return;
+  if (window.DEMO_MODE) { card.style.display = 'none'; return; }
+  if (localStorage.getItem('sly_checklist_dismissed')) { card.style.display = 'none'; return; }
+  const allDone = CHECKLIST_ITEMS.every(function(i) { return !!localStorage.getItem(i.key); });
+  if (allDone) { card.style.display = 'none'; return; }
+
+  card.style.display = '';
+  list.innerHTML = CHECKLIST_ITEMS.map(function(item) {
+    const done = !!localStorage.getItem(item.key);
+    const action = item.action.startsWith('nav_')
+      ? 'navigate(\'' + item.action.slice(4) + '\')'
+      : item.action + '()';
+    return '<div onclick="' + (done ? '' : action) + '" style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg);border-radius:8px;cursor:' + (done ? 'default' : 'pointer') + ';border:1px solid ' + (done ? 'var(--success)' : 'var(--border)') + ';transition:box-shadow 0.15s;" ' +
+      (done ? '' : 'onmouseover="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.08)\'" onmouseout="this.style.boxShadow=\'\'"') + '>' +
+      '<span style="font-size:18px;">' + (done ? '✅' : item.icon) + '</span>' +
+      '<span style="font-size:13px;font-weight:600;' + (done ? 'text-decoration:line-through;color:var(--text-sub)' : '') + '">' + item.label + '</span>' +
+      (done ? '' : '<span style="margin-left:auto;font-size:12px;color:var(--primary);font-weight:600;">Start →</span>') +
+      '</div>';
+  }).join('');
+}
+
+function dismissChecklist() {
+  localStorage.setItem('sly_checklist_dismissed', '1');
+  const card = document.getElementById('checklist-card');
+  if (card) card.style.display = 'none';
+}
+
+// Auto-mark checklist items when pages are visited
+(function patchNavigate() {
+  const _orig = typeof navigate === 'function' ? navigate : null;
+  if (!_orig) return;
+  window.navigate = function(page) {
+    if (page === 'vehicle-pricing')  localStorage.setItem('sly_checklist_pricing', '1');
+    if (page === 'system-settings')  localStorage.setItem('sly_checklist_payment', '1');
+    if (page === 'manual-booking')   localStorage.setItem('sly_checklist_booking', '1');
+    return _orig(page);
+  };
+})();
 </script>
 
 <script src="voice-assistant.js"></script>
