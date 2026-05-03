@@ -84,7 +84,10 @@ export default async function handler(req, res) {
     // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
     if (!vehicleData) {
-      return res.status(400).json({ error: "Invalid vehicle" });
+      const msg = vehicleId
+        ? `Vehicle "${vehicleId}" is not available for booking. It may be inactive or not yet configured — please check the admin panel.`
+        : "No vehicle selected. Please go back and choose a vehicle.";
+      return res.status(400).json({ error: msg });
     }
 
     // Pickup time is required for all vehicles — it anchors the rental window and
