@@ -13,7 +13,9 @@ function escHtml(str) {
 // ── Los Angeles timezone helper ───────────────────────────────────────────────
 // SlyLA is provided by la-date.js; if that script wasn't loaded (e.g., on a
 // page that only embeds the chatbot widget), define a self-contained fallback.
-var SlyLA = window.SlyLA || (function () {
+// Assign directly to window to avoid redeclaration conflicts with `const SlyLA`
+// that cars.js / car.js declare at the top level of their own scripts.
+window.SlyLA = window.SlyLA || (function () {
   var TZ = "America/Los_Angeles";
   function isoDateInLA(d) {
     try {
@@ -203,7 +205,7 @@ function fmtDateChatbot(iso, locale) {
 
 /** Return the ISO date of the day after the given ISO date. */
 function nextDayChatbot(iso) {
-  return SlyLA.addDaysToISO(iso, 1);
+  return window.SlyLA.addDaysToISO(iso, 1);
 }
 
 /**
@@ -220,7 +222,7 @@ function getVehicleBookingInfo(vehicleId, lang) {
       : "I couldn't load the latest booking info right now. Call us at 📞 (833) 252-1093 for up-to-date availability.";
   }
 
-  var today  = SlyLA.todayISO();
+  var today  = window.SlyLA.todayISO();
   var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
     return a.from < b.from ? -1 : 1;
   });
@@ -276,7 +278,7 @@ function getVehicleBookingInfo(vehicleId, lang) {
 function buildAvailabilityMessage(lang) {
   var ids   = getFleetVehicleIds();
   var locale = lang === "es" ? "es-US" : "en-US";
-  var today  = SlyLA.todayISO();
+  var today  = window.SlyLA.todayISO();
 
   var lines = [];
   for (var k = 0; k < ids.length; k++) {
@@ -331,7 +333,7 @@ function buildAvailabilityMessage(lang) {
  */
 function buildFleetMessage(lang) {
   var locale = lang === "es" ? "es-US" : "en-US";
-  var today  = SlyLA.todayISO();
+  var today  = window.SlyLA.todayISO();
 
   function statusLine(vehicleId) {
     if (!slyFleetStatus) return "";

@@ -16,7 +16,7 @@ export const CAMRY_BOOKING_DEPOSIT = 50;
 export const CARS = {
   camry:      { name: "Camry 2012",       pricePerDay: 55,  weekly: 350, biweekly: 650,  monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",    pricePerDay: 55,  weekly: 350, biweekly: 650,  monthly: 1300, deposit: 0 },
-  fusion2017: { name: "Ford Fusion 2017", pricePerDay: 65,  weekly: 400, biweekly: 750,  monthly: 1400, deposit: 0 },
+  fusion2017: { name: "Ford Fusion 2017", pricePerDay: 60,  weekly: 400, biweekly: 800,  monthly: 1500, deposit: 0 },
 };
 
 // Canonical vehicle IDs derived from the CARS registry above.
@@ -244,11 +244,12 @@ export async function getVehiclePricing(supabase, vehicleId) {
   if (!vehicleErr && vehicleRow?.data) {
     const vdata = vehicleRow.data;
     // Support both v2-vehicles field names (daily_price, weekly_price, …) and
-    // AI-tool field names (daily_rate, weekly, biweekly, monthly) so that
-    // vehicles created via toolCreateVehicle/toolAddVehicle work without a
-    // separate vehicle_pricing row being present.
+    // AI-tool field names (daily_rate, weekly, biweekly, monthly) and legacy
+    // CARS/vehicles.json field names (pricePerDay) so that all vehicle records
+    // created via any path work without a separate vehicle_pricing row.
     const dailyPrice    = vdata.daily_price    ? Number(vdata.daily_price)    :
-                          vdata.daily_rate     ? Number(vdata.daily_rate)     : null;
+                          vdata.daily_rate     ? Number(vdata.daily_rate)     :
+                          vdata.pricePerDay    ? Number(vdata.pricePerDay)    : null;
     const weeklyPrice   = vdata.weekly_price   ? Number(vdata.weekly_price)   :
                           vdata.weekly         ? Number(vdata.weekly)         : null;
     const biweeklyPrice = vdata.biweekly_price ? Number(vdata.biweekly_price) :
