@@ -556,6 +556,25 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
     if (error && !error.message?.includes("relation")) {
       throw new Error(`Supabase insert failed: ${error.message}`);
     }
+
+    // Upsert vehicle_pricing row so create-payment-intent can load pricing
+    // without relying on the JSONB fallback.
+    if (dailyRate) {
+      const pricingRow = {
+        vehicle_id:     vehicleId,
+        daily_price:    Number(dailyRate),
+        weekly_price:   null,
+        biweekly_price: null,
+        monthly_price:  null,
+        updated_at:     new Date().toISOString(),
+      };
+      const { error: pricingErr } = await sb
+        .from("vehicle_pricing")
+        .upsert(pricingRow, { onConflict: "vehicle_id" });
+      if (pricingErr) {
+        console.warn("toolAddVehicle: vehicle_pricing upsert failed:", pricingErr.message);
+      }
+    }
   }
 
   // Also update vehicles.json as fallback store
@@ -668,6 +687,23 @@ async function toolCreateVehicle({ vehicle_id: requestedVehicleId, name, type, p
     // Mirror bouncie_device_id into the data blob for consistency
     if (bouncie_device_id) {
       vehicleObj.bouncie_device_id = String(bouncie_device_id).trim();
+    }
+
+    // Upsert vehicle_pricing row so create-payment-intent can load pricing
+    // without relying on the JSONB fallback.
+    const pricingRow = {
+      vehicle_id:     vehicleId,
+      daily_price:    dailyRate,
+      weekly_price:   weeklyRate   || null,
+      biweekly_price: null,
+      monthly_price:  null,
+      updated_at:     new Date().toISOString(),
+    };
+    const { error: pricingErr } = await sb
+      .from("vehicle_pricing")
+      .upsert(pricingRow, { onConflict: "vehicle_id" });
+    if (pricingErr) {
+      console.warn("toolCreateVehicle: vehicle_pricing upsert failed:", pricingErr.message);
     }
   }
 
