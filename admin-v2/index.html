@@ -6124,18 +6124,21 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
 let allCustomers = [];
 
 // ── Customer KPI summary ──────────────────────────────────────────────────
-function renderCustomerKpis() {
+// Accepts an optional `customers` array so cards always reflect whatever
+// subset is currently visible in the table (filtered or unfiltered).
+function renderCustomerKpis(customers) {
+  const list = customers || allCustomers;
   const grid = document.getElementById('cust-kpi-grid');
   if (!grid || !allCustomers.length) { if (grid) grid.innerHTML = ''; return; }
 
-  const total        = allCustomers.length;
-  const flagged      = allCustomers.filter((c) => c.flagged && !c.banned).length;
-  const banned       = allCustomers.filter((c) => c.banned).length;
-  const highRisk     = allCustomers.filter((c) => c.risk_flag === 'high').length;
+  const total        = list.length;
+  const flagged      = list.filter((c) => c.flagged && !c.banned).length;
+  const banned       = list.filter((c) => c.banned).length;
+  const highRisk     = list.filter((c) => c.risk_flag === 'high').length;
   // All financial totals via the shared financial engine.
-  const fin          = calcFinancials(allCustomers.map(normalizeCustomer), 'Customers');
-  const vip          = allCustomers.filter((c) => computeCustomerTier(c) === 'vip').length;
-  const unprofitable = allCustomers.filter((c) => computeCustomerTier(c) === 'unprofitable').length;
+  const fin          = calcFinancials(list.map(normalizeCustomer), 'Customers');
+  const vip          = list.filter((c) => computeCustomerTier(c) === 'vip').length;
+  const unprofitable = list.filter((c) => computeCustomerTier(c) === 'unprofitable').length;
 
   grid.innerHTML = [
     { label: 'Total Customers',  value: total,                              icon: '👥', color: '' },
@@ -6168,7 +6171,6 @@ function loadCustomers() {
     .then((data) => {
       allCustomers = data.customers || [];
       document.getElementById('customers-loading').style.display = 'none';
-      renderCustomerKpis();
       applyCustomerFilters();
     })
     .catch((err) => {
@@ -6206,6 +6208,9 @@ function applyCustomerFilters() {
     if (sortBy === 'name')              return (a.name || '').localeCompare(b.name || '');
     return 0;
   });
+
+  // Always keep KPI cards in sync with the visible (filtered) set.
+  renderCustomerKpis(filtered);
 
   const tbody = document.getElementById('customers-tbody');
   const wrap  = document.getElementById('customers-table-wrap');
@@ -6419,7 +6424,6 @@ function flagCustomer(id, flagged) {
     // Update in-memory record immediately so re-render is instant
     const c = allCustomers.find((x) => x.id === id);
     if (c) { c.flagged = flagged; c.flag_reason = reason || null; }
-    renderCustomerKpis();
     applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -6435,7 +6439,6 @@ function banCustomer(id, banned) {
     closeModal('customer-detail-modal');
     const c = allCustomers.find((x) => x.id === id);
     if (c) { c.banned = banned; c.ban_reason = reason || null; }
-    renderCustomerKpis();
     applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
