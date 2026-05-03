@@ -134,6 +134,9 @@ function normalizeVehicleData(vehicleId, vdata) {
  *   1. Static CARS list in _pricing.js (fastest — no I/O for known vehicles)
  *   2. Supabase vehicles table (live database for admin-created vehicles)
  *   3. vehicles.json on GitHub (fallback when Supabase is not configured)
+ *   4. vehicle_pricing table (last resort — any vehicle with pricing configured
+ *      is considered valid; handles admin-created vehicles whose vehicles table
+ *      row is missing or whose query failed transiently)
  *
  * Returns null when the vehicle is not found in any source, or when it is
  * found but its status is not "active" (inactive/maintenance vehicles cannot
@@ -212,6 +215,30 @@ export async function getVehicleById(vehicleId) {
     }
   } catch {
     // vehicle not found
+  }
+
+  // ── 4. vehicle_pricing table — last resort for admin-created vehicles ─────
+  // Handles the case where fusion2017 (or any vehicle created directly in
+  // Supabase or via admin pricing panel) has pricing configured but its
+  // vehicles table row was not found above — either because the row is missing
+  // or because the step-2 query failed transiently.  If any positive price
+  // exists for this vehicleId, treat the vehicle as bookable.  The name falls
+  // back to vehicleId (e.g. "fusion2017"); the actual human-readable name is
+  // not needed for charging — only for the Stripe receipt description.
+  if (sb) {
+    try {
+      const { data: pRow, error: pErr } = await sb
+        .from("vehicle_pricing")
+        .select("vehicle_id, daily_price, weekly_price")
+        .eq("vehicle_id", vehicleId)
+        .maybeSingle();
+      if (!pErr && pRow && (Number(pRow.daily_price) > 0 || Number(pRow.weekly_price) > 0)) {
+        console.log("[getVehicleById] Resolved via vehicle_pricing fallback:", vehicleId);
+        return normalizeVehicleData(vehicleId, { vehicle_name: vehicleId, status: "active" });
+      }
+    } catch (pFallbackErr) {
+      console.error("[getVehicleById] vehicle_pricing fallback error:", vehicleId, pFallbackErr?.message || pFallbackErr);
+    }
   }
 
   return null;
