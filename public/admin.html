@@ -547,11 +547,6 @@
             <label>Category</label>
             <select id="expCategory">
               <option value="maintenance">Maintenance</option>
-              <option value="insurance">Insurance</option>
-              <option value="repair">Repair</option>
-              <option value="fuel">Fuel</option>
-              <option value="registration">Registration</option>
-              <option value="other">Other</option>
             </select>
           </div>
           <div class="form-group">
@@ -1088,17 +1083,62 @@
         var html = "";
         if (vehicleExpenses.length) {
           vehicleExpenses.forEach(function (e) {
-            html += '<div class="expense-item">'
-              + '<div class="exp-info"><div>' + esc(e.notes || capitalize(e.category)) + '</div>'
-              + '<div class="exp-cat">' + esc(capitalize(e.category)) + ' · ' + esc(e.date) + '</div></div>'
-              + '<span class="exp-amt">-' + fmt(e.amount) + '</span>'
-              + '<button class="exp-del" data-expense-id="' + esc(e.expense_id) + '" title="Delete">🗑</button>'
-              + '</div>';
+              var catDisplay = e.category_name || capitalize(e.category) || '–';
+              var grpDisplay = e.category_group ? e.category_group + ' / ' + catDisplay : catDisplay;
+              html += '<div class="expense-item">'
+                + '<div class="exp-info"><div>' + esc(e.notes || catDisplay) + '</div>'
+                + '<div class="exp-cat">' + esc(grpDisplay) + ' · ' + esc(e.date) + '</div></div>'
+                + '<span class="exp-amt">-' + fmt(e.amount) + '</span>'
+                + '<button class="exp-del" data-expense-id="' + esc(e.expense_id) + '" title="Delete">🗑</button>'
+                + '</div>';
           });
         } else {
           html = '<div class="no-expenses">No expenses recorded yet.</div>';
         }
         document.getElementById("detailExpenses").innerHTML = html;
+      }
+
+      // ── Load expense categories ────────────────────────────────────────────
+      var expenseCategoryMap = {}; // id → { name, group_name }
+      function loadExpenseCategories(secret) {
+        fetch(API_BASE + "/api/get-expense-categories", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, action: "list" }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var cats = (data.categories || []).filter(function (c) { return c.is_active; });
+            expenseCategoryMap = {};
+            var sel = document.getElementById("expCategory");
+            sel.innerHTML = "";
+            var groups = {};
+            cats.forEach(function (c) {
+              expenseCategoryMap[c.id] = c;
+              if (!groups[c.group_name]) groups[c.group_name] = [];
+              groups[c.group_name].push(c);
+            });
+            Object.keys(groups).forEach(function (g) {
+              var og = document.createElement("optgroup");
+              og.label = g;
+              groups[g].forEach(function (c) {
+                var opt = document.createElement("option");
+                opt.value = c.id;
+                opt.textContent = c.name;
+                og.appendChild(opt);
+              });
+              sel.appendChild(og);
+            });
+          })
+          .catch(function () {
+            // Fallback to legacy static options if API unavailable
+            var sel = document.getElementById("expCategory");
+            sel.innerHTML = '<option value="maintenance">Maintenance</option>'
+              + '<option value="insurance">Insurance</option>'
+              + '<option value="repair">Repair</option>'
+              + '<option value="fuel">Fuel</option>'
+              + '<option value="registration">Registration</option>'
+              + '<option value="other">Other</option>';
+          });
       }
 
       // ── Load stats ─────────────────────────────────────────────────────────
@@ -1138,7 +1178,11 @@
         });
       }
 
-      document.getElementById("loadStatsBtn").addEventListener("click", function () { loadStats(false); });
+      document.getElementById("loadStatsBtn").addEventListener("click", function () {
+        var secret = document.getElementById("adminPassword") ? document.getElementById("adminPassword").value.trim() : "";
+        if (secret) loadExpenseCategories(secret);
+        loadStats(false);
+      });
 
       // ── Save vehicle info ──────────────────────────────────────────────────
       document.getElementById("saveVehicleBtn").addEventListener("click", function () {
@@ -1188,8 +1232,8 @@
         var secret = getSecret();
         if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
 
-        var date     = document.getElementById("expDate").value;
-        var category = document.getElementById("expCategory").value;
+        var date            = document.getElementById("expDate").value;
+        var selectedCatId   = document.getElementById("expCategory").value;
         var amount   = parseFloat(document.getElementById("expAmount").value);
         var notes    = document.getElementById("expNotes").value.trim();
 
@@ -1201,7 +1245,7 @@
         showProfitMsg("Adding expense…", "info");
         fetch(API_BASE + "/api/add-expense", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category: category, amount: amount, notes: notes }),
+          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category_id: selectedCatId, amount: amount, notes: notes }),
         })
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
           .then(function (result) {

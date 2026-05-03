@@ -12,6 +12,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses } from "./_expenses.js";
+import { enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -42,7 +43,9 @@ export default async function handler(req, res) {
 
     if (sb) {
       // ── Supabase path (preferred) ──────────────────────────────────────
-      let q = sb.from("expenses").select("*").order("date", { ascending: false });
+      let q = sb.from("expenses")
+        .select("*, expense_categories!category_id(name, group_name)")
+        .order("date", { ascending: false });
       if (vehicle_id) q = q.eq("vehicle_id", vehicle_id);
       const { data, error } = await q;
       if (error) {
@@ -50,16 +53,26 @@ export default async function handler(req, res) {
         console.error("get-expenses supabase error:", error.message);
         expenses = null;
       } else {
-        expenses = data || [];
+        expenses = (data || []).map((e) => {
+          const { category_name, category_group } = enrichExpenseCategory(e);
+          // Remove the nested relation object; expose flat fields instead
+          const { expense_categories: _rel, ...flat } = e;
+          return { ...flat, category_name, category_group };
+        });
       }
     }
 
     if (!expenses) {
       // ── GitHub fallback ────────────────────────────────────────────────
       const { data } = await loadExpenses();
-      expenses = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
+      let raw = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
       // Newest first (descending by date)
-      expenses.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
+      raw.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
+      // Enrich legacy records with category_name / category_group
+      expenses = raw.map((e) => {
+        const { category_name, category_group } = enrichExpenseCategory(e);
+        return { ...e, category_name, category_group };
+      });
     }
 
     return res.status(200).json({ expenses });

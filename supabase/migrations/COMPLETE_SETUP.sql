@@ -1111,20 +1111,55 @@ CREATE TRIGGER revenue_records_updated_at
   BEFORE UPDATE ON revenue_records
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- ── 2. expenses ───────────────────────────────────────────────────────────────
+-- ── 2. expense_categories ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text        NOT NULL,
+  group_name  text        NOT NULL,
+  is_default  boolean     NOT NULL DEFAULT false,
+  is_active   boolean     NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (name, group_name)
+);
+CREATE INDEX IF NOT EXISTS expense_categories_group_idx  ON expense_categories (group_name);
+CREATE INDEX IF NOT EXISTS expense_categories_active_idx ON expense_categories (is_active);
+
+INSERT INTO expense_categories (name, group_name, is_default, is_active) VALUES
+  ('Loan / Lease','Ownership',true,true),('Insurance','Ownership',true,true),
+  ('Registration','Ownership',true,true),('Taxes','Ownership',true,true),
+  ('Fuel','Usage',true,true),('EV Charging','Usage',true,true),
+  ('Parking','Usage',true,true),('Tolls','Usage',true,true),
+  ('Oil Change','Maintenance',true,true),('Tires','Maintenance',true,true),
+  ('Brakes','Maintenance',true,true),('Fluids','Maintenance',true,true),
+  ('Filters','Maintenance',true,true),('Battery','Maintenance',true,true),
+  ('Inspection / Emissions','Maintenance',true,true),
+  ('Repair (General)','Repairs',true,true),('Parts','Repairs',true,true),
+  ('Labor','Repairs',true,true),('Diagnostics','Repairs',true,true),
+  ('Car Wash','Cleaning',true,true),('Detailing','Cleaning',true,true),
+  ('Accessories','Extras',true,true),('Mods / Upgrades','Extras',true,true),
+  ('Subscriptions','Extras',true,true),
+  ('Fines / Tickets','Incidents',true,true),('Towing','Incidents',true,true),
+  ('Accident / Damage','Incidents',true,true),('Insurance Deductible','Incidents',true,true),
+  ('Depreciation','Advanced',true,false),('Mileage','Advanced',true,false),
+  ('Rental / Replacement','Advanced',true,false),('Other','Other',true,false)
+ON CONFLICT (name, group_name) DO NOTHING;
+
+-- ── 3. expenses ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS expenses (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   expense_id  text        UNIQUE,
   vehicle_id  text        NOT NULL,
   date        date        NOT NULL,
   category    text        NOT NULL,
+  category_id uuid        REFERENCES expense_categories(id),
   amount      numeric(10,2) NOT NULL DEFAULT 0,
   notes       text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS expenses_vehicle_id_idx ON expenses (vehicle_id);
-CREATE INDEX IF NOT EXISTS expenses_date_idx       ON expenses (date DESC);
+CREATE INDEX IF NOT EXISTS expenses_vehicle_id_idx  ON expenses (vehicle_id);
+CREATE INDEX IF NOT EXISTS expenses_date_idx        ON expenses (date DESC);
+CREATE INDEX IF NOT EXISTS expenses_category_id_idx ON expenses (category_id);
 
 DROP TRIGGER IF EXISTS expenses_updated_at ON expenses;
 CREATE TRIGGER expenses_updated_at
