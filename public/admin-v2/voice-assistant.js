@@ -1112,6 +1112,7 @@
       URL.revokeObjectURL(currentBlobUrl);
       currentBlobUrl = null;
     }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     isSpeaking = false;
     isPaused   = false;
     currentSpeakPriority = 0;
@@ -1255,7 +1256,19 @@
         audio.play().catch(reject);
       });
     } catch (err) {
-      console.warn('[VoiceAssistant] speak error:', err);
+      // Fall back to the browser's built-in SpeechSynthesis when the TTS API is
+      // unavailable (e.g. in demo mode where /api/tts is intentionally disabled).
+      if (window.speechSynthesis && text) {
+        await new Promise((resolve) => {
+          const utt  = new SpeechSynthesisUtterance(text);
+          utt.lang   = speakLang === 'es' ? 'es-US' : 'en-US';
+          utt.onend  = resolve;
+          utt.onerror = resolve; // resolve so the tour can continue after cancel()
+          window.speechSynthesis.speak(utt);
+        });
+      } else {
+        console.warn('[VoiceAssistant] speak error:', err);
+      }
     } finally {
       stopAudio();
     }
