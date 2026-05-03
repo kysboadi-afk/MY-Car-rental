@@ -1287,7 +1287,7 @@ async function launchExtendRentalPayment() {
     var data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Server error");
 
-    var { clientSecret, publishableKey, extensionAmount, extensionLabel, newReturnDate: confirmedDate, newReturnTime: confirmedTime, vehicleName, renterName } = data;
+    var { clientSecret, publishableKey, extensionAmount, extensionLabel, lateFeeIncluded, deferredLateFee, newReturnDate: confirmedDate, newReturnTime: confirmedTime, vehicleName, renterName } = data;
     if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
 
     var stripe   = Stripe(publishableKey);
@@ -1309,11 +1309,19 @@ async function launchExtendRentalPayment() {
     var summaryEl = document.getElementById("ext-rental-summary");
     if (summaryEl) {
       var displayReturn = SlyLA.formatLocalDateTime(confirmedDate, confirmedTime);
+      var lateFeeHtml = "";
+      if (lateFeeIncluded && Number(lateFeeIncluded) > 0) {
+        lateFeeHtml += "Late return fee: $" + Number(lateFeeIncluded).toFixed(2) + "<br>";
+      }
+      if (deferredLateFee && Number(deferredLateFee) > 0) {
+        lateFeeHtml += "Previously deferred late fee: $" + Number(deferredLateFee).toFixed(2) + "<br>";
+      }
       summaryEl.innerHTML =
         "<strong>⏱️ Rental Extension</strong><br>" +
         (vehicleName ? "Vehicle: " + vehicleName + "<br>" : "") +
         (renterName  ? "Renter: "  + renterName  + "<br>" : "") +
         "Extension: " + extensionLabel + "<br>" +
+        lateFeeHtml +
         "<strong>New Return: " + displayReturn + "</strong><br>" +
         "<strong style='color:#ffb400'>Total: $" + extensionAmount + "</strong>";
     }
