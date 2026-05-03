@@ -3043,6 +3043,89 @@ async function toolDeleteVehicle({ vehicleId }) {
   return { success: true, deleted: vehicleId, name: vehicleName };
 }
 
+async function toolDeleteBooking({ booking_id }) {
+  if (!booking_id || typeof booking_id !== "string") throw new Error("booking_id is required");
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase is required to delete a booking.");
+
+  // Fetch booking to verify it exists and check its status
+  const { data: booking, error: fetchErr } = await sb
+    .from("bookings")
+    .select("id, booking_ref, status, customers(name)")
+    .eq("booking_ref", booking_id)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(`Failed to fetch booking: ${fetchErr.message}`);
+  if (!booking) throw new Error(`Booking "${booking_id}" not found`);
+
+  const DELETABLE_STATUSES = ["cancelled", "cancelled_rental", "pending"];
+  if (!DELETABLE_STATUSES.includes(booking.status)) {
+    throw new Error(
+      `Cannot permanently delete booking "${booking_id}" — it has status "${booking.status}". ` +
+        `Only cancelled or pending bookings may be deleted. ` +
+        `Update the booking status to cancelled first if needed.`
+    );
+  }
+
+  const customerName = booking.customers?.name || booking_id;
+
+  // Delete all related records that do not cascade automatically
+  const tablesToClean = [
+    { table: "revenue_records",        column: "booking_id" },
+    { table: "booking_status_history", column: "booking_id" },
+    { table: "payment_transactions",   column: "booking_id" },
+    { table: "charges",                column: "booking_id" },
+    { table: "sms_logs",               column: "booking_id" },
+    { table: "pending_booking_docs",   column: "booking_id" },
+  ];
+
+  for (const { table, column } of tablesToClean) {
+    const { error: delErr } = await sb.from(table).delete().eq(column, booking_id);
+    if (delErr && !isSchemaError(delErr)) {
+      throw new Error(`Failed to delete related ${table} records: ${delErr.message}`);
+    }
+  }
+
+  // Delete the booking itself; booking_extensions and payments cascade via DB FK
+  const { error: bookingDelErr } = await sb.from("bookings").delete().eq("booking_ref", booking_id);
+  if (bookingDelErr) throw new Error(`Failed to delete booking: ${bookingDelErr.message}`);
+
+  // Also remove from bookings.json if present
+  try {
+    const { data: bookingsData } = await loadBookings();
+    let changed = false;
+    for (const [vid, list] of Object.entries(bookingsData)) {
+      if (!Array.isArray(list)) continue;
+      const idx = list.findIndex((b) => b.bookingId === booking_id || b.paymentIntentId === booking_id);
+      if (idx !== -1) { list.splice(idx, 1); changed = true; break; }
+    }
+    if (changed) {
+      await updateJsonFileWithRetry({
+        load:    loadBookings,
+        apply:   (data) => {
+          for (const [vid, list] of Object.entries(data)) {
+            if (!Array.isArray(list)) continue;
+            const idx = list.findIndex((b) => b.bookingId === booking_id || b.paymentIntentId === booking_id);
+            if (idx !== -1) { list.splice(idx, 1); break; }
+          }
+        },
+        save:    saveBookings,
+        message: `Delete booking ${booking_id}`,
+      });
+    }
+  } catch (jsonErr) {
+    console.warn("toolDeleteBooking: bookings.json cleanup failed (non-fatal):", jsonErr.message);
+  }
+
+  return {
+    success: true,
+    deleted: booking_id,
+    customer: customerName,
+    message: `Booking "${booking_id}" for ${customerName} has been permanently deleted along with all associated revenue, charge, and SMS records.`,
+  };
+}
+
 async function toolChargeCustomerFee({ booking_id, charge_type, amount, notes }) {
   // Validate before calling executeChargeFee so AI sees clean error messages
   if (!booking_id) throw new Error("booking_id is required");
@@ -4044,6 +4127,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "add_vehicle",
   "update_vehicle",
   "delete_vehicle",
+  "delete_booking",
   "send_sms",
   "mark_maintenance",
   "flag_booking",
@@ -4137,6 +4221,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "update_customer":               result = await toolUpdateCustomer(args);               break;
       case "recount_customer_counts":        result = await toolRecountCustomerCounts();            break;
       case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
+      case "delete_booking":                result = await toolDeleteBooking(args);                break;
       case "charge_customer_fee":           result = await toolChargeCustomerFee(args);            break;
       case "get_charges":                   result = await toolGetCharges(args);                   break;
       case "record_extension_payment":      result = await toolRecordExtensionPayment(args);       break;
