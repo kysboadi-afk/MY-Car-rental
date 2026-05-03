@@ -740,9 +740,36 @@
     }
 
     /* ── Demo Mode Layout Adjustment ─────────────────────────────── */
-    body.demo-mode-active { padding-top: 44px; }
-    body.demo-mode-active .sidebar  { top: 44px; }
+    :root { --demo-banner-h: 44px; --mobile-nav-h: 58px; }
+    body.demo-mode-active { padding-top: var(--demo-banner-h, 44px); }
+    body.demo-mode-active .sidebar  { top: var(--demo-banner-h, 44px); }
     body.demo-mode-active .topbar   { top: 0; /* stays sticky within the offset main */ }
+    @media (max-width: 900px) {
+      #demo-mode-banner { font-size: 11px; padding: 7px 10px; gap: 8px; }
+    }
+
+    /* ── Mobile Bottom Navigation ─────────────────────────────────── */
+    .mobile-bottom-nav {
+      display: none; position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--sidebar-bg); border-top: 1px solid #1e2130;
+      z-index: 95; height: var(--mobile-nav-h); flex-direction: row; align-items: stretch;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    @media (max-width: 900px) {
+      .mobile-bottom-nav { display: flex; }
+      .content { padding-bottom: calc(var(--mobile-nav-h) + 12px); }
+      /* Give sidebar a bit more width on narrow screens */
+      .sidebar.open { width: min(260px, 88vw); }
+    }
+    .mbn-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 3px; background: none; border: none;
+      cursor: pointer; color: #6b7280; font-family: var(--font);
+      font-size: 10px; font-weight: 500; transition: color 0.15s; padding: 6px 2px;
+    }
+    .mbn-item svg { width: 19px; height: 19px; flex-shrink: 0; }
+    .mbn-item.active { color: #60a5fa; }
+    .mbn-item:active { opacity: 0.75; }
 
     /* ── Wizard & Onboarding Buttons ─────────────────────────────── */
     #onboarding-modal .btn { display: flex; }
@@ -2022,6 +2049,31 @@
 
     </div><!-- /content -->
   </div><!-- /main -->
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mbn-item active" id="mbn-dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="mbn-item" id="mbn-bookings" onclick="navigate('bookings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>Bookings</span>
+    </button>
+    <button class="mbn-item" id="mbn-fleet-status" onclick="navigate('fleet-status')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg>
+      <span>Fleet</span>
+    </button>
+    <button class="mbn-item" id="mbn-revenue" onclick="navigate('revenue')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      <span>Revenue</span>
+    </button>
+    <button class="mbn-item" id="mbn-more" onclick="openSidebar()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
 </div><!-- /app -->
 
 <!-- Add Expense Modal -->
@@ -2900,6 +2952,11 @@ function navigate(page) {
   document.getElementById('page-title').textContent = titles[page] || page;
   currentPage = page;
   closeSidebar();
+
+  // Sync mobile bottom nav active state
+  document.querySelectorAll('.mbn-item[id]').forEach((btn) => btn.classList.remove('active'));
+  const mbnTarget = document.getElementById(`mbn-${page}`);
+  if (mbnTarget) mbnTarget.classList.add('active');
 
   // Load data if needed
   if (page === 'bookings') loadBookings();
@@ -8935,6 +8992,11 @@ function initDemoMode() {
   if (banner) {
     banner.style.display = 'flex';
     document.body.classList.add('demo-mode-active');
+    // Measure actual banner height (may wrap on mobile) and apply it
+    requestAnimationFrame(() => {
+      const h = banner.offsetHeight;
+      if (h > 0) document.documentElement.style.setProperty('--demo-banner-h', h + 'px');
+    });
   }
 
   // Bypass auth
