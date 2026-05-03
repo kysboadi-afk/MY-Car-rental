@@ -11,7 +11,7 @@
 //   is not configured or a table does not yet exist.
 
 import { loadBookings, saveBookings, updateBooking, isNetworkError } from "./_bookings.js";
-import { loadVehicles, saveVehicles } from "./_vehicles.js";
+import { loadVehicles, saveVehicles, getVehicleById } from "./_vehicles.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { loadCategories, enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { computeAmount, computeRentalDays, CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
@@ -1530,36 +1530,25 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate }) {
 
   const days = computeRentalDays(pickup, returnDate);
 
-  // Known vehicles with configured tier rates in _settings.js
-  if (vehicleId === "camry" || vehicleId === "camry2013") {
-    const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null);
-    if (!lines) return { error: `Could not compute price for "${vehicleId}"` };
-    const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
-    const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
-    return {
-      vehicleId,
-      vehicle_name: vehicle.vehicle_name || vehicleId,
-      type:         "car",
-      pickup,
-      return_date:  returnDate,
-      days,
-      breakdown:    lines,
-      total,
-      note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
-    };
+  // Use getVehicleById for non-camry vehicles so we get normalised pricing
+  // fields (pricePerDay, weekly, biweekly, monthly) regardless of how the
+  // vehicle was created (admin portal, AI tool, or vehicles.json).
+  const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
+  const vehicleDataForBreakdown = isKnownEconomy ? null : await getVehicleById(vehicleId).catch(() => null);
+
+  // Validate that a daily rate is available for non-economy vehicles.
+  if (!isKnownEconomy) {
+    const dailyCheck = vehicleDataForBreakdown?.pricePerDay || vehicleDataForBreakdown?.daily_price || vehicleDataForBreakdown?.daily_rate
+      || vehicle.pricePerDay || vehicle.daily_price || vehicle.daily_rate || 0;
+    if (!dailyCheck || Number(dailyCheck) <= 0) {
+      return { error: `Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.` };
+    }
   }
 
-  // Newly created vehicles — use their stored daily_rate with live tax
-  const dailyRate = Number(vehicle.daily_rate || vehicle.pricePerDay || 0);
-  if (!dailyRate || dailyRate <= 0) {
-    return { error: `Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.` };
-  }
-
-  const preTax    = days * dailyRate;
-  const taxRate   = settings.la_tax_rate;
-  const taxAmount = Math.round(preTax * taxRate * 100) / 100;
-  const total     = Math.round((preTax + taxAmount) * 100) / 100;
-
+  const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null, vehicleDataForBreakdown || vehicle);
+  if (!lines) return { error: `Could not compute price for "${vehicleId}"` };
+  const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
+  const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
   return {
     vehicleId,
     vehicle_name: vehicle.vehicle_name || vehicleId,
@@ -1567,11 +1556,7 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate }) {
     pickup,
     return_date:  returnDate,
     days,
-    breakdown: [
-      `${days} × Daily ($${dailyRate}/day): $${preTax}`,
-      `Sales Tax (${(taxRate * 100).toFixed(2)}%): $${taxAmount.toFixed(2)}`,
-      `Total: $${total.toFixed(2)}`,
-    ],
+    breakdown:    lines,
     total,
     note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
   };
@@ -3835,13 +3820,18 @@ async function toolResendBookingConfirmation({ bookingId }) {
     const isHourly = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
     if (!isHourly && vehicleId && pickupDate && returnDate) {
       const pricingSettings = await loadPricingSettings();
+      const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
+      const vehicleDataForBreakdown = !isKnownEconomy
+        ? await getVehicleById(vehicleId).catch(() => null)
+        : null;
       breakdownLines = computeBreakdownLinesFromSettings(
         vehicleId,
         pickupDate,
         returnDate,
         pricingSettings,
         hasProtectionPlan,
-        protectionPlanTier
+        protectionPlanTier,
+        vehicleDataForBreakdown
       );
     }
   } catch (err) {

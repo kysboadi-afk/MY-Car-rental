@@ -51,6 +51,7 @@ import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
+import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -1434,13 +1435,18 @@ export default async function handler(req, res) {
         const isHourly = !!(bVid && CARS[bVid] && CARS[bVid].hourlyTiers);
         if (!isHourly && bVid && pickupDate && returnDate) {
           const pricingSettings = await loadPricingSettings();
+          const isKnownEconomy = (bVid === "camry" || bVid === "camry2013");
+          const vehicleDataForBreakdown = !isKnownEconomy
+            ? await getVehicleById(bVid).catch(() => null)
+            : null;
           breakdownLines = computeBreakdownLinesFromSettings(
             bVid,
             pickupDate,
             returnDate,
             pricingSettings,
             hasProtectionPlan,
-            protectionPlanTier
+            protectionPlanTier,
+            vehicleDataForBreakdown
           );
         }
       } catch (err) {
