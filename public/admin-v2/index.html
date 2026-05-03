@@ -1340,12 +1340,6 @@
           </select>
           <select class="filter-select" id="expense-filter-category" onchange="applyExpenseFilters()">
             <option value="">All Categories</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="insurance">Insurance</option>
-            <option value="repair">Repair</option>
-            <option value="fuel">Fuel</option>
-            <option value="registration">Registration</option>
-            <option value="other">Other</option>
           </select>
         </div>
         <div class="card">
@@ -2044,12 +2038,6 @@
         <label class="form-label">Category *</label>
         <select class="form-select" id="exp-category">
           <option value="">Select category…</option>
-          <option value="maintenance">Maintenance</option>
-          <option value="insurance">Insurance</option>
-          <option value="repair">Repair</option>
-          <option value="fuel">Fuel</option>
-          <option value="registration">Registration</option>
-          <option value="other">Other</option>
         </select>
       </div>
       <div class="form-group">
@@ -2628,6 +2616,7 @@ let adminSecret   = '';
 let dashboardData = null;
 let allBookings   = [];
 let allExpenses   = [];
+let expCategories = [];
 let allVehicles   = {};
 let smsTemplates  = [];
 let editingVehicleId   = null;
@@ -2876,7 +2865,7 @@ function navigate(page) {
   if (page === 'bookings') loadBookings();
   else if (page === 'bookings-raw') loadRawBookings();
   else if (page === 'vehicles') loadVehicles();
-  else if (page === 'expenses') loadExpenses();
+  else if (page === 'expenses') { loadExpenseCategories(); loadExpenses(); }
   else if (page === 'sms') loadSmsTemplates();
   else if (page === 'dashboard' && !dashboardData) refreshDashboard();
   else if (page === 'revenue') loadRevenue();
@@ -2910,7 +2899,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
   else if (currentPage === 'bookings-raw') loadRawBookings();
   else if (currentPage === 'vehicles') { allVehicles = {}; loadVehicles(); }
-  else if (currentPage === 'expenses') { allExpenses = []; loadExpenses(); }
+  else if (currentPage === 'expenses') { allExpenses = []; expCategories = []; loadExpenseCategories(); loadExpenses(); }
   else if (currentPage === 'sms') { smsTemplates = []; loadSmsTemplates(); }
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
@@ -4976,6 +4965,45 @@ function clearManualBookingForm() {
 }
 
 // ── Expenses ───────────────────────────────────────────────────────────────
+function loadExpenseCategories() {
+  if (expCategories.length) { populateExpenseCategoryDropdowns(); return; }
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      expCategories = (data.categories || []).filter((c) => c.is_active);
+      populateExpenseCategoryDropdowns();
+    })
+    .catch(() => { /* keep hardcoded fallback options if API fails */ });
+}
+
+function populateExpenseCategoryDropdowns() {
+  const groups = {};
+  for (const c of expCategories) {
+    const g = c.group_name || 'Other';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(c);
+  }
+
+  function buildOptions(sel, placeholder) {
+    sel.innerHTML = `<option value="">${placeholder}</option>`;
+    for (const [group, cats] of Object.entries(groups)) {
+      const og = document.createElement('optgroup');
+      og.label = group;
+      for (const c of cats) {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        og.appendChild(opt);
+      }
+      sel.appendChild(og);
+    }
+  }
+
+  const addSel    = document.getElementById('exp-category');
+  const filterSel = document.getElementById('expense-filter-category');
+  if (addSel)    buildOptions(addSel,    'Select category…');
+  if (filterSel) buildOptions(filterSel, 'All Categories');
+}
+
 function loadExpenses() {
   document.getElementById('expenses-loading').style.display = '';
   document.getElementById('expenses-table-wrap').style.display = 'none';
@@ -5046,14 +5074,13 @@ function applyExpenseFilters() {
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
     if (cFilter) {
-      // Match on the stored flat category text, the enriched category name, or the
-      // category group — all compared case-insensitively so expenses added via the
-      // AI agent (which stores the rich name like "Oil Change" in e.category) still
-      // appear under the "Maintenance" filter option.
+      // Match on category_id (new UUID-based), stored flat text, enriched name, or group
+      const cid  = e.category_id || '';
       const cat  = (e.category       || '').toLowerCase();
       const name = (e.category_name  || '').toLowerCase();
       const grp  = (e.category_group || '').toLowerCase();
-      if (cat !== cFilter && name !== cFilter && grp !== cFilter) return false;
+      const fLower = cFilter.toLowerCase();
+      if (cid !== cFilter && cat !== fLower && name !== fLower && grp !== fLower) return false;
     }
     return true;
   });
@@ -5113,7 +5140,7 @@ function submitExpense() {
   const btn = document.getElementById('exp-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category, amount, notes })
+  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category_id: category, amount, notes })
     .then(() => {
       closeModal('add-expense-modal');
       showToast('Expense added.', 'success');
