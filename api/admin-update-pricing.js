@@ -73,9 +73,9 @@ export default async function handler(req, res) {
     const patch = {};
     for (const field of PRICE_FIELDS) {
       const raw = body[field];
-      // biweekly_price and monthly_price are optional — null/empty means "not offered"
+      // biweekly_price and monthly_price are optional — null/empty/0 means "not offered"
       // (falls through to daily × days in computeAmountFromPricing).
-      if (OPTIONAL_PRICE_FIELDS.has(field) && (raw === undefined || raw === null || raw === "")) {
+      if (OPTIONAL_PRICE_FIELDS.has(field) && (raw === undefined || raw === null || raw === "" || Number(raw) === 0)) {
         patch[field] = null;
         continue;
       }
@@ -83,8 +83,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: `${field} is required.` });
       }
       const val = Number(raw);
-      if (isNaN(val) || val < 0) {
-        return res.status(400).json({ error: `${field} must be a non-negative number.` });
+      if (isNaN(val) || val <= 0) {
+        return res.status(400).json({ error: `${field} must be a positive number greater than $0.` });
       }
       patch[field] = val;
     }

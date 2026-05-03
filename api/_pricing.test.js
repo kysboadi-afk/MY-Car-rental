@@ -272,3 +272,20 @@ test("computeAmountFromPricing: all null prices returns null", () => {
   const pricing = { daily_price: null, weekly_price: null, biweekly_price: null, monthly_price: null };
   assert.equal(computeAmountFromPricing(pricing, 3), null);
 });
+
+test("computeAmountFromPricing: zero daily_price is NOT used — derives from weekly_price instead", () => {
+  // Reproduces the Ford Fusion bug: admin saved daily_price=0 but weekly_price=350.
+  // The $0 daily should be treated as "not configured", not as a free rental.
+  const pricing = { daily_price: 0, weekly_price: 350, biweekly_price: null, monthly_price: null };
+  assert.equal(computeAmountFromPricing(pricing, 7), 350);
+  assert.equal(computeAmountFromPricing(pricing, 5), Math.round(350 / 7 * 5 * 100) / 100);
+});
+
+test("computeAmountFromPricing: all-zero prices returns null (not $0)", () => {
+  // All prices 0 means the vehicle is misconfigured — should return null so
+  // the booking endpoint can reject the request with a helpful error instead of
+  // sending a $0 amount to Stripe (which Stripe rejects with a cryptic error).
+  const pricing = { daily_price: 0, weekly_price: 0, biweekly_price: 0, monthly_price: 0 };
+  assert.equal(computeAmountFromPricing(pricing, 5), null);
+  assert.equal(computeAmountFromPricing(pricing, 7), null);
+});
