@@ -119,10 +119,10 @@ function normalizeVehicleData(vehicleId, vdata) {
     name:        vdata.vehicle_name || vdata.name || vehicleId,
     type,
     hourlyTiers,
-    pricePerDay: toNum(vdata.daily_price  ?? vdata.daily_rate  ?? vdata.pricePerDay),
-    weekly:      toNum(vdata.weekly_price ?? vdata.weekly      ?? vdata.weekly_rate),
-    biweekly:    toNum(vdata.biweekly_price ?? vdata.biweekly  ?? vdata.biweekly_rate),
-    monthly:     toNum(vdata.monthly_price  ?? vdata.monthly   ?? vdata.monthly_rate),
+    pricePerDay: toNum(vdata.daily_price    ?? vdata.daily_rate    ?? vdata.pricePerDay),
+    weekly:      toNum(vdata.weekly_price   ?? vdata.weekly_rate   ?? vdata.weekly),
+    biweekly:    toNum(vdata.biweekly_price ?? vdata.biweekly_rate ?? vdata.biweekly),
+    monthly:     toNum(vdata.monthly_price  ?? vdata.monthly_rate  ?? vdata.monthly),
     deposit:     toNum(vdata.deposit),
   };
 }

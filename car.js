@@ -1875,8 +1875,8 @@ stripeBtn.addEventListener("click", async () => {
       console.error("ID encoding error:", err);
       stripeBtn.disabled = false;
       stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      const _reserveBtnFileErr = document.getElementById("reserveBtn");
-      if (_reserveBtnFileErr) _reserveBtnFileErr.disabled = false;
+      const reserveBtn = document.getElementById("reserveBtn");
+      if (reserveBtn) reserveBtn.disabled = false;
       _pendingPaymentMode = null;
       showPayError("Could not read your ID file. Please try re-uploading it and try again.");
       return;
