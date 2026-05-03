@@ -532,10 +532,14 @@ export default async function handler(req, res) {
           if (!insertErr) {
             // Upsert vehicle_pricing row if any rates were provided (use
             // pre-parsed values to avoid duplicating the parsing logic).
+            // Always populate daily_price: derive from weekly when not explicitly
+            // provided so that getVehiclePricing never fails for this vehicle.
             if (parsedDaily || parsedWeekly || parsedBiweekly || parsedMonthly) {
+              const derivedDaily = parsedDaily ||
+                (parsedWeekly ? Math.round(parsedWeekly / 7 * 100) / 100 : null);
               const pricingRow = {
                 vehicle_id:     vehicleId,
-                daily_price:    parsedDaily,
+                daily_price:    derivedDaily,
                 weekly_price:   parsedWeekly,
                 biweekly_price: parsedBiweekly,
                 monthly_price:  parsedMonthly,

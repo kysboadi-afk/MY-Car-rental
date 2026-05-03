@@ -16,6 +16,11 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const PRICE_FIELDS = ["daily_price", "weekly_price", "biweekly_price", "monthly_price"];
 
+// Pricing tiers that are not required — if omitted or left empty they are stored
+// as null, meaning getVehiclePricing falls through to daily × days for those
+// rental lengths.  daily_price is always required.
+const OPTIONAL_PRICE_FIELDS = new Set(["biweekly_price", "monthly_price"]);
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -68,10 +73,16 @@ export default async function handler(req, res) {
     const patch = {};
     for (const field of PRICE_FIELDS) {
       const raw = body[field];
-      const val = Number(raw);
+      // biweekly_price and monthly_price are optional — null/empty means "not offered"
+      // (falls through to daily × days in computeAmountFromPricing).
+      if (OPTIONAL_PRICE_FIELDS.has(field) && (raw === undefined || raw === null || raw === "")) {
+        patch[field] = null;
+        continue;
+      }
       if (raw === undefined || raw === null || raw === "") {
         return res.status(400).json({ error: `${field} is required.` });
       }
+      const val = Number(raw);
       if (isNaN(val) || val < 0) {
         return res.status(400).json({ error: `${field} must be a non-negative number.` });
       }
