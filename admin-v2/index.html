@@ -2084,6 +2084,11 @@
         <label class="form-label">Vehicle Name</label>
         <input type="text" class="form-input" id="ev-name">
       </div>
+      <div class="form-group full">
+        <label class="form-label">Make</label>
+        <input type="text" class="form-input" id="ev-make" placeholder="e.g. Toyota, Ford, Honda" maxlength="100">
+        <div class="form-hint">Vehicle manufacturer (required for the rental agreement).</div>
+      </div>
       <div class="form-group">
         <label class="form-label">Type</label>
         <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
@@ -2194,6 +2199,11 @@
       <div class="form-group">
         <label class="form-label">Vehicle Name *</label>
         <input type="text" class="form-input" id="av-name" placeholder="e.g. Camry 2022 SE" maxlength="200">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Make</label>
+        <input type="text" class="form-input" id="av-make" placeholder="e.g. Toyota, Ford, Honda" maxlength="100">
+        <div class="form-hint">Vehicle manufacturer (required for the rental agreement).</div>
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
@@ -3363,6 +3373,7 @@ async function openEditVehicle(vehicleId) {
   }
   const v = allVehicles[vehicleId] || {};
   document.getElementById('ev-name').value = v.vehicle_name || '';
+  document.getElementById('ev-make').value = v.make || '';
   document.getElementById('ev-type').value = v.type || 'economy';
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
@@ -3387,6 +3398,7 @@ async function saveVehicle() {
   if (!editingVehicleId) return;
   const updates = {
     vehicle_name:      document.getElementById('ev-name').value.trim(),
+    make:              document.getElementById('ev-make').value.trim() || null,
     type:              document.getElementById('ev-type').value,
     status:            document.getElementById('ev-status').value,
     vehicle_year:      Number(document.getElementById('ev-year').value) || null,
@@ -3763,6 +3775,7 @@ async function markVehicleServiced(vehicleId, serviceType) {
 function openAddVehicle() {
   document.getElementById('av-id').value = '';
   document.getElementById('av-name').value = '';
+  document.getElementById('av-make').value = '';
   document.getElementById('av-type').value = 'economy';
   document.getElementById('av-status').value = 'active';
   document.getElementById('av-year').value = '';
@@ -3797,6 +3810,7 @@ async function saveNewVehicle() {
   const vehicleYear     = parseInt(document.getElementById('av-year').value, 10) || null;
   const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
   const purchaseDate    = document.getElementById('av-purchase-date').value;
+  const make            = document.getElementById('av-make').value.trim() || null;
   const coverImage      = document.getElementById('av-cover-image').value.trim();
   const galleryImages   = readGalleryUrls('av');
   const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
@@ -3834,6 +3848,7 @@ async function saveNewVehicle() {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
       vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      ...(make         ? { make }         : {}),
       ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
       ...(vin          ? { vin }          : {}),

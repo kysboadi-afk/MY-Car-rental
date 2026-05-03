@@ -81,8 +81,7 @@ export default async function handler(req, res) {
 
     const { error } = await sb
       .from("vehicle_pricing")
-      .update(patch)
-      .eq("vehicle_id", vehicle_id.trim());
+      .upsert({ vehicle_id: vehicle_id.trim(), ...patch }, { onConflict: "vehicle_id" });
 
     if (error) {
       console.error("[admin-update-pricing] update error:", error);
