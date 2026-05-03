@@ -805,7 +805,7 @@
     </nav>
 
     <nav class="nav-section">
-      <div class="nav-section-label">Reservations</div>
+      <div class="nav-section-label">Operations</div>
       <a class="nav-item" data-page="bookings" href="#" onclick="navigate('bookings');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         Bookings
@@ -850,7 +850,7 @@
     </nav>
 
     <nav class="nav-section">
-      <div class="nav-section-label">Management</div>
+      <div class="nav-section-label">Customers</div>
       <a class="nav-item" data-page="customers" href="#" onclick="navigate('customers');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
@@ -859,6 +859,19 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
       </a>
+      <a class="nav-item" data-page="late-fees" href="#" onclick="navigate('late-fees');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Late Fees
+        <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
+      </a>
+      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        SMS Automation
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">System</div>
       <a class="nav-item" data-page="vehicle-pricing" href="#" onclick="navigate('vehicle-pricing');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Vehicle Pricing
@@ -867,23 +880,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         System Settings
       </a>
-      <a class="nav-item" data-page="late-fees" href="#" onclick="navigate('late-fees');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Late Fees
-        <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
-      </a>
-    </nav>
-
-    <nav class="nav-section">
-      <div class="nav-section-label">Communication</div>
-      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        SMS Automation
-      </a>
-    </nav>
-
-    <nav class="nav-section">
-      <div class="nav-section-label">Admin</div>
       <a class="nav-item" data-page="ai" href="#" onclick="navigate('ai');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2z"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="3"/></svg>
         AI Assistant
