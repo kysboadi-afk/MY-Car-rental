@@ -274,7 +274,7 @@ export default async function handler(req, res) {
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
         "vehicle_name", "vehicle_year", "type", "cover_image", "gallery_images",
-        "bouncie_device_id", "vin", "scarcity_text",
+        "bouncie_device_id", "vin", "scarcity_text", "make",
         "earnings_tagline", "earnings_title", "earnings_row1", "earnings_cta",
       ];
       for (const f of allowedUpdateFields) {
@@ -421,7 +421,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, make, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -491,6 +491,7 @@ export default async function handler(req, res) {
           : {}),
         ...(vin           ? { vin:           String(vin).trim().slice(0, 50) }         : {}),
         ...(scarcityText  ? { scarcity_text: String(scarcityText).trim().slice(0, 200) } : {}),
+        ...(make          ? { make:          String(make).trim().slice(0, 100) }         : {}),
         ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
         ...(earningsTagline ? { earnings_tagline: String(earningsTagline).trim().slice(0, 500) } : {}),
         ...(earningsTitle   ? { earnings_title:   String(earningsTitle).trim().slice(0, 500) }   : {}),
