@@ -5045,7 +5045,16 @@ function applyExpenseFilters() {
 
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
-    if (cFilter && e.category !== cFilter) return false;
+    if (cFilter) {
+      // Match on the stored flat category text, the enriched category name, or the
+      // category group — all compared case-insensitively so expenses added via the
+      // AI agent (which stores the rich name like "Oil Change" in e.category) still
+      // appear under the "Maintenance" filter option.
+      const cat  = (e.category       || '').toLowerCase();
+      const name = (e.category_name  || '').toLowerCase();
+      const grp  = (e.category_group || '').toLowerCase();
+      if (cat !== cFilter && name !== cFilter && grp !== cFilter) return false;
+    }
     return true;
   });
 
@@ -5063,7 +5072,7 @@ function applyExpenseFilters() {
     <tr>
       <td>${esc(e.date || '–')}</td>
       <td>${esc(getVehicleLabel(e.vehicle_id) || '–')}</td>
-      <td><span class="badge badge-gray">${esc(e.category || '–')}</span></td>
+      <td><span class="badge badge-gray">${esc(e.category_name || e.category || '–')}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
       <td>
