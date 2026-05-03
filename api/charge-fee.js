@@ -108,8 +108,9 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
   const { data: booking, error: bkErr } = await sb
     .from("bookings")
     .select(
-      "id, booking_ref, stripe_customer_id, stripe_payment_method_id, vehicle_id, " +
-      "extension_count, pickup_date, return_date, customers(name, email, phone)"
+      "id, booking_ref, stripe_customer_id, stripe_payment_method_id, " +
+      "extension_stripe_customer_id, extension_stripe_payment_method_id, " +
+      "vehicle_id, extension_count, pickup_date, return_date, customers(name, email, phone)"
     )
     .eq("booking_ref", bookingId)
     .maybeSingle();
@@ -129,7 +130,15 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     );
   }
 
-  if (!booking.stripe_customer_id || !booking.stripe_payment_method_id) {
+  // ── Resolve the best available card ─────────────────────────────────────
+  // Prefer the original booking card; fall back to the extension card when the
+  // renter used a different card for their most-recent extension payment.
+  const resolvedCustomerId =
+    booking.stripe_customer_id       || booking.extension_stripe_customer_id       || null;
+  const resolvedPaymentMethodId =
+    booking.stripe_payment_method_id  || booking.extension_stripe_payment_method_id  || null;
+
+  if (!resolvedCustomerId || !resolvedPaymentMethodId) {
     throw new Error(
       "This booking does not have a saved payment method. " +
       "Card saving was added on April 7 2026 — older bookings cannot be charged off-session."
@@ -151,8 +160,8 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     stripePI = await stripe.paymentIntents.create({
       amount:         amountCents,
       currency:       "usd",
-      customer:       booking.stripe_customer_id,
-      payment_method: booking.stripe_payment_method_id,
+      customer:       resolvedCustomerId,
+      payment_method: resolvedPaymentMethodId,
       confirm:        true,
       off_session:    true,
       description,

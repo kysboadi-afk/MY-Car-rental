@@ -116,7 +116,7 @@ export async function logAiAction(action, input, output, adminId = "admin") {
 // Columns selected from the Supabase bookings table for AI queries.
 // Keep in sync with DB schema (migration 0019 adds flagged + risk_score).
 const BOOKING_COLUMNS =
-  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, stripe_customer_id, stripe_payment_method_id, created_at, flagged, risk_score, customers(name, phone, email)";
+  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, stripe_customer_id, stripe_payment_method_id, extension_stripe_customer_id, extension_stripe_payment_method_id, created_at, flagged, risk_score, customers(name, phone, email)";
 
 // ── Supabase-first helpers ───────────────────────────────────────────────────
 
@@ -383,7 +383,10 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
           createdAt:    row.created_at || "",
           flagged:      row.flagged || false,
           risk_score:   row.risk_score || 0,
-          hasSavedCard: !!(row.stripe_customer_id && row.stripe_payment_method_id),
+          hasSavedCard: !!(
+            (row.stripe_customer_id && row.stripe_payment_method_id) ||
+            (row.extension_stripe_customer_id && row.extension_stripe_payment_method_id)
+          ),
         }));
         return { total, returned: results.length, bookings: results };
       }
@@ -3104,6 +3107,68 @@ async function toolBackfillStripeCards({ action = "preview", confirmed } = {}) {
   return await executeBackfillStripeCards(action);
 }
 
+async function toolDeferLateFee({ booking_id, amount, confirmed }) {
+  if (!booking_id) throw new Error("booking_id is required");
+  const resolvedAmount = Number(amount);
+  if (isNaN(resolvedAmount) || resolvedAmount <= 0) {
+    throw new Error("amount must be a positive number in USD");
+  }
+
+  if (!confirmed) {
+    return {
+      requires_confirmation: true,
+      booking_id,
+      amount: resolvedAmount,
+      message: `This will flag a $${resolvedAmount.toFixed(2)} late fee as pending_collection on booking "${booking_id}". The fee will be added to the renter's next extension payment. Confirm to proceed (retry with confirmed:true).`,
+    };
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase is not configured");
+
+  // Verify the booking exists
+  const { data: booking, error: bkErr } = await sb
+    .from("bookings")
+    .select("booking_ref, late_fee_status, late_fee_amount, customers(name)")
+    .eq("booking_ref", booking_id)
+    .maybeSingle();
+  if (bkErr) throw new Error(`Booking lookup failed: ${bkErr.message}`);
+  if (!booking) throw new Error(`Booking "${booking_id}" not found`);
+
+  // Guard: don't overwrite a fee that has already been fully resolved.
+  // 'dismissed' means the admin explicitly chose not to collect — block it too.
+  const blockedStatuses = ["paid", "approved", "dismissed"];
+  if (blockedStatuses.includes(booking.late_fee_status)) {
+    throw new Error(
+      `Cannot defer late fee for booking "${booking_id}" — current status is "${booking.late_fee_status}". ` +
+      "The fee has already been approved, dismissed, or paid. Use charge_customer_fee or check with the admin first."
+    );
+  }
+
+  const { error: updateErr } = await sb
+    .from("bookings")
+    .update({
+      late_fee_status:      "pending_collection",
+      late_fee_amount:      resolvedAmount,
+      late_fee_approved_by: "ai",
+      late_fee_approved_at: new Date().toISOString(),
+    })
+    .eq("booking_ref", booking_id);
+
+  if (updateErr) throw new Error(`Failed to update booking: ${updateErr.message}`);
+
+  const renterName = booking.customers?.name || booking_id;
+  return {
+    success: true,
+    booking_id,
+    late_fee_status: "pending_collection",
+    late_fee_amount: resolvedAmount,
+    message:
+      `Late fee of $${resolvedAmount.toFixed(2)} flagged as pending_collection for ${renterName} (${booking_id}). ` +
+      "It will be automatically added to their next rental extension payment.",
+  };
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
@@ -4000,6 +4065,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "charge_customer_fee",
   "record_extension_payment",
   "update_site_content",
+  "defer_late_fee",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -4078,6 +4144,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_site_content":              result = await toolGetSiteContent();                  break;
       case "update_site_content":           result = await toolUpdateSiteContent(args);           break;
       case "backfill_stripe_cards":         result = await toolBackfillStripeCards(args);         break;
+      case "defer_late_fee":                result = await toolDeferLateFee(args);                break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
