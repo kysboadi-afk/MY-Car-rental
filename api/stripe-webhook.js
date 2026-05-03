@@ -2698,9 +2698,10 @@ export default async function handler(req, res) {
               totalPrice:             normalizeCurrency(meta.full_rental_amount || Number(sbBalRow.total_price) || existingDeposit + paidAmount),
               paymentStatus:          "paid",
               status:                 "active_rental",
-              // Preserve saved-card references so autoUpsertBooking does not wipe them.
-              stripeCustomerId:       sbBalRow.stripe_customer_id       || null,
-              stripePaymentMethodId:  sbBalRow.stripe_payment_method_id  || null,
+              // Prefer the card from this balance payment PI; fall back to the
+              // previously-saved card so off-session charges always have a method.
+              stripeCustomerId:       paymentIntent.customer        || sbBalRow.stripe_customer_id       || null,
+              stripePaymentMethodId:  paymentIntent.payment_method  || sbBalRow.stripe_payment_method_id  || null,
             };
           } else {
             // Booking not found in Supabase — build from metadata.
@@ -2717,8 +2718,10 @@ export default async function handler(req, res) {
               returnTime:  meta.return_time || DEFAULT_RETURN_TIME,
               amountPaid:  paidAmount,
               totalPrice:  normalizeCurrency(meta.full_rental_amount || paidAmount),
-              paymentStatus: "paid",
-              status:        "active_rental",
+              paymentStatus:        "paid",
+              status:               "active_rental",
+              stripeCustomerId:     paymentIntent.customer       || null,
+              stripePaymentMethodId: paymentIntent.payment_method || null,
             };
           }
 
