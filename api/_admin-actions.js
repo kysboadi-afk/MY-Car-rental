@@ -1536,17 +1536,8 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate }) {
   const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
   const vehicleDataForBreakdown = isKnownEconomy ? null : await getVehicleById(vehicleId).catch(() => null);
 
-  // Validate that a daily rate is available for non-economy vehicles.
-  if (!isKnownEconomy) {
-    const dailyCheck = vehicleDataForBreakdown?.pricePerDay || vehicleDataForBreakdown?.daily_price || vehicleDataForBreakdown?.daily_rate
-      || vehicle.pricePerDay || vehicle.daily_price || vehicle.daily_rate || 0;
-    if (!dailyCheck || Number(dailyCheck) <= 0) {
-      return { error: `Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.` };
-    }
-  }
-
   const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null, vehicleDataForBreakdown || vehicle);
-  if (!lines) return { error: `Could not compute price for "${vehicleId}"` };
+  if (!lines) return { error: `Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.` };
   const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
   const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
   return {
