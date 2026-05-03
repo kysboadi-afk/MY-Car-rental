@@ -185,13 +185,15 @@ function deriveDaily(weeklyPrice) {
 /**
  * Fetch pricing data for a single vehicle.
  *
- * Resolution order:
+ * Resolution order (first source with any usable rate wins):
  *   1. vehicle_pricing table — the canonical source for all known vehicles.
- *   2. vehicles.data JSONB — fallback for dynamically added vehicles whose
- *      vehicle_pricing row was not yet created (e.g. the upsert failed silently
- *      at creation time or pricing was not entered when the vehicle was added).
- *
- * Throws only when neither source has usable pricing data.
+ *   2. vehicles.data JSONB   — fallback for vehicles whose vehicle_pricing row
+ *      was not yet created (e.g. the upsert failed silently, or pricing was not
+ *      entered at creation time).
+ *   3. system_settings economy rates — allows newly added vehicles to be booked
+ *      immediately using the admin-configurable economy-wide rates (camry_daily_rate
+ *      etc.) while per-vehicle pricing is being set up.
+ *   4. Hardcoded CARS.camry constants — absolute last resort; never throws.
  *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} vehicleId - vehicle_id value stored in the DB
@@ -258,8 +260,51 @@ export async function getVehiclePricing(supabase, vehicleId) {
     }
   }
 
-  console.error('[pricing] fetch failed — no vehicle_pricing row and no JSONB fallback', { vehicleId, error });
-  throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
+  // Third fallback: economy-wide pricing from system_settings so that newly
+  // added vehicles without explicit per-vehicle pricing are still bookable.
+  // Falls back to the hardcoded CARS.camry constants when Supabase is unavailable
+  // or system_settings has no pricing keys configured.
+  console.warn('[pricing] no vehicle_pricing row and no JSONB data — trying system_settings economy fallback', { vehicleId });
+  try {
+    const { data: settingsRows } = await supabase
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['camry_daily_rate', 'camry_weekly_rate', 'camry_biweekly_rate', 'camry_monthly_rate']);
+
+    const settingsMap = {};
+    for (const row of settingsRows || []) {
+      const n = Number(row.value);
+      if (Number.isFinite(n) && n > 0) settingsMap[row.key] = n;
+    }
+
+    const fallbackDaily    = settingsMap.camry_daily_rate    || CARS.camry.pricePerDay;
+    const fallbackWeekly   = settingsMap.camry_weekly_rate   || CARS.camry.weekly;
+    const fallbackBiweekly = settingsMap.camry_biweekly_rate || CARS.camry.biweekly;
+    const fallbackMonthly  = settingsMap.camry_monthly_rate  || CARS.camry.monthly;
+
+    if (fallbackDaily) {
+      console.warn('[pricing] applying economy fallback pricing from system_settings/defaults', { vehicleId, fallbackDaily });
+      return {
+        vehicle_id:     vehicleId,
+        daily_price:    fallbackDaily,
+        weekly_price:   fallbackWeekly   || null,
+        biweekly_price: fallbackBiweekly || null,
+        monthly_price:  fallbackMonthly  || null,
+      };
+    }
+  } catch (settingsErr) {
+    console.warn('[pricing] system_settings query failed during economy fallback', { vehicleId, message: settingsErr.message });
+  }
+
+  // Absolute last resort: hardcoded economy defaults (never throws).
+  console.warn('[pricing] using hardcoded CARS.camry defaults as last resort', { vehicleId });
+  return {
+    vehicle_id:     vehicleId,
+    daily_price:    CARS.camry.pricePerDay,
+    weekly_price:   CARS.camry.weekly   || null,
+    biweekly_price: CARS.camry.biweekly || null,
+    monthly_price:  CARS.camry.monthly  || null,
+  };
 }
 
 /**
