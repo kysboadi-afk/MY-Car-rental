@@ -229,7 +229,7 @@ export async function getVehicleById(vehicleId) {
     try {
       const { data: pRow, error: pErr } = await sb
         .from("vehicle_pricing")
-        .select("vehicle_id, daily_price, weekly_price")
+        .select("daily_price, weekly_price")
         .eq("vehicle_id", vehicleId)
         .maybeSingle();
       if (!pErr && pRow && (Number(pRow.daily_price) > 0 || Number(pRow.weekly_price) > 0)) {
