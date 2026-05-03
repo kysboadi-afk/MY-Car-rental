@@ -173,11 +173,19 @@ export async function getAllVehicleIds(supabase) {
 }
 
 /**
- * Fetch pricing data for a single vehicle from the Supabase `vehicle_pricing` table.
- * Throws if the record is missing or the query fails — the DB is the source of truth.
+ * Fetch pricing data for a single vehicle.
+ *
+ * Resolution order:
+ *   1. vehicle_pricing table — the canonical source for all known vehicles.
+ *   2. vehicles.data JSONB — fallback for dynamically added vehicles whose
+ *      vehicle_pricing row was not yet created (e.g. the upsert failed silently
+ *      at creation time or pricing was not entered when the vehicle was added).
+ *
+ * Throws only when neither source has usable pricing data.
+ *
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string} vehicleId - vehicle_id value stored in the DB
- * @returns {Promise<object>} the vehicle_pricing row
+ * @returns {Promise<object>} a pricing object compatible with computeAmountFromPricing()
  */
 export async function getVehiclePricing(supabase, vehicleId) {
   const { data, error } = await supabase
@@ -186,12 +194,44 @@ export async function getVehiclePricing(supabase, vehicleId) {
     .eq('vehicle_id', vehicleId)
     .single();
 
-  if (error) {
+  // Happy path — vehicle_pricing row exists.
+  if (!error) return data;
+
+  // PGRST116 = "no rows" — try the vehicle's own JSONB data blob as a fallback.
+  // Any other error (network, schema, etc.) should still be surfaced immediately.
+  if (error.code !== 'PGRST116') {
     console.error('[pricing] fetch failed', { vehicleId, error });
     throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
   }
 
-  return data;
+  // Fallback: read pricing from vehicles.data JSONB (populated by v2-vehicles create).
+  const { data: vehicleRow, error: vehicleErr } = await supabase
+    .from('vehicles')
+    .select('data')
+    .eq('vehicle_id', vehicleId)
+    .single();
+
+  if (!vehicleErr && vehicleRow?.data) {
+    const vdata = vehicleRow.data;
+    const dailyPrice    = vdata.daily_price    ? Number(vdata.daily_price)    : null;
+    const weeklyPrice   = vdata.weekly_price   ? Number(vdata.weekly_price)   : null;
+    const biweeklyPrice = vdata.biweekly_price ? Number(vdata.biweekly_price) : null;
+    const monthlyPrice  = vdata.monthly_price  ? Number(vdata.monthly_price)  : null;
+
+    if (dailyPrice) {
+      console.warn('[pricing] vehicle_pricing row missing — falling back to vehicles.data JSONB', { vehicleId });
+      return {
+        vehicle_id:     vehicleId,
+        daily_price:    dailyPrice,
+        weekly_price:   weeklyPrice   || dailyPrice * 7,
+        biweekly_price: biweeklyPrice || dailyPrice * 14,
+        monthly_price:  monthlyPrice  || dailyPrice * 28,
+      };
+    }
+  }
+
+  console.error('[pricing] fetch failed — no vehicle_pricing row and no JSONB fallback', { vehicleId, error });
+  throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
 }
 
 /**
