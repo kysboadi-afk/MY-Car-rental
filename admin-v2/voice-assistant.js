@@ -33,8 +33,12 @@
   const MUTE_STORAGE          = 'va_mute';
   const HIDE_STORAGE          = 'va_hidden';
   const CLICK_EXPLAIN_DEBOUNCE_MS = 1500;   // minimum gap between click-explain triggers
-  const MAX_HIGHLIGHT         = 4000;       // ms to keep highlight ring visible
   const MAX_MODAL_WAIT_MS     = 60000;      // max ms to wait for a modal to open during tour
+  const STEP_GAP_MS           = 350;        // breathing-room pause between tour steps
+  const SCROLL_SETTLE_MS      = 450;        // ms to wait after scrollIntoView before spotlighting
+  const PAGE_SETTLE_MS        = 800;        // ms to wait for DOM after navigate() in full tour
+  const SPOTLIGHT_ID          = 'va-spotlight-ring';
+  const SPOTLIGHT_CSS_ID      = 'va-spotlight-css';
   const TTS_CACHE_MAX         = 80;         // max cached TTS entries before eviction
   const VALID_LANGS           = ['en', 'es'];
   const CURSOR_TRAVEL_MS      = 650;        // ms for cursor glide animation between elements
@@ -356,8 +360,20 @@
         sel:          '#bookings-table-wrap',
         action:       () => { const btn = document.querySelector('#bookings-table-wrap [onclick*="viewBooking"]'); if (btn) btn.click(); },
         waitForModal: '#booking-detail-modal',
-        en:  'The table shows each booking with customer name, vehicle, dates, financials, payment method, tier, and status. Opening a booking detail now.',
-        es:  'La tabla muestra cada reserva con nombre, vehículo, fechas, finanzas, método de pago, nivel y estado. Abriendo el detalle de una reserva ahora.',
+        en:  'Please click the View button on any booking row to open the Booking Detail panel — the guide will continue once it opens.',
+        es:  'Haga clic en el botón Ver de cualquier fila para abrir el panel de Detalle de Reserva. El recorrido continuará cuando se abra.',
+        // fullTourText: used by the Full System Tour instead of the interactive
+        // waitForModal prompt, so the tour can cover this content hands-free.
+        fullTourEn:
+          'Each booking row has a View button that opens the full Booking Detail panel. ' +
+          'Inside you can see complete customer info, vehicle assignment, rental dates, payment breakdown, and status history. ' +
+          'Action buttons let you Approve, Mark as Active, Mark Returned, Extend, or Cancel the booking. ' +
+          'Additional actions include Flag Issue, Resend Email, Edit Booking, and Delete Booking.',
+        fullTourEs:
+          'Cada fila tiene un botón Ver que abre el panel completo de Detalle de Reserva. ' +
+          'Dentro puede ver información del cliente, vehículo, fechas, desglose de pagos e historial. ' +
+          'Los botones de acción permiten Aprobar, Marcar como Activa, Marcar como Devuelta, Extender o Cancelar la reserva. ' +
+          'Acciones adicionales incluyen Marcar Problema, Reenviar Correo, Editar y Eliminar Reserva.',
       },
       {
         sel:          '#booking-detail-modal',
@@ -900,6 +916,7 @@
   let currentAudio    = null;     // HTMLAudioElement currently playing
   let currentBlobUrl  = null;     // blob URL for the current audio (to revoke)
   let isSpeaking      = false;
+  let isPaused        = false;
   let tourActive      = false;
   let tourStepIndex   = 0;
   let tourAborted     = false;
@@ -1067,6 +1084,7 @@
     const muteBtn      = panel.querySelector('#va-mute-btn');
     const explBtn      = panel.querySelector('#va-expl-btn');
     const stopBtn      = panel.querySelector('#va-stop-btn');
+    const pauseBtn     = panel.querySelector('#va-pause-btn');
     const tourBtn      = panel.querySelector('#va-tour-btn');
     const fullTourBtn  = panel.querySelector('#va-fulltour-btn');
 
@@ -1074,6 +1092,11 @@
     if (muteBtn)     muteBtn.textContent     = muted ? '🔇 Muted' : '🔊 Sound On';
     if (explBtn)     explBtn.style.opacity   = clickExplain ? '1' : '0.55';
     if (stopBtn)     stopBtn.disabled        = !isSpeaking && !tourActive;
+    if (pauseBtn) {
+      pauseBtn.disabled    = !isSpeaking;
+      pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+      pauseBtn.style.color = isSpeaking ? '#fff' : '#9ca3af';
+    }
     if (tourBtn)     tourBtn.textContent     = tourActive ? '⏹ Stop Guide'  : '📍 Page Guide';
     if (fullTourBtn) fullTourBtn.textContent = tourActive ? '⏹ Stop Tour'   : '🚀 Full Tour';
   }
@@ -1090,8 +1113,31 @@
       currentBlobUrl = null;
     }
     isSpeaking = false;
+    isPaused   = false;
     currentSpeakPriority = 0;
     updatePanelState();
+  }
+
+  // ── Audio pause / resume ───────────────────────────────────────────────────
+  function pauseAudio() {
+    if (currentAudio && isSpeaking && !isPaused) {
+      currentAudio.pause();
+      isPaused = true;
+      updatePanelState();
+    }
+  }
+
+  function resumeAudio() {
+    if (currentAudio && isSpeaking && isPaused) {
+      currentAudio.play().catch(() => {});
+      isPaused = false;
+      updatePanelState();
+    }
+  }
+
+  function togglePause() {
+    if (isPaused) resumeAudio();
+    else          pauseAudio();
   }
 
   // ── Core TTS ───────────────────────────────────────────────────────────────
@@ -1215,20 +1261,117 @@
     }
   }
 
-  // ── Highlight helper ───────────────────────────────────────────────────────
-  function highlightElement(el) {
+  // ── Presentation Spotlight ─────────────────────────────────────────────────
+  /**
+   * Inject the CSS keyframes and shared spotlight styles once per page load.
+   * The spotlight ring dims everything outside the target element and pulses
+   * gently to draw the presenter's audience attention to the right UI element.
+   */
+  function injectSpotlightStyles() {
+    if (document.getElementById(SPOTLIGHT_CSS_ID)) return;
+    const style = document.createElement('style');
+    style.id = SPOTLIGHT_CSS_ID;
+    style.textContent = `
+      @keyframes va-spotlight-pulse {
+        0%, 100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55),
+                               0 0 0 2px #2563eb,
+                               0 0 18px rgba(37,99,235,0.55); }
+        50%       { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55),
+                               0 0 0 3px #60a5fa,
+                               0 0 32px rgba(96,165,250,0.85); }
+      }
+      #${SPOTLIGHT_ID} {
+        position:       fixed;
+        border-radius:  8px;
+        pointer-events: none;
+        z-index:        100000;
+        opacity:        0;
+        transition:     opacity 0.25s ease,
+                        top    0.3s  ease,
+                        left   0.3s  ease,
+                        width  0.3s  ease,
+                        height 0.3s  ease;
+        animation:      va-spotlight-pulse 2s ease-in-out infinite;
+      }
+      #${SPOTLIGHT_ID}.va-visible { opacity: 1; }
+      #va-step-label {
+        text-align:    center;
+        font-size:     10px;
+        color:         #6b7280;
+        padding-top:   2px;
+        display:       none;
+        font-variant-numeric: tabular-nums;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Show a pulsing spotlight ring around `el` that dims everything outside it.
+   * The ring persists until `clearSpotlight()` is called — it stays visible for
+   * the ENTIRE duration of the spoken audio for each tour step, keeping cursor
+   * and voice perfectly in sync.
+   *
+   * @param {Element} el         — DOM element to spotlight
+   * @param {string}  [caption]  — optional "Step X of Y" label shown below ring
+   */
+  function showSpotlight(el, caption) {
     if (!el) return;
+    injectSpotlightStyles();
+
+    const PAD  = 10;
+    const rect = el.getBoundingClientRect();
+
+    let ring = document.getElementById(SPOTLIGHT_ID);
+    if (!ring) {
+      ring = document.createElement('div');
+      ring.id = SPOTLIGHT_ID;
+      document.body.appendChild(ring);
+    }
+
+    // Position ring to exactly surround the target element
+    ring.style.top    = `${rect.top    - PAD}px`;
+    ring.style.left   = `${rect.left   - PAD}px`;
+    ring.style.width  = `${rect.width  + PAD * 2}px`;
+    ring.style.height = `${rect.height + PAD * 2}px`;
+
+    // Optional step badge below the ring
+    const oldBadge = ring.querySelector('.va-step-badge');
+    if (oldBadge) oldBadge.remove();
+    if (caption) {
+      const badge = document.createElement('div');
+      badge.className = 'va-step-badge';
+      badge.style.cssText =
+        'position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);' +
+        'background:#2563eb;color:#fff;font-size:10px;font-family:system-ui,sans-serif;' +
+        'font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;' +
+        'pointer-events:none;letter-spacing:0.3px;';
+      badge.textContent = caption;
+      ring.appendChild(badge);
+    }
+
+    // Trigger fade-in via class (transition is on #va-spotlight-ring base rule)
+    requestAnimationFrame(() => requestAnimationFrame(() => ring.classList.add('va-visible')));
+  }
+
+  /** Fade out and remove the spotlight ring. */
+  function clearSpotlight() {
+    const ring = document.getElementById(SPOTLIGHT_ID);
+    if (!ring) return;
+    ring.classList.remove('va-visible');
+    setTimeout(() => { if (ring.parentNode) ring.remove(); }, 260);
+  }
+
+  /**
+   * Scroll `el` smoothly into the viewport center and wait for the scroll to settle.
+   * Returns a Promise that resolves after SCROLL_SETTLE_MS.
+   */
+  function scrollAndSettle(el) {
+    if (!el) return Promise.resolve();
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     moveCursorTo(el);
     setTimeout(clickCursor, 300);
-    el.style.outline       = '3px solid #2563eb';
-    el.style.outlineOffset = '3px';
-    el.style.borderRadius  = '6px';
-    el.style.transition    = 'outline 0.3s';
-    setTimeout(() => {
-      el.style.outline       = '';
-      el.style.outlineOffset = '';
-    }, MAX_HIGHLIGHT);
+    return new Promise(r => setTimeout(r, SCROLL_SETTLE_MS));
   }
 
   // ── Tour Cursor ────────────────────────────────────────────────────────────
@@ -1359,8 +1502,13 @@
   /**
    * Start a guide for the page the admin is currently viewing.
    * No forced navigation — the tour always matches the visible UI.
-   * For each step: the target element must exist and be visible; otherwise the
-   * step is skipped automatically.
+   *
+   * Presentation sequencing per step:
+   *   1. Clear previous spotlight (fade-out)
+   *   2. Scroll target element into view and wait for settle
+   *   3. Show spotlight (ring persists for entire audio duration)
+   *   4. Speak the step text (spotlight stays on element while voice is active)
+   *   5. Brief inter-step pause before moving on
    */
   async function startTour() {
     if (tourActive) return;
@@ -1372,6 +1520,8 @@
 
     const page  = getActivePage();
     const steps = PAGE_TOUR_STEPS[page] || buildGenericPageSteps(page);
+    const total = steps.filter(s => !s.sel || isElementVisible(document.querySelector(s.sel))).length;
+    let   shown = 0;
 
     for (let i = 0; i < steps.length; i++) {
       if (tourAborted) break;
@@ -1383,9 +1533,21 @@
       // Skip any step whose target element is specified but not visible
       if (step.sel && !isElementVisible(el)) continue;
 
-      if (el) highlightElement(el);
-      await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
+      shown++;
 
+      // Clear previous spotlight before moving to the next element
+      clearSpotlight();
+
+      // Scroll to element and wait for viewport to settle
+      if (el) await scrollAndSettle(el);
+      if (tourAborted) break;
+
+      // Show spotlight ring (stays on for full audio duration of this step)
+      const caption = lang === 'es' ? `Paso ${shown} / ${total}` : `Step ${shown} / ${total}`;
+      if (el) showSpotlight(el, caption);
+      updateStepLabel(shown, total);
+
+      await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
       if (tourAborted) break;
 
       // Programmatic action (e.g. open a modal) — fires after speaking
@@ -1404,7 +1566,8 @@
         if (tourAborted) break;
       }
 
-      // If this step requires waiting for a modal to open
+      // If this step requires a user action (e.g. click View to open modal),
+      // keep the spotlight on the element and wait for the modal to open.
       if (step.waitForModal && !tourAborted) {
         try {
           await waitForModalOpen(step.waitForModal);
@@ -1412,13 +1575,18 @@
           // Timeout or element missing — continue tour anyway
         }
         if (tourAborted) break;
-        // Small delay so the modal animation finishes before highlighting
+        // Small delay so the modal animation finishes before spotlighting next element
         await new Promise(r => setTimeout(r, 400));
       }
+
+      // Breathing-room pause between steps
+      if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
     }
 
+    clearSpotlight();
     tourActive    = false;
     tourStepIndex = 0;
+    updateStepLabel(0, 0);
     hideCursor();
     updatePanelState();
   }
@@ -1428,6 +1596,9 @@
    * Navigate through all major pages in order, speaking each page's tour steps.
    * Designed for demos and onboarding.  The tour moves to the next page once all
    * visible steps for the current page have been spoken.
+   *
+   * Presentation sequencing per step (same as startTour):
+   *   clear spotlight → scroll + settle → showSpotlight → speak → gap → next
    */
   async function startFullTour() {
     if (tourActive) return;
@@ -1436,6 +1607,14 @@
     tourStepIndex = 0;
     showCursor();
     updatePanelState();
+
+    // Pre-compute total step count for the global progress badge
+    let globalTotal = 0;
+    for (const pg of FULL_TOUR_PAGES) {
+      const s = PAGE_TOUR_STEPS[pg] || [];
+      globalTotal += s.length;
+    }
+    let globalStep = 0;
 
     // Opening announcement
     await speak(
@@ -1450,15 +1629,17 @@
       if (tourAborted) break;
       const page = FULL_TOUR_PAGES[p];
 
-      // Navigate to this page and give the DOM a moment to render
+      // Navigate to this page and give the DOM time to render
+      clearSpotlight();
       if (typeof navigate === 'function') navigate(page);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, PAGE_SETTLE_MS));
       if (tourAborted) break;
 
       const steps = PAGE_TOUR_STEPS[page] || [];
       for (let i = 0; i < steps.length; i++) {
         if (tourAborted) break;
         tourStepIndex = i;
+        globalStep++;
 
         const step = steps[i];
 
@@ -1466,10 +1647,45 @@
         // feel fluid (the next page's intro immediately follows).
         if (!step.sel && i === steps.length - 1 && p < FULL_TOUR_PAGES.length - 1) continue;
 
+        // Steps that require user interaction (waitForModal) are replaced by their
+        // fullTourEn/fullTourEs narration text so the automated tour flows hands-free.
+        // We still spotlight the step's sel element while speaking the alternate text.
+        if (step.waitForModal) {
+          const fullText = lang === 'es' ? step.fullTourEs : step.fullTourEn;
+          if (fullText) {
+            clearSpotlight();
+            const el = step.sel ? document.querySelector(step.sel) : null;
+            if (el && isElementVisible(el)) {
+              await scrollAndSettle(el);
+              if (!tourAborted) {
+                const caption = lang === 'es'
+                  ? `Paso ${globalStep} / ${globalTotal}`
+                  : `Step ${globalStep} / ${globalTotal}`;
+                showSpotlight(el, caption);
+                updateStepLabel(globalStep, globalTotal);
+              }
+            }
+            if (!tourAborted) await speak(fullText, undefined, PRIORITY.guide);
+            if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
+          }
+          continue;
+        }
+
         const el = step.sel ? document.querySelector(step.sel) : null;
         if (step.sel && !isElementVisible(el)) continue;
 
-        if (el) highlightElement(el);
+        // Presentation sequence: clear → scroll → spotlight → speak → pause
+        clearSpotlight();
+        if (el) {
+          await scrollAndSettle(el);
+          if (tourAborted) break;
+          const caption = lang === 'es'
+            ? `Paso ${globalStep} / ${globalTotal}`
+            : `Step ${globalStep} / ${globalTotal}`;
+          showSpotlight(el, caption);
+          updateStepLabel(globalStep, globalTotal);
+        }
+
         await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
         if (tourAborted) break;
 
@@ -1489,19 +1705,12 @@
           if (tourAborted) break;
         }
 
-        if (step.waitForModal && !tourAborted) {
-          try {
-            await waitForModalOpen(step.waitForModal);
-          } catch (_) {
-            // Timeout or missing — advance anyway
-          }
-          if (tourAborted) break;
-          await new Promise(r => setTimeout(r, 400));
-        }
+        if (!tourAborted) await new Promise(r => setTimeout(r, STEP_GAP_MS));
       }
     }
 
     // Closing words
+    clearSpotlight();
     if (!tourAborted) {
       await speak(
         lang === 'es' ? FULL_TOUR_CLOSING.es : FULL_TOUR_CLOSING.en,
@@ -1512,6 +1721,7 @@
 
     tourActive    = false;
     tourStepIndex = 0;
+    updateStepLabel(0, 0);
     hideCursor();
     updatePanelState();
   }
@@ -1536,10 +1746,24 @@
     // Immediately release any pending waitForModalOpen so the tour loop exits
     // without waiting up to MAX_MODAL_WAIT_MS.
     if (tourWaitResolve) { tourWaitResolve(); tourWaitResolve = null; }
+    clearSpotlight();
     stopAudio();
     tourActive  = false;
+    updateStepLabel(0, 0);
     hideCursor();
     updatePanelState();
+  }
+
+  /** Show or hide the step-progress label inside the panel. */
+  function updateStepLabel(current, total) {
+    const el = document.getElementById('va-step-label');
+    if (!el) return;
+    if (total > 0 && current > 0) {
+      el.textContent  = lang === 'es' ? `Paso ${current} / ${total}` : `Step ${current} / ${total}`;
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
   }
 
   // ── Context-Aware Click-Explain ────────────────────────────────────────────
@@ -1846,6 +2070,12 @@
       <button id="va-stop-btn"  style="${btnStyle}background:#374151;color:#9ca3af;" disabled>
         ⏹ Stop
       </button>
+      <button id="va-pause-btn" style="${btnStyle}background:#374151;color:#9ca3af;" disabled>
+        ⏸ Pause
+      </button>
+      <div id="va-step-label" style="text-align:center;font-size:10px;color:#6b7280;
+                                     padding:2px 0;display:none;font-variant-numeric:tabular-nums;">
+      </div>
       <div style="display:flex;gap:6px;margin-top:2px;">
         <button id="va-lang-btn"
           style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
@@ -1917,6 +2147,8 @@
       stopTour();
       stopAudio();
     });
+
+    panel.querySelector('#va-pause-btn').addEventListener('click', togglePause);
 
     panel.querySelector('#va-lang-btn').addEventListener('click', () => {
       setLang(lang === 'en' ? 'es' : 'en');
