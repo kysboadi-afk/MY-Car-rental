@@ -214,8 +214,17 @@ export async function getVehiclePricing(supabase, vehicleId) {
     .order('updated_at', { ascending: false })
     .limit(1);
 
-  // Happy path — at least one vehicle_pricing row found.
-  if (!error && rows && rows.length > 0) return rows[0];
+  // Happy path — at least one vehicle_pricing row found with at least one usable price.
+  // A row where every price is 0 or null (e.g. the admin saved $0 as a placeholder)
+  // is treated as "not configured" and falls through to the JSONB/system_settings
+  // fallback so economy defaults are used instead of a $0 payment intent.
+  if (!error && rows && rows.length > 0) {
+    const row = rows[0];
+    const hasUsablePrice = [row.daily_price, row.weekly_price, row.biweekly_price, row.monthly_price]
+      .some(p => p != null && Number(p) > 0);
+    if (hasUsablePrice) return row;
+    console.warn('[pricing] vehicle_pricing row has no positive prices — falling through to fallback', { vehicleId });
+  }
 
   // Real error (not an empty result) — log and fall through to JSONB fallback.
   if (error) {
@@ -341,8 +350,13 @@ export function computeAmountFromPricing(pricing, days) {
   if (days === 7  && w  != null && w  > 0) return w;
   if (days === 14 && bw != null && bw > 0) return bw;
   if (days >= 28  && m  != null && m  > 0) return m;
-  // Derive daily_price from weekly when it is not explicitly stored.
-  const daily = d != null ? d : (w != null ? deriveDaily(w) : null);
+  // Derive daily_price from weekly when it is not explicitly stored, or when
+  // daily_price is 0 (consistent with the > 0 tier checks above — $0 means
+  // "this rate is not configured", not "free").
+  // deriveDaily(w) is guaranteed > 0 when w > 0 (it's round(w/7 * 100)/100),
+  // so the explicit positivity check on w ensures the derived rate is also valid.
+  const derived = (w != null && w > 0) ? deriveDaily(w) : null;
+  const daily = (d != null && d > 0) ? d : derived;
   return daily != null ? Math.round(daily * days * 100) / 100 : null;
 }
 
