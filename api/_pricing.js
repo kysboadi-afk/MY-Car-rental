@@ -14,8 +14,9 @@ export const LA_TAX_RATE = 0.1025;
 export const CAMRY_BOOKING_DEPOSIT = 50;
 
 export const CARS = {
-  camry:      { name: "Camry 2012",     pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
-  camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
+  camry:      { name: "Camry 2012",       pricePerDay: 55,  weekly: 350, biweekly: 650,  monthly: 1300, deposit: 0 },
+  camry2013:  { name: "Camry 2013 SE",    pricePerDay: 55,  weekly: 350, biweekly: 650,  monthly: 1300, deposit: 0 },
+  fusion2017: { name: "Ford Fusion 2017", pricePerDay: 65,  weekly: 400, biweekly: 750,  monthly: 1400, deposit: 0 },
 };
 
 // Canonical vehicle IDs derived from the CARS registry above.
