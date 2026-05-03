@@ -13,6 +13,7 @@
 import { loadBookings, saveBookings, updateBooking, isNetworkError } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
+import { loadCategories, enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { computeAmount, computeRentalDays, CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import {
@@ -1083,17 +1084,24 @@ async function toolGetGpsTracking() {
 }
 
 
-async function toolGetExpenses({ vehicleId, category } = {}) {
+async function toolGetExpenses({ vehicleId, category, group } = {}) {
   const sb = getSupabaseAdmin();
   let expenses = null;
 
   if (sb) {
     try {
-      let q = sb.from("expenses").select("*").order("date", { ascending: false }).limit(200);
+      let q = sb.from("expenses")
+        .select("*, expense_categories!category_id(name, group_name)")
+        .order("date", { ascending: false }).limit(200);
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
-      if (category)  q = q.eq("category", category);
       const { data, error } = await q;
-      if (!error) expenses = data || [];
+      if (!error) {
+        expenses = (data || []).map((e) => {
+          const { category_name, category_group } = enrichExpenseCategory(e);
+          const { expense_categories: _rel, ...flat } = e;
+          return { ...flat, category_name, category_group };
+        });
+      }
     } catch {
       // fall through
     }
@@ -1103,22 +1111,42 @@ async function toolGetExpenses({ vehicleId, category } = {}) {
     const { data } = await loadExpenses();
     expenses = data;
     if (vehicleId) expenses = expenses.filter((e) => e.vehicle_id === vehicleId);
-    if (category)  expenses = expenses.filter((e) => e.category === category);
+    expenses = expenses.map((e) => {
+      const { category_name, category_group } = enrichExpenseCategory(e);
+      return { ...e, category_name, category_group };
+    });
   }
 
-  const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  // Filter by legacy category text or new group
+  if (category) {
+    expenses = expenses.filter((e) =>
+      e.category === category ||
+      e.category_name?.toLowerCase() === category.toLowerCase()
+    );
+  }
+  if (group) {
+    expenses = expenses.filter((e) =>
+      e.category_group?.toLowerCase() === group.toLowerCase()
+    );
+  }
+
+  const total      = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const byCategory = {};
+  const byGroup    = {};
   const byVehicle  = {};
   for (const e of expenses) {
-    const cat = e.category || "other";
+    const cat = e.category_name || e.category || "other";
     byCategory[cat] = (byCategory[cat] || 0) + (Number(e.amount) || 0);
+    const grp = e.category_group || "Other";
+    byGroup[grp]    = (byGroup[grp] || 0) + (Number(e.amount) || 0);
     const vid = e.vehicle_id || "unknown";
-    byVehicle[vid] = (byVehicle[vid] || 0) + (Number(e.amount) || 0);
+    byVehicle[vid]  = (byVehicle[vid] || 0) + (Number(e.amount) || 0);
   }
 
   return {
     total:      Math.round(total * 100) / 100,
     count:      expenses.length,
+    byGroup:    Object.fromEntries(Object.entries(byGroup).map(([k, v]) => [k, Math.round(v * 100) / 100])),
     byCategory: Object.fromEntries(Object.entries(byCategory).map(([k, v]) => [k, Math.round(v * 100) / 100])),
     byVehicle:  Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, Math.round(v * 100) / 100])),
     expenses:   expenses.slice(0, 50),
@@ -2454,29 +2482,60 @@ async function toolMarkMaintenance({ vehicleId, serviceType, mileage }) {
 
 // ── New tool implementations ───────────────────────────────────────────────────
 
-const ALLOWED_EXPENSE_CATEGORIES = ["maintenance", "insurance", "repair", "fuel", "registration", "other"];
+const LEGACY_EXPENSE_CATEGORIES = Object.keys(LEGACY_CATEGORY_MAP);
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-async function toolAddExpense({ vehicle_id, date, category, amount, notes }) {
+async function toolAddExpense({ vehicle_id, date, category_id, category, amount, notes }) {
   if (!vehicle_id || typeof vehicle_id !== "string") throw new Error("vehicle_id is required");
   if (!date || !ISO_DATE_PATTERN.test(String(date))) throw new Error("date must be in YYYY-MM-DD format");
-  if (!category || !ALLOWED_EXPENSE_CATEGORIES.includes(category)) {
-    throw new Error(`category must be one of: ${ALLOWED_EXPENSE_CATEGORIES.join(", ")}`);
+
+  const sb = getSupabaseAdmin();
+  let resolvedCategoryId   = null;
+  let resolvedCategoryText = null;
+
+  if (category_id && typeof category_id === "string") {
+    // New path: validate UUID in expense_categories
+    if (sb) {
+      const { data: catRow, error: catErr } = await sb
+        .from("expense_categories").select("id, name, group_name")
+        .eq("id", category_id).maybeSingle();
+      if (catErr || !catRow) throw new Error("Invalid category_id");
+      resolvedCategoryId   = catRow.id;
+      resolvedCategoryText = catRow.name;
+    } else {
+      resolvedCategoryId   = category_id;
+      resolvedCategoryText = category || "other";
+    }
+  } else if (category && typeof category === "string") {
+    // Legacy path
+    if (!LEGACY_EXPENSE_CATEGORIES.includes(category)) {
+      throw new Error(`category must be one of: ${LEGACY_EXPENSE_CATEGORIES.join(", ")}`);
+    }
+    resolvedCategoryText = category;
+    if (sb) {
+      const allCats = await loadCategories(sb);
+      const { name: tName, group_name: tGroup } = LEGACY_CATEGORY_MAP[category];
+      const match = allCats.find((c) => c.name === tName && c.group_name === tGroup);
+      if (match) resolvedCategoryId = match.id;
+    }
+  } else {
+    throw new Error("category_id or category is required");
   }
+
   const parsedAmount = Number(amount);
   if (isNaN(parsedAmount) || parsedAmount <= 0) throw new Error("amount must be a positive number");
 
   const expense = {
-    expense_id: randomBytes(8).toString("hex"),
-    vehicle_id: String(vehicle_id).trim(),
-    date:       String(date),
-    category,
-    amount:     Math.round(parsedAmount * 100) / 100,
-    notes:      typeof notes === "string" ? notes.trim().slice(0, 500) : "",
-    created_at: new Date().toISOString(),
+    expense_id:  randomBytes(8).toString("hex"),
+    vehicle_id:  String(vehicle_id).trim(),
+    date:        String(date),
+    category:    resolvedCategoryText || "",
+    amount:      Math.round(parsedAmount * 100) / 100,
+    notes:       typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+    created_at:  new Date().toISOString(),
   };
+  if (resolvedCategoryId) expense.category_id = resolvedCategoryId;
 
-  const sb = getSupabaseAdmin();
   let useGitHub = !sb;
   if (sb) {
     const { error: sbErr } = await sb.from("expenses").insert(expense);
@@ -2491,7 +2550,7 @@ async function toolAddExpense({ vehicle_id, date, category, amount, notes }) {
       load:    loadExpenses,
       apply:   (data) => { if (!data.some((e) => e.expense_id === expense.expense_id)) data.push(expense); },
       save:    saveExpenses,
-      message: `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`,
+      message: `Add expense for ${vehicle_id}: ${resolvedCategoryText || category_id} $${expense.amount} on ${date}`,
     });
   }
   return { success: true, expense };
@@ -2534,6 +2593,57 @@ async function toolDeleteExpense({ expense_id }) {
     });
   }
   return { success: true, deleted: expense_id };
+}
+
+async function toolGetExpenseCategories() {
+  const sb = getSupabaseAdmin();
+  const categories = await loadCategories(sb);
+  return { categories };
+}
+
+async function toolManageExpenseCategory({ action, id, name, group_name, is_active }) {
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase is required to manage categories.");
+
+  if (action === "create") {
+    const trimName  = typeof name       === "string" ? name.trim().slice(0, 80)  : "";
+    const trimGroup = typeof group_name === "string" ? group_name.trim().slice(0, 60) : "";
+    if (!trimName)  throw new Error("name is required");
+    if (!trimGroup) throw new Error("group_name is required");
+
+    const { data, error } = await sb.from("expense_categories")
+      .insert({ name: trimName, group_name: trimGroup, is_default: false, is_active: true })
+      .select().single();
+    if (error) {
+      if (error.code === "23505") throw new Error(`Category "${trimName}" already exists in group "${trimGroup}".`);
+      throw new Error(error.message);
+    }
+    return { success: true, category: data, categories: await loadCategories(sb) };
+  }
+
+  if (action === "update") {
+    if (!id)   throw new Error("id is required");
+    const trimName = typeof name === "string" ? name.trim().slice(0, 80) : "";
+    if (!trimName) throw new Error("name is required");
+    const { data, error } = await sb.from("expense_categories")
+      .update({ name: trimName }).eq("id", id).select().single();
+    if (error) {
+      if (error.code === "23505") throw new Error(`A category named "${trimName}" already exists in this group.`);
+      throw new Error(error.message);
+    }
+    return { success: true, category: data, categories: await loadCategories(sb) };
+  }
+
+  if (action === "toggle") {
+    if (!id)                          throw new Error("id is required");
+    if (typeof is_active !== "boolean") throw new Error("is_active (boolean) is required");
+    const { data, error } = await sb.from("expense_categories")
+      .update({ is_active }).eq("id", id).select().single();
+    if (error) throw new Error(error.message);
+    return { success: true, category: data, categories: await loadCategories(sb) };
+  }
+
+  throw new Error(`Unknown action: ${action}`);
 }
 
 async function toolBlockDates({ vehicleId, from, to }) {
@@ -3848,6 +3958,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "create_manual_booking",
   "add_expense",
   "delete_expense",
+  "manage_expense_category",
   "block_dates",
   "open_dates",
   "update_system_setting",
@@ -3918,6 +4029,8 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "create_manual_booking":         result = await toolCreateManualBooking(args);         break;
       case "add_expense":                   result = await toolAddExpense(args);                   break;
       case "delete_expense":                result = await toolDeleteExpense(args);                break;
+      case "get_expense_categories":        result = await toolGetExpenseCategories();             break;
+      case "manage_expense_category":       result = await toolManageExpenseCategory(args);        break;
       case "block_dates":                   result = await toolBlockDates(args);                   break;
       case "open_dates":                    result = await toolOpenDates(args);                    break;
       case "update_system_setting":         result = await toolUpdateSystemSetting(args);          break;

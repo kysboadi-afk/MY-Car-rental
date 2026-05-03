@@ -1305,7 +1305,11 @@
 
       <!-- EXPENSES PAGE -->
       <div class="page" id="page-expenses">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
+          <button class="btn btn-secondary" onclick="openManageCategoriesModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            Manage Categories
+          </button>
           <button class="btn btn-primary" onclick="openAddExpenseModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Expense
@@ -1318,12 +1322,6 @@
           </select>
           <select class="filter-select" id="expense-filter-category" onchange="applyExpenseFilters()">
             <option value="">All Categories</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="insurance">Insurance</option>
-            <option value="repair">Repair</option>
-            <option value="fuel">Fuel</option>
-            <option value="registration">Registration</option>
-            <option value="other">Other</option>
           </select>
         </div>
         <div class="card">
@@ -2022,12 +2020,6 @@
         <label class="form-label">Category *</label>
         <select class="form-select" id="exp-category">
           <option value="">Select category…</option>
-          <option value="maintenance">Maintenance</option>
-          <option value="insurance">Insurance</option>
-          <option value="repair">Repair</option>
-          <option value="fuel">Fuel</option>
-          <option value="registration">Registration</option>
-          <option value="other">Other</option>
         </select>
       </div>
       <div class="form-group">
@@ -2042,6 +2034,38 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-expense-modal')">Cancel</button>
       <button class="btn btn-primary" id="exp-submit-btn" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Categories Modal -->
+<div class="modal-overlay" id="manage-categories-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">Manage Expense Categories</div>
+      <button class="modal-close" onclick="closeModal('manage-categories-modal')">✕</button>
+    </div>
+    <div style="max-height:420px;overflow-y:auto;padding:0 4px;">
+      <div id="cat-manager-list"></div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;">Add Custom Category</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Name *</label>
+          <input type="text" class="form-input" id="new-cat-name" placeholder="e.g. Car Payment" maxlength="80">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Group *</label>
+          <input type="text" class="form-input" id="new-cat-group" placeholder="e.g. Ownership" maxlength="60">
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn btn-primary" id="new-cat-submit" onclick="submitNewCategory()">Add Category</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('manage-categories-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -2602,6 +2626,7 @@ let adminSecret   = '';
 let dashboardData = null;
 let allBookings   = [];
 let allExpenses   = [];
+let allExpenseCategories = [];
 let allVehicles   = {};
 let smsTemplates  = [];
 let editingVehicleId   = null;
@@ -4936,12 +4961,62 @@ function clearManualBookingForm() {
 }
 
 // ── Expenses ───────────────────────────────────────────────────────────────
+function loadExpenseCategories() {
+  return apiPost('/api/get-expense-categories', { secret: adminSecret })
+    .then((data) => {
+      allExpenseCategories = data.categories || [];
+      populateCategoryDropdowns();
+    })
+    .catch((err) => console.warn('Could not load expense categories:', err.message));
+}
+
+function populateCategoryDropdowns() {
+  const active = allExpenseCategories.filter((c) => c.is_active);
+  const groups = {};
+  for (const cat of active) {
+    if (!groups[cat.group_name]) groups[cat.group_name] = [];
+    groups[cat.group_name].push(cat);
+  }
+
+  const buildOptgroups = (blankLabel) => {
+    let html = `<option value="">${esc(blankLabel)}</option>`;
+    for (const [group, cats] of Object.entries(groups)) {
+      html += `<optgroup label="${esc(group)}">`;
+      for (const cat of cats) {
+        html += `<option value="${esc(cat.id)}">${esc(cat.name)}</option>`;
+      }
+      html += '</optgroup>';
+    }
+    return html;
+  };
+
+  const filterSel = document.getElementById('expense-filter-category');
+  if (filterSel) filterSel.innerHTML = buildOptgroups('All Categories');
+  const addSel = document.getElementById('exp-category');
+  if (addSel) addSel.innerHTML = buildOptgroups('Select category…');
+}
+
+function getCategoryLabel(expense) {
+  if (expense.category_name) {
+    return expense.category_group
+      ? `${esc(expense.category_group)} / ${esc(expense.category_name)}`
+      : esc(expense.category_name);
+  }
+  const text = expense.category || '–';
+  return esc(text.charAt(0).toUpperCase() + text.slice(1));
+}
+
 function loadExpenses() {
   document.getElementById('expenses-loading').style.display = '';
   document.getElementById('expenses-table-wrap').style.display = 'none';
   document.getElementById('expenses-empty').style.display = 'none';
 
-  apiPost('/api/get-expenses', { secret: adminSecret })
+  const catPromise = allExpenseCategories.length
+    ? Promise.resolve()
+    : loadExpenseCategories();
+
+  catPromise
+    .then(() => apiPost('/api/get-expenses', { secret: adminSecret }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -4964,14 +5039,14 @@ function renderExpenseKpis() {
 
   const total = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
 
-  // By category totals
-  const byCat = {};
+  // By group totals (new hierarchy)
+  const byGroup = {};
   for (const e of allExpenses) {
-    const cat = e.category || 'other';
-    byCat[cat] = (byCat[cat] || 0) + Number(e.amount || 0);
+    const grp = e.category_group || (e.category ? e.category.charAt(0).toUpperCase() + e.category.slice(1) : 'Other');
+    byGroup[grp] = (byGroup[grp] || 0) + Number(e.amount || 0);
   }
-  const topCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 2);
-  const catSub  = topCats.map(([c, v]) => `${c}: $${formatMoney(v)}`).join(' · ');
+  const topGroups = Object.entries(byGroup).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const groupSub  = topGroups.map(([g, v]) => `${g}: $${formatMoney(v)}`).join(' · ');
 
   // By vehicle totals
   const byVeh = {};
@@ -4983,9 +5058,9 @@ function renderExpenseKpis() {
   const vehSub  = topVehs.map(([v, amt]) => `${VEHICLE_NAMES_DYNAMIC[v] || VEHICLE_NAMES[v] || v}: $${formatMoney(amt)}`).join(' · ');
 
   grid.innerHTML = [
-    { label: 'Total Expenses',   value: '$' + formatMoney(total),                    icon: '💸', sub: `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` },
-    { label: 'By Category',      value: topCats.length ? '$' + formatMoney(topCats[0][1]) : '–', icon: '🏷️', sub: catSub },
-    { label: 'By Vehicle',       value: topVehs.length ? '$' + formatMoney(topVehs[0][1]) : '–', icon: '🚗', sub: vehSub },
+    { label: 'Total Expenses',   value: '$' + formatMoney(total),                          icon: '💸', sub: `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` },
+    { label: 'By Group',         value: topGroups.length ? '$' + formatMoney(topGroups[0][1]) : '–', icon: '🏷️', sub: groupSub },
+    { label: 'By Vehicle',       value: topVehs.length ? '$' + formatMoney(topVehs[0][1]) : '–',  icon: '🚗', sub: vehSub },
     { label: 'Avg per Record',   value: allExpenses.length ? '$' + formatMoney(total / allExpenses.length) : '–', icon: '📊', sub: '' },
   ].map((k) => `
     <div class="kpi-card">
@@ -5005,7 +5080,7 @@ function applyExpenseFilters() {
 
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
-    if (cFilter && e.category !== cFilter) return false;
+    if (cFilter && e.category_id !== cFilter && e.category !== cFilter) return false;
     return true;
   });
 
@@ -5023,7 +5098,7 @@ function applyExpenseFilters() {
     <tr>
       <td>${esc(e.date || '–')}</td>
       <td>${esc(getVehicleLabel(e.vehicle_id) || '–')}</td>
-      <td><span class="badge badge-gray">${esc(e.category || '–')}</span></td>
+      <td><span class="badge badge-gray" title="${esc(e.category_group || '')}">${getCategoryLabel(e)}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
       <td>
@@ -5050,21 +5125,21 @@ function openAddExpenseModal() {
 }
 
 function submitExpense() {
-  const vehicle_id = document.getElementById('exp-vehicle').value;
-  const date       = document.getElementById('exp-date').value;
-  const category   = document.getElementById('exp-category').value;
-  const amount     = parseFloat(document.getElementById('exp-amount').value);
-  const notes      = document.getElementById('exp-notes').value.trim();
+  const vehicle_id  = document.getElementById('exp-vehicle').value;
+  const date        = document.getElementById('exp-date').value;
+  const category_id = document.getElementById('exp-category').value;
+  const amount      = parseFloat(document.getElementById('exp-amount').value);
+  const notes       = document.getElementById('exp-notes').value.trim();
 
-  if (!vehicle_id) { showToast('Please select a vehicle.', 'error'); return; }
-  if (!date)       { showToast('Please enter a date.', 'error'); return; }
-  if (!category)   { showToast('Please select a category.', 'error'); return; }
+  if (!vehicle_id)   { showToast('Please select a vehicle.', 'error'); return; }
+  if (!date)         { showToast('Please enter a date.', 'error'); return; }
+  if (!category_id)  { showToast('Please select a category.', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
 
   const btn = document.getElementById('exp-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category, amount, notes })
+  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category_id, amount, notes })
     .then(() => {
       closeModal('add-expense-modal');
       showToast('Expense added.', 'success');
@@ -5090,6 +5165,91 @@ function deleteExpense(expenseId) {
       refreshDashboard();
     })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Category Manager ────────────────────────────────────────────────────────
+function openManageCategoriesModal() {
+  renderCategoryManager();
+  openModal('manage-categories-modal');
+}
+
+function renderCategoryManager() {
+  const container = document.getElementById('cat-manager-list');
+  if (!container) return;
+
+  if (!allExpenseCategories.length) {
+    container.innerHTML = '<p style="color:var(--text-sub);padding:8px 0;">No categories loaded.</p>';
+    return;
+  }
+
+  // Group by group_name
+  const groups = {};
+  for (const cat of allExpenseCategories) {
+    if (!groups[cat.group_name]) groups[cat.group_name] = [];
+    groups[cat.group_name].push(cat);
+  }
+
+  container.innerHTML = Object.entries(groups).map(([group, cats]) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-sub);letter-spacing:0.5px;margin-bottom:6px;">${esc(group)}</div>
+      ${cats.map((cat) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+          <span style="flex:1;font-size:14px;${cat.is_active ? '' : 'color:var(--text-sub);text-decoration:line-through;'}">${esc(cat.name)}</span>
+          ${cat.is_default ? '<span style="font-size:10px;color:var(--text-sub);">default</span>' : ''}
+          <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;" onclick="editCategoryName('${esc(cat.id)}', '${esc(cat.name)}')">Rename</button>
+          <button class="btn btn-sm ${cat.is_active ? 'btn-secondary' : 'btn-primary'}" style="font-size:11px;padding:3px 8px;min-width:60px;" onclick="toggleCategory('${esc(cat.id)}', ${!cat.is_active})">${cat.is_active ? 'Disable' : 'Enable'}</button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function editCategoryName(id, currentName) {
+  const newName = prompt('Enter new category name:', currentName);
+  if (!newName || newName.trim() === currentName) return;
+
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'update', id, name: newName.trim() })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      showToast('Category renamed.', 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function toggleCategory(id, is_active) {
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'toggle', id, is_active })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      showToast(is_active ? 'Category enabled.' : 'Category disabled.', 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function submitNewCategory() {
+  const name       = document.getElementById('new-cat-name').value.trim();
+  const group_name = document.getElementById('new-cat-group').value.trim();
+
+  if (!name)       { showToast('Category name is required.', 'error'); return; }
+  if (!group_name) { showToast('Group name is required.', 'error'); return; }
+
+  const btn = document.getElementById('new-cat-submit');
+  btn.disabled = true; btn.textContent = 'Adding…';
+
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'create', name, group_name })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      document.getElementById('new-cat-name').value  = '';
+      document.getElementById('new-cat-group').value = '';
+      showToast(`Category "${name}" added.`, 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Add Category'; });
 }
 
 // ── SMS Templates ──────────────────────────────────────────────────────────
