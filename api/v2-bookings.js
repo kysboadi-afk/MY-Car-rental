@@ -1322,6 +1322,50 @@ export default async function handler(req, res) {
         const found = list.find((b) => b.bookingId === bookingId);
         if (found) { booking = found; break; }
       }
+
+      // Fallback: look up Supabase for bookings not present in bookings.json
+      if (!booking) {
+        try {
+          const sbLookup = getSupabaseAdmin();
+          if (sbLookup) {
+            const { data: sbRow } = await sbLookup
+              .from("bookings")
+              .select(`
+                booking_ref, vehicle_id, pickup_date, return_date,
+                pickup_time, return_time, status, total_price, deposit_paid,
+                payment_intent_id, notes,
+                customers ( name, phone, email )
+              `)
+              .eq("booking_ref", bookingId)
+              .maybeSingle();
+            if (sbRow) {
+              const cust = sbRow.customers || {};
+              const vid = uiVehicleId(sbRow.vehicle_id);
+              booking = {
+                bookingId:       sbRow.booking_ref,
+                vehicleId:       vid,
+                vehicleName:     VEHICLE_NAMES[vid] || sbRow.vehicle_id || "",
+                name:            cust.name  || "",
+                email:           cust.email || "",
+                phone:           cust.phone || "",
+                pickupDate:      sbRow.pickup_date  || "",
+                pickupTime:      sbRow.pickup_time  || "",
+                returnDate:      sbRow.return_date  || "",
+                returnTime:      sbRow.return_time  || "",
+                amountPaid:      Number(sbRow.deposit_paid || 0),
+                totalPrice:      Number(sbRow.total_price  || 0),
+                status:          DB_TO_APP_STATUS[sbRow.status] || sbRow.status,
+                paymentIntentId: sbRow.payment_intent_id || "",
+                notes:           sbRow.notes || "",
+              };
+              console.log(`v2-bookings resend_confirmation: found booking ${bookingId} in Supabase (not in bookings.json)`);
+            }
+          }
+        } catch (sbLookupErr) {
+          console.warn("v2-bookings resend_confirmation: Supabase fallback lookup failed (non-fatal):", sbLookupErr.message);
+        }
+      }
+
       if (!booking) return res.status(404).json({ error: `No booking found with ID "${bookingId}"` });
 
       if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -1551,6 +1595,21 @@ export default async function handler(req, res) {
         html: ownerTemplate.html,
         text: ownerTemplate.text,
       });
+
+      // Mark email_sent in pending_booking_docs now that the owner email succeeded
+      try {
+        const sbMark = getSupabaseAdmin();
+        if (sbMark) {
+          await sbMark
+            .from("pending_booking_docs")
+            .upsert(
+              { booking_id: bookingId, email_sent: true },
+              { onConflict: "booking_id" }
+            );
+        }
+      } catch (markErr) {
+        console.warn("v2-bookings resend_confirmation: could not mark email_sent (non-fatal):", markErr.message);
+      }
 
       // Customer email
       let customerSent = false;
