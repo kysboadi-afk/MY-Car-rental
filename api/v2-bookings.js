@@ -55,8 +55,9 @@ import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
-  camry:     "Camry 2012",
-  camry2013: "Camry 2013 SE",
+  camry:      "Camry 2012",
+  camry2013:  "Camry 2013 SE",
+  fusion2017: "Ford Fusion 2017",
 };
 
 // Mapping from app-level status values (used in bookings.json and the admin UI)
@@ -431,10 +432,10 @@ export default async function handler(req, res) {
 
       // Validate booking exists before the retry loop
       const { data: checkData } = await loadBookings();
-      if (!Array.isArray(checkData[vehicleId])) {
-        return res.status(404).json({ error: "Vehicle not found" });
-      }
-      const foundInJson = checkData[vehicleId].some(
+      // foundInJson is false when the vehicle has no entry in bookings.json
+      // (e.g. Ford Fusion bookings that exist only in Supabase).  The Supabase
+      // fallback below will locate those bookings without a "Vehicle not found" error.
+      const foundInJson = Array.isArray(checkData[vehicleId]) && checkData[vehicleId].some(
         (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
       );
 
@@ -587,7 +588,7 @@ export default async function handler(req, res) {
                 // (e.g. created before the column was populated, or where the initial
                 // autoUpsertBooking failed).  Using UPDATE avoids the INSERT conflict-
                 // check trigger that fires on date-overlapping bookings.
-                const preCheck = checkData[vehicleId].find(
+                const preCheck = (checkData[vehicleId] || []).find(
                   (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
                 );
                 const piId = preCheck?.paymentIntentId;
@@ -668,7 +669,7 @@ export default async function handler(req, res) {
               "v2-bookings: bookings.json write failed after Supabase update succeeded (non-fatal):",
               githubErr.message
             );
-            const preCheckBooking = checkData[vehicleId].find(
+            const preCheckBooking = (checkData[vehicleId] || []).find(
               (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
             );
             if (preCheckBooking) {
