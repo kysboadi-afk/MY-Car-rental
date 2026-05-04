@@ -1254,7 +1254,7 @@ export default async function handler(req, res) {
       const { data: existingBookings } = await loadBookings();
       const vehicleBookings = existingBookings[vehicleId] || [];
       const activeOverlap = vehicleBookings.filter(
-        (b) => b.status === "booked_paid" || b.status === "active_rental" || b.status === "reserved_unpaid"
+        (b) => b.status === "booked_paid" || b.status === "active_rental"
       );
       for (const existing of activeOverlap) {
         const eFrom = existing.pickupDate;

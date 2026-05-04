@@ -453,8 +453,11 @@ export async function persistBooking(opts) {
       }
     }
 
-    // Step D: blocked_dates entry
-    if (opts.pickupDate && opts.returnDate) {
+    // Step D: blocked_dates entry — only for paid/active bookings.
+    // Pending/unpaid bookings must NOT block dates; only a confirmed payment
+    // should prevent other customers from booking the same vehicle.
+    const PAID_ACTIVE_STATUSES = new Set(["booked_paid", "active_rental", "approved", "active"]);
+    if (opts.pickupDate && opts.returnDate && PAID_ACTIVE_STATUSES.has(booking.status)) {
       const blockResult = await runStep(traceId, "create_blocked_date", () =>
         autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking", bookingId, opts.returnTime || null)
       );
