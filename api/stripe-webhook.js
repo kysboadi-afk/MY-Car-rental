@@ -586,8 +586,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       pickup_time:               parseTime12h(pickup_time  || "") || null,
       return_time:               parseTime12h(return_time  || "") || DEFAULT_RETURN_TIME_PG,
       // status='reserved' requires payment_status='partial' (DB constraint).
-      // Full_payment writes status='pending' + payment_status='paid'.
-      status:                    isDepositPayment ? "reserved" : "pending",
+      // Full payment is immediately confirmed — no manual approval step needed.
+      status:                    isDepositPayment ? "reserved" : "booked_paid",
       total_price:               totalPrice,
       deposit_paid:              depositPaidAmount,
       remaining_balance:         Math.max(0, totalPrice - depositPaidAmount),
