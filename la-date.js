@@ -54,8 +54,8 @@
    * Los Angeles local time string (e.g. "Jun 15, 2024, 8:00 AM").
    *
    * Always treats the supplied date/time values as Los Angeles wall-clock
-   * time so that the displayed value exactly matches what the user selected —
-   * no UTC conversion, no timezone shift.
+   * time and displays them in the America/Los_Angeles timezone, so the result
+   * is always LA time regardless of the viewer's browser timezone.
    *
    * @param {string} dateStr - "YYYY-MM-DD"
    * @param {string} [timeStr] - "HH:MM" (24-hour); defaults to "00:00"
@@ -74,14 +74,32 @@
     var h   = Number(timeParts[0]) || 0;
     var min = Number(timeParts[1]) || 0;
 
-    // Use Date.UTC so the Date holds the exact wall-clock values the user
-    // selected, then format in UTC to avoid any browser-timezone shift.
-    // (The values are already Los Angeles local times chosen from the
-    // LA-based time-slot picker, so no timezone conversion is needed.)
-    var date = new Date(Date.UTC(y, m - 1, d, h, min));
+    // Build the Date as an exact Los Angeles wall-clock moment.
+    // Step 1: approximate the UTC instant (ignores DST — only used to probe offset).
+    var hh = String(h).padStart(2, "0");
+    var mm = String(min).padStart(2, "0");
+    var dd = String(d).padStart(2, "0");
+    var mo = String(m).padStart(2, "0");
+    var approxUtc = new Date(Date.UTC(y, m - 1, d, h, min));
+
+    // Step 2: look up the actual LA UTC offset for that moment (handles DST).
+    var tzOffset = "-08:00"; // PST fallback
+    try {
+      var tzPart = new Intl.DateTimeFormat("en-US", {
+        timeZone: BUSINESS_TZ,
+        timeZoneName: "longOffset"
+      }).formatToParts(approxUtc).find(function (p) { return p.type === "timeZoneName"; });
+      var match = tzPart && tzPart.value.match(/GMT([+-]\d{1,2}:\d{2})/);
+      if (match) tzOffset = match[1];
+    } catch (_) {
+      // Keep fallback offset.
+    }
+
+    // Step 3: build the correct absolute moment using the real offset.
+    var date = new Date(y + "-" + mo + "-" + dd + "T" + hh + ":" + mm + ":00" + tzOffset);
 
     return date.toLocaleString("en-US", {
-      timeZone: "UTC",
+      timeZone: BUSINESS_TZ,
       month: "short",
       day: "numeric",
       year: "numeric",

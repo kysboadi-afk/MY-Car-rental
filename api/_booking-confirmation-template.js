@@ -1,4 +1,5 @@
 import { CARS, computeAmount, computeRentalDays } from "./_pricing.js";
+import { formatTime12h } from "./_time.js";
 
 function esc(str) {
   if (str == null) return "";
@@ -97,8 +98,8 @@ export function buildUnifiedConfirmationEmail({
   missingItemNotes = [],
   firstName,
 }) {
-  const pickupDisplay = [pickupDate, pickupTime].filter(Boolean).join(" at ") || "N/A";
-  const returnDisplay = [returnDate, returnTime].filter(Boolean).join(" at ") || "N/A";
+  const pickupDisplay = [pickupDate, formatTime12h(pickupTime) || pickupTime].filter(Boolean).join(" at ") || "N/A";
+  const returnDisplay = [returnDate, formatTime12h(returnTime) || returnTime].filter(Boolean).join(" at ") || "N/A";
   const displayVehicle = vehicleName || vehicleId || "N/A";
   const displayName = renterName || "Not provided";
   const totalDisplay = Number.isFinite(Number(amountPaid))
