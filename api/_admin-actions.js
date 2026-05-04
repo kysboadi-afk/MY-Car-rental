@@ -3160,7 +3160,7 @@ async function toolBackfillStripeCards({ action = "preview", confirmed } = {}) {
     return {
       requires_confirmation: true,
       action,
-      message: "Running the backfill will write stripe_customer_id and stripe_payment_method_id to all affected bookings. Confirm to proceed (retry with confirmed:true).",
+      message: "Running the backfill will write stripe_customer_id, stripe_payment_method_id, extension_stripe_customer_id, and extension_stripe_payment_method_id to all affected bookings. Confirm to proceed (retry with confirmed:true).",
     };
   }
   return await executeBackfillStripeCards(action);
