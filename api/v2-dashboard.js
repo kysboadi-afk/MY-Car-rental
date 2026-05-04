@@ -225,11 +225,6 @@ export default async function handler(req, res) {
         for (const row of (sbRows || [])) {
           if (canonicalIds.has(row.vehicle_id)) continue; // canonical — keep
           if (row.data?.status === "inactive")  continue; // already deactivated
-          // Skip rows the admin explicitly activated — they may have been
-          // created via the admin UI before or while the vehicles.json sync
-          // was in-flight.  Only phantom rows (status absent or null, i.e.
-          // never set by any admin action) are eligible for deactivation.
-          if (row.data?.status === "active")    continue;
           const newData = { ...(row.data || {}), status: "inactive" };
           deactivations.push(
             sb.from("vehicles")
