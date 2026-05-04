@@ -1,16 +1,29 @@
 // api/backfill-stripe-card.js
 // SLYTRANS Fleet Control v2 — Stripe card backfill endpoint.
 //
-// Recovers stripe_customer_id + stripe_payment_method_id for bookings where
-// those columns were wiped to NULL by a bug in the upsert_booking_revenue_atomic
-// Postgres RPC (fixed by migration 0117).
+// Phase 1 — Main payment cards:
+//   Recovers stripe_customer_id + stripe_payment_method_id for bookings where
+//   those columns were wiped to NULL by a bug in the upsert_booking_revenue_atomic
+//   Postgres RPC (fixed by migration 0117).
 //
-// The approach:
-//   1. Query bookings where payment_method='stripe' AND payment_intent_id IS NOT NULL
-//      AND (stripe_customer_id IS NULL OR stripe_payment_method_id IS NULL)
-//   2. For each, retrieve the PaymentIntent from Stripe
-//   3. Extract customer + payment_method from the PI
-//   4. UPDATE the booking row using COALESCE semantics (never overwrite existing values)
+//   Approach:
+//     1. Query bookings where payment_method='stripe' AND payment_intent_id IS NOT NULL
+//        AND (stripe_customer_id IS NULL OR stripe_payment_method_id IS NULL)
+//     2. For each, retrieve the PaymentIntent from Stripe
+//     3. Extract customer + payment_method from the PI
+//     4. UPDATE the booking row using COALESCE semantics (never overwrite existing values)
+//
+// Phase 2 — Extension payment cards:
+//   Recovers extension_stripe_customer_id + extension_stripe_payment_method_id for
+//   bookings that have at least one paid extension (booking_extensions rows) but
+//   were booked before migration 0127 added these columns (so the webhook never
+//   had a chance to write them).
+//
+//   Approach:
+//     1. Query bookings with null extension card fields that have booking_extensions rows
+//     2. For each, pick the most-recent extension PI from booking_extensions
+//     3. Retrieve that PaymentIntent from Stripe
+//     4. UPDATE using COALESCE semantics
 //
 // POST /api/backfill-stripe-card
 // Body: { secret, action: "preview" | "backfill" }
@@ -47,7 +60,38 @@ export async function executeBackfillStripeCards(action = "preview") {
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-  // ── Step 1: Find bookings with missing card fields ──────────────────────────
+  // ── Phase 1: Recover main payment card fields ────────────────────────────────
+  const phase1 = await _backfillMainCards(sb, stripe, action);
+
+  // ── Phase 2: Recover extension payment card fields ───────────────────────────
+  const phase2 = await _backfillExtensionCards(sb, stripe, action);
+
+  const totalRows   = phase1.total   + phase2.total;
+  const totalRecov  = phase1.recovered + phase2.recovered;
+  const totalSkip   = phase1.skipped  + phase2.skipped;
+  const totalUnch   = phase1.unchanged + phase2.unchanged;
+
+  return {
+    action,
+    total:     totalRows,
+    recovered: totalRecov,
+    skipped:   totalSkip,
+    unchanged: totalUnch,
+    message: action === "preview"
+      ? `${totalRecov} of ${totalRows} bookings would be patched (run with action='backfill' to apply). ` +
+        `Phase 1 (main card): ${phase1.recovered}/${phase1.total}. ` +
+        `Phase 2 (extension card): ${phase2.recovered}/${phase2.total}.`
+      : `${totalRecov} of ${totalRows} bookings patched. ${totalSkip} skipped. ${totalUnch} already complete. ` +
+        `Phase 1 (main card): ${phase1.recovered}/${phase1.total}. ` +
+        `Phase 2 (extension card): ${phase2.recovered}/${phase2.total}.`,
+    phase1,
+    phase2,
+  };
+}
+
+// ── Phase 1 helper ────────────────────────────────────────────────────────────
+
+async function _backfillMainCards(sb, stripe, action) {
   const { data: rows, error: fetchErr } = await sb
     .from("bookings")
     .select("id, booking_ref, payment_intent_id, status, stripe_customer_id, stripe_payment_method_id")
@@ -57,22 +101,14 @@ export async function executeBackfillStripeCards(action = "preview") {
     .order("created_at", { ascending: false });
 
   if (fetchErr) {
-    throw new Error(`Supabase query failed: ${fetchErr.message}`);
+    throw new Error(`Phase 1 Supabase query failed: ${fetchErr.message}`);
   }
 
   if (!rows || rows.length === 0) {
-    return {
-      action,
-      total: 0,
-      recovered: 0,
-      skipped: 0,
-      unchanged: 0,
-      message: "No bookings found with missing Stripe card fields — nothing to backfill.",
-      rows: [],
-    };
+    return { total: 0, recovered: 0, skipped: 0, unchanged: 0, rows: [] };
   }
 
-  // Sort: active bookings first so they are patched even if rate limits hit.
+  // Sort: active bookings first.
   const sorted = [...rows].sort((a, b) => {
     const aActive = ACTIVE_STATUSES.has(a.status) ? 0 : 1;
     const bActive = ACTIVE_STATUSES.has(b.status) ? 0 : 1;
@@ -80,11 +116,8 @@ export async function executeBackfillStripeCards(action = "preview") {
   });
 
   const results = [];
-  let recovered = 0;
-  let skipped = 0;
-  let unchanged = 0;
+  let recovered = 0, skipped = 0, unchanged = 0;
 
-  // ── Step 2: For each booking, retrieve PI from Stripe ──────────────────────
   for (const row of sorted) {
     const piId = row.payment_intent_id;
     const result = {
@@ -99,7 +132,6 @@ export async function executeBackfillStripeCards(action = "preview") {
       error: null,
     };
 
-    // Skip PIs that look synthetic (created by saveWebhookBookingRecord fallback).
     if (!piId || piId.startsWith("wh-")) {
       result.outcome = "skipped_synthetic_pi";
       skipped++;
@@ -124,7 +156,6 @@ export async function executeBackfillStripeCards(action = "preview") {
     result.new_stripe_customer_id = newCustomerId;
     result.new_stripe_payment_method_id = newPaymentMethodId;
 
-    // If Stripe doesn't have these either, nothing to recover.
     if (!newCustomerId && !newPaymentMethodId) {
       result.outcome = "stripe_has_no_card";
       skipped++;
@@ -132,11 +163,8 @@ export async function executeBackfillStripeCards(action = "preview") {
       continue;
     }
 
-    // COALESCE: only write a field if the current DB value is NULL/empty.
-    const patchCustomerId =
-      !row.stripe_customer_id ? (newCustomerId || null) : null;          // null = no change
-    const patchPaymentMethodId =
-      !row.stripe_payment_method_id ? (newPaymentMethodId || null) : null;
+    const patchCustomerId      = !row.stripe_customer_id      ? (newCustomerId || null) : null;
+    const patchPaymentMethodId = !row.stripe_payment_method_id ? (newPaymentMethodId || null) : null;
 
     if (!patchCustomerId && !patchPaymentMethodId) {
       result.outcome = "already_has_both";
@@ -152,9 +180,8 @@ export async function executeBackfillStripeCards(action = "preview") {
       continue;
     }
 
-    // action === "backfill" — apply the patch.
     const patch = {};
-    if (patchCustomerId) patch.stripe_customer_id = patchCustomerId;
+    if (patchCustomerId)      patch.stripe_customer_id      = patchCustomerId;
     if (patchPaymentMethodId) patch.stripe_payment_method_id = patchPaymentMethodId;
 
     const { error: updateErr } = await sb
@@ -175,14 +202,162 @@ export async function executeBackfillStripeCards(action = "preview") {
   }
 
   return {
-    action,
     total: rows.length,
     recovered,
     skipped,
     unchanged,
     message: action === "preview"
-      ? `${recovered} of ${rows.length} bookings would be patched (run with action='backfill' to apply).`
-      : `${recovered} of ${rows.length} bookings patched. ${skipped} skipped (Stripe had no card or fetch failed). ${unchanged} already complete.`,
+      ? `${recovered} of ${rows.length} bookings would be patched.`
+      : `${recovered} of ${rows.length} bookings patched. ${skipped} skipped. ${unchanged} already complete.`,
+    rows: results,
+  };
+}
+
+// ── Phase 2 helper ────────────────────────────────────────────────────────────
+// Recover extension_stripe_customer_id + extension_stripe_payment_method_id by
+// looking up each booking's most-recent extension PaymentIntent from the
+// booking_extensions table and retrieving card info from Stripe.
+
+async function _backfillExtensionCards(sb, stripe, action) {
+  // Find bookings that have at least one extension but are missing extension card fields.
+  const { data: rows, error: fetchErr } = await sb
+    .from("bookings")
+    .select("id, booking_ref, status, extension_stripe_customer_id, extension_stripe_payment_method_id")
+    .eq("payment_method", "stripe")
+    .not("last_extension_at", "is", null)
+    .or("extension_stripe_customer_id.is.null,extension_stripe_payment_method_id.is.null")
+    .order("created_at", { ascending: false });
+
+  if (fetchErr) {
+    throw new Error(`Phase 2 Supabase query failed: ${fetchErr.message}`);
+  }
+
+  if (!rows || rows.length === 0) {
+    return { total: 0, recovered: 0, skipped: 0, unchanged: 0, rows: [] };
+  }
+
+  // For each booking, fetch the most-recent extension PI from booking_extensions.
+  const bookingRefs = rows.map((r) => r.booking_ref);
+  const { data: extRows, error: extErr } = await sb
+    .from("booking_extensions")
+    .select("booking_id, payment_intent_id, created_at")
+    .in("booking_id", bookingRefs)
+    .not("payment_intent_id", "is", null)
+    .order("created_at", { ascending: false });
+
+  if (extErr) {
+    throw new Error(`Phase 2 booking_extensions query failed: ${extErr.message}`);
+  }
+
+  // Build a map: booking_ref → most-recent extension PI ID.
+  const latestExtPi = new Map();
+  for (const ext of extRows || []) {
+    if (!latestExtPi.has(ext.booking_id)) {
+      latestExtPi.set(ext.booking_id, ext.payment_intent_id);
+    }
+  }
+
+  // Sort: active bookings first.
+  const sorted = [...rows].sort((a, b) => {
+    const aActive = ACTIVE_STATUSES.has(a.status) ? 0 : 1;
+    const bActive = ACTIVE_STATUSES.has(b.status) ? 0 : 1;
+    return aActive - bActive;
+  });
+
+  const results = [];
+  let recovered = 0, skipped = 0, unchanged = 0;
+
+  for (const row of sorted) {
+    const piId = latestExtPi.get(row.booking_ref) || null;
+    const result = {
+      booking_ref:                            row.booking_ref,
+      extension_payment_intent_id:            piId,
+      status:                                 row.status,
+      existing_extension_stripe_customer_id:       row.extension_stripe_customer_id || null,
+      existing_extension_stripe_payment_method_id: row.extension_stripe_payment_method_id || null,
+      new_extension_stripe_customer_id:       null,
+      new_extension_stripe_payment_method_id: null,
+      outcome: "pending",
+      error: null,
+    };
+
+    if (!piId || piId.startsWith("wh-")) {
+      result.outcome = "skipped_no_extension_pi";
+      skipped++;
+      results.push(result);
+      continue;
+    }
+
+    let pi;
+    try {
+      pi = await stripe.paymentIntents.retrieve(piId);
+    } catch (stripeErr) {
+      result.outcome = "stripe_fetch_failed";
+      result.error = stripeErr.message;
+      skipped++;
+      results.push(result);
+      continue;
+    }
+
+    const newCustomerId = pi.customer || null;
+    const newPaymentMethodId = pi.payment_method || null;
+
+    result.new_extension_stripe_customer_id = newCustomerId;
+    result.new_extension_stripe_payment_method_id = newPaymentMethodId;
+
+    if (!newCustomerId && !newPaymentMethodId) {
+      result.outcome = "stripe_has_no_card";
+      skipped++;
+      results.push(result);
+      continue;
+    }
+
+    const patchCustomerId      = !row.extension_stripe_customer_id      ? (newCustomerId || null) : null;
+    const patchPaymentMethodId = !row.extension_stripe_payment_method_id ? (newPaymentMethodId || null) : null;
+
+    if (!patchCustomerId && !patchPaymentMethodId) {
+      result.outcome = "already_has_both";
+      unchanged++;
+      results.push(result);
+      continue;
+    }
+
+    if (action === "preview") {
+      result.outcome = "would_patch";
+      recovered++;
+      results.push(result);
+      continue;
+    }
+
+    const patch = {};
+    if (patchCustomerId)      patch.extension_stripe_customer_id      = patchCustomerId;
+    if (patchPaymentMethodId) patch.extension_stripe_payment_method_id = patchPaymentMethodId;
+
+    const { error: updateErr } = await sb
+      .from("bookings")
+      .update(patch)
+      .eq("booking_ref", row.booking_ref);
+
+    if (updateErr) {
+      result.outcome = "db_update_failed";
+      result.error = updateErr.message;
+      skipped++;
+    } else {
+      result.outcome = "patched";
+      recovered++;
+    }
+
+    results.push(result);
+  }
+
+  return {
+    total: rows.length,
+    recovered,
+    skipped,
+    unchanged,
+    message: action === "preview"
+      ? `${recovered} of ${rows.length} bookings would be patched.`
+      : `${recovered} of ${rows.length} bookings patched. ${skipped} skipped. ${unchanged} already complete.`,
     rows: results,
   };
 }
