@@ -519,6 +519,42 @@ export default async function handler(req, res) {
         safeUpdates._autoDismissLateFee = true;
       }
 
+      // Guard: only allow booked_paid transition when a successful payment is
+      // already on record.  The Stripe webhook is the canonical way a booking
+      // becomes paid; this prevents an admin from manually confirming a booking
+      // that has never been charged.
+      if (safeUpdates.status === "booked_paid") {
+        let currentPaymentStatus = null;
+        if (sbOnlyRow) {
+          currentPaymentStatus = sbOnlyRow.payment_status || null;
+        } else {
+          // Try Supabase for the authoritative payment_status value
+          const sbGuard = getSupabaseAdmin();
+          if (sbGuard) {
+            try {
+              const { data: psRow } = await sbGuard
+                .from("bookings")
+                .select("payment_status")
+                .eq("booking_ref", bookingId)
+                .maybeSingle();
+              if (psRow) currentPaymentStatus = psRow.payment_status || null;
+            } catch (_e) { /* non-fatal — fall through to bookings.json */ }
+          }
+          // Fallback: bookings.json local value
+          if (!currentPaymentStatus) {
+            const existing = (checkData[vehicleId] || []).find(
+              (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+            );
+            if (existing) currentPaymentStatus = existing.paymentStatus || null;
+          }
+        }
+        if (currentPaymentStatus !== "paid") {
+          return res.status(402).json({
+            error: "Cannot confirm booking: no successful payment on record.",
+          });
+        }
+      }
+
       // ── Supabase direct update (primary path when configured) ──────────────
       // Update the Supabase bookings table directly so that status transitions
       // ("Mark Active", "Mark Completed", etc.) succeed immediately even if
