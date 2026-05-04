@@ -1,17 +1,20 @@
 {
-    "slingshot": {
-        "available": true
-    },
-    "slingshot2": {
-        "available": true
-    },
-    "slingshot3": {
-        "available": true
-    },
-    "camry": {
-        "available": true
-    },
-    "camry2013": {
-        "available": true
-    }
+  "slingshot": {
+    "available": true
+  },
+  "slingshot2": {
+    "available": true
+  },
+  "slingshot3": {
+    "available": true
+  },
+  "camry": {
+    "available": true
+  },
+  "camry2013": {
+    "available": true
+  },
+  "fusion2017": {
+    "available": false
+  }
 }
