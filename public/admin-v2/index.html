@@ -1068,7 +1068,7 @@
             <option value="">All Vehicles</option>
           </select>
           <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
-            <option value="">All Statuses</option>
+            <option value="">Paid Bookings</option>
             <option value="reserved_unpaid">Pending / Unpaid</option>
             <option value="booked_paid">Booked &amp; Paid</option>
             <option value="active_rental">Active Rental</option>
@@ -4333,6 +4333,10 @@ function applyBookingFilters() {
     if (vFilter && b.vehicleId !== vFilter) return false;
     // Derived status: overdue / extended / flagged overlay
     const derived = bookingDerivedStatus(b, now);
+    // By default (no status filter selected) hide unpaid/pending bookings so
+    // only bookings with a confirmed payment are visible.  The admin must
+    // explicitly choose "Pending / Unpaid" to see those entries.
+    if (!sFilter && b.status === 'reserved_unpaid') return false;
     if (sFilter) {
       if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
       if (sFilter === 'extended'  && derived !== 'extended')  return false;

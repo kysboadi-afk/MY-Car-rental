@@ -29,6 +29,11 @@ import {
 } from "./_booking-automation.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
+// Booking statuses that represent a confirmed, paid booking.
+// Only paid/active bookings should create blocked_dates entries —
+// pending/unpaid bookings must not block vehicle availability.
+const PAID_ACTIVE_STATUSES = new Set(["booked_paid", "active_rental", "approved", "active"]);
+
 /**
  * Structured logger for the booking pipeline.
  * All messages include a shared trace-id so related log lines can be correlated
@@ -453,8 +458,10 @@ export async function persistBooking(opts) {
       }
     }
 
-    // Step D: blocked_dates entry
-    if (opts.pickupDate && opts.returnDate) {
+    // Step D: blocked_dates entry — only for paid/active bookings.
+    // Pending/unpaid bookings must NOT block dates; only a confirmed payment
+    // should prevent other customers from booking the same vehicle.
+    if (opts.pickupDate && opts.returnDate && PAID_ACTIVE_STATUSES.has(booking.status)) {
       const blockResult = await runStep(traceId, "create_blocked_date", () =>
         autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking", bookingId, opts.returnTime || null)
       );

@@ -180,8 +180,8 @@ mock.module("./_error-helpers.js", {
 
 // Mock _booking-pipeline.js so persistBooking stores the booking in the
 // in-memory bookingsStore and populates automationCalls without hitting
-// real Supabase or GitHub.  Mirrors old v2-bookings.js create behavior:
-// revenue + customer only for paid bookings; booking + blocked for all.
+// real Supabase or GitHub.  Mirrors booking pipeline behavior:
+// revenue + customer only for paid bookings; blocked_dates only for paid bookings.
 mock.module("./_booking-pipeline.js", {
   namedExports: {
     persistBooking: async (opts) => {
@@ -191,7 +191,8 @@ mock.module("./_booking-pipeline.js", {
         automationCalls.customer.push({ ...booking, countStats: false });
       }
       automationCalls.booking.push({ ...booking });
-      if (opts.pickupDate && opts.returnDate) {
+      // Only paid/active bookings create blocked_dates entries.
+      if (opts.pickupDate && opts.returnDate && booking.status === "booked_paid") {
         automationCalls.blocked.push({
           vehicleId: opts.vehicleId,
           start:     opts.pickupDate,
@@ -382,10 +383,17 @@ test("create: any booking syncs to Supabase bookings table", async () => {
   assert.ok(automationCalls.booking.length > 0, "autoUpsertBooking was called");
 });
 
-test("create: any booking creates blocked dates", async () => {
+test("create: unpaid booking does NOT create blocked dates", async () => {
   resetStore(); resetCalls();
   const res = makeRes();
   await handler(makeReq(createPayload({ amountPaid: 0 })), res);
+  assert.equal(automationCalls.blocked.length, 0, "autoCreateBlockedDate must NOT fire for unpaid bookings");
+});
+
+test("create: paid booking creates blocked dates", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150 })), res);
   assert.ok(automationCalls.blocked.length > 0, "autoCreateBlockedDate was called");
   assert.equal(automationCalls.blocked[0].vehicleId, "camry");
   assert.equal(automationCalls.blocked[0].reason, "booking");
@@ -486,9 +494,20 @@ test("lifecycle: approve booking (reserved_unpaid → booked_paid) triggers reve
   const r1 = makeRes();
   await handler(makeReq(createPayload({ amountPaid: 0, totalPrice: 150 })), r1);
   const { bookingId } = r1._body.booking;
+
+  // Simulate Stripe payment succeeding (the webhook sets payment_status='paid')
+  const rPay = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { paymentStatus: "paid" },
+  }), rPay);
+  assert.equal(rPay._status, 200, `Payment simulation failed: ${JSON.stringify(rPay._body)}`);
   resetCalls();
 
-  // Approve (mark paid)
+  // Approve (mark paid) — now allowed because payment_status is 'paid'
   const r2 = makeRes();
   await handler(makeReq({
     secret:    "test-admin-secret",

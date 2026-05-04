@@ -21,7 +21,7 @@ import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_fina
 import { getActiveVehicleIds } from "./_pricing.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
+const ACTIVE_STATUSES  = ["approved", "active", "booked_paid", "active_rental", "overdue"];
 
 /**
  * Check availability for one vehicle against the Supabase bookings table.
