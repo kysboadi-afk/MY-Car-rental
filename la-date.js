@@ -74,12 +74,14 @@
     var h   = Number(timeParts[0]) || 0;
     var min = Number(timeParts[1]) || 0;
 
-    // Use the multi-argument constructor so the Date is created in the
-    // browser's local timezone without any ISO-string UTC interpretation.
-    var date = new Date(y, m - 1, d, h, min);
+    // Use Date.UTC so the Date holds the exact wall-clock values the user
+    // selected, then format in UTC to avoid any browser-timezone shift.
+    // (The values are already Los Angeles local times chosen from the
+    // LA-based time-slot picker, so no timezone conversion is needed.)
+    var date = new Date(Date.UTC(y, m - 1, d, h, min));
 
     return date.toLocaleString("en-US", {
-      timeZone: BUSINESS_TZ,
+      timeZone: "UTC",
       month: "short",
       day: "numeric",
       year: "numeric",
