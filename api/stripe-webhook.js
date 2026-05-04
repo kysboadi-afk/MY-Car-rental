@@ -898,13 +898,18 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     const isHourly = !!(vehicle_id && CARS[vehicle_id] && CARS[vehicle_id].hourlyTiers);
     if (!isHourly && vehicle_id && pickup_date && return_date) {
       const pricingSettings = await loadPricingSettings();
+      const isKnownEconomy = (vehicle_id === "camry" || vehicle_id === "camry2013");
+      const vehicleDataForBreakdown = !isKnownEconomy
+        ? await getVehicleById(vehicle_id).catch(() => null)
+        : null;
       breakdownLines = computeBreakdownLinesFromSettings(
         vehicle_id,
         pickup_date,
         return_date,
         pricingSettings,
         hasProtectionPlan,
-        protection_plan_tier || null
+        protection_plan_tier || null,
+        vehicleDataForBreakdown
       );
     }
   } catch (err) {

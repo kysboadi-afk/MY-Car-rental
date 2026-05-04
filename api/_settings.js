@@ -146,10 +146,11 @@ export function computeCamryAmountFromSettings(vehicleId, pickup, returnDate, se
  * @param {object} settings      - result of loadPricingSettings()
  * @returns {number|null}
  */
-export function computeAmountFromSettings(vehicleId, pickup, returnDate, settings) {
-  const car = CARS[vehicleId];
-  if (!car) return null;
-  return computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
+export function computeAmountFromSettings(vehicleId, pickup, returnDate, settings, vehicleData = null) {
+  if (vehicleId === "camry" || vehicleId === "camry2013") {
+    return computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
+  }
+  return computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 }
 
 /**
@@ -189,13 +190,33 @@ export function applyTax(preTax, settings) {
  * @param {string|null} [protectionPlanTier] - "basic"|"standard"|"premium"|null
  * @returns {string[]|null}
  */
-export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, protectionPlan = false, protectionPlanTier = null) {
-  if (vehicleId !== "camry" && vehicleId !== "camry2013") return null;
+export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, protectionPlan = false, protectionPlanTier = null, vehicleData = null) {
+  const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
 
-  const monthly  = settings.camry_monthly_rate;
-  const biweekly = settings.camry_biweekly_rate;
-  const weekly   = settings.camry_weekly_rate;
-  const daily    = settings.camry_daily_rate;
+  let monthly, biweekly, weekly, daily;
+
+  if (isKnownEconomy) {
+    // Known economy cars: use admin-configurable system_settings rates.
+    monthly  = settings.camry_monthly_rate;
+    biweekly = settings.camry_biweekly_rate;
+    weekly   = settings.camry_weekly_rate;
+    daily    = settings.camry_daily_rate;
+  } else if (vehicleData) {
+    // Any vehicle added via the admin portal — resolve rates from the stored data
+    // object, handling all field-name aliases used across the codebase:
+    //   pricePerDay  (getVehicleById normalised output)
+    //   daily_price  (v2-vehicles create JSONB, vehicle_pricing table)
+    //   daily_rate   (legacy / AI tool format)
+    daily    = vehicleData.pricePerDay    || vehicleData.daily_price    || vehicleData.daily_rate    || null;
+    weekly   = vehicleData.weekly         || vehicleData.weekly_price   || vehicleData.weekly_rate   || null;
+    biweekly = vehicleData.biweekly       || vehicleData.biweekly_price || vehicleData.biweekly_rate || null;
+    monthly  = vehicleData.monthly        || vehicleData.monthly_price  || vehicleData.monthly_rate  || null;
+    // Derive daily from weekly when only a weekly rate is stored.
+    if (!daily && weekly) daily = Math.round(weekly / 7 * 100) / 100;
+    if (!daily) return null;
+  } else {
+    return null;
+  }
 
   const lines = [];
   let remaining = computeRentalDays(pickup, returnDate);
@@ -205,9 +226,11 @@ export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate,
   if (weekly   && remaining >= 7)  { const w = Math.floor(remaining / 7);  lines.push(`${w} × Weekly ($${weekly}/week): $${w * weekly}`); remaining %= 7;  }
   if (remaining > 0)               { lines.push(`${remaining} × Daily ($${daily}/day): $${remaining * daily}`); }
 
-  const totalDays    = computeRentalDays(pickup, returnDate);
-  const rentalCost   = computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
-  const dppCost      = protectionPlan ? computeDppCostFromSettings(totalDays, protectionPlanTier) : 0;
+  const totalDays  = computeRentalDays(pickup, returnDate);
+  const rentalCost = isKnownEconomy
+    ? computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings)
+    : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
+  const dppCost    = protectionPlan ? computeDppCostFromSettings(totalDays, protectionPlanTier) : 0;
 
   if (protectionPlan) {
     const tierLabel = protectionPlanTier

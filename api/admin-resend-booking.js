@@ -34,6 +34,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
+import { getVehicleById } from "./_vehicles.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-confirmation-template.js";
 
@@ -290,13 +291,18 @@ export default async function handler(req, res) {
     if (!isHourly && vehicle_id && pickup_date && return_date) {
       const hasProtectionPlan = !!protection_plan_tier;
       const pricingSettings = await loadPricingSettings();
+      const isKnownEconomy = (vehicle_id === "camry" || vehicle_id === "camry2013");
+      const vehicleDataForBreakdown = !isKnownEconomy
+        ? await getVehicleById(vehicle_id).catch(() => null)
+        : null;
       breakdownLines = computeBreakdownLinesFromSettings(
         vehicle_id,
         pickup_date,
         return_date,
         pricingSettings,
         hasProtectionPlan,
-        protection_plan_tier || null
+        protection_plan_tier || null,
+        vehicleDataForBreakdown
       );
     }
   } catch (err) {

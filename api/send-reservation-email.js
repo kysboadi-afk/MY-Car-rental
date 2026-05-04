@@ -14,6 +14,7 @@ import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
 import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
+import { getVehicleById } from "./_vehicles.js";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
@@ -635,8 +636,14 @@ export default async function handler(req, res) {
   const pricingSettings = (vehicleId && pickup && returnDate)
     ? await loadPricingSettings()
     : null;
+  // For vehicles not in the hardcoded economy list, fetch live vehicle data so
+  // computeBreakdownLinesFromSettings can use the vehicle's own stored rates.
+  const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
+  const vehicleDataForBreakdown = (pricingSettings && !isKnownEconomy && vehicleId)
+    ? await getVehicleById(vehicleId).catch(() => null)
+    : null;
   const breakdownLines = pricingSettings
-    ? computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, pricingSettings, !!protectionPlan, protectionPlanTier || null)
+    ? computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, pricingSettings, !!protectionPlan, protectionPlanTier || null, vehicleDataForBreakdown)
     : null;
   const breakdownText = breakdownLines ? breakdownLines.join("\n") : null;
   const breakdownHtml = breakdownLines
