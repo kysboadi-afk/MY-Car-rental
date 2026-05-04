@@ -451,7 +451,7 @@ export default async function handler(req, res) {
             // Try by booking_ref first
             let { data: sbCheck } = await sbVal
               .from("bookings")
-              .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
+              .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, payment_status, total_price, deposit_paid, notes, payment_method")
               .eq("vehicle_id", normalizeVehicleId(vehicleId))
               .eq("booking_ref", bookingId)
               .maybeSingle();
@@ -461,7 +461,7 @@ export default async function handler(req, res) {
               if (!isNaN(numId)) {
                 const { data: sbCheckById } = await sbVal
                   .from("bookings")
-                  .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
+                  .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, payment_status, total_price, deposit_paid, notes, payment_method")
                   .eq("vehicle_id", normalizeVehicleId(vehicleId))
                   .eq("id", numId)
                   .maybeSingle();
