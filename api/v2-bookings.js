@@ -538,7 +538,9 @@ export default async function handler(req, res) {
                 .eq("booking_ref", bookingId)
                 .maybeSingle();
               if (psRow) currentPaymentStatus = psRow.payment_status || null;
-            } catch (_e) { /* non-fatal — fall through to bookings.json */ }
+            } catch (_e) {
+              console.warn("v2-bookings: payment_status guard Supabase query failed (non-fatal):", _e.message);
+            }
           }
           // Fallback: bookings.json local value
           if (!currentPaymentStatus) {
