@@ -44,9 +44,10 @@ const ACTIVE_STATUSES = new Set(["reserved", "pending", "active_rental", "overdu
  * Core backfill logic — shared by the HTTP endpoint and the AI tool.
  *
  * @param {"preview"|"backfill"} action
+ * @param {string|null} [bookingRef]  Optional: limit backfill to a single booking ref.
  * @returns {Promise<object>} result summary
  */
-export async function executeBackfillStripeCards(action = "preview") {
+export async function executeBackfillStripeCards(action = "preview", bookingRef = null) {
   if (action !== "preview" && action !== "backfill") {
     throw new Error("action must be 'preview' or 'backfill'");
   }
@@ -61,10 +62,10 @@ export async function executeBackfillStripeCards(action = "preview") {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   // ── Phase 1: Recover main payment card fields ────────────────────────────────
-  const phase1 = await _backfillMainCards(sb, stripe, action);
+  const phase1 = await _backfillMainCards(sb, stripe, action, bookingRef);
 
   // ── Phase 2: Recover extension payment card fields ───────────────────────────
-  const phase2 = await _backfillExtensionCards(sb, stripe, action);
+  const phase2 = await _backfillExtensionCards(sb, stripe, action, bookingRef);
 
   const totalRows   = phase1.total   + phase2.total;
   const totalRecov  = phase1.recovered + phase2.recovered;
@@ -91,14 +92,18 @@ export async function executeBackfillStripeCards(action = "preview") {
 
 // ── Phase 1 helper ────────────────────────────────────────────────────────────
 
-async function _backfillMainCards(sb, stripe, action) {
-  const { data: rows, error: fetchErr } = await sb
+async function _backfillMainCards(sb, stripe, action, bookingRef = null) {
+  let q = sb
     .from("bookings")
     .select("id, booking_ref, payment_intent_id, status, stripe_customer_id, stripe_payment_method_id")
     .eq("payment_method", "stripe")
     .not("payment_intent_id", "is", null)
     .or("stripe_customer_id.is.null,stripe_payment_method_id.is.null")
     .order("created_at", { ascending: false });
+
+  if (bookingRef) q = q.eq("booking_ref", bookingRef);
+
+  const { data: rows, error: fetchErr } = await q;
 
   if (fetchErr) {
     throw new Error(`Phase 1 Supabase query failed: ${fetchErr.message}`);
@@ -218,15 +223,19 @@ async function _backfillMainCards(sb, stripe, action) {
 // looking up each booking's most-recent extension PaymentIntent from the
 // booking_extensions table and retrieving card info from Stripe.
 
-async function _backfillExtensionCards(sb, stripe, action) {
+async function _backfillExtensionCards(sb, stripe, action, bookingRef = null) {
   // Find bookings that have at least one extension but are missing extension card fields.
-  const { data: rows, error: fetchErr } = await sb
+  let q = sb
     .from("bookings")
     .select("id, booking_ref, status, extension_stripe_customer_id, extension_stripe_payment_method_id")
     .eq("payment_method", "stripe")
     .not("last_extension_at", "is", null)
     .or("extension_stripe_customer_id.is.null,extension_stripe_payment_method_id.is.null")
     .order("created_at", { ascending: false });
+
+  if (bookingRef) q = q.eq("booking_ref", bookingRef);
+
+  const { data: rows, error: fetchErr } = await q;
 
   if (fetchErr) {
     throw new Error(`Phase 2 Supabase query failed: ${fetchErr.message}`);
@@ -376,7 +385,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: STRIPE_SECRET_KEY is not set." });
 
   const body = req.body || {};
-  const { secret, action = "preview" } = body;
+  const { secret, action = "preview", bookingRef = null } = body;
 
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
@@ -385,7 +394,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "action must be 'preview' or 'backfill'" });
 
   try {
-    const result = await executeBackfillStripeCards(action);
+    const result = await executeBackfillStripeCards(action, bookingRef || null);
     return res.status(200).json(result);
   } catch (err) {
     return res.status(500).json({ error: err.message });

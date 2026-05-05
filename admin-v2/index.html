@@ -1960,6 +1960,21 @@
           </button>
         </div>
 
+        <!-- Stripe Card Backfill card -->
+        <div class="card" style="margin-top:24px;">
+          <div class="card-header" style="margin-bottom:12px;">
+            <div>
+              <div class="card-title">💳 Backfill Stripe Cards</div>
+              <div class="card-sub">Recover missing saved-card data for Stripe bookings (main + extension payments)</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-backfill-preview" onclick="runBackfillStripeCards('preview',this)">🔍 Preview</button>
+              <button class="btn btn-primary btn-sm" id="btn-backfill-run" onclick="runBackfillStripeCards('backfill',this)">⚡ Backfill Now</button>
+            </div>
+          </div>
+          <div id="backfill-stripe-result" style="display:none;font-size:13px;color:var(--text-sub);padding:8px 0;"></div>
+        </div>
+
         <!-- SMS Logs card -->
         <div class="card" style="margin-top:24px;">
           <div class="card-header" style="margin-bottom:12px;">
@@ -4613,6 +4628,19 @@ function applyBookingFilters() {
 function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
+
+  // Silently attempt to recover missing Stripe card data in the background.
+  if ((b.paymentMethod || '').toLowerCase() === 'stripe' && b.hasSavedCard === false && b.paymentIntentId) {
+    apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
+      .then((data) => {
+        if ((data.recovered || 0) > 0) {
+          const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+          if (idx !== -1) allBookings[idx].hasSavedCard = true;
+        }
+      })
+      .catch(() => { /* non-fatal — ignore silently */ });
+  }
+
   const derived = bookingDerivedStatus(b, new Date());
   const tier    = computeBookingCustomerTier(b);
   const tierBadge = {
@@ -6346,7 +6374,41 @@ async function runRevenueHeal(btn) {
   }
 }
 
-// ── Analytics ─────────────────────────────────────────────────────────────
+async function runBackfillStripeCards(action, btn) {
+  const previewBtn  = document.getElementById('btn-backfill-preview');
+  const backfillBtn = document.getElementById('btn-backfill-run');
+  const resultEl    = document.getElementById('backfill-stripe-result');
+
+  if (action === 'backfill' && !confirm('This will write stripe_customer_id and payment_method_id to all affected bookings. Continue?')) return;
+
+  if (previewBtn)  previewBtn.disabled  = true;
+  if (backfillBtn) backfillBtn.disabled = true;
+  if (btn) btn.textContent = '⏳ Running…';
+  if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = ''; }
+
+  try {
+    const data = await apiPost('/api/backfill-stripe-card', { secret: adminSecret, action });
+    const msg = data.message || (action === 'preview' ? `${data.recovered || 0} booking(s) would be patched.` : `${data.recovered || 0} booking(s) patched.`);
+    showToast(msg, action === 'backfill' ? 'success' : 'info');
+    if (resultEl) {
+      resultEl.textContent = msg;
+      resultEl.style.display = '';
+      resultEl.style.color = action === 'backfill' ? 'var(--success)' : 'var(--text-sub)';
+    }
+    if (action === 'backfill' && (data.recovered || 0) > 0) {
+      allBookings = [];
+      loadBookings();
+    }
+  } catch (err) {
+    showToast('Backfill error: ' + err.message, 'error');
+    if (resultEl) { resultEl.textContent = 'Error: ' + err.message; resultEl.style.display = ''; resultEl.style.color = 'var(--danger)'; }
+  } finally {
+    if (previewBtn)  { previewBtn.disabled  = false; previewBtn.textContent  = '🔍 Preview'; }
+    if (backfillBtn) { backfillBtn.disabled = false; backfillBtn.textContent = '⚡ Backfill Now'; }
+  }
+}
+
+
 let analyticsChart1 = null, analyticsChart2 = null;
 
 function loadAnalytics() {
