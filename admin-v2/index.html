@@ -3025,6 +3025,7 @@ function populateVehicleFilters(vehicles) {
     'expense-filter-vehicle',
     'rev-filter-vehicle',
     'lf-filter-vehicle',
+    'ticket-filter-vehicle',
   ];
   const filterOpts = vehicles.map((v) =>
     `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
@@ -3036,7 +3037,7 @@ function populateVehicleFilters(vehicles) {
   }
 
   // ── Form dropdowns (prefix: "Select vehicle…") ─────────────────────────────
-  const formIds = ['bd-vehicle', 'ub-vehicle', 'exp-vehicle', 'rev-vehicle'];
+  const formIds = ['bd-vehicle', 'ub-vehicle', 'exp-vehicle', 'rev-vehicle', 'atk-vehicle'];
   const formOpts = vehicles.map((v) =>
     `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
   ).join('');
@@ -9730,7 +9731,9 @@ function loadTickets() {
   const vSel = document.getElementById('ticket-filter-vehicle');
   if (vSel) {
     const existing = new Set([...vSel.options].map((o) => o.value));
-    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    const vMap = allVehicles && Object.keys(allVehicles).length
+      ? allVehicles
+      : Object.fromEntries(Object.entries(VEHICLE_NAMES_DYNAMIC).map(([id, name]) => [id, { vehicle_name: name }]));
     Object.entries(vMap).forEach(([id, v]) => {
       if (!existing.has(id)) {
         const opt = document.createElement('option');
@@ -9852,7 +9855,9 @@ function openAddTicketModal() {
   const vSel = document.getElementById('atk-vehicle');
   if (vSel) {
     vSel.innerHTML = '<option value="">Select vehicle\u2026</option>';
-    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    const vMap = allVehicles && Object.keys(allVehicles).length
+      ? allVehicles
+      : Object.fromEntries(Object.entries(VEHICLE_NAMES_DYNAMIC).map(([id, name]) => [id, { vehicle_name: name }]));
     Object.entries(vMap).forEach(([id, v]) => {
       const opt = document.createElement('option');
       opt.value = id; opt.textContent = v.vehicle_name || id;

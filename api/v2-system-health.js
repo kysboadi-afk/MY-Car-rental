@@ -227,7 +227,26 @@ async function checkMissingAgreements(sb) {
       return check("Missing Agreement PDFs", "error", "Could not query pending_booking_docs: " + dErr.message);
     }
 
-    const rows = missingDocs || [];
+    let rows = missingDocs || [];
+    if (rows.length === 0) {
+      return check("Missing Agreement PDFs", "ok", "All booking documents have agreement PDFs stored.");
+    }
+
+    // Exclude rows for bookings that were never successfully paid (cancelled, failed,
+    // or still pending) — a missing PDF is only actionable for paid/active bookings.
+    // Note: pending_booking_docs.booking_id stores the booking reference string
+    // (e.g. "bk-abc123") which matches bookings.booking_ref in the bookings table.
+    const bookingIds = rows.map((r) => r.booking_id).filter(Boolean);
+    if (bookingIds.length > 0) {
+      const { data: paidRows } = await sb
+        .from("bookings")
+        .select("booking_ref")
+        .in("booking_ref", bookingIds)
+        .in("status", ["booked_paid", "active_rental", "active", "completed", "completed_rental", "approved"]);
+      const paidSet = new Set((paidRows || []).map((b) => b.booking_ref));
+      rows = rows.filter((r) => paidSet.has(r.booking_id));
+    }
+
     if (rows.length === 0) {
       return check("Missing Agreement PDFs", "ok", "All booking documents have agreement PDFs stored.");
     }
@@ -1073,7 +1092,16 @@ async function checkTicketChargeHealth(sb) {
 
     if (fErr) {
       // Gracefully handle deployments where the tickets table does not yet exist.
-      if (fErr.code === "42P01" || (fErr.message || "").includes("does not exist")) {
+      // Matches both the Postgres "undefined_table" error (42P01 / "does not exist")
+      // and the PostgREST schema-cache miss ("schema cache") that occurs when the
+      // table was created but the cache hasn't refreshed yet.
+      const msg = fErr.message || "";
+      if (
+        fErr.code === "42P01" ||
+        msg.includes("does not exist") ||
+        msg.includes("schema cache") ||
+        fErr.code === "PGRST106"
+      ) {
         return check("Ticket Charge Health", "ok", "No ticket charge failures.");
       }
       console.error("[v2-system-health] ticketChargeHealth query error:", fErr.message);
