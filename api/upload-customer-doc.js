@@ -1,12 +1,12 @@
 // api/upload-customer-doc.js
-// Upload a customer document (e.g. driver's license front) to Supabase Storage
+// Upload a customer document (driver's license front or back) to Supabase Storage
 // and store the public URL in the customers table.
 //
 // POST /api/upload-customer-doc
 // Body (JSON): {
 //   secret:     string  — admin password
 //   customerId: string  — customer UUID
-//   docType:    string  — "license_front" (only supported type for now)
+//   docType:    string  — "license_front" | "license_back"
 //   imageData:  string  — base64-encoded image (data URI or raw base64)
 //   mimeType:   string  — e.g. "image/jpeg", "image/png", "application/pdf"
 //   fileName:   string  — original file name (optional, used for extension fallback)
@@ -33,6 +33,7 @@ const ALLOWED_MIMETYPES = [
 
 const DOC_TYPE_COLUMN = {
   license_front: { url: "license_front_url", at: "license_uploaded_at" },
+  license_back:  { url: "license_back_url",  at: "license_uploaded_at" },
 };
 
 export default async function handler(req, res) {

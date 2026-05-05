@@ -11,8 +11,10 @@
 //   update_status  — { secret, action:"update_status", id, status }
 //   add_note       — { secret, action:"add_note", id, note }
 //   delete         — { secret, action:"delete", id }
+//
+// tickets.booking_id is a UUID FK to bookings.id (migration 0131).
+// tickets.booking_ref is the human-readable booking_ref stored denormalised for display.
 
-import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -22,7 +24,6 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const VALID_STATUSES = ["new","matched","transfer_ready","submitted","approved","rejected","charged","closed"];
 const VALID_TYPES    = ["parking","toll","camera","other"];
 
-// Status labels for activity log entries
 const STATUS_LABELS = {
   new:            "New",
   matched:        "Matched",
@@ -62,12 +63,12 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case "create":   return await actionCreate(sb, body, res);
-      case "list":     return await actionList(sb, body, res);
-      case "get":      return await actionGet(sb, body, res);
+      case "create":        return await actionCreate(sb, body, res);
+      case "list":          return await actionList(sb, body, res);
+      case "get":           return await actionGet(sb, body, res);
       case "update_status": return await actionUpdateStatus(sb, body, res);
-      case "add_note": return await actionAddNote(sb, body, res);
-      case "delete":   return await actionDelete(sb, body, res);
+      case "add_note":      return await actionAddNote(sb, body, res);
+      case "delete":        return await actionDelete(sb, body, res);
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
     }
@@ -107,24 +108,44 @@ async function actionCreate(sb, body, res) {
     return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(", ")}` });
   }
 
-  // Auto-match: find a booking on this vehicle whose date range covers the violation date
   const violationMs = new Date(violationDate).getTime();
   const violationDateStr = !isNaN(violationMs)
     ? new Date(violationDate).toISOString().slice(0, 10)
     : null;
+
+  // Auto-match: find the booking covering the violation date, including extensions.
+  // Broad query: vehicle bookings starting on/before the violation date and ending
+  // no more than 90 days before it (generous window for late-issued tickets on
+  // extended rentals).
   let matchedBooking = null;
   if (violationDateStr) {
+    const windowStart = new Date(violationMs - 90 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+
     const { data: candidates } = await sb
       .from("bookings")
-      .select("booking_ref, customer_id, pickup_date, return_date, status")
+      .select("id, booking_ref, customer_id, pickup_date, return_date, status")
       .eq("vehicle_id", vehicleId)
       .lte("pickup_date", violationDateStr)
-      .gte("return_date",  violationDateStr)
+      .gte("return_date",  windowStart)
       .in("status", ["booked_paid", "active_rental", "active", "completed", "completed_rental", "approved"])
       .order("pickup_date", { ascending: false })
-      .limit(1);
+      .limit(10);
+
     if (candidates && candidates.length > 0) {
-      matchedBooking = candidates[0];
+      for (const candidate of candidates) {
+        // Direct return_date coverage
+        if (candidate.return_date >= violationDateStr) {
+          matchedBooking = candidate;
+          break;
+        }
+        // Violation date is after base return_date — check extensions
+        const finalDate = await getFinalReturnDate(sb, candidate.booking_ref, candidate.return_date);
+        if (finalDate >= violationDateStr) {
+          matchedBooking = candidate;
+          break;
+        }
+      }
     }
   }
 
@@ -135,7 +156,7 @@ async function actionCreate(sb, body, res) {
     customerId = matchedBooking.customer_id;
     const { data: cust } = await sb
       .from("customers")
-      .select("id, name, phone, email, license_front_url")
+      .select("id, name, phone, email, license_front_url, license_back_url")
       .eq("id", customerId)
       .maybeSingle();
     if (cust) customerData = cust;
@@ -158,7 +179,8 @@ async function actionCreate(sb, body, res) {
     .insert({
       ticket_number:  ticketNumber.trim().slice(0, 80),
       vehicle_id:     vehicleId,
-      booking_id:     matchedBooking?.booking_ref || null,
+      booking_id:     matchedBooking?.id         || null,   // UUID FK to bookings.id
+      booking_ref:    matchedBooking?.booking_ref || null,  // denorm text for display
       customer_id:    customerId,
       violation_date: new Date(violationDate).toISOString(),
       location:       String(location || "").trim().slice(0, 200),
@@ -191,7 +213,7 @@ async function actionList(sb, body, res) {
     .from("tickets")
     .select(`
       *,
-      customers!customer_id(id, name, phone, email, license_front_url)
+      customers!customer_id(id, name, phone, email, license_front_url, license_back_url)
     `)
     .order("created_at", { ascending: false });
 
@@ -223,7 +245,7 @@ async function actionGet(sb, body, res) {
     .from("tickets")
     .select(`
       *,
-      customers!customer_id(id, name, phone, email, license_front_url, license_uploaded_at)
+      customers!customer_id(id, name, phone, email, license_front_url, license_back_url, license_uploaded_at)
     `)
     .eq("id", id)
     .maybeSingle();
@@ -234,7 +256,7 @@ async function actionGet(sb, body, res) {
   const { customers: cust, ...rest } = ticket;
   const enriched = enrichTicket(rest, cust);
 
-  // Fetch booking documents if a booking is linked
+  // Fetch booking documents by UUID booking_id
   let bookingDocs = [];
   if (ticket.booking_id) {
     const { data: docs } = await sb
@@ -257,7 +279,6 @@ async function actionUpdateStatus(sb, body, res) {
     return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(", ")}` });
   }
 
-  // Fetch current ticket to get existing activity log and old status
   const { data: existing, error: fetchErr } = await sb
     .from("tickets")
     .select("id, status, activity_log")
@@ -270,13 +291,19 @@ async function actionUpdateStatus(sb, body, res) {
   const activityLog = Array.isArray(existing.activity_log) ? existing.activity_log : [];
   activityLog.push({
     date:   new Date().toISOString(),
-    action: `Status changed: ${STATUS_LABELS[oldStatus] || oldStatus} → ${STATUS_LABELS[status] || status}`,
+    action: `Status changed: ${STATUS_LABELS[oldStatus] || oldStatus} \u2192 ${STATUS_LABELS[status] || status}`,
     note:   "",
   });
 
+  // Stamp transfer_submitted_at when first entering transfer_ready state
+  const extra = {};
+  if (status === "transfer_ready" && oldStatus !== "transfer_ready") {
+    extra.transfer_submitted_at = new Date().toISOString();
+  }
+
   const { data: updated, error: updateErr } = await sb
     .from("tickets")
-    .update({ status, activity_log: activityLog })
+    .update({ status, activity_log: activityLog, ...extra })
     .eq("id", id)
     .select()
     .single();
@@ -333,15 +360,47 @@ async function actionDelete(sb, body, res) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
+ * Get the final effective return date for a booking by checking booking_extensions.
+ * Returns the base return date when no extensions exist or queries fail.
+ *
+ * booking_extensions.booking_id stores the booking_ref (text) so we query by
+ * the booking_ref (not the UUID), consistent with the rest of the codebase.
+ *
+ * @param {object} sb           - Supabase admin client
+ * @param {string} bookingRef   - bookings.booking_ref (text ID, e.g. "bk-...")
+ * @param {string} baseDate     - YYYY-MM-DD base return date
+ * @returns {Promise<string>}   - YYYY-MM-DD final return date (max of base + extensions)
+ */
+async function getFinalReturnDate(sb, bookingRef, baseDate) {
+  if (!sb || !bookingRef) return baseDate || "";
+  try {
+    const { data: exts } = await sb
+      .from("booking_extensions")
+      .select("new_return_date")
+      .eq("booking_id", bookingRef);
+
+    let max = baseDate || "";
+    for (const ext of (exts || [])) {
+      const d = ext.new_return_date ? String(ext.new_return_date).split("T")[0] : "";
+      if (d > max) max = d;
+    }
+    return max;
+  } catch {
+    return baseDate || "";
+  }
+}
+
+/**
  * Flatten a ticket row + optional customer join into a consistent shape
  * for the frontend.
  */
 function enrichTicket(ticket, customer) {
   return {
     ...ticket,
-    matchedRenterName:  customer?.name          || null,
-    matchedRenterPhone: customer?.phone         || null,
-    matchedRenterEmail: customer?.email         || null,
-    matchedRenterLicenseUrl: customer?.license_front_url || null,
+    matchedRenterName:           customer?.name              || null,
+    matchedRenterPhone:          customer?.phone             || null,
+    matchedRenterEmail:          customer?.email             || null,
+    matchedRenterLicenseUrl:     customer?.license_front_url || null,
+    matchedRenterLicenseBackUrl: customer?.license_back_url  || null,
   };
 }

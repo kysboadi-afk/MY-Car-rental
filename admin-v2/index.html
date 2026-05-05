@@ -9952,24 +9952,28 @@ function renderTicketDetailModal(ticket, bookingDocs) {
   document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
   document.getElementById('td-progress').innerHTML  = renderProgressBar(ticket.status);
 
-  // Match banner
+  // Match banner — use booking_ref (human-readable) not booking_id (UUID)
   const bannerEl = document.getElementById('td-match-banner');
-  if (ticket.booking_id) {
-    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.booking_id)})</div>`;
+  if (ticket.booking_ref) {
+    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.booking_ref)})</div>`;
   } else {
     bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">\u26a0 No booking found for this vehicle on the violation date.</div>`;
   }
 
   // A. Ticket Info
   const vName = (allVehicles[ticket.vehicle_id]?.vehicle_name) || ticket.vehicle_id;
+  const adminFee = ticket.admin_fee != null ? `$${Number(ticket.admin_fee).toFixed(2)}` : '\u2014';
   document.getElementById('td-info').innerHTML = [
-    ['Ticket #',       ticket.ticket_number],
-    ['Type',           ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '\u2014'],
-    ['Violation Date', ticket.violation_date ? new Date(ticket.violation_date).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014'],
-    ['Amount',         `$${Number(ticket.amount).toFixed(2)}`],
-    ['Location',       ticket.location || '\u2014'],
-    ['Vehicle',        vName],
-    ['Status',         TICKET_STATUS_LABELS[ticket.status] || ticket.status],
+    ['Ticket #',         ticket.ticket_number],
+    ['Type',             ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '\u2014'],
+    ['Violation Date',   ticket.violation_date ? new Date(ticket.violation_date).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014'],
+    ['Amount',           `$${Number(ticket.amount).toFixed(2)}`],
+    ['Admin Fee',        adminFee],
+    ['Location',         ticket.location || '\u2014'],
+    ['Vehicle',          vName],
+    ['Status',           TICKET_STATUS_LABELS[ticket.status] || ticket.status],
+    ['Charge Status',    ticket.charge_status || '\u2014'],
+    ['Renter Responsible', ticket.renter_responsible ? 'Yes' : 'No'],
   ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
 
   // B. Renter Info
@@ -9984,13 +9988,13 @@ function renderTicketDetailModal(ticket, bookingDocs) {
     renterEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No renter matched for this ticket.</div>';
   }
 
-  // C. Booking Info
+  // C. Booking Info — display booking_ref (text ID), find in allBookings by booking_ref
   const bookingEl = document.getElementById('td-booking');
-  if (ticket.booking_id) {
-    const linked  = allBookings.find((b) => (b.booking_ref || b.bookingId) === ticket.booking_id);
+  if (ticket.booking_ref) {
+    const linked  = allBookings.find((b) => (b.booking_ref || b.bookingId) === ticket.booking_ref);
     const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '\u2014';
     bookingEl.innerHTML = [
-      ['Booking ID',  ticket.booking_id],
+      ['Booking ID',  ticket.booking_ref],
       ['Pickup Date', fmtDate(linked?.pickup_date || linked?.pickupDate)],
       ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
       ['Vehicle',     vName],
@@ -10018,19 +10022,27 @@ function renderTicketDocuments(ticket, bookingDocs) {
   if (!docsEl) return;
   const parts = [];
 
-  if (ticket.matchedRenterLicenseUrl) {
-    parts.push(`<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-sub);margin-bottom:5px;">Driver License</div><a href="${esc(ticket.matchedRenterLicenseUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">\ud83e\udeb7 View License</a></div>`);
+  // Driver license front + back
+  if (ticket.matchedRenterLicenseUrl || ticket.matchedRenterLicenseBackUrl) {
+    const btns = [];
+    if (ticket.matchedRenterLicenseUrl) {
+      btns.push(`<a href="${esc(ticket.matchedRenterLicenseUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;">\ud83e\udeb7 License Front</a>`);
+    }
+    if (ticket.matchedRenterLicenseBackUrl) {
+      btns.push(`<a href="${esc(ticket.matchedRenterLicenseBackUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">\ud83e\udeb7 License Back</a>`);
+    }
+    parts.push(`<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-sub);margin-bottom:5px;">Driver License</div>${btns.join('')}</div>`);
   } else if (ticket.customer_id) {
     parts.push('<div style="margin-bottom:10px;font-size:12px;color:var(--text-sub);font-style:italic;">No driver license on file.</div>');
   }
 
   if (Array.isArray(bookingDocs) && bookingDocs.length) {
-    const typeLabel = { agreement: '\ud83d\udcc4 Rental Agreement', insurance: '\ud83d\udee1 Insurance', other: '\ud83d\udcce Document' };
+    const typeLabel = { agreement: '\ud83d\udcc4 Rental Agreement', insurance: '\ud83d\udee1 Insurance', id_copy: '\ud83d\udcdb ID Copy', other: '\ud83d\udcce Document' };
     bookingDocs.forEach((doc) => {
       const label = typeLabel[doc.type] || typeLabel.other;
       parts.push(`<a href="${esc(doc.file_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;margin-bottom:6px;">${label}${doc.file_name ? ' \u2014 ' + esc(doc.file_name) : ''}</a>`);
     });
-  } else if (ticket.booking_id) {
+  } else if (ticket.booking_ref) {
     parts.push('<div style="font-size:12px;color:var(--text-sub);font-style:italic;">No booking documents uploaded yet.</div>');
   }
 

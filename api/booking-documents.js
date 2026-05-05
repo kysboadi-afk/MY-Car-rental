@@ -1,10 +1,10 @@
 // api/booking-documents.js
-// Manage per-booking documents (rental agreement, insurance, other) stored in
+// Manage per-booking documents (rental agreement, insurance, id_copy, other) stored in
 // Supabase Storage with references tracked in the booking_documents table.
 //
 // POST /api/booking-documents
 // Actions:
-//   list    — { secret, action:"list",   bookingId }
+//   list    — { secret, action:"list",   bookingId }        bookingId = bookings.id (UUID)
 //   add     — { secret, action:"add",    bookingId, docType, fileData, mimeType, fileName? }
 //   delete  — { secret, action:"delete", id }
 //
@@ -25,7 +25,7 @@ export const config = {
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const BUCKET           = "booking-documents";
 const MAX_SIZE_BYTES   = 15 * 1024 * 1024; // 15 MB
-const VALID_TYPES      = ["agreement", "insurance", "other"];
+const VALID_TYPES      = ["agreement", "insurance", "other", "id_copy"];
 const ALLOWED_MIMETYPES = [
   "image/jpeg", "image/png", "image/webp", "image/gif",
   "application/pdf",
