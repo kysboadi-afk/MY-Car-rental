@@ -1552,6 +1552,19 @@ async function sendBalancePaidOwnerEmail({
 }
 
 /**
+ * Returns true for payment types that represent an initial booking payment
+ * (not a post-rental charge like an extension or late fee).
+ * Used to decide whether a failed/canceled PaymentIntent should cancel the
+ * pending booking or set balance_due for retry collection.
+ *
+ * @param {string} paymentType - piMeta.payment_type || piMeta.type
+ * @returns {boolean}
+ */
+function isInitialBookingPayment(paymentType) {
+  return paymentType === "full_payment" || paymentType === "reservation_deposit";
+}
+
+/**
  * Cancel a pending or reserved_unpaid booking by booking_ref.
  * Only updates rows that are still in an unpaid state so that a successful
  * retry (which sets status to booked_paid) is never overwritten.
@@ -2973,8 +2986,7 @@ export default async function handler(req, res) {
       amount_due:   amountDue,
     });
 
-    const isInitialBooking =
-      paymentType === "full_payment" || paymentType === "reservation_deposit";
+    const isInitialBooking = isInitialBookingPayment(paymentType);
 
     if (bookingRef && bookingRef.startsWith("bk-")) {
       try {
@@ -3040,10 +3052,7 @@ export default async function handler(req, res) {
       booking_ref:  bookingRef,
     });
 
-    const isInitialBooking =
-      paymentType === "full_payment" || paymentType === "reservation_deposit";
-
-    if (bookingRef && bookingRef.startsWith("bk-") && isInitialBooking) {
+    if (bookingRef && bookingRef.startsWith("bk-") && isInitialBookingPayment(paymentType)) {
       try {
         const sbCancel = getSupabaseAdmin();
         if (sbCancel) {

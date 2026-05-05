@@ -2451,9 +2451,10 @@ async function cancelStalePendingBookings(sb) {
     const cutoff = new Date(Date.now() - STALE_PENDING_HOURS * MS_PER_HOUR).toISOString();
     const { data: staleRows, error: queryErr } = await sb
       .from("bookings")
-      .select("booking_ref, payment_intent_id, created_at")
+      .select("booking_ref")
       .eq("status", "pending")
       .like("payment_intent_id", "pi_%")
+      .not("booking_ref", "is", null)
       .lt("created_at", cutoff);
 
     if (queryErr) {
@@ -2463,7 +2464,7 @@ async function cancelStalePendingBookings(sb) {
 
     if (!staleRows || staleRows.length === 0) return;
 
-    const refs = staleRows.map((r) => r.booking_ref).filter(Boolean);
+    const refs = staleRows.map((r) => r.booking_ref);
     if (refs.length === 0) return;
 
     const { error: updateErr } = await sb
