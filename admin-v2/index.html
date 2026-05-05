@@ -9687,18 +9687,10 @@ function dismissChecklist() {
 
 // ── Tickets / Violations ────────────────────────────────────────────────────
 
-const TICKETS_KEY = 'sly_tickets';
 let allTickets = [];
 let ticketFilterActive = 'all';
 let viewingTicketId = null;
-
-function loadTicketsFromStorage() {
-  try { return JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]'); }
-  catch (e) { console.error('[Tickets] Failed to parse tickets from localStorage:', e); return []; }
-}
-function saveTicketsToStorage(tickets) {
-  localStorage.setItem(TICKETS_KEY, JSON.stringify(tickets));
-}
+let viewingTicketData = null; // full ticket object currently shown in detail modal
 
 function loadTickets() {
   const loading = document.getElementById('tickets-loading');
@@ -9707,8 +9699,6 @@ function loadTickets() {
   if (loading) loading.style.display = 'block';
   if (wrap)    wrap.style.display    = 'none';
   if (empty)   empty.style.display   = 'none';
-
-  allTickets = loadTicketsFromStorage();
 
   // Populate vehicle filter dropdown
   const vSel = document.getElementById('ticket-filter-vehicle');
@@ -9724,9 +9714,19 @@ function loadTickets() {
     });
   }
 
-  if (loading) loading.style.display = 'none';
-  applyTicketFilters();
-  updateTicketsBadge();
+  apiPost('/api/tickets', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allTickets = data.tickets || [];
+      if (loading) loading.style.display = 'none';
+      applyTicketFilters();
+      updateTicketsBadge();
+    })
+    .catch((err) => {
+      if (loading) loading.style.display = 'none';
+      allTickets = [];
+      applyTicketFilters();
+      showToast('Failed to load tickets: ' + err.message, 'error');
+    });
 }
 
 const TICKET_PENDING_STATUSES = new Set(['new', 'matched', 'transfer_ready']);
@@ -9756,9 +9756,9 @@ function applyTicketFilters() {
     if (ticketFilterActive === 'submitted' && t.status !== 'submitted')  return false;
     if (ticketFilterActive === 'charged'   && t.status !== 'charged')    return false;
     if (ticketFilterActive === 'closed'    && t.status !== 'closed')     return false;
-    if (vehicle && t.vehicleId !== vehicle) return false;
+    if (vehicle && t.vehicle_id !== vehicle) return false;
     if (search) {
-      const haystack = [t.ticketNumber, t.vehicleName, t.matchedRenterName, t.location]
+      const haystack = [t.ticket_number, t.vehicle_id, t.matchedRenterName, t.location]
         .join(' ').toLowerCase();
       if (!haystack.includes(search)) return false;
     }
@@ -9799,13 +9799,16 @@ function renderTicketsTable(tickets) {
   if (empty) empty.style.display = 'none';
 
   tbody.innerHTML = tickets.map((t) => {
-    const date = t.violationDate ? new Date(t.violationDate).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    const date = t.violation_date
+      ? new Date(t.violation_date).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '\u2014';
     const renter = t.matchedRenterName
       ? `<span style="color:var(--text);">${esc(t.matchedRenterName)}</span>`
       : `<span style="color:var(--text-sub);font-style:italic;">No match</span>`;
+    const vName = (allVehicles[t.vehicle_id]?.vehicle_name) || t.vehicle_id;
     return `<tr>
-      <td><strong>${esc(t.ticketNumber)}</strong><br><span style="font-size:11px;color:var(--text-sub);text-transform:capitalize;">${esc(t.type)}</span></td>
-      <td>${esc(t.vehicleName || t.vehicleId)}</td>
+      <td><strong>${esc(t.ticket_number)}</strong><br><span style="font-size:11px;color:var(--text-sub);text-transform:capitalize;">${esc(t.type)}</span></td>
+      <td>${esc(vName)}</td>
       <td>${renter}</td>
       <td><strong>$${Number(t.amount).toFixed(2)}</strong></td>
       <td>${ticketBadge(t.status)}</td>
@@ -9820,10 +9823,9 @@ function renderTicketsTable(tickets) {
 // ── Add Ticket Modal ────────────────────────────────────────────────────────
 
 function openAddTicketModal() {
-  // Populate vehicle dropdown
   const vSel = document.getElementById('atk-vehicle');
   if (vSel) {
-    vSel.innerHTML = '<option value="">Select vehicle…</option>';
+    vSel.innerHTML = '<option value="">Select vehicle\u2026</option>';
     const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
     Object.entries(vMap).forEach(([id, v]) => {
       const opt = document.createElement('option');
@@ -9832,7 +9834,6 @@ function openAddTicketModal() {
     });
   }
 
-  // Set default date/time to now
   const dtInput = document.getElementById('atk-date');
   if (dtInput && !dtInput.value) {
     const now = new Date();
@@ -9840,7 +9841,6 @@ function openAddTicketModal() {
     dtInput.value = now.toISOString().slice(0, 16);
   }
 
-  // Clear fields
   ['atk-number','atk-amount','atk-location','atk-notes'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -9853,20 +9853,8 @@ function openAddTicketModal() {
   openModal('add-ticket-modal');
 }
 
-function tryAutoMatch(vehicleId, dateStr) {
-  if (!vehicleId || !dateStr || !allBookings.length) return null;
-  const violationMs = new Date(dateStr).getTime();
-  if (isNaN(violationMs)) return null;
-  return allBookings.find((b) => {
-    if (b.vehicle_id !== vehicleId && b.vehicleId !== vehicleId) return false;
-    const pickup = new Date(b.pickup_date || b.pickupDate).getTime();
-    const ret    = new Date(b.return_date || b.returnDate).getTime();
-    return !isNaN(pickup) && !isNaN(ret) && violationMs >= pickup && violationMs <= ret;
-  }) || null;
-}
-
-function saveTicket() {
-  const btn = document.getElementById('atk-submit-btn');
+async function saveTicket() {
+  const btn          = document.getElementById('atk-submit-btn');
   const ticketNumber = document.getElementById('atk-number')?.value.trim();
   const vehicleId    = document.getElementById('atk-vehicle')?.value;
   const dateVal      = document.getElementById('atk-date')?.value;
@@ -9882,45 +9870,35 @@ function saveTicket() {
     showToast('Please enter a valid amount.', 'error'); return;
   }
 
-  const vehicleName = (allVehicles[vehicleId]?.vehicle_name) || vehicleId;
-  const match = tryAutoMatch(vehicleId, dateVal);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
 
-  const ticket = {
-    id:               crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
-    ticketNumber,
-    vehicleId,
-    vehicleName,
-    violationDate:    dateVal,
-    amount:           Number(amountVal),
-    type,
-    location,
-    notes,
-    status:           match ? 'matched' : 'new',
-    createdAt:        new Date().toISOString(),
-    matchedBookingId: match ? (match.booking_ref || match.bookingId || match.id || null) : null,
-    matchedRenterName: match ? (match.customer_name || match.name || null) : null,
-    matchedRenterPhone: match ? (match.phone || null) : null,
-    matchedRenterEmail: match ? (match.email || null) : null,
-    matchedPickupDate:  match ? (match.pickup_date || match.pickupDate || null) : null,
-    matchedReturnDate:  match ? (match.return_date || match.returnDate || null) : null,
-    activityLog: [
-      { date: new Date().toISOString(), action: 'Ticket created', note: notes || '' }
-    ],
-  };
-  if (match) {
-    ticket.activityLog.push({ date: new Date().toISOString(), action: `Auto-matched to booking ${ticket.matchedBookingId || ''}`, note: '' });
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'create',
+      ticketNumber,
+      vehicleId,
+      violationDate: dateVal,
+      amount: Number(amountVal),
+      type,
+      location,
+      notes,
+    });
+
+    allTickets.unshift(data.ticket);
+    updateTicketsBadge();
+    closeModal('add-ticket-modal');
+    applyTicketFilters();
+
+    const matchMsg = data.matched
+      ? `\u2705 Matched to: ${data.matchedRenterName || 'Renter'} (${data.matchedBookingId || 'Booking'})`
+      : '\u26a0 No booking found for that vehicle/date.';
+    showToast(`Ticket saved. ${matchMsg}`, data.matched ? 'success' : 'warning');
+  } catch (err) {
+    showToast('Failed to save ticket: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Ticket'; }
   }
-
-  allTickets.unshift(ticket);
-  saveTicketsToStorage(allTickets);
-  updateTicketsBadge();
-  closeModal('add-ticket-modal');
-  applyTicketFilters();
-
-  const matchMsg = match
-    ? `✅ Matched to: ${match.customer_name || 'Renter'} (${ticket.matchedBookingId || 'Booking'})`
-    : '⚠ No booking found for that vehicle/date.';
-  showToast(`Ticket saved. ${matchMsg}`, match ? 'success' : 'warning');
 }
 
 // ── Ticket Detail Modal ─────────────────────────────────────────────────────
@@ -9932,7 +9910,6 @@ const PROGRESS_STEPS = [
   { key: 'approved', label: 'Approved',  altKey: 'rejected', altLabel: 'Rejected' },
   { key: 'closed',   label: 'Closed'    },
 ];
-const STEP_ORDER = ['new','matched','transfer_ready','submitted','approved','rejected','charged','closed'];
 
 function getProgressIndex(status) {
   const map = { new:0, matched:1, transfer_ready:1, submitted:2, approved:3, rejected:3, charged:3, closed:4 };
@@ -9940,7 +9917,7 @@ function getProgressIndex(status) {
 }
 
 function renderProgressBar(status) {
-  const current = getProgressIndex(status);
+  const current    = getProgressIndex(status);
   const isRejected = status === 'rejected';
   return `<div class="ticket-progress">${PROGRESS_STEPS.map((step, i) => {
     let cls = 'tp-step';
@@ -9951,34 +9928,47 @@ function renderProgressBar(status) {
   }).join('')}</div>`;
 }
 
-function openTicketDetail(ticketId) {
-  const ticket = allTickets.find((t) => t.id === ticketId);
-  if (!ticket) return;
+async function openTicketDetail(ticketId) {
   viewingTicketId = ticketId;
 
-  // Title + badge
-  document.getElementById('td-title').textContent = `Ticket #${ticket.ticketNumber}`;
-  document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
+  // Immediate render from cache while full fetch runs
+  const cached = allTickets.find((t) => t.id === ticketId);
+  if (cached) renderTicketDetailModal(cached, []);
+  openModal('ticket-detail-modal');
 
-  // Progress bar
-  document.getElementById('td-progress').innerHTML = renderProgressBar(ticket.status);
+  try {
+    const data = await apiPost('/api/tickets', { secret: adminSecret, action: 'get', id: ticketId });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    renderTicketDetailModal(data.ticket, data.bookingDocs || []);
+  } catch (err) {
+    showToast('Failed to load ticket details: ' + err.message, 'error');
+  }
+}
+
+function renderTicketDetailModal(ticket, bookingDocs) {
+  document.getElementById('td-title').textContent = `Ticket #${ticket.ticket_number}`;
+  document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
+  document.getElementById('td-progress').innerHTML  = renderProgressBar(ticket.status);
 
   // Match banner
   const bannerEl = document.getElementById('td-match-banner');
-  if (ticket.matchedBookingId) {
-    bannerEl.innerHTML = `<div class="ticket-match-banner matched">✅ Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.matchedBookingId)})</div>`;
+  if (ticket.booking_id) {
+    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.booking_id)})</div>`;
   } else {
-    bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">⚠ No booking found for this vehicle on the violation date.</div>`;
+    bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">\u26a0 No booking found for this vehicle on the violation date.</div>`;
   }
 
   // A. Ticket Info
+  const vName = (allVehicles[ticket.vehicle_id]?.vehicle_name) || ticket.vehicle_id;
   document.getElementById('td-info').innerHTML = [
-    ['Ticket #',       ticket.ticketNumber],
-    ['Type',           ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '—'],
-    ['Violation Date', ticket.violationDate ? new Date(ticket.violationDate).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '—'],
+    ['Ticket #',       ticket.ticket_number],
+    ['Type',           ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '\u2014'],
+    ['Violation Date', ticket.violation_date ? new Date(ticket.violation_date).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014'],
     ['Amount',         `$${Number(ticket.amount).toFixed(2)}`],
-    ['Location',       ticket.location || '—'],
-    ['Vehicle',        ticket.vehicleName || ticket.vehicleId],
+    ['Location',       ticket.location || '\u2014'],
+    ['Vehicle',        vName],
     ['Status',         TICKET_STATUS_LABELS[ticket.status] || ticket.status],
   ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
 
@@ -9987,8 +9977,8 @@ function openTicketDetail(ticketId) {
   if (ticket.matchedRenterName) {
     renterEl.innerHTML = [
       ['Name',  ticket.matchedRenterName],
-      ['Phone', ticket.matchedRenterPhone || '—'],
-      ['Email', ticket.matchedRenterEmail || '—'],
+      ['Phone', ticket.matchedRenterPhone || '\u2014'],
+      ['Email', ticket.matchedRenterEmail || '\u2014'],
     ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
   } else {
     renterEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No renter matched for this ticket.</div>';
@@ -9996,38 +9986,24 @@ function openTicketDetail(ticketId) {
 
   // C. Booking Info
   const bookingEl = document.getElementById('td-booking');
-  if (ticket.matchedBookingId) {
-    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+  if (ticket.booking_id) {
+    const linked  = allBookings.find((b) => (b.booking_ref || b.bookingId) === ticket.booking_id);
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '\u2014';
     bookingEl.innerHTML = [
-      ['Booking ID',  ticket.matchedBookingId],
-      ['Pickup Date', fmtDate(ticket.matchedPickupDate)],
-      ['Return Date', fmtDate(ticket.matchedReturnDate)],
-      ['Vehicle',     ticket.vehicleName || ticket.vehicleId],
+      ['Booking ID',  ticket.booking_id],
+      ['Pickup Date', fmtDate(linked?.pickup_date || linked?.pickupDate)],
+      ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
+      ['Vehicle',     vName],
     ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
   } else {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }
 
-    // D. Documents
-  const docsEl = document.getElementById('td-docs');
-  if (ticket.matchedBookingId) {
-    const safeRef = encodeURIComponent(ticket.matchedBookingId);
-    const a = document.createElement('a');
-    a.href = `../rental-agreement.html?ref=${safeRef}`;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.className = 'btn btn-secondary btn-sm';
-    a.style.textDecoration = 'none';
-    a.textContent = '📄 View Rental Agreement';
-    docsEl.innerHTML = '';
-    docsEl.appendChild(a);
-  } else {
-    docsEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No documents available — link a booking first.</div>';
-  }
+  // D. Documents
+  renderTicketDocuments(ticket, bookingDocs);
 
   // E. Action buttons
-  const actionGrid = document.getElementById('td-actions-grid');
-  actionGrid.innerHTML = buildTicketActionButtons(ticket);
+  document.getElementById('td-actions-grid').innerHTML = buildTicketActionButtons(ticket);
 
   // Note input
   const noteInput = document.getElementById('td-note-input');
@@ -10035,29 +10011,55 @@ function openTicketDetail(ticketId) {
 
   // Activity log
   renderTicketLog(ticket);
+}
 
-  openModal('ticket-detail-modal');
+function renderTicketDocuments(ticket, bookingDocs) {
+  const docsEl = document.getElementById('td-docs');
+  if (!docsEl) return;
+  const parts = [];
+
+  if (ticket.matchedRenterLicenseUrl) {
+    parts.push(`<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-sub);margin-bottom:5px;">Driver License</div><a href="${esc(ticket.matchedRenterLicenseUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">\ud83e\udeb7 View License</a></div>`);
+  } else if (ticket.customer_id) {
+    parts.push('<div style="margin-bottom:10px;font-size:12px;color:var(--text-sub);font-style:italic;">No driver license on file.</div>');
+  }
+
+  if (Array.isArray(bookingDocs) && bookingDocs.length) {
+    const typeLabel = { agreement: '\ud83d\udcc4 Rental Agreement', insurance: '\ud83d\udee1 Insurance', other: '\ud83d\udcce Document' };
+    bookingDocs.forEach((doc) => {
+      const label = typeLabel[doc.type] || typeLabel.other;
+      parts.push(`<a href="${esc(doc.file_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;margin-bottom:6px;">${label}${doc.file_name ? ' \u2014 ' + esc(doc.file_name) : ''}</a>`);
+    });
+  } else if (ticket.booking_id) {
+    parts.push('<div style="font-size:12px;color:var(--text-sub);font-style:italic;">No booking documents uploaded yet.</div>');
+  }
+
+  if (!parts.length) {
+    docsEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No documents available \u2014 link a booking first.</div>';
+    return;
+  }
+  docsEl.innerHTML = parts.join('');
 }
 
 function buildTicketActionButtons(ticket) {
-  const s = ticket.status;
+  const s    = ticket.status;
   const btns = [];
 
   if (['new','matched','transfer_ready'].includes(s)) {
-    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('transfer_ready')">📋 Generate Transfer Docs</button>`);
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('transfer_ready')">\ud83d\udccb Generate Transfer Docs</button>`);
   }
   if (s === 'transfer_ready' || s === 'matched') {
-    btns.push(`<button class="btn btn-primary btn-sm" onclick="ticketAction('submitted')">📤 Mark Submitted</button>`);
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="ticketAction('submitted')">\ud83d\udce4 Mark Submitted</button>`);
   }
   if (s === 'submitted') {
-    btns.push(`<button class="btn btn-success btn-sm" onclick="ticketAction('approved')">✅ Mark Approved</button>`);
-    btns.push(`<button class="btn btn-danger btn-sm"  onclick="ticketAction('rejected')">❌ Mark Rejected</button>`);
+    btns.push(`<button class="btn btn-success btn-sm" onclick="ticketAction('approved')">\u2705 Mark Approved</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm"  onclick="ticketAction('rejected')">\u274c Mark Rejected</button>`);
   }
   if (s === 'approved') {
-    btns.push(`<button class="btn btn-warning btn-sm" onclick="ticketAction('charged')">💳 Charge Renter</button>`);
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="ticketAction('charged')">\ud83d\udcb3 Charge Renter</button>`);
   }
   if (s === 'charged' || s === 'approved') {
-    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('closed')">🔒 Mark Closed</button>`);
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('closed')">\ud83d\udd12 Mark Closed</button>`);
   }
   if (!btns.length) {
     btns.push(`<div style="color:var(--text-sub);font-size:13px;font-style:italic;grid-column:1/-1;">No further actions available.</div>`);
@@ -10065,39 +10067,66 @@ function buildTicketActionButtons(ticket) {
   return btns.join('');
 }
 
-function ticketAction(newStatus) {
-  const ticket = allTickets.find((t) => t.id === viewingTicketId);
-  if (!ticket) return;
-  const oldStatus = ticket.status;
-  ticket.status = newStatus;
-  ticket.activityLog = ticket.activityLog || [];
-  ticket.activityLog.push({ date: new Date().toISOString(), action: `Status changed: ${TICKET_STATUS_LABELS[oldStatus] || oldStatus} → ${TICKET_STATUS_LABELS[newStatus] || newStatus}`, note: '' });
-  saveTicketsToStorage(allTickets);
-  updateTicketsBadge();
-  applyTicketFilters();
-  // Refresh detail modal in place
-  openTicketDetail(viewingTicketId);
-  showToast(`Ticket ${TICKET_STATUS_LABELS[newStatus] || newStatus}.`, 'success');
+async function ticketAction(newStatus) {
+  if (!viewingTicketId) return;
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'update_status',
+      id:     viewingTicketId,
+      status: newStatus,
+    });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    updateTicketsBadge();
+    applyTicketFilters();
+    const bookingDocs = await fetchBookingDocs(data.ticket.booking_id);
+    renderTicketDetailModal(data.ticket, bookingDocs);
+    showToast(`Ticket ${TICKET_STATUS_LABELS[newStatus] || newStatus}.`, 'success');
+  } catch (err) {
+    showToast('Failed to update status: ' + err.message, 'error');
+  }
 }
 
-function addTicketNote() {
-  const input  = document.getElementById('td-note-input');
-  const note   = input?.value.trim();
-  if (!note) return;
-  const ticket = allTickets.find((t) => t.id === viewingTicketId);
-  if (!ticket) return;
-  ticket.activityLog = ticket.activityLog || [];
-  ticket.activityLog.push({ date: new Date().toISOString(), action: 'Note added', note });
-  saveTicketsToStorage(allTickets);
-  if (input) input.value = '';
-  renderTicketLog(ticket);
-  showToast('Note added.', 'success');
+async function addTicketNote() {
+  const input = document.getElementById('td-note-input');
+  const note  = input?.value.trim();
+  if (!note || !viewingTicketId) return;
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'add_note',
+      id:     viewingTicketId,
+      note,
+    });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    if (input) input.value = '';
+    renderTicketLog(data.ticket);
+    showToast('Note added.', 'success');
+  } catch (err) {
+    showToast('Failed to add note: ' + err.message, 'error');
+  }
+}
+
+async function fetchBookingDocs(bookingId) {
+  if (!bookingId) return [];
+  try {
+    const data = await apiPost('/api/booking-documents', {
+      secret: adminSecret, action: 'list', bookingId,
+    });
+    return data.docs || [];
+  } catch {
+    return [];
+  }
 }
 
 function renderTicketLog(ticket) {
   const logEl = document.getElementById('td-log');
   if (!logEl) return;
-  const entries = (ticket.activityLog || []).slice().reverse();
+  const entries = (ticket.activity_log || []).slice().reverse();
   if (!entries.length) {
     logEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No activity yet.</div>';
     return;
@@ -10108,21 +10137,25 @@ function renderTicketLog(ticket) {
       <span style="color:var(--text-sub);white-space:nowrap;flex-shrink:0;">${d}</span>
       <div>
         <span style="font-weight:600;">${esc(e.action)}</span>
-        ${e.note ? `<span style="color:var(--text-sub);"> — ${esc(e.note)}</span>` : ''}
+        ${e.note ? `<span style="color:var(--text-sub);"> \u2014 ${esc(e.note)}</span>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-function deleteCurrentTicket() {
+async function deleteCurrentTicket() {
   if (!viewingTicketId) return;
   if (!confirm('Delete this ticket? This cannot be undone.')) return;
-  allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
-  saveTicketsToStorage(allTickets);
-  updateTicketsBadge();
-  closeModal('ticket-detail-modal');
-  applyTicketFilters();
-  showToast('Ticket deleted.', 'success');
+  try {
+    await apiPost('/api/tickets', { secret: adminSecret, action: 'delete', id: viewingTicketId });
+    allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
+    updateTicketsBadge();
+    closeModal('ticket-detail-modal');
+    applyTicketFilters();
+    showToast('Ticket deleted.', 'success');
+  } catch (err) {
+    showToast('Failed to delete ticket: ' + err.message, 'error');
+  }
 }
 </script>
 
