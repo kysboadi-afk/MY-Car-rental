@@ -80,8 +80,9 @@
       width: var(--sidebar-w); background: var(--sidebar-bg);
       position: fixed; top: 0; left: 0; bottom: 0;
       display: flex; flex-direction: column; z-index: 100;
-      overflow-y: auto; transition: transform 0.3s;
+      overflow: hidden; transition: transform 0.3s;
     }
+    .nav-scroll { flex: 1; overflow-y: auto; min-height: 0; }
     .sidebar-logo {
       padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
       border-bottom: 1px solid #1e2130;
@@ -107,7 +108,7 @@
     }
 
     .sidebar-footer {
-      margin-top: auto; padding: 16px 12px;
+      margin-top: 0; padding: 16px 12px;
       border-top: 1px solid #1e2130;
     }
     .sidebar-user { display: flex; align-items: center; gap: 10px; }
@@ -455,6 +456,7 @@
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       #kpi-grid { grid-template-columns: 1fr 1fr; }
       .vehicles-grid { grid-template-columns: 1fr; }
+      /* Keep bottom padding large enough to clear the bottom nav bar */
       .content { padding: 12px; }
       .block-dates-grid { grid-template-columns: 1fr !important; }
       /* fin-grid collapses to single column */
@@ -740,18 +742,202 @@
     }
 
     /* ── Demo Mode Layout Adjustment ─────────────────────────────── */
-    body.demo-mode-active { padding-top: 44px; }
-    body.demo-mode-active .sidebar  { top: 44px; }
+    :root { --demo-banner-h: 44px; --mobile-nav-h: 58px; }
+    body.demo-mode-active { padding-top: var(--demo-banner-h, 44px); }
+    body.demo-mode-active .sidebar  { top: var(--demo-banner-h, 44px); }
     body.demo-mode-active .topbar   { top: 0; /* stays sticky within the offset main */ }
+    @media (max-width: 900px) {
+      #demo-mode-banner { font-size: 11px; padding: 7px 10px; gap: 8px; }
+    }
+
+    /* ── Mobile Bottom Navigation ─────────────────────────────────── */
+    .mobile-bottom-nav {
+      display: none; position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--sidebar-bg); border-top: 1px solid #1e2130;
+      z-index: 95; height: var(--mobile-nav-h); flex-direction: row; align-items: stretch;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    @media (max-width: 900px) {
+      .mobile-bottom-nav { display: flex; }
+      .content { padding-bottom: calc(var(--mobile-nav-h) + 12px); }
+      /* Give sidebar a bit more width on narrow screens */
+      .sidebar.open { width: min(260px, 88vw); }
+    }
+    .mbn-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 3px; background: none; border: none;
+      cursor: pointer; color: #6b7280; font-family: var(--font);
+      font-size: 10px; font-weight: 500; transition: color 0.15s; padding: 6px 2px;
+    }
+    .mbn-item svg { width: 19px; height: 19px; flex-shrink: 0; }
+    .mbn-item.active { color: #60a5fa; }
+    .mbn-item:active { opacity: 0.75; }
 
     /* ── Wizard & Onboarding Buttons ─────────────────────────────── */
     #onboarding-modal .btn { display: flex; }
 
-    /* ── Small-phone polish ─────────────────────────────────────── */
+    /* ── Comprehensive Mobile Polish ─────────────────────────────── */
+
+    /* Toast: float above the bottom nav bar on mobile */
+    @media (max-width: 900px) {
+      #toast-container { bottom: calc(var(--mobile-nav-h) + 8px); right: 12px; }
+    }
+
+    /* Auth card: less padding on phones */
     @media (max-width: 480px) {
-      /* Hide the two "Open Site" preview buttons so the topbar doesn't
-         overflow on very narrow screens (≤320px phones) */
+      .auth-card { padding: 28px 20px; }
+      /* Topbar: hide the two "Open Site" preview buttons on very small
+         phones so the title + Refresh + New Booking row doesn't overflow */
       .btn-hide-xs { display: none !important; }
+    }
+
+    /* KPI cards: tighter layout + smaller numbers at 600px */
+    @media (max-width: 600px) {
+      .kpi-card { padding: 14px 12px; }
+      .kpi-value { font-size: 22px; }
+      /* Hide the float icon so numbers don't wrap */
+      .kpi-icon { display: none; }
+      /* Secondary KPI grid (has inline repeat(3,1fr)) → 2 cols */
+      #kpi-grid-secondary { grid-template-columns: 1fr 1fr !important; }
+      /* Vehicle profile finance numbers */
+      .fin-value { font-size: 18px; }
+    }
+
+    /* Revenue page action buttons: horizontal scroll row on mobile
+       to avoid stacking 6+ buttons and losing vertical space */
+    @media (max-width: 600px) {
+      #page-revenue .filters-row {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px;
+        gap: 8px;
+      }
+      #page-revenue .filters-row .filter-select,
+      #page-revenue .filters-row .filter-input,
+      #page-revenue .filters-row .btn {
+        flex-shrink: 0;
+        width: auto;
+        min-width: unset;
+      }
+    }
+
+    /* Table column hiding on small screens */
+    @media (max-width: 600px) {
+      /* Bookings table: hide "Customer Tier" (col 6) — least actionable on mobile */
+      #page-bookings .table-wrap th:nth-child(6),
+      #page-bookings .table-wrap td:nth-child(6) { display: none; }
+      /* Late fees table: hide "Rental Dates" (col 3) to save width */
+      #page-late-fees .table-wrap th:nth-child(3),
+      #page-late-fees .table-wrap td:nth-child(3) { display: none; }
+    }
+
+    /* Form section title: allow wrapping when title + subtitle + button overflow */
+    @media (max-width: 600px) {
+      .form-section-title { flex-wrap: wrap; gap: 6px; }
+    }
+
+    /* GPS map: shorter on mobile to keep it usable without huge scroll */
+    @media (max-width: 600px) {
+      #gps-map { height: 260px !important; }
+    }
+
+    /* ── Tickets Page ───────────────────────────────────────────── */
+    .ticket-filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .ticket-tab {
+      padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-sub); transition: all 0.15s; font-family: var(--font);
+    }
+    .ticket-tab:hover { border-color: var(--primary); color: var(--primary); }
+    .ticket-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* Ticket status badge colors */
+    .badge-ticket-new           { background: #fffbeb; color: #b45309; }
+    .badge-ticket-matched       { background: #fffbeb; color: #b45309; }
+    .badge-ticket-transfer_ready { background: #eff6ff; color: #1d4ed8; }
+    .badge-ticket-submitted     { background: #eff6ff; color: #1d4ed8; }
+    .badge-ticket-approved      { background: #f0fdf4; color: #15803d; }
+    .badge-ticket-rejected      { background: #fef2f2; color: #b91c1c; }
+    .badge-ticket-charged       { background: #faf5ff; color: #6d28d9; }
+    .badge-ticket-closed        { background: #f0fdf4; color: #15803d; }
+
+    /* Ticket progress bar */
+    .ticket-progress {
+      display: flex; align-items: center; gap: 0;
+      margin: 16px 0; overflow-x: auto; padding: 4px 0;
+    }
+    .tp-step {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; min-width: 80px; position: relative;
+    }
+    .tp-step:not(:last-child)::after {
+      content: ''; position: absolute; top: 13px; left: calc(50% + 14px);
+      width: calc(100% - 28px); height: 2px; background: var(--border);
+      z-index: 0;
+    }
+    .tp-step.done:not(:last-child)::after { background: var(--primary); }
+    .tp-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid var(--border); background: var(--surface);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; z-index: 1; position: relative;
+      color: var(--text-sub); transition: all 0.2s;
+    }
+    .tp-step.done .tp-dot   { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .tp-step.active .tp-dot { border-color: var(--primary); background: #eff6ff; color: var(--primary); box-shadow: 0 0 0 3px #bfdbfe; }
+    .tp-step.reject .tp-dot { border-color: var(--danger);  background: var(--danger);  color: #fff; }
+    .tp-label { font-size: 10px; color: var(--text-sub); font-weight: 500; text-align: center; line-height: 1.2; white-space: nowrap; }
+    .tp-step.done .tp-label, .tp-step.active .tp-label { color: var(--primary); font-weight: 600; }
+    .tp-step.reject .tp-label { color: var(--danger); font-weight: 600; }
+
+    /* Ticket detail sections */
+    .ticket-section {
+      background: var(--bg); border-radius: 8px; padding: 14px;
+      margin-bottom: 12px;
+    }
+    .ticket-section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-sub); margin-bottom: 10px;
+    }
+    .ticket-detail-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .ticket-detail-row:last-child { border-bottom: none; }
+    .ticket-detail-label { color: var(--text-sub); flex-shrink: 0; font-weight: 500; }
+    .ticket-detail-value { font-weight: 600; text-align: right; word-break: break-word; }
+    .ticket-match-banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-radius: 8px; font-size: 13px;
+      margin-bottom: 12px; font-weight: 500;
+    }
+    .ticket-match-banner.matched   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .ticket-match-banner.unmatched { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .ticket-action-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;
+    }
+    @media (max-width: 600px) {
+      .ticket-action-grid { grid-template-columns: 1fr; }
+      #page-tickets .table-wrap th:nth-child(3),
+      #page-tickets .table-wrap td:nth-child(3) { display: none; }
+    }
+
+    /* AI chat panel: fill available viewport height on mobile */
+    @media (max-width: 900px) {
+      .ai-chat-panel {
+        height: calc(100vh - var(--topbar-h) - var(--mobile-nav-h) - 40px);
+        height: calc(100dvh - var(--topbar-h) - var(--mobile-nav-h) - 40px);
+        min-height: 380px;
+      }
+    }
+
+    /* Expenses / customers pages: action button rows above tables */
+    @media (max-width: 600px) {
+      #page-expenses > div:first-child,
+      #page-customers > div:first-child { flex-wrap: wrap; }
     }
 
   </style>
@@ -813,6 +999,7 @@
       </div>
     </div>
 
+    <div class="nav-scroll">
     <nav class="nav-section">
       <div class="nav-section-label">Overview</div>
       <a class="nav-item active" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;">
@@ -826,7 +1013,7 @@
     </nav>
 
     <nav class="nav-section">
-      <div class="nav-section-label">Operations</div>
+      <div class="nav-section-label">Reservations</div>
       <a class="nav-item" data-page="bookings" href="#" onclick="navigate('bookings');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         Bookings
@@ -871,7 +1058,7 @@
     </nav>
 
     <nav class="nav-section">
-      <div class="nav-section-label">Customers</div>
+      <div class="nav-section-label">Management</div>
       <a class="nav-item" data-page="customers" href="#" onclick="navigate('customers');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
@@ -880,19 +1067,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
       </a>
-      <a class="nav-item" data-page="late-fees" href="#" onclick="navigate('late-fees');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Late Fees
-        <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
-      </a>
-      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        SMS Automation
-      </a>
-    </nav>
-
-    <nav class="nav-section">
-      <div class="nav-section-label">System</div>
       <a class="nav-item" data-page="vehicle-pricing" href="#" onclick="navigate('vehicle-pricing');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Vehicle Pricing
@@ -901,6 +1075,28 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         System Settings
       </a>
+      <a class="nav-item" data-page="late-fees" href="#" onclick="navigate('late-fees');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Late Fees
+        <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
+      </a>
+      <a class="nav-item" data-page="tickets" href="#" onclick="navigate('tickets');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        Tickets
+        <span class="nav-badge" id="tickets-badge" style="display:none">0</span>
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Communication</div>
+      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        SMS Automation
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Admin</div>
       <a class="nav-item" data-page="ai" href="#" onclick="navigate('ai');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2z"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="3"/></svg>
         AI Assistant
@@ -915,6 +1111,7 @@
         Settings
       </a>
     </nav>
+    </div><!-- /nav-scroll -->
 
     <div class="sidebar-footer">
       <div class="sidebar-user">
@@ -1068,7 +1265,7 @@
             <option value="">All Vehicles</option>
           </select>
           <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
-            <option value="">Paid Bookings</option>
+            <option value="">All Statuses</option>
             <option value="reserved_unpaid">Pending / Unpaid</option>
             <option value="booked_paid">Booked &amp; Paid</option>
             <option value="active_rental">Active Rental</option>
@@ -1334,7 +1531,11 @@
 
       <!-- EXPENSES PAGE -->
       <div class="page" id="page-expenses">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
+          <button class="btn btn-secondary" onclick="openManageCategoriesModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            Manage Categories
+          </button>
           <button class="btn btn-primary" onclick="openAddExpenseModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Expense
@@ -2034,9 +2235,215 @@
         </div><!-- /ai-layout -->
       </div>
 
+      <!-- TICKETS / VIOLATIONS PAGE -->
+      <div class="page" id="page-tickets">
+        <!-- Page header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Tickets / Violations</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Track and manage parking, toll, and camera violations</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddTicketModal()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Ticket
+          </button>
+        </div>
+        <!-- Filter tabs -->
+        <div class="ticket-filter-tabs">
+          <button class="ticket-tab active" data-filter="all"             onclick="setTicketFilter('all')">All</button>
+          <button class="ticket-tab"        data-filter="pending"         onclick="setTicketFilter('pending')">Pending</button>
+          <button class="ticket-tab"        data-filter="submitted"       onclick="setTicketFilter('submitted')">Submitted</button>
+          <button class="ticket-tab"        data-filter="charged"         onclick="setTicketFilter('charged')">Charged</button>
+          <button class="ticket-tab"        data-filter="closed"          onclick="setTicketFilter('closed')">Closed</button>
+        </div>
+        <!-- Search row -->
+        <div class="filters-row" style="margin-bottom:16px;">
+          <input type="text" class="filter-input" id="ticket-search" placeholder="Search ticket #, renter, vehicle…" oninput="applyTicketFilters()">
+          <select class="filter-select" id="ticket-filter-vehicle" onchange="applyTicketFilters()">
+            <option value="">All Vehicles</option>
+          </select>
+        </div>
+        <!-- Table card -->
+        <div class="card">
+          <div id="tickets-loading" class="loading"><div class="loading-spinner"></div><div>Loading tickets…</div></div>
+          <div id="tickets-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticket #</th>
+                  <th>Vehicle</th>
+                  <th>Renter</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Violation Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tickets-tbody"></tbody>
+            </table>
+          </div>
+          <!-- Empty state -->
+          <div id="tickets-empty" class="empty-state" style="display:none">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+            <p>No violations yet.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddTicketModal()">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Ticket
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mbn-item active" id="mbn-dashboard" onclick="navigate('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="mbn-item" id="mbn-bookings" onclick="navigate('bookings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>Bookings</span>
+    </button>
+    <button class="mbn-item" id="mbn-fleet-status" onclick="navigate('fleet-status')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg>
+      <span>Fleet</span>
+    </button>
+    <button class="mbn-item" id="mbn-revenue" onclick="navigate('revenue')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      <span>Revenue</span>
+    </button>
+    <button class="mbn-item" id="mbn-more" onclick="openSidebar()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
 </div><!-- /app -->
+
+<!-- ── Add Ticket Modal ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-ticket-modal">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-header">
+      <div class="modal-title">Add Ticket / Violation</div>
+      <button class="modal-close" onclick="closeModal('add-ticket-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Ticket Number *</label>
+        <input type="text" class="form-input" id="atk-number" placeholder="e.g. LA-2024-00123" maxlength="80">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle *</label>
+        <select class="form-select" id="atk-vehicle">
+          <option value="">Select vehicle…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Violation Date &amp; Time *</label>
+        <input type="datetime-local" class="form-input" id="atk-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="atk-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type *</label>
+        <select class="form-select" id="atk-type">
+          <option value="parking">Parking</option>
+          <option value="toll">Toll</option>
+          <option value="camera">Camera / Red Light</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input type="text" class="form-input" id="atk-location" placeholder="e.g. 123 Main St, Los Angeles" maxlength="200">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="atk-notes" placeholder="Optional notes…" style="min-height:60px;"></textarea>
+      </div>
+    </div>
+    <!-- Auto-match preview -->
+    <div id="atk-match-preview" style="display:none;margin-top:8px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-ticket-modal')">Cancel</button>
+      <button class="btn btn-primary" id="atk-submit-btn" onclick="saveTicket()">Save Ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="ticket-detail-modal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="td-title">Ticket Details</div>
+        <div id="td-badge-wrap" style="margin-top:4px;"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('ticket-detail-modal')">✕</button>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="td-progress"></div>
+
+    <!-- Match banner -->
+    <div id="td-match-banner"></div>
+
+    <!-- A. Ticket Info -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">A — Ticket Info</div>
+      <div id="td-info"></div>
+    </div>
+
+    <!-- B. Renter Info -->
+    <div class="ticket-section" id="td-renter-section">
+      <div class="ticket-section-title">B — Renter Info</div>
+      <div id="td-renter"></div>
+    </div>
+
+    <!-- C. Booking Info -->
+    <div class="ticket-section" id="td-booking-section">
+      <div class="ticket-section-title">C — Booking Info</div>
+      <div id="td-booking"></div>
+    </div>
+
+    <!-- D. Documents -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">D — Documents</div>
+      <div id="td-docs"></div>
+    </div>
+
+    <!-- E. Status & Actions -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">E — Status &amp; Actions</div>
+      <div id="td-actions-grid" class="ticket-action-grid"></div>
+    </div>
+
+    <!-- Add Note -->
+    <div style="margin-top:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Add Note</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" class="form-input" id="td-note-input" placeholder="Enter note…" style="flex:1;">
+        <button class="btn btn-secondary btn-sm" onclick="addTicketNote()">Add</button>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div style="margin-top:14px;" id="td-log-wrap">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">Activity Log</div>
+      <div id="td-log"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrentTicket()">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal('ticket-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add Expense Modal -->
 <div class="modal-overlay" id="add-expense-modal">
@@ -2074,6 +2481,38 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-expense-modal')">Cancel</button>
       <button class="btn btn-primary" id="exp-submit-btn" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Categories Modal -->
+<div class="modal-overlay" id="manage-categories-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">Manage Expense Categories</div>
+      <button class="modal-close" onclick="closeModal('manage-categories-modal')">✕</button>
+    </div>
+    <div style="max-height:420px;overflow-y:auto;padding:0 4px;">
+      <div id="cat-manager-list"></div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:8px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:10px;">Add Custom Category</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Name *</label>
+          <input type="text" class="form-input" id="new-cat-name" placeholder="e.g. Car Payment" maxlength="80">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Group *</label>
+          <input type="text" class="form-input" id="new-cat-group" placeholder="e.g. Ownership" maxlength="60">
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn btn-primary" id="new-cat-submit" onclick="submitNewCategory()">Add Category</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('manage-categories-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -2638,7 +3077,7 @@ let adminSecret   = '';
 let dashboardData = null;
 let allBookings   = [];
 let allExpenses   = [];
-let expCategories = [];
+let allExpenseCategories = [];
 let allVehicles   = {};
 let smsTemplates  = [];
 let editingVehicleId   = null;
@@ -2874,6 +3313,7 @@ function navigate(page) {
     'late-fees':        'Late Fees',
     'ai':               'AI Assistant',
     'system-health':    'System Health',
+    'tickets':          'Tickets / Violations',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -2883,11 +3323,16 @@ function navigate(page) {
   currentPage = page;
   closeSidebar();
 
+  // Sync mobile bottom nav active state
+  document.querySelectorAll('.mbn-item[id]').forEach((btn) => btn.classList.remove('active'));
+  const mbnTarget = document.getElementById(`mbn-${page}`);
+  if (mbnTarget) mbnTarget.classList.add('active');
+
   // Load data if needed
   if (page === 'bookings') loadBookings();
   else if (page === 'bookings-raw') loadRawBookings();
   else if (page === 'vehicles') loadVehicles();
-  else if (page === 'expenses') { loadExpenseCategories(); loadExpenses(); }
+  else if (page === 'expenses') loadExpenses();
   else if (page === 'sms') loadSmsTemplates();
   else if (page === 'dashboard' && !dashboardData) refreshDashboard();
   else if (page === 'revenue') loadRevenue();
@@ -2903,6 +3348,7 @@ function navigate(page) {
   else if (page === 'ai') loadAiInsights();
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
   else if (page === 'late-fees') loadLateFees();
+  else if (page === 'tickets') loadTickets();
 }
 
 function refreshCurrentPage() {
@@ -2921,7 +3367,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
   else if (currentPage === 'bookings-raw') loadRawBookings();
   else if (currentPage === 'vehicles') { allVehicles = {}; loadVehicles(); }
-  else if (currentPage === 'expenses') { allExpenses = []; expCategories = []; loadExpenseCategories(); loadExpenses(); }
+  else if (currentPage === 'expenses') { allExpenses = []; loadExpenses(); }
   else if (currentPage === 'sms') { smsTemplates = []; loadSmsTemplates(); }
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
@@ -2934,6 +3380,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'block-dates') loadBlockedDates();
   else if (currentPage === 'settings') loadSiteContent();
   else if (currentPage === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
+  else if (currentPage === 'tickets') loadTickets();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -4348,10 +4795,6 @@ function applyBookingFilters() {
     if (vFilter && b.vehicleId !== vFilter) return false;
     // Derived status: overdue / extended / flagged overlay
     const derived = bookingDerivedStatus(b, now);
-    // By default (no status filter selected) hide unpaid/pending bookings so
-    // only bookings with a confirmed payment are visible.  The admin must
-    // explicitly choose "Pending / Unpaid" to see those entries.
-    if (!sFilter && b.status === 'reserved_unpaid') return false;
     if (sFilter) {
       if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
       if (sFilter === 'extended'  && derived !== 'extended')  return false;
@@ -4459,6 +4902,19 @@ function applyBookingFilters() {
 function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
+
+  // Silently attempt to recover missing Stripe card data in the background.
+  if ((b.paymentMethod || '').toLowerCase() === 'stripe' && !b.hasSavedCard && b.paymentIntentId) {
+    apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
+      .then((data) => {
+        if ((data.recovered || 0) > 0) {
+          const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+          if (idx !== -1) allBookings[idx].hasSavedCard = true;
+        }
+      })
+      .catch(() => { /* non-fatal — ignore silently */ });
+  }
+
   const derived = bookingDerivedStatus(b, new Date());
   const tier    = computeBookingCustomerTier(b);
   const tierBadge = {
@@ -4529,6 +4985,29 @@ function viewBooking(bookingId, vehicleId) {
       ` : '<div style="font-size:12px;color:var(--text-sub);">No extension payment records stored yet.</div>'}
     </div>
     ` : ''}
+    ${(() => {
+      const linked = allTickets.filter((t) => t.booking_ref === b.bookingId);
+      if (!linked.length) return '';
+      const rows = linked.map((t) => {
+        const tDate = t.violation_date
+          ? new Date(t.violation_date).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+          : '—';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:0;">
+            <strong>${esc(t.ticket_number)}</strong>
+            <span style="color:var(--text-sub);margin-left:5px;text-transform:capitalize;">${esc(t.type)}</span>
+          </div>
+          <div style="color:var(--text-sub);font-size:11px;">${tDate}</div>
+          <div><strong>$${Number(t.amount).toFixed(2)}</strong></div>
+          <div>${ticketBadge(t.status)}</div>
+          <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openTicketDetail('${esc(t.id)}')">View</button>
+        </div>`;
+      }).join('');
+      return `<div style="margin-top:14px;padding:12px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;">
+        <div style="font-size:12px;font-weight:700;color:#6d28d9;text-transform:uppercase;margin-bottom:8px;">🎫 Violations / Tickets (${linked.length})</div>
+        ${rows}
+      </div>`;
+    })()}
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
       <div class="detail-sub-grid">
@@ -4992,42 +5471,48 @@ function clearManualBookingForm() {
 
 // ── Expenses ───────────────────────────────────────────────────────────────
 function loadExpenseCategories() {
-  if (expCategories.length) { populateExpenseCategoryDropdowns(); return; }
-  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'list' })
+  return apiPost('/api/get-expense-categories', { secret: adminSecret })
     .then((data) => {
-      expCategories = (data.categories || []).filter((c) => c.is_active);
-      populateExpenseCategoryDropdowns();
+      allExpenseCategories = data.categories || [];
+      populateCategoryDropdowns();
     })
-    .catch(() => { /* keep hardcoded fallback options if API fails */ });
+    .catch((err) => console.warn('Could not load expense categories:', err.message));
 }
 
-function populateExpenseCategoryDropdowns() {
+function populateCategoryDropdowns() {
+  const active = allExpenseCategories.filter((c) => c.is_active);
   const groups = {};
-  for (const c of expCategories) {
-    const g = c.group_name || 'Other';
-    if (!groups[g]) groups[g] = [];
-    groups[g].push(c);
+  for (const cat of active) {
+    if (!groups[cat.group_name]) groups[cat.group_name] = [];
+    groups[cat.group_name].push(cat);
   }
 
-  function buildOptions(sel, placeholder) {
-    sel.innerHTML = `<option value="">${placeholder}</option>`;
+  const buildOptgroups = (blankLabel) => {
+    let html = `<option value="">${esc(blankLabel)}</option>`;
     for (const [group, cats] of Object.entries(groups)) {
-      const og = document.createElement('optgroup');
-      og.label = group;
-      for (const c of cats) {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.name;
-        og.appendChild(opt);
+      html += `<optgroup label="${esc(group)}">`;
+      for (const cat of cats) {
+        html += `<option value="${esc(cat.id)}">${esc(cat.name)}</option>`;
       }
-      sel.appendChild(og);
+      html += '</optgroup>';
     }
-  }
+    return html;
+  };
 
-  const addSel    = document.getElementById('exp-category');
   const filterSel = document.getElementById('expense-filter-category');
-  if (addSel)    buildOptions(addSel,    'Select category…');
-  if (filterSel) buildOptions(filterSel, 'All Categories');
+  if (filterSel) filterSel.innerHTML = buildOptgroups('All Categories');
+  const addSel = document.getElementById('exp-category');
+  if (addSel) addSel.innerHTML = buildOptgroups('Select category…');
+}
+
+function getCategoryLabel(expense) {
+  if (expense.category_name) {
+    return expense.category_group
+      ? `${esc(expense.category_group)} / ${esc(expense.category_name)}`
+      : esc(expense.category_name);
+  }
+  const text = expense.category || '–';
+  return esc(text.charAt(0).toUpperCase() + text.slice(1));
 }
 
 function loadExpenses() {
@@ -5035,7 +5520,12 @@ function loadExpenses() {
   document.getElementById('expenses-table-wrap').style.display = 'none';
   document.getElementById('expenses-empty').style.display = 'none';
 
-  apiPost('/api/get-expenses', { secret: adminSecret })
+  const catPromise = allExpenseCategories.length
+    ? Promise.resolve()
+    : loadExpenseCategories();
+
+  catPromise
+    .then(() => apiPost('/api/get-expenses', { secret: adminSecret }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -5058,14 +5548,14 @@ function renderExpenseKpis() {
 
   const total = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
 
-  // By category totals
-  const byCat = {};
+  // By group totals (new hierarchy)
+  const byGroup = {};
   for (const e of allExpenses) {
-    const cat = e.category || 'other';
-    byCat[cat] = (byCat[cat] || 0) + Number(e.amount || 0);
+    const grp = e.category_group || (e.category ? e.category.charAt(0).toUpperCase() + e.category.slice(1) : 'Other');
+    byGroup[grp] = (byGroup[grp] || 0) + Number(e.amount || 0);
   }
-  const topCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 2);
-  const catSub  = topCats.map(([c, v]) => `${c}: $${formatMoney(v)}`).join(' · ');
+  const topGroups = Object.entries(byGroup).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const groupSub  = topGroups.map(([g, v]) => `${g}: $${formatMoney(v)}`).join(' · ');
 
   // By vehicle totals
   const byVeh = {};
@@ -5077,9 +5567,9 @@ function renderExpenseKpis() {
   const vehSub  = topVehs.map(([v, amt]) => `${VEHICLE_NAMES_DYNAMIC[v] || VEHICLE_NAMES[v] || v}: $${formatMoney(amt)}`).join(' · ');
 
   grid.innerHTML = [
-    { label: 'Total Expenses',   value: '$' + formatMoney(total),                    icon: '💸', sub: `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` },
-    { label: 'By Category',      value: topCats.length ? '$' + formatMoney(topCats[0][1]) : '–', icon: '🏷️', sub: catSub },
-    { label: 'By Vehicle',       value: topVehs.length ? '$' + formatMoney(topVehs[0][1]) : '–', icon: '🚗', sub: vehSub },
+    { label: 'Total Expenses',   value: '$' + formatMoney(total),                          icon: '💸', sub: `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` },
+    { label: 'By Group',         value: topGroups.length ? '$' + formatMoney(topGroups[0][1]) : '–', icon: '🏷️', sub: groupSub },
+    { label: 'By Vehicle',       value: topVehs.length ? '$' + formatMoney(topVehs[0][1]) : '–',  icon: '🚗', sub: vehSub },
     { label: 'Avg per Record',   value: allExpenses.length ? '$' + formatMoney(total / allExpenses.length) : '–', icon: '📊', sub: '' },
   ].map((k) => `
     <div class="kpi-card">
@@ -5097,16 +5587,20 @@ function applyExpenseFilters() {
   const vFilter = document.getElementById('expense-filter-vehicle').value;
   const cFilter = document.getElementById('expense-filter-category').value;
 
+  // When cFilter is a UUID from the new system, also resolve it to a category_name
+  // so legacy expenses (which have no category_id) can still be matched by name.
+  let cFilterName = null;
+  if (cFilter) {
+    const cat = allExpenseCategories.find((c) => c.id === cFilter);
+    if (cat) cFilterName = cat.name;
+  }
+
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
     if (cFilter) {
-      // Match on category_id (new UUID-based), stored flat text, enriched name, or group
-      const cid  = e.category_id || '';
-      const cat  = (e.category       || '').toLowerCase();
-      const name = (e.category_name  || '').toLowerCase();
-      const grp  = (e.category_group || '').toLowerCase();
-      const fLower = cFilter.toLowerCase();
-      if (cid !== cFilter && cat !== fLower && name !== fLower && grp !== fLower) return false;
+      const matchById   = e.category_id === cFilter;
+      const matchByName = cFilterName && (e.category_name === cFilterName || e.category === cFilterName);
+      if (!matchById && !matchByName) return false;
     }
     return true;
   });
@@ -5125,7 +5619,7 @@ function applyExpenseFilters() {
     <tr>
       <td>${esc(e.date || '–')}</td>
       <td>${esc(getVehicleLabel(e.vehicle_id) || '–')}</td>
-      <td><span class="badge badge-gray">${esc(e.category_name || e.category || '–')}</span></td>
+      <td><span class="badge badge-gray" title="${esc(e.category_group || '')}">${getCategoryLabel(e)}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
       <td>
@@ -5152,21 +5646,21 @@ function openAddExpenseModal() {
 }
 
 function submitExpense() {
-  const vehicle_id = document.getElementById('exp-vehicle').value;
-  const date       = document.getElementById('exp-date').value;
-  const category   = document.getElementById('exp-category').value;
-  const amount     = parseFloat(document.getElementById('exp-amount').value);
-  const notes      = document.getElementById('exp-notes').value.trim();
+  const vehicle_id  = document.getElementById('exp-vehicle').value;
+  const date        = document.getElementById('exp-date').value;
+  const category_id = document.getElementById('exp-category').value;
+  const amount      = parseFloat(document.getElementById('exp-amount').value);
+  const notes       = document.getElementById('exp-notes').value.trim();
 
-  if (!vehicle_id) { showToast('Please select a vehicle.', 'error'); return; }
-  if (!date)       { showToast('Please enter a date.', 'error'); return; }
-  if (!category)   { showToast('Please select a category.', 'error'); return; }
+  if (!vehicle_id)   { showToast('Please select a vehicle.', 'error'); return; }
+  if (!date)         { showToast('Please enter a date.', 'error'); return; }
+  if (!category_id)  { showToast('Please select a category.', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
 
   const btn = document.getElementById('exp-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category_id: category, amount, notes })
+  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category_id, amount, notes })
     .then(() => {
       closeModal('add-expense-modal');
       showToast('Expense added.', 'success');
@@ -5192,6 +5686,91 @@ function deleteExpense(expenseId) {
       refreshDashboard();
     })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Category Manager ────────────────────────────────────────────────────────
+function openManageCategoriesModal() {
+  renderCategoryManager();
+  openModal('manage-categories-modal');
+}
+
+function renderCategoryManager() {
+  const container = document.getElementById('cat-manager-list');
+  if (!container) return;
+
+  if (!allExpenseCategories.length) {
+    container.innerHTML = '<p style="color:var(--text-sub);padding:8px 0;">No categories loaded.</p>';
+    return;
+  }
+
+  // Group by group_name
+  const groups = {};
+  for (const cat of allExpenseCategories) {
+    if (!groups[cat.group_name]) groups[cat.group_name] = [];
+    groups[cat.group_name].push(cat);
+  }
+
+  container.innerHTML = Object.entries(groups).map(([group, cats]) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-sub);letter-spacing:0.5px;margin-bottom:6px;">${esc(group)}</div>
+      ${cats.map((cat) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+          <span style="flex:1;font-size:14px;${cat.is_active ? '' : 'color:var(--text-sub);text-decoration:line-through;'}">${esc(cat.name)}</span>
+          ${cat.is_default ? '<span style="font-size:10px;color:var(--text-sub);">default</span>' : ''}
+          <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;" onclick="editCategoryName('${esc(cat.id)}', '${esc(cat.name)}')">Rename</button>
+          <button class="btn btn-sm ${cat.is_active ? 'btn-secondary' : 'btn-primary'}" style="font-size:11px;padding:3px 8px;min-width:60px;" onclick="toggleCategory('${esc(cat.id)}', ${!cat.is_active})">${cat.is_active ? 'Disable' : 'Enable'}</button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function editCategoryName(id, currentName) {
+  const newName = prompt('Enter new category name:', currentName);
+  if (!newName || newName.trim() === currentName) return;
+
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'update', id, name: newName.trim() })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      showToast('Category renamed.', 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function toggleCategory(id, is_active) {
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'toggle', id, is_active })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      showToast(is_active ? 'Category enabled.' : 'Category disabled.', 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function submitNewCategory() {
+  const name       = document.getElementById('new-cat-name').value.trim();
+  const group_name = document.getElementById('new-cat-group').value.trim();
+
+  if (!name)       { showToast('Category name is required.', 'error'); return; }
+  if (!group_name) { showToast('Group name is required.', 'error'); return; }
+
+  const btn = document.getElementById('new-cat-submit');
+  btn.disabled = true; btn.textContent = 'Adding…';
+
+  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'create', name, group_name })
+    .then((data) => {
+      allExpenseCategories = data.categories || allExpenseCategories;
+      populateCategoryDropdowns();
+      renderCategoryManager();
+      document.getElementById('new-cat-name').value  = '';
+      document.getElementById('new-cat-group').value = '';
+      showToast(`Category "${name}" added.`, 'success');
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Add Category'; });
 }
 
 // ── SMS Templates ──────────────────────────────────────────────────────────
@@ -6126,7 +6705,7 @@ async function runBackfillStripeCards(action, btn) {
   }
 }
 
-// ── Analytics ─────────────────────────────────────────────────────────────
+
 let analyticsChart1 = null, analyticsChart2 = null;
 
 function loadAnalytics() {
@@ -8855,6 +9434,11 @@ function initDemoMode() {
   if (banner) {
     banner.style.display = 'flex';
     document.body.classList.add('demo-mode-active');
+    // Measure actual banner height (may wrap on mobile) and apply it
+    requestAnimationFrame(() => {
+      const h = banner.offsetHeight;
+      if (h > 0) document.documentElement.style.setProperty('--demo-banner-h', h + 'px');
+    });
   }
 
   // Bypass auth
@@ -9126,6 +9710,547 @@ function dismissChecklist() {
     return _orig(page);
   };
 })();
+
+// ── Tickets / Violations ────────────────────────────────────────────────────
+
+let allTickets = [];
+let ticketFilterActive = 'all';
+let viewingTicketId = null;
+let viewingTicketData = null; // full ticket object currently shown in detail modal
+
+function loadTickets() {
+  const loading = document.getElementById('tickets-loading');
+  const wrap    = document.getElementById('tickets-table-wrap');
+  const empty   = document.getElementById('tickets-empty');
+  if (loading) loading.style.display = 'block';
+  if (wrap)    wrap.style.display    = 'none';
+  if (empty)   empty.style.display   = 'none';
+
+  // Populate vehicle filter dropdown
+  const vSel = document.getElementById('ticket-filter-vehicle');
+  if (vSel) {
+    const existing = new Set([...vSel.options].map((o) => o.value));
+    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    Object.entries(vMap).forEach(([id, v]) => {
+      if (!existing.has(id)) {
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = v.vehicle_name || id;
+        vSel.appendChild(opt);
+      }
+    });
+  }
+
+  apiPost('/api/tickets', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allTickets = data.tickets || [];
+      if (loading) loading.style.display = 'none';
+      applyTicketFilters();
+      updateTicketsBadge();
+    })
+    .catch((err) => {
+      if (loading) loading.style.display = 'none';
+      allTickets = [];
+      applyTicketFilters();
+      showToast('Failed to load tickets: ' + err.message, 'error');
+    });
+}
+
+const TICKET_PENDING_STATUSES = new Set(['new', 'matched', 'transfer_ready']);
+
+function updateTicketsBadge() {
+  const badge = document.getElementById('tickets-badge');
+  if (!badge) return;
+  const pending = allTickets.filter((t) => TICKET_PENDING_STATUSES.has(t.status)).length;
+  if (pending > 0) { badge.textContent = pending; badge.style.display = ''; }
+  else              { badge.style.display = 'none'; }
+}
+
+function setTicketFilter(filter) {
+  ticketFilterActive = filter;
+  document.querySelectorAll('.ticket-tab').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  applyTicketFilters();
+}
+
+function applyTicketFilters() {
+  const search  = (document.getElementById('ticket-search')?.value || '').toLowerCase().trim();
+  const vehicle = document.getElementById('ticket-filter-vehicle')?.value || '';
+
+  let filtered = allTickets.filter((t) => {
+    if (ticketFilterActive === 'pending'   && !TICKET_PENDING_STATUSES.has(t.status)) return false;
+    if (ticketFilterActive === 'submitted' && t.status !== 'submitted')  return false;
+    if (ticketFilterActive === 'charged'   && t.status !== 'charged')    return false;
+    if (ticketFilterActive === 'closed'    && t.status !== 'closed')     return false;
+    if (vehicle && t.vehicle_id !== vehicle) return false;
+    if (search) {
+      const haystack = [t.ticket_number, t.vehicle_id, t.matchedRenterName, t.location]
+        .join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  renderTicketsTable(filtered);
+}
+
+const TICKET_STATUS_LABELS = {
+  new:            'New',
+  matched:        'Matched',
+  transfer_ready: 'Transfer Ready',
+  submitted:      'Submitted',
+  approved:       'Approved',
+  rejected:       'Rejected',
+  charged:        'Charged',
+  closed:         'Closed',
+};
+
+function ticketBadge(status) {
+  const label = TICKET_STATUS_LABELS[status] || status;
+  return `<span class="badge badge-ticket-${status}">${label}</span>`;
+}
+
+function renderTicketsTable(tickets) {
+  const wrap  = document.getElementById('tickets-table-wrap');
+  const empty = document.getElementById('tickets-empty');
+  const tbody = document.getElementById('tickets-tbody');
+  if (!tbody) return;
+
+  if (!tickets.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = tickets.map((t) => {
+    const date = t.violation_date
+      ? new Date(t.violation_date).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '\u2014';
+    const renter = t.matchedRenterName
+      ? `<span style="color:var(--text);">${esc(t.matchedRenterName)}</span>`
+      : `<span style="color:var(--text-sub);font-style:italic;">No match</span>`;
+    const vName = (allVehicles[t.vehicle_id]?.vehicle_name) || t.vehicle_id;
+    return `<tr>
+      <td><strong>${esc(t.ticket_number)}</strong><br><span style="font-size:11px;color:var(--text-sub);text-transform:capitalize;">${esc(t.type)}</span></td>
+      <td>${esc(vName)}</td>
+      <td>${renter}</td>
+      <td><strong>$${Number(t.amount).toFixed(2)}</strong></td>
+      <td>${ticketBadge(t.status)}</td>
+      <td>${date}</td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openTicketDetail('${esc(t.id)}')">View</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Add Ticket Modal ────────────────────────────────────────────────────────
+
+function openAddTicketModal() {
+  const vSel = document.getElementById('atk-vehicle');
+  if (vSel) {
+    vSel.innerHTML = '<option value="">Select vehicle\u2026</option>';
+    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    Object.entries(vMap).forEach(([id, v]) => {
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = v.vehicle_name || id;
+      vSel.appendChild(opt);
+    });
+  }
+
+  const dtInput = document.getElementById('atk-date');
+  if (dtInput && !dtInput.value) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    dtInput.value = now.toISOString().slice(0, 16);
+  }
+
+  ['atk-number','atk-amount','atk-location','atk-notes'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const typeEl = document.getElementById('atk-type');
+  if (typeEl) typeEl.value = 'parking';
+  const preview = document.getElementById('atk-match-preview');
+  if (preview) preview.style.display = 'none';
+
+  openModal('add-ticket-modal');
+}
+
+async function saveTicket() {
+  const btn          = document.getElementById('atk-submit-btn');
+  const ticketNumber = document.getElementById('atk-number')?.value.trim();
+  const vehicleId    = document.getElementById('atk-vehicle')?.value;
+  const dateVal      = document.getElementById('atk-date')?.value;
+  const amountVal    = document.getElementById('atk-amount')?.value;
+  const type         = document.getElementById('atk-type')?.value || 'parking';
+  const location     = document.getElementById('atk-location')?.value.trim() || '';
+  const notes        = document.getElementById('atk-notes')?.value.trim() || '';
+
+  if (!ticketNumber) { showToast('Ticket number is required.', 'error'); return; }
+  if (!vehicleId)    { showToast('Please select a vehicle.', 'error'); return; }
+  if (!dateVal)      { showToast('Violation date is required.', 'error'); return; }
+  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
+    showToast('Please enter a valid amount.', 'error'); return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'create',
+      ticketNumber,
+      vehicleId,
+      violationDate: dateVal,
+      amount: Number(amountVal),
+      type,
+      location,
+      notes,
+    });
+
+    allTickets.unshift(data.ticket);
+    updateTicketsBadge();
+    closeModal('add-ticket-modal');
+    applyTicketFilters();
+
+    const matchMsg = data.matched
+      ? `\u2705 Matched to: ${data.matchedRenterName || 'Renter'} (${data.matchedBookingId || 'Booking'})`
+      : '\u26a0 No booking found for that vehicle/date.';
+    showToast(`Ticket saved. ${matchMsg}`, data.matched ? 'success' : 'warning');
+  } catch (err) {
+    showToast('Failed to save ticket: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Ticket'; }
+  }
+}
+
+// ── Ticket Detail Modal ─────────────────────────────────────────────────────
+
+const PROGRESS_STEPS = [
+  { key: 'new',      label: 'New'       },
+  { key: 'matched',  label: 'Matched'   },
+  { key: 'submitted',label: 'Submitted' },
+  { key: 'approved', label: 'Approved',  altKey: 'rejected', altLabel: 'Rejected' },
+  { key: 'closed',   label: 'Closed'    },
+];
+
+function getProgressIndex(status) {
+  const map = { new:0, matched:1, transfer_ready:1, submitted:2, approved:3, rejected:3, charged:3, closed:4 };
+  return map[status] ?? 0;
+}
+
+function renderProgressBar(status) {
+  const current    = getProgressIndex(status);
+  const isRejected = status === 'rejected';
+  return `<div class="ticket-progress">${PROGRESS_STEPS.map((step, i) => {
+    let cls = 'tp-step';
+    if (i < current) cls += ' done';
+    else if (i === current) cls += isRejected && step.altKey ? ' reject' : ' active';
+    const label = (isRejected && i === current && step.altLabel) ? step.altLabel : step.label;
+    return `<div class="${cls}"><div class="tp-dot">${i + 1}</div><div class="tp-label">${label}</div></div>`;
+  }).join('')}</div>`;
+}
+
+async function openTicketDetail(ticketId) {
+  viewingTicketId = ticketId;
+
+  // Immediate render from cache while full fetch runs
+  const cached = allTickets.find((t) => t.id === ticketId);
+  if (cached) renderTicketDetailModal(cached, []);
+  openModal('ticket-detail-modal');
+
+  try {
+    const data = await apiPost('/api/tickets', { secret: adminSecret, action: 'get', id: ticketId });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === ticketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    renderTicketDetailModal(data.ticket, data.bookingDocs || []);
+  } catch (err) {
+    showToast('Failed to load ticket details: ' + err.message, 'error');
+  }
+}
+
+function renderTicketDetailModal(ticket, bookingDocs) {
+  document.getElementById('td-title').textContent = `Ticket #${ticket.ticket_number}`;
+  document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
+  document.getElementById('td-progress').innerHTML  = renderProgressBar(ticket.status);
+
+  // Match banner — use booking_ref (human-readable) not booking_id (UUID)
+  const bannerEl = document.getElementById('td-match-banner');
+  if (ticket.booking_ref) {
+    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.booking_ref)})</div>`;
+  } else {
+    bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">\u26a0 No booking found for this vehicle on the violation date.</div>`;
+  }
+
+  // A. Ticket Info
+  const vName = (allVehicles[ticket.vehicle_id]?.vehicle_name) || ticket.vehicle_id;
+  const adminFee = ticket.admin_fee != null ? `$${Number(ticket.admin_fee).toFixed(2)}` : '\u2014';
+  document.getElementById('td-info').innerHTML = [
+    ['Ticket #',         ticket.ticket_number],
+    ['Type',             ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '\u2014'],
+    ['Violation Date',   ticket.violation_date ? new Date(ticket.violation_date).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014'],
+    ['Amount',           `$${Number(ticket.amount).toFixed(2)}`],
+    ['Admin Fee',        adminFee],
+    ['Location',         ticket.location || '\u2014'],
+    ['Vehicle',          vName],
+    ['Status',           TICKET_STATUS_LABELS[ticket.status] || ticket.status],
+    ['Charge Status',    ticket.charge_status || '\u2014'],
+    ['Renter Responsible', ticket.renter_responsible ? 'Yes' : 'No'],
+  ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+
+  // B. Renter Info
+  const renterEl = document.getElementById('td-renter');
+  if (ticket.matchedRenterName) {
+    renterEl.innerHTML = [
+      ['Name',  ticket.matchedRenterName],
+      ['Phone', ticket.matchedRenterPhone || '\u2014'],
+      ['Email', ticket.matchedRenterEmail || '\u2014'],
+    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+  } else {
+    renterEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No renter matched for this ticket.</div>';
+  }
+
+  // C. Booking Info — display booking_ref (text ID), find in allBookings by booking_ref
+  const bookingEl = document.getElementById('td-booking');
+  if (ticket.booking_ref) {
+    const linked  = allBookings.find((b) => (b.booking_ref || b.bookingId) === ticket.booking_ref);
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '\u2014';
+    bookingEl.innerHTML = [
+      ['Booking ID',  ticket.booking_ref],
+      ['Pickup Date', fmtDate(linked?.pickup_date || linked?.pickupDate)],
+      ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
+      ['Vehicle',     vName],
+    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('') +
+    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(ticket.booking_ref)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
+  } else {
+    bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
+  }
+
+  // D. Documents
+  renderTicketDocuments(ticket, bookingDocs);
+
+  // E. Action buttons
+  document.getElementById('td-actions-grid').innerHTML = buildTicketActionButtons(ticket);
+
+  // Note input
+  const noteInput = document.getElementById('td-note-input');
+  if (noteInput) noteInput.value = '';
+
+  // Activity log
+  renderTicketLog(ticket);
+}
+
+function renderTicketDocuments(ticket, bookingDocs) {
+  const docsEl = document.getElementById('td-docs');
+  if (!docsEl) return;
+  const parts = [];
+
+  // Driver license front + back
+  if (ticket.matchedRenterLicenseUrl || ticket.matchedRenterLicenseBackUrl) {
+    const btns = [];
+    if (ticket.matchedRenterLicenseUrl) {
+      btns.push(`<a href="${esc(ticket.matchedRenterLicenseUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;">\ud83e\udeb7 License Front</a>`);
+    }
+    if (ticket.matchedRenterLicenseBackUrl) {
+      btns.push(`<a href="${esc(ticket.matchedRenterLicenseBackUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">\ud83e\udeb7 License Back</a>`);
+    }
+    parts.push(`<div style="margin-bottom:10px;"><div style="font-size:12px;color:var(--text-sub);margin-bottom:5px;">Driver License</div>${btns.join('')}</div>`);
+  } else if (ticket.customer_id) {
+    parts.push('<div style="margin-bottom:10px;font-size:12px;color:var(--text-sub);font-style:italic;">No driver license on file.</div>');
+  }
+
+  if (Array.isArray(bookingDocs) && bookingDocs.length) {
+    const typeLabel = { agreement: '\ud83d\udcc4 Rental Agreement', insurance: '\ud83d\udee1 Insurance', id_copy: '\ud83d\udcdb ID Copy', other: '\ud83d\udcce Document' };
+    bookingDocs.forEach((doc) => {
+      const label = typeLabel[doc.type] || typeLabel.other;
+      parts.push(`<a href="${esc(doc.file_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;margin-bottom:6px;">${label}${doc.file_name ? ' \u2014 ' + esc(doc.file_name) : ''}</a>`);
+    });
+  } else if (ticket.booking_ref) {
+    parts.push('<div style="font-size:12px;color:var(--text-sub);font-style:italic;">No booking documents uploaded yet.</div>');
+  }
+
+  if (!parts.length) {
+    docsEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No documents available \u2014 link a booking first.</div>';
+    return;
+  }
+  docsEl.innerHTML = parts.join('');
+}
+
+function buildTicketActionButtons(ticket) {
+  const s    = ticket.status;
+  const btns = [];
+
+  if (['new','matched','transfer_ready'].includes(s)) {
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('transfer_ready')">\ud83d\udccb Generate Transfer Docs</button>`);
+  }
+  if (s === 'transfer_ready' || s === 'matched') {
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="ticketAction('submitted')">\ud83d\udce4 Mark Submitted</button>`);
+  }
+  if (s === 'submitted') {
+    btns.push(`<button class="btn btn-success btn-sm" onclick="ticketAction('approved')">\u2705 Mark Approved</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm"  onclick="ticketAction('rejected')">\u274c Mark Rejected</button>`);
+  }
+  if (s === 'approved') {
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="chargeTicketRenter(false)">\ud83d\udcb3 Charge Renter</button>`);
+  }
+  if (s === 'rejected') {
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="chargeTicketRenter(false)">\ud83d\udea8 Charge Renter (Rejected)</button>`);
+  }
+  if ((s === 'charged' && viewingTicketData?.charge_status !== 'succeeded')) {
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="chargeTicketRenter(true)">\ud83d\udd04 Retry Charge</button>`);
+  }
+  if (s === 'charged' || s === 'approved') {
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('closed')">\ud83d\udd12 Mark Closed</button>`);
+  }
+  if (!btns.length) {
+    btns.push(`<div style="color:var(--text-sub);font-size:13px;font-style:italic;grid-column:1/-1;">No further actions available.</div>`);
+  }
+  return btns.join('');
+}
+
+async function ticketAction(newStatus) {
+  if (!viewingTicketId) return;
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'update_status',
+      id:     viewingTicketId,
+      status: newStatus,
+    });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    updateTicketsBadge();
+    applyTicketFilters();
+    const bookingDocs = await fetchBookingDocs(data.ticket.booking_id);
+    renderTicketDetailModal(data.ticket, bookingDocs);
+    showToast(`Ticket ${TICKET_STATUS_LABELS[newStatus] || newStatus}.`, 'success');
+  } catch (err) {
+    showToast('Failed to update status: ' + err.message, 'error');
+  }
+}
+
+async function chargeTicketRenter(isRetry = false) {
+  if (!viewingTicketId) return;
+  const label = isRetry ? 'Retry charge' : 'Charge renter';
+  if (!confirm(`${label} for ticket #${viewingTicketData?.ticket_number}?\n\nThis will charge: ticket amount + admin fee.`)) return;
+
+  showToast(`${label} — processing…`, 'info');
+  try {
+    // Use raw fetch (not apiPost) so we can read the body on 402 Payment Required,
+    // which the endpoint returns when Stripe declines — the response still contains
+    // the updated ticket data and we want to refresh the UI.
+    const resp = await fetch((typeof API_BASE !== 'undefined' ? API_BASE : '') + '/api/ticket-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret:   adminSecret,
+        action:   isRetry ? 'retry' : 'charge',
+        ticketId: viewingTicketId,
+      }),
+    });
+
+    let data;
+    try { data = await resp.json(); } catch { data = {}; }
+
+    // On hard errors (401, 404, 500, etc.) throw so the catch block handles it
+    if (!resp.ok && resp.status !== 402) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    // Update UI with the returned ticket (present on both 200 and 402)
+    if (data.ticket) {
+      viewingTicketData = data.ticket;
+      const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+      if (idx >= 0) allTickets[idx] = data.ticket;
+      updateTicketsBadge();
+      applyTicketFilters();
+      const bookingDocs = await fetchBookingDocs(data.ticket?.booking_id);
+      renderTicketDetailModal(data.ticket, bookingDocs);
+    }
+
+    if (resp.status === 200 && data.chargeStatus === 'succeeded') {
+      showToast(`\u2705 ${data.message || 'Charge succeeded.'}`, 'success');
+    } else {
+      showToast(`\u274c Charge failed: ${data.error || 'Stripe declined the payment.'}`, 'error');
+    }
+  } catch (err) {
+    showToast('Charge request failed: ' + err.message, 'error');
+  }
+}
+
+async function addTicketNote() {
+  const input = document.getElementById('td-note-input');
+  const note  = input?.value.trim();
+  if (!note || !viewingTicketId) return;
+  try {
+    const data = await apiPost('/api/tickets', {
+      secret: adminSecret,
+      action: 'add_note',
+      id:     viewingTicketId,
+      note,
+    });
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    if (input) input.value = '';
+    renderTicketLog(data.ticket);
+    showToast('Note added.', 'success');
+  } catch (err) {
+    showToast('Failed to add note: ' + err.message, 'error');
+  }
+}
+
+async function fetchBookingDocs(bookingId) {
+  if (!bookingId) return [];
+  try {
+    const data = await apiPost('/api/booking-documents', {
+      secret: adminSecret, action: 'list', bookingId,
+    });
+    return data.docs || [];
+  } catch {
+    return [];
+  }
+}
+
+function renderTicketLog(ticket) {
+  const logEl = document.getElementById('td-log');
+  if (!logEl) return;
+  const entries = (ticket.activity_log || []).slice().reverse();
+  if (!entries.length) {
+    logEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No activity yet.</div>';
+    return;
+  }
+  logEl.innerHTML = entries.map((e) => {
+    const d = new Date(e.date).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+    return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <span style="color:var(--text-sub);white-space:nowrap;flex-shrink:0;">${d}</span>
+      <div>
+        <span style="font-weight:600;">${esc(e.action)}</span>
+        ${e.note ? `<span style="color:var(--text-sub);"> \u2014 ${esc(e.note)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteCurrentTicket() {
+  if (!viewingTicketId) return;
+  if (!confirm('Delete this ticket? This cannot be undone.')) return;
+  try {
+    await apiPost('/api/tickets', { secret: adminSecret, action: 'delete', id: viewingTicketId });
+    allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
+    updateTicketsBadge();
+    closeModal('ticket-detail-modal');
+    applyTicketFilters();
+    showToast('Ticket deleted.', 'success');
+  } catch (err) {
+    showToast('Failed to delete ticket: ' + err.message, 'error');
+  }
+}
 </script>
 
 <script src="voice-assistant.js"></script>
