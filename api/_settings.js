@@ -125,7 +125,7 @@ export async function loadNumericSetting(key, defaultVal) {
       .maybeSingle();
     if (error || !data) return defaultVal;
     const num = Number(data.value);
-    return Number.isFinite(num) && num > 0 ? num : defaultVal;
+    return Number.isFinite(num) && num >= 0 ? num : defaultVal;
   } catch {
     return defaultVal;
   }

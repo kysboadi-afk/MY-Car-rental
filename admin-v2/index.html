@@ -10073,8 +10073,7 @@ function buildTicketActionButtons(ticket) {
   if (s === 'rejected') {
     btns.push(`<button class="btn btn-danger btn-sm" onclick="chargeTicketRenter(false)">\ud83d\udea8 Charge Renter (Rejected)</button>`);
   }
-  if ((s === 'charged' && viewingTicketData?.charge_status === 'failed') ||
-      (s === 'charged' && viewingTicketData?.charge_status !== 'succeeded')) {
+  if ((s === 'charged' && viewingTicketData?.charge_status !== 'succeeded')) {
     btns.push(`<button class="btn btn-warning btn-sm" onclick="chargeTicketRenter(true)">\ud83d\udd04 Retry Charge</button>`);
   }
   if (s === 'charged' || s === 'approved') {
@@ -10115,24 +10114,42 @@ async function chargeTicketRenter(isRetry = false) {
 
   showToast(`${label} — processing…`, 'info');
   try {
-    const data = await apiPost('/api/ticket-charge', {
-      secret:   adminSecret,
-      action:   isRetry ? 'retry' : 'charge',
-      ticketId: viewingTicketId,
+    // Use raw fetch (not apiPost) so we can read the body on 402 Payment Required,
+    // which the endpoint returns when Stripe declines — the response still contains
+    // the updated ticket data and we want to refresh the UI.
+    const resp = await fetch((typeof API_BASE !== 'undefined' ? API_BASE : '') + '/api/ticket-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret:   adminSecret,
+        action:   isRetry ? 'retry' : 'charge',
+        ticketId: viewingTicketId,
+      }),
     });
 
-    viewingTicketData = data.ticket;
-    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
-    if (idx >= 0) allTickets[idx] = data.ticket;
-    updateTicketsBadge();
-    applyTicketFilters();
-    const bookingDocs = await fetchBookingDocs(data.ticket?.booking_id);
-    renderTicketDetailModal(data.ticket, bookingDocs);
+    let data;
+    try { data = await resp.json(); } catch { data = {}; }
 
-    if (data.chargeStatus === 'succeeded') {
+    // On hard errors (401, 404, 500, etc.) throw so the catch block handles it
+    if (!resp.ok && resp.status !== 402) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    // Update UI with the returned ticket (present on both 200 and 402)
+    if (data.ticket) {
+      viewingTicketData = data.ticket;
+      const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+      if (idx >= 0) allTickets[idx] = data.ticket;
+      updateTicketsBadge();
+      applyTicketFilters();
+      const bookingDocs = await fetchBookingDocs(data.ticket?.booking_id);
+      renderTicketDetailModal(data.ticket, bookingDocs);
+    }
+
+    if (resp.status === 200 && data.chargeStatus === 'succeeded') {
       showToast(`\u2705 ${data.message || 'Charge succeeded.'}`, 'success');
     } else {
-      showToast(`\u274c Charge failed: ${data.error || 'Unknown error'}`, 'error');
+      showToast(`\u274c Charge failed: ${data.error || 'Stripe declined the payment.'}`, 'error');
     }
   } catch (err) {
     showToast('Charge request failed: ' + err.message, 'error');

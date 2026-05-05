@@ -38,12 +38,12 @@ import { autoCreateRevenueRecord } from "./_booking-automation.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
-// Maximum automatic retries before giving up (manual retry still allowed via admin UI)
-const MAX_RETRIES = 3;
 // Default admin fee when system_settings row is missing
 const DEFAULT_ADMIN_FEE = 25;
 
-// HTML-escape helper for email templates
+// Maximum automatic retries before giving up (manual retry still allowed via admin UI)
+const MAX_RETRIES = 3;
+
 function esc(str) {
   if (!str) return "";
   return String(str)
@@ -137,8 +137,6 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       error: `Maximum automatic retries (${MAX_RETRIES}) reached. Use action:"retry" to force a manual attempt.`,
     });
   }
-
-  // ── 3. Fetch booking's Stripe card ────────────────────────────────────────
   if (!ticket.booking_ref) {
     return res.status(400).json({ error: "Ticket is not matched to a booking — cannot charge." });
   }
@@ -419,7 +417,8 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       message: `Charged $${totalAmount.toFixed(2)} to ${renterName} for ticket #${ticket.ticket_number}.`,
     });
   } else {
-    return res.status(200).json({
+    // HTTP 402 Payment Required — the charge attempt was valid but Stripe declined.
+    return res.status(402).json({
       success: false,
       chargeStatus: "failed",
       error:   stripeError || "Unknown Stripe error",
