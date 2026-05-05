@@ -193,6 +193,10 @@ export default async function handler(req, res) {
             payment_status,
             payment_method,
             payment_intent_id,
+            stripe_customer_id,
+            stripe_payment_method_id,
+            extension_stripe_customer_id,
+            extension_stripe_payment_method_id,
             flagged,
             risk_score,
             notes,
@@ -292,6 +296,10 @@ export default async function handler(req, res) {
               paymentStatus:   r.payment_status  || "",
               paymentMethod:   r.payment_method  || "",
               paymentIntentId: r.payment_intent_id || "",
+              hasSavedCard:    !!(
+                (r.stripe_customer_id && r.stripe_payment_method_id) ||
+                (r.extension_stripe_customer_id && r.extension_stripe_payment_method_id)
+              ),
               flagged:         r.flagged || false,
               riskScore:       r.risk_score || 0,
               // Financial
