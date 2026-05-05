@@ -36,6 +36,7 @@
 //     extensionReturnDateSync: HealthCheck,
 //     smsDeliveryHealth:       HealthCheck,
 //     availabilitySyncHealth:  HealthCheck,
+//     ticketChargeHealth:      HealthCheck,
 //   },
 //   overallStatus: "ok" | "warning" | "error",
 //   checkedAt: ISO-8601 string,
@@ -1056,6 +1057,63 @@ async function checkAvailabilitySync(sb) {
   }
 }
 
+// Check 10 — Ticket charge failures
+// Surfaces violation tickets whose Stripe charge has failed.
+//   • warning: one or more tickets have failed charges with retries remaining
+//   • error:   one or more tickets have exhausted all retry attempts (>= MAX_RETRIES)
+//   • ok:      no failed charge attempts on record
+const TICKET_MAX_RETRIES = 3; // must match MAX_RETRIES in ticket-charge.js
+async function checkTicketChargeHealth(sb) {
+  try {
+    const { data: failedRows, error: fErr } = await sb
+      .from("tickets")
+      .select("id, ticket_number, booking_ref, amount, charge_retry_count")
+      .eq("charge_status", "failed")
+      .limit(100);
+
+    if (fErr) {
+      // Gracefully handle deployments where the tickets table does not yet exist.
+      if (fErr.code === "42P01" || (fErr.message || "").includes("does not exist")) {
+        return check("Ticket Charge Health", "ok", "No ticket charge failures.");
+      }
+      console.error("[v2-system-health] ticketChargeHealth query error:", fErr.message);
+      return check("Ticket Charge Health", "error", "Could not query tickets: " + fErr.message);
+    }
+
+    const failed = failedRows || [];
+    if (failed.length === 0) {
+      return check("Ticket Charge Health", "ok", "No ticket charge failures.");
+    }
+
+    const exhausted = failed.filter((t) => (t.charge_retry_count || 0) >= TICKET_MAX_RETRIES);
+    const retryable = failed.filter((t) => (t.charge_retry_count || 0) < TICKET_MAX_RETRIES);
+
+    const items = failed.map((t) => ({
+      id:   t.ticket_number || t.id,
+      info: `booking=${t.booking_ref || "—"} amount=$${Number(t.amount || 0).toFixed(2)} retries=${t.charge_retry_count || 0}` +
+            ((t.charge_retry_count || 0) >= TICKET_MAX_RETRIES ? " [MAX RETRIES EXHAUSTED]" : ""),
+    }));
+
+    const parts = [];
+    if (exhausted.length > 0)
+      parts.push(`${exhausted.length} ticket${exhausted.length !== 1 ? "s" : ""} exhausted max retries`);
+    if (retryable.length > 0)
+      parts.push(`${retryable.length} ticket${retryable.length !== 1 ? "s" : ""} with failed charge`);
+
+    const overallStatus = exhausted.length > 0 ? "error" : "warning";
+    return check(
+      "Ticket Charge Health",
+      overallStatus,
+      parts.join("; ") + ".",
+      items,
+      "Open the Tickets page to review failed charges and retry them manually.",
+    );
+  } catch (err) {
+    console.error("[v2-system-health] ticketChargeHealth exception:", err);
+    return check("Ticket Charge Health", "error", "Unexpected error: " + err.message);
+  }
+}
+
 async function runAllChecks(sb) {
   const checks    = {};
   const checkedAt = new Date().toISOString();
@@ -1070,6 +1128,7 @@ async function runAllChecks(sb) {
     checkExtensionReturnDateSync(sb)  .then((r) => { checks.extensionReturnDateSync  = r; }),
     checkSmsDeliveryHealth(sb)        .then((r) => { checks.smsDeliveryHealth        = r; }),
     checkAvailabilitySync(sb)         .then((r) => { checks.availabilitySyncHealth   = r; }),
+    checkTicketChargeHealth(sb)       .then((r) => { checks.ticketChargeHealth        = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);
