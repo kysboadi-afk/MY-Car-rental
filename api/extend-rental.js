@@ -335,8 +335,8 @@ export default async function handler(req, res) {
         b.returnTime || ""
       );
       if (hasConflict) {
-        const fmtDate = new Date(b.pickupDate + "T00:00:00")
-          .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+        const fmtDate = new Date(b.pickupDate + "T12:00:00Z")
+          .toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric", year: "numeric" });
         return res.status(409).json({
           error: `The new return date conflicts with another booking starting on ${fmtDate}. ` +
                  "Please choose an earlier return date.",
@@ -444,8 +444,8 @@ export default async function handler(req, res) {
             fbkReturnTime
           );
           if (hasConflict) {
-            const fmtDate = new Date(fbkPickupDate + "T00:00:00")
-              .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+            const fmtDate = new Date(fbkPickupDate + "T12:00:00Z")
+              .toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric", year: "numeric" });
             return res.status(409).json({
               error: `The new return date conflicts with another booking starting on ${fmtDate}. ` +
                      "Please choose an earlier return date.",

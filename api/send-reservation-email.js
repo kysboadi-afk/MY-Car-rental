@@ -231,9 +231,9 @@ function generateRentalAgreementHtml(body) {
   <h4>RENTAL PERIOD</h4>
   <table>
     <tr><th>Pickup Date</th><td>${esc(pickup || "")}</td></tr>
-    <tr><th>Pickup Time</th><td>${esc(pickupTime || "Not specified")}</td></tr>
+    <tr><th>Pickup Time</th><td>${esc(formatTime12h(pickupTime) || "Not specified")}</td></tr>
     <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
-    <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
+    <tr><th>Return Time</th><td>${esc(formatTime12h(returnTime) || "Not specified")}</td></tr>
     ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
     <tr><th>Total Charged</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
     ${balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
@@ -796,9 +796,9 @@ export default async function handler(req, res) {
         vehicleColor ? `Color          : ${vehicleColor}` : "",
         `Renter Name    : ${name || "Not provided"}`,
         `Pickup Date    : ${pickup || ""}`,
-        `Pickup Time    : ${pickupTime || "Not specified"}`,
+        `Pickup Time    : ${formatTime12h(pickupTime) || "Not specified"}`,
         `Return Date    : ${returnDate || ""}`,
-        `Return Time    : ${returnTime || "Not specified"}`,
+        `Return Time    : ${formatTime12h(returnTime) || "Not specified"}`,
         `Customer Email : ${email || "Not provided"}`,
         `Phone          : ${phone || "Not provided"}`,
         `Number of Days : ${days || "N/A"}`,
@@ -833,9 +833,9 @@ export default async function handler(req, res) {
           ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(pickupTime)) || "Not specified"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(returnTime)) || "Not specified"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email) || "Not provided"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone) || "Not provided"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Number of Days</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(days || "N/A"))}</td></tr>
@@ -970,9 +970,9 @@ export default async function handler(req, res) {
             vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
             vehicleColor ? `Color          : ${vehicleColor}` : "",
             `Pickup Date    : ${pickup || ""}`,
-            `Pickup Time    : ${pickupTime || "Not specified"}`,
+            `Pickup Time    : ${formatTime12h(pickupTime) || "Not specified"}`,
             `Return Date    : ${returnDate || ""}`,
-            `Return Time    : ${returnTime || "Not specified"}`,
+            `Return Time    : ${formatTime12h(returnTime) || "Not specified"}`,
             isBalancePayment
               ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
               : `Total Charged  : $${total || "TBD"}`,
@@ -1001,9 +1001,9 @@ export default async function handler(req, res) {
               ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
               ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(pickupTime)) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(returnTime)) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
               ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
@@ -1060,7 +1060,7 @@ export default async function handler(req, res) {
           render(BOOKING_CONFIRMED, {
             vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             customer_name: (name || "").split(" ")[0] || name || "Customer",
-            pickup_date:   pickup ? new Date(pickup + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "",
+            pickup_date:   pickup ? new Date(pickup + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
             pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
             location:      DEFAULT_LOCATION,
           })

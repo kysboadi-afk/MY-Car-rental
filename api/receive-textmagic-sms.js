@@ -265,7 +265,7 @@ export function computeEconomyExtensionPriceDays(days, car = null) {
 function addHoursToDateTime(date, time, extraHours) {
   const dt = parseDateTime(date, time);
   dt.setTime(dt.getTime() + extraHours * 3600000);
-  const newTime = dt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const newTime = dt.toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", hour12: true });
   const newDate = dt.toISOString().split("T")[0];
   return { newDate, newTime };
 }
