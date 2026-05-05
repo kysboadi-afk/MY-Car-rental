@@ -23,7 +23,7 @@ import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, autoReleaseBlockedDateOnReturn, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -2973,6 +2973,119 @@ export default async function handler(req, res) {
         }
       } catch (failCatchErr) {
         console.warn("[PAYMENT_FAILED] balance_due update threw (non-fatal):", failCatchErr.message);
+      }
+    }
+
+    return res.status(200).json({ received: true });
+  }
+
+  // ── charge.refunded ───────────────────────────────────────────────────────
+  // Fires when a charge is refunded (partially or fully) via the Stripe
+  // dashboard or API.  On a FULL refund we automatically:
+  //   1. Resolve the booking_ref (via PI metadata or payment_intent_id lookup)
+  //   2. Cancel the booking in Supabase (status → "cancelled")
+  //   3. Delete the blocked_dates row so the vehicle becomes bookable again
+  //
+  // Partial refunds are logged but do not trigger automatic cancellation —
+  // they are often goodwill adjustments that do not cancel the rental.
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object;
+    const piId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
+    const fullyRefunded = charge.refunded === true;
+    const amountRefunded = (charge.amount_refunded || 0) / 100;
+
+    console.log("[CHARGE_REFUNDED]", {
+      charge_id:       charge.id,
+      payment_intent:  piId || "<none>",
+      fully_refunded:  fullyRefunded,
+      amount_refunded: amountRefunded,
+    });
+
+    if (!fullyRefunded) {
+      console.log("[CHARGE_REFUNDED] partial refund — no automatic booking cancellation", {
+        charge_id:       charge.id,
+        amount_refunded: amountRefunded,
+      });
+      return res.status(200).json({ received: true });
+    }
+
+    // Resolve booking_ref — try metadata first, then payment_intent_id lookup.
+    let refundBookingRef = null;
+    const chargeMeta = charge.metadata || {};
+    const metaRef = chargeMeta.booking_id || chargeMeta.booking_ref || chargeMeta.original_booking_id || "";
+    if (metaRef && metaRef.startsWith("bk-")) {
+      refundBookingRef = await resolveBookingId(metaRef);
+    }
+    if (!refundBookingRef && piId) {
+      refundBookingRef = await resolveBookingIdByPaymentIntent(piId);
+    }
+
+    if (!refundBookingRef) {
+      console.warn("[CHARGE_REFUNDED] could not resolve booking_ref — no booking to cancel", {
+        charge_id:      charge.id,
+        payment_intent: piId || "<none>",
+      });
+      return res.status(200).json({ received: true });
+    }
+
+    const sbRefund = getSupabaseAdmin();
+    if (!sbRefund) {
+      console.warn("[CHARGE_REFUNDED] Supabase unavailable — skipping booking cancellation for", refundBookingRef);
+      return res.status(200).json({ received: true });
+    }
+
+    // Fetch the booking row to check status and get vehicle_id.
+    let refundBookingRow = null;
+    try {
+      const { data: rbData, error: rbErr } = await sbRefund
+        .from("bookings")
+        .select("id, status, vehicle_id")
+        .eq("booking_ref", refundBookingRef)
+        .maybeSingle();
+      if (rbErr) throw rbErr;
+      refundBookingRow = rbData;
+    } catch (fetchErr) {
+      console.error("[CHARGE_REFUNDED] booking row fetch failed (non-fatal):", fetchErr.message);
+      return res.status(200).json({ received: true });
+    }
+
+    if (!refundBookingRow) {
+      console.warn("[CHARGE_REFUNDED] booking row not found for", refundBookingRef);
+      return res.status(200).json({ received: true });
+    }
+
+    // Skip if already cancelled or completed — nothing to do.
+    const REFUND_SKIP_STATUSES = ["cancelled", "cancelled_rental", "completed"];
+    if (REFUND_SKIP_STATUSES.includes(refundBookingRow.status)) {
+      console.log("[CHARGE_REFUNDED] booking already cancelled/completed — no action taken", {
+        booking_ref: refundBookingRef,
+        status:      refundBookingRow.status,
+      });
+      return res.status(200).json({ received: true });
+    }
+
+    // Step 1: Cancel the booking.
+    try {
+      const { error: cancelErr } = await sbRefund
+        .from("bookings")
+        .update({ status: "cancelled", updated_at: new Date().toISOString() })
+        .eq("booking_ref", refundBookingRef);
+      if (cancelErr) throw cancelErr;
+      console.log("[CHARGE_REFUNDED] booking cancelled", { booking_ref: refundBookingRef });
+    } catch (cancelErr) {
+      console.error("[CHARGE_REFUNDED] booking cancellation failed (non-fatal):", cancelErr.message);
+    }
+
+    // Step 2: Delete the blocked_dates row so the vehicle is bookable again.
+    if (refundBookingRow.vehicle_id) {
+      try {
+        await autoReleaseBlockedDateOnReturn(refundBookingRow.vehicle_id, refundBookingRef);
+        console.log("[CHARGE_REFUNDED] blocked_dates released", {
+          vehicle_id:  refundBookingRow.vehicle_id,
+          booking_ref: refundBookingRef,
+        });
+      } catch (releaseErr) {
+        console.error("[CHARGE_REFUNDED] blocked_dates release failed (non-fatal):", releaseErr.message);
       }
     }
 
