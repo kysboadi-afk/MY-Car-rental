@@ -196,11 +196,12 @@ function buildChatDepositText(lang) {
     "💡 Full payment is charged at the time of booking.";
 }
 
-/** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". */
+/** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". Always uses LA timezone. */
 function fmtDateChatbot(iso, locale) {
   var p = iso.split("-");
-  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-  return d.toLocaleDateString(locale || "en-US", { month: "long", day: "numeric", year: "numeric" });
+  // Use noon UTC so the date is the same calendar day in all timezones including LA.
+  var d = new Date(Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]), 12, 0, 0));
+  return d.toLocaleDateString(locale || "en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric", year: "numeric" });
 }
 
 /** Return the ISO date of the day after the given ISO date. */

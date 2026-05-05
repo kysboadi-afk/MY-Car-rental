@@ -3324,7 +3324,7 @@ function renderVehicleProfile(id, v, s) {
           </div>
           <div class="form-group full">
             <label class="form-label">Last Synced</label>
-            <input class="form-input" value="${v.last_synced_at ? new Date(v.last_synced_at).toLocaleString() : 'Never'}" readonly>
+            <input class="form-input" value="${v.last_synced_at ? new Date(v.last_synced_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) : 'Never'}" readonly>
           </div>
         </div>
         <div style="margin-top:12px;margin-bottom:12px;">
@@ -3539,7 +3539,7 @@ function loadGpsTracking() {
       renderGpsVehicles(data.vehicles || []);
       const now = new Date();
       document.getElementById('gps-last-updated').textContent =
-        `Updated ${now.toLocaleTimeString()}`;
+        `Updated ${now.toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", hour12: true })}`;
     })
     .catch((err) => {
       loading.style.display = 'none';
@@ -3568,7 +3568,7 @@ function renderGpsVehicles(vehicles) {
     const moving   = v.isMoving;
     const speed    = v.speed !== null ? `${v.speed} mph` : '—';
     const odo      = v.odometer !== null ? `${Math.round(v.odometer).toLocaleString()} mi` : '—';
-    const updated  = v.lastUpdated ? new Date(v.lastUpdated).toLocaleString() : '—';
+    const updated  = v.lastUpdated ? new Date(v.lastUpdated).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) : '—';
     const statusDot = moving
       ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:5px;"></span>'
       : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#6b7280;margin-right:5px;"></span>';
@@ -3771,7 +3771,7 @@ async function triggerGlobalBouncieSync() {
       showToast(count > 0 ? `✅ Synced ${count} vehicle${count !== 1 ? 's' : ''}` : 'Sync complete — no vehicles updated', 'success');
       // Update last-sync label
       const syncEl = document.getElementById('gps-last-sync');
-      if (syncEl) syncEl.textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+      if (syncEl) syncEl.textContent = `Last sync: ${new Date().toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", hour12: true })}`;
       // Refresh GPS cards to show updated mileage
       loadGpsTracking();
     }
@@ -4506,7 +4506,7 @@ function viewBooking(bookingId, vehicleId) {
         <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;text-transform:uppercase;">Extension Payments</div>
         ${b.payments.filter(p => p && p.type === 'rental_extension').map(p => `
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid #f9a82533;">
-            <span style="color:var(--text-sub);">${p.appliedAt ? new Date(p.appliedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '–'}</span>
+            <span style="color:var(--text-sub);">${p.appliedAt ? new Date(p.appliedAt).toLocaleDateString('en-US',{timeZone:'America/Los_Angeles',month:'short',day:'numeric',year:'numeric'}) : '–'}</span>
             <strong style="color:#b45309;">+$${formatMoney(p.amount || 0)}</strong>
             ${p.paymentIntentId ? `<span style="color:var(--text-sub);font-size:10px;font-family:monospace;">${esc(p.paymentIntentId.length > 24 ? p.paymentIntentId.slice(0,24) + '…' : p.paymentIntentId)}</span>` : ''}
           </div>
@@ -5715,8 +5715,8 @@ function renderRevenueSummary() {
 
 function fmtRevDate(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const d = new Date(dateStr + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 }
 
 function renderRevenue(groups) {
@@ -6792,7 +6792,7 @@ function renderVehiclePricing(rows) {
             <button class="btn btn-primary" onclick="saveVehiclePricing('${esc(row.vehicle_id)}')" id="vp-save-btn-${esc(row.vehicle_id)}">Save</button>
             <span id="vp-status-${esc(row.vehicle_id)}" style="font-size:13px;"></span>
           </div>
-          ${row.updated_at ? `<div style="margin-top:8px;font-size:11px;color:var(--text-sub);">Last updated: ${esc(new Date(row.updated_at).toLocaleString())}</div>` : ''}
+          ${row.updated_at ? `<div style="margin-top:8px;font-size:11px;color:var(--text-sub);">Last updated: ${esc(new Date(row.updated_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }))}</div>` : ''}
         </div>
       `).join('')}
     </div>
@@ -7570,7 +7570,7 @@ function renderSystemHealth(data) {
 
   const checks  = data.checks || {};
   const overall = data.overallStatus || 'ok';
-  const ts      = data.checkedAt ? new Date(data.checkedAt).toLocaleString() : '';
+  const ts      = data.checkedAt ? new Date(data.checkedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) : '';
 
   // "Last checked" line
   if (lastChk && lastTs && ts) {
@@ -7735,7 +7735,7 @@ async function loadSmsLogs() {
           ? '#fef2f2'
           : '#fefce8';
         const time = row.created_at
-          ? new Date(row.created_at).toLocaleString()
+          ? new Date(row.created_at).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })
           : '—';
         return `<tr style="border-bottom:1px solid var(--border);">
           <td style="padding:7px 10px;white-space:nowrap;color:var(--text-sub);">${esc(time)}</td>

@@ -1319,7 +1319,7 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     const dayCounts = {};
     for (const b of vBookings) {
       if (!b.pickupDate) continue;
-      const day = new Date(b.pickupDate).toLocaleDateString("en-US", { weekday: "long" });
+      const day = new Date(b.pickupDate + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", weekday: "long" });
       dayCounts[day] = (dayCounts[day] || 0) + 1;
     }
     const vExpenseTotal = expensesData

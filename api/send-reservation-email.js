@@ -1060,7 +1060,7 @@ export default async function handler(req, res) {
           render(BOOKING_CONFIRMED, {
             vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             customer_name: (name || "").split(" ")[0] || name || "Customer",
-            pickup_date:   pickup ? new Date(pickup + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "",
+            pickup_date:   pickup ? new Date(pickup + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
             pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
             location:      DEFAULT_LOCATION,
           })

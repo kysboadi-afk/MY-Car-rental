@@ -537,18 +537,21 @@ function parseBookingDateTime(date, time) {
 
 /**
  * Format a date object into a human-readable date string ("March 28").
+ * Always formats in LA timezone so displayed dates are consistent regardless
+ * of the server's system timezone.
  */
 function formatDate(d) {
   if (!d || isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-US", { timeZone: BUSINESS_TZ, month: "long", day: "numeric" });
 }
 
 /**
  * Format a date object into a human-readable time string ("3:00 PM").
+ * Always formats in LA timezone so displayed times match LA wall-clock time.
  */
 function formatTime(d) {
   if (!d || isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return d.toLocaleTimeString("en-US", { timeZone: BUSINESS_TZ, hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 /**
