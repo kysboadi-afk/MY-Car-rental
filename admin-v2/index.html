@@ -2241,7 +2241,7 @@
             <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Track and manage parking, toll, and camera violations</div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="openAddTicketModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Ticket
           </button>
         </div>
@@ -2281,10 +2281,10 @@
           </div>
           <!-- Empty state -->
           <div id="tickets-empty" class="empty-state" style="display:none">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
             <p>No violations yet.</p>
             <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddTicketModal()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Ticket
             </button>
           </div>
@@ -9694,7 +9694,7 @@ let viewingTicketId = null;
 
 function loadTicketsFromStorage() {
   try { return JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]'); }
-  catch (e) { return []; }
+  catch (e) { console.error('[Tickets] Failed to parse tickets from localStorage:', e); return []; }
 }
 function saveTicketsToStorage(tickets) {
   localStorage.setItem(TICKETS_KEY, JSON.stringify(tickets));
@@ -9830,14 +9830,6 @@ function openAddTicketModal() {
       opt.value = id; opt.textContent = v.vehicle_name || id;
       vSel.appendChild(opt);
     });
-    // If vehicles haven't loaded yet, fall back to vehicles.json keys
-    if (!Object.keys(vMap).length) {
-      ['camry', 'camry2013'].forEach((id) => {
-        const opt = document.createElement('option');
-        opt.value = id; opt.textContent = id;
-        vSel.appendChild(opt);
-      });
-    }
   }
 
   // Set default date/time to now
@@ -10016,10 +10008,19 @@ function openTicketDetail(ticketId) {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }
 
-  // D. Documents
+    // D. Documents
   const docsEl = document.getElementById('td-docs');
   if (ticket.matchedBookingId) {
-    docsEl.innerHTML = `<a href="../rental-agreement.html?ref=${encodeURIComponent(ticket.matchedBookingId)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">📄 View Rental Agreement</a>`;
+    const safeRef = encodeURIComponent(ticket.matchedBookingId);
+    const a = document.createElement('a');
+    a.href = `../rental-agreement.html?ref=${safeRef}`;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.className = 'btn btn-secondary btn-sm';
+    a.style.textDecoration = 'none';
+    a.textContent = '📄 View Rental Agreement';
+    docsEl.innerHTML = '';
+    docsEl.appendChild(a);
   } else {
     docsEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No documents available — link a booking first.</div>';
   }
