@@ -224,12 +224,30 @@ async function _backfillMainCards(sb, stripe, action, bookingRef = null) {
 // booking_extensions table and retrieving card info from Stripe.
 
 async function _backfillExtensionCards(sb, stripe, action, bookingRef = null) {
+  // First, find all booking_refs that have at least one extension in booking_extensions.
+  let extRefQuery = sb
+    .from("booking_extensions")
+    .select("booking_id")
+    .not("payment_intent_id", "is", null);
+
+  if (bookingRef) extRefQuery = extRefQuery.eq("booking_id", bookingRef);
+
+  const { data: extRefRows, error: extRefErr } = await extRefQuery;
+  if (extRefErr) {
+    throw new Error(`Phase 2 booking_extensions pre-query failed: ${extRefErr.message}`);
+  }
+
+  const refsWithExtensions = [...new Set((extRefRows || []).map((r) => r.booking_id))];
+  if (refsWithExtensions.length === 0) {
+    return { total: 0, recovered: 0, skipped: 0, unchanged: 0, rows: [] };
+  }
+
   // Find bookings that have at least one extension but are missing extension card fields.
   let q = sb
     .from("bookings")
     .select("id, booking_ref, status, extension_stripe_customer_id, extension_stripe_payment_method_id")
     .eq("payment_method", "stripe")
-    .not("last_extension_at", "is", null)
+    .in("booking_ref", refsWithExtensions)
     .or("extension_stripe_customer_id.is.null,extension_stripe_payment_method_id.is.null")
     .order("created_at", { ascending: false });
 
