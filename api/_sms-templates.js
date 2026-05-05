@@ -385,8 +385,53 @@ export const POST_RENTAL_CHARGE =
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. MAINTENANCE (customer-facing only — no technical details, no links)
+// 8b. VIOLATION / TICKET NOTIFICATIONS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sent immediately when a violation ticket is created and matched to a renter.
+ * Variables: ticket_number, violation_date, amount
+ */
+export const VIOLATION_NOTICE =
+  "Notice from Sly Transportation Services LLC:\n\n" +
+  "A violation (#{ticket_number}) was recorded during your rental on {violation_date}.\n\n" +
+  "Amount: \${amount}\n\n" +
+  "We will contact you with next steps. Questions? Call (833) 252-1093.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when the ticket status transitions to transfer_ready or submitted,
+ * meaning a transfer-of-liability form has been sent to the issuing authority.
+ * Variables: ticket_number
+ */
+export const VIOLATION_TRANSFER_SUBMITTED =
+  "Sly Transportation Services LLC:\n\n" +
+  "We have submitted a transfer of liability for violation #{ticket_number} on your behalf.\n\n" +
+  "If the transfer is approved you will not be charged. We will notify you of the outcome.\n\n" +
+  "Questions? Call (833) 252-1093.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when a violation charge succeeds.
+ * Variables: amount, ticket_number
+ */
+export const VIOLATION_CHARGED =
+  "Sly Transportation Services LLC:\n\n" +
+  "You have been charged \${amount} for violation #{ticket_number} during your rental.\n\n" +
+  "This includes the violation amount and a \$25 admin fee.\n\n" +
+  "Questions? Call (833) 252-1093.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when a violation charge fails.
+ * Variables: ticket_number
+ */
+export const VIOLATION_CHARGE_FAILED =
+  "Sly Transportation Services LLC:\n\n" +
+  "Payment failed for violation #{ticket_number}. Please update your payment method.\n\n" +
+  "We will retry automatically. To resolve this, contact us at (833) 252-1093.\n\n" +
+  "Reply STOP to opt out.";
+
 
 /**
  * Sent when maintenance is first detected (80% threshold).
@@ -515,4 +560,8 @@ export const TEMPLATES = {
   retention_day_7:           RETENTION_DAY_7,
   retention_day_14:          RETENTION_DAY_14,
   retention_day_30:          RETENTION_DAY_30,
+  violation_notice:              VIOLATION_NOTICE,
+  violation_transfer_submitted:  VIOLATION_TRANSFER_SUBMITTED,
+  violation_charged:             VIOLATION_CHARGED,
+  violation_charge_failed:       VIOLATION_CHARGE_FAILED,
 };

@@ -10068,7 +10068,14 @@ function buildTicketActionButtons(ticket) {
     btns.push(`<button class="btn btn-danger btn-sm"  onclick="ticketAction('rejected')">\u274c Mark Rejected</button>`);
   }
   if (s === 'approved') {
-    btns.push(`<button class="btn btn-warning btn-sm" onclick="ticketAction('charged')">\ud83d\udcb3 Charge Renter</button>`);
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="chargeTicketRenter(false)">\ud83d\udcb3 Charge Renter</button>`);
+  }
+  if (s === 'rejected') {
+    btns.push(`<button class="btn btn-danger btn-sm" onclick="chargeTicketRenter(false)">\ud83d\udea8 Charge Renter (Rejected)</button>`);
+  }
+  if ((s === 'charged' && viewingTicketData?.charge_status === 'failed') ||
+      (s === 'charged' && viewingTicketData?.charge_status !== 'succeeded')) {
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="chargeTicketRenter(true)">\ud83d\udd04 Retry Charge</button>`);
   }
   if (s === 'charged' || s === 'approved') {
     btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('closed')">\ud83d\udd12 Mark Closed</button>`);
@@ -10098,6 +10105,37 @@ async function ticketAction(newStatus) {
     showToast(`Ticket ${TICKET_STATUS_LABELS[newStatus] || newStatus}.`, 'success');
   } catch (err) {
     showToast('Failed to update status: ' + err.message, 'error');
+  }
+}
+
+async function chargeTicketRenter(isRetry = false) {
+  if (!viewingTicketId) return;
+  const label = isRetry ? 'Retry charge' : 'Charge renter';
+  if (!confirm(`${label} for ticket #${viewingTicketData?.ticket_number}?\n\nThis will charge: ticket amount + admin fee.`)) return;
+
+  showToast(`${label} — processing…`, 'info');
+  try {
+    const data = await apiPost('/api/ticket-charge', {
+      secret:   adminSecret,
+      action:   isRetry ? 'retry' : 'charge',
+      ticketId: viewingTicketId,
+    });
+
+    viewingTicketData = data.ticket;
+    const idx = allTickets.findIndex((t) => t.id === viewingTicketId);
+    if (idx >= 0) allTickets[idx] = data.ticket;
+    updateTicketsBadge();
+    applyTicketFilters();
+    const bookingDocs = await fetchBookingDocs(data.ticket?.booking_id);
+    renderTicketDetailModal(data.ticket, bookingDocs);
+
+    if (data.chargeStatus === 'succeeded') {
+      showToast(`\u2705 ${data.message || 'Charge succeeded.'}`, 'success');
+    } else {
+      showToast(`\u274c Charge failed: ${data.error || 'Unknown error'}`, 'error');
+    }
+  } catch (err) {
+    showToast('Charge request failed: ' + err.message, 'error');
   }
 }
 

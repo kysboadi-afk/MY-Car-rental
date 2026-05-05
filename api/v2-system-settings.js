@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS = [
   { key: "notify_sms_on_approve",       value: true,    description: "Send SMS to customer when booking approved",      category: "notification" },
   { key: "notify_email_on_approve",     value: true,    description: "Send email to customer when booking approved",    category: "notification" },
   { key: "overdue_grace_period_hours",  value: 2,       description: "Hours after return time before booking flagged overdue", category: "automation" },
+  { key: "violation_admin_fee",         value: 25,      description: "Admin processing fee added to violation ticket charge (USD)", category: "fees" },
 ];
 
 export default async function handler(req, res) {

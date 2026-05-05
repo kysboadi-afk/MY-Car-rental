@@ -18,6 +18,9 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { sendSms } from "./_textmagic.js";
+import { render, VIOLATION_NOTICE, VIOLATION_TRANSFER_SUBMITTED } from "./_sms-templates.js";
+import { normalizePhone } from "./_bookings.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -214,6 +217,22 @@ async function actionCreate(sb, body, res) {
 
   if (insertErr) throw insertErr;
 
+  // Send VIOLATION_NOTICE SMS to matched renter (non-fatal)
+  if (customerData?.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    try {
+      const smsText = render(VIOLATION_NOTICE, {
+        ticket_number:  ticket.ticket_number,
+        violation_date: new Date(ticket.violation_date).toLocaleDateString("en-US", {
+          month: "short", day: "numeric", year: "numeric",
+        }),
+        amount: Number(ticket.amount).toFixed(2),
+      });
+      await sendSms(normalizePhone(customerData.phone), smsText);
+    } catch (smsErr) {
+      console.error("tickets create: VIOLATION_NOTICE SMS failed (non-fatal):", smsErr.message);
+    }
+  }
+
   return res.status(200).json({
     success: true,
     ticket:  enrichTicket(ticket, customerData),
@@ -327,6 +346,27 @@ async function actionUpdateStatus(sb, body, res) {
     .select()
     .single();
   if (updateErr) throw updateErr;
+
+  // Send VIOLATION_TRANSFER_SUBMITTED SMS when entering transfer_ready or submitted
+  if ((status === "transfer_ready" || status === "submitted") &&
+      updated.customer_id &&
+      process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    try {
+      const { data: cust } = await sb
+        .from("customers")
+        .select("phone")
+        .eq("id", updated.customer_id)
+        .maybeSingle();
+      if (cust?.phone) {
+        const smsText = render(VIOLATION_TRANSFER_SUBMITTED, {
+          ticket_number: updated.ticket_number,
+        });
+        await sendSms(normalizePhone(cust.phone), smsText);
+      }
+    } catch (smsErr) {
+      console.error("tickets update_status: VIOLATION_TRANSFER_SUBMITTED SMS failed (non-fatal):", smsErr.message);
+    }
+  }
 
   return res.status(200).json({ success: true, ticket: enrichTicket(updated, null) });
 }
