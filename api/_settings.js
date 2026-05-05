@@ -107,7 +107,10 @@ export async function loadBooleanSetting(key, defaultVal = true) {
 /**
  * Reads a single numeric setting from the system_settings table.
  * Returns `defaultVal` when Supabase is unavailable, the key is not found,
- * or the stored value is not a finite positive number.
+ * or the stored value is not a finite non-negative number.
+ *
+ * Zero is a valid value (e.g. violation_admin_fee may be set to 0 to waive the fee).
+ * Negative values are rejected and fall back to `defaultVal`.
  *
  * @param {string} key        - system_settings key
  * @param {number} defaultVal - value to return when the setting cannot be read
