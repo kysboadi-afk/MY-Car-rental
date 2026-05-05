@@ -553,16 +553,23 @@ export default async function handler(req, res) {
               }
             }
 
-            // Sync vehicles.json so the v2-dashboard self-heal does not mark
-            // this vehicle inactive on the next dashboard load.  This is
-            // fire-and-forget: a GitHub API failure is logged but must not
-            // block the creation response.
-            updateJsonFileWithRetry({
-              load:    loadVehicles,
-              apply:   (data) => { if (!data[vehicleId]) data[vehicleId] = newData; },
-              save:    saveVehicles,
-              message: `v2: Add vehicle ${vehicleId} (${newData.vehicle_name})`,
-            }).catch((e) => console.warn("v2-vehicles create: could not sync vehicles.json:", e?.message));
+            // Sync vehicles.json before returning so that vehicles.json (the
+            // canonical fleet source) stays in sync with Supabase.  If this
+            // write fails the Supabase row is rolled back, ensuring the two
+            // sources never diverge and phantom rows never accumulate.
+            try {
+              await updateJsonFileWithRetry({
+                load:    loadVehicles,
+                apply:   (data) => { if (!data[vehicleId]) data[vehicleId] = newData; },
+                save:    saveVehicles,
+                message: `v2: Add vehicle ${vehicleId} (${newData.vehicle_name})`,
+              });
+            } catch (syncErr) {
+              console.error("v2-vehicles create: vehicles.json sync failed, rolling back Supabase row:", syncErr?.message);
+              await supabase.from("vehicles").delete().eq("vehicle_id", vehicleId)
+                .then(() => {}, (e) => console.warn(`v2-vehicles create: rollback delete failed for vehicle ${vehicleId}:`, e?.message));
+              return res.status(500).json({ error: "Failed to sync vehicle configuration. Please try again." });
+            }
 
             return res.status(201).json({
               success: true,
