@@ -842,6 +842,88 @@
       #gps-map { height: 260px !important; }
     }
 
+    /* ── Tickets Page ───────────────────────────────────────────── */
+    .ticket-filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .ticket-tab {
+      padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-sub); transition: all 0.15s; font-family: var(--font);
+    }
+    .ticket-tab:hover { border-color: var(--primary); color: var(--primary); }
+    .ticket-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* Ticket status badge colors */
+    .badge-ticket-new           { background: #fffbeb; color: #b45309; }
+    .badge-ticket-matched       { background: #fffbeb; color: #b45309; }
+    .badge-ticket-transfer_ready { background: #eff6ff; color: #1d4ed8; }
+    .badge-ticket-submitted     { background: #eff6ff; color: #1d4ed8; }
+    .badge-ticket-approved      { background: #f0fdf4; color: #15803d; }
+    .badge-ticket-rejected      { background: #fef2f2; color: #b91c1c; }
+    .badge-ticket-charged       { background: #faf5ff; color: #6d28d9; }
+    .badge-ticket-closed        { background: #f0fdf4; color: #15803d; }
+
+    /* Ticket progress bar */
+    .ticket-progress {
+      display: flex; align-items: center; gap: 0;
+      margin: 16px 0; overflow-x: auto; padding: 4px 0;
+    }
+    .tp-step {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; min-width: 80px; position: relative;
+    }
+    .tp-step:not(:last-child)::after {
+      content: ''; position: absolute; top: 13px; left: calc(50% + 14px);
+      width: calc(100% - 28px); height: 2px; background: var(--border);
+      z-index: 0;
+    }
+    .tp-step.done:not(:last-child)::after { background: var(--primary); }
+    .tp-dot {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid var(--border); background: var(--surface);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; z-index: 1; position: relative;
+      color: var(--text-sub); transition: all 0.2s;
+    }
+    .tp-step.done .tp-dot   { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .tp-step.active .tp-dot { border-color: var(--primary); background: #eff6ff; color: var(--primary); box-shadow: 0 0 0 3px #bfdbfe; }
+    .tp-step.reject .tp-dot { border-color: var(--danger);  background: var(--danger);  color: #fff; }
+    .tp-label { font-size: 10px; color: var(--text-sub); font-weight: 500; text-align: center; line-height: 1.2; white-space: nowrap; }
+    .tp-step.done .tp-label, .tp-step.active .tp-label { color: var(--primary); font-weight: 600; }
+    .tp-step.reject .tp-label { color: var(--danger); font-weight: 600; }
+
+    /* Ticket detail sections */
+    .ticket-section {
+      background: var(--bg); border-radius: 8px; padding: 14px;
+      margin-bottom: 12px;
+    }
+    .ticket-section-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-sub); margin-bottom: 10px;
+    }
+    .ticket-detail-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding: 5px 0; font-size: 13px; border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+    .ticket-detail-row:last-child { border-bottom: none; }
+    .ticket-detail-label { color: var(--text-sub); flex-shrink: 0; font-weight: 500; }
+    .ticket-detail-value { font-weight: 600; text-align: right; word-break: break-word; }
+    .ticket-match-banner {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; border-radius: 8px; font-size: 13px;
+      margin-bottom: 12px; font-weight: 500;
+    }
+    .ticket-match-banner.matched   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .ticket-match-banner.unmatched { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .ticket-action-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;
+    }
+    @media (max-width: 600px) {
+      .ticket-action-grid { grid-template-columns: 1fr; }
+      #page-tickets .table-wrap th:nth-child(3),
+      #page-tickets .table-wrap td:nth-child(3) { display: none; }
+    }
+
     /* AI chat panel: fill available viewport height on mobile */
     @media (max-width: 900px) {
       .ai-chat-panel {
@@ -995,6 +1077,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Late Fees
         <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
+      </a>
+      <a class="nav-item" data-page="tickets" href="#" onclick="navigate('tickets');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        Tickets
+        <span class="nav-badge" id="tickets-badge" style="display:none">0</span>
       </a>
     </nav>
 
@@ -2145,6 +2232,65 @@
         </div><!-- /ai-layout -->
       </div>
 
+      <!-- TICKETS / VIOLATIONS PAGE -->
+      <div class="page" id="page-tickets">
+        <!-- Page header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Tickets / Violations</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Track and manage parking, toll, and camera violations</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddTicketModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Ticket
+          </button>
+        </div>
+        <!-- Filter tabs -->
+        <div class="ticket-filter-tabs">
+          <button class="ticket-tab active" data-filter="all"             onclick="setTicketFilter('all')">All</button>
+          <button class="ticket-tab"        data-filter="pending"         onclick="setTicketFilter('pending')">Pending</button>
+          <button class="ticket-tab"        data-filter="submitted"       onclick="setTicketFilter('submitted')">Submitted</button>
+          <button class="ticket-tab"        data-filter="charged"         onclick="setTicketFilter('charged')">Charged</button>
+          <button class="ticket-tab"        data-filter="closed"          onclick="setTicketFilter('closed')">Closed</button>
+        </div>
+        <!-- Search row -->
+        <div class="filters-row" style="margin-bottom:16px;">
+          <input type="text" class="filter-input" id="ticket-search" placeholder="Search ticket #, renter, vehicle…" oninput="applyTicketFilters()">
+          <select class="filter-select" id="ticket-filter-vehicle" onchange="applyTicketFilters()">
+            <option value="">All Vehicles</option>
+          </select>
+        </div>
+        <!-- Table card -->
+        <div class="card">
+          <div id="tickets-loading" class="loading"><div class="loading-spinner"></div><div>Loading tickets…</div></div>
+          <div id="tickets-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticket #</th>
+                  <th>Vehicle</th>
+                  <th>Renter</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Violation Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tickets-tbody"></tbody>
+            </table>
+          </div>
+          <!-- Empty state -->
+          <div id="tickets-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+            <p>No violations yet.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddTicketModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Ticket
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 
@@ -2173,6 +2319,128 @@
   </nav>
 
 </div><!-- /app -->
+
+<!-- ── Add Ticket Modal ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-ticket-modal">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-header">
+      <div class="modal-title">Add Ticket / Violation</div>
+      <button class="modal-close" onclick="closeModal('add-ticket-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Ticket Number *</label>
+        <input type="text" class="form-input" id="atk-number" placeholder="e.g. LA-2024-00123" maxlength="80">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle *</label>
+        <select class="form-select" id="atk-vehicle">
+          <option value="">Select vehicle…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Violation Date &amp; Time *</label>
+        <input type="datetime-local" class="form-input" id="atk-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="atk-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type *</label>
+        <select class="form-select" id="atk-type">
+          <option value="parking">Parking</option>
+          <option value="toll">Toll</option>
+          <option value="camera">Camera / Red Light</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input type="text" class="form-input" id="atk-location" placeholder="e.g. 123 Main St, Los Angeles" maxlength="200">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="atk-notes" placeholder="Optional notes…" style="min-height:60px;"></textarea>
+      </div>
+    </div>
+    <!-- Auto-match preview -->
+    <div id="atk-match-preview" style="display:none;margin-top:8px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-ticket-modal')">Cancel</button>
+      <button class="btn btn-primary" id="atk-submit-btn" onclick="saveTicket()">Save Ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="ticket-detail-modal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="td-title">Ticket Details</div>
+        <div id="td-badge-wrap" style="margin-top:4px;"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('ticket-detail-modal')">✕</button>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="td-progress"></div>
+
+    <!-- Match banner -->
+    <div id="td-match-banner"></div>
+
+    <!-- A. Ticket Info -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">A — Ticket Info</div>
+      <div id="td-info"></div>
+    </div>
+
+    <!-- B. Renter Info -->
+    <div class="ticket-section" id="td-renter-section">
+      <div class="ticket-section-title">B — Renter Info</div>
+      <div id="td-renter"></div>
+    </div>
+
+    <!-- C. Booking Info -->
+    <div class="ticket-section" id="td-booking-section">
+      <div class="ticket-section-title">C — Booking Info</div>
+      <div id="td-booking"></div>
+    </div>
+
+    <!-- D. Documents -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">D — Documents</div>
+      <div id="td-docs"></div>
+    </div>
+
+    <!-- E. Status & Actions -->
+    <div class="ticket-section">
+      <div class="ticket-section-title">E — Status &amp; Actions</div>
+      <div id="td-actions-grid" class="ticket-action-grid"></div>
+    </div>
+
+    <!-- Add Note -->
+    <div style="margin-top:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Add Note</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" class="form-input" id="td-note-input" placeholder="Enter note…" style="flex:1;">
+        <button class="btn btn-secondary btn-sm" onclick="addTicketNote()">Add</button>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div style="margin-top:14px;" id="td-log-wrap">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">Activity Log</div>
+      <div id="td-log"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrentTicket()">Delete</button>
+      <button class="btn btn-secondary" onclick="closeModal('ticket-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add Expense Modal -->
 <div class="modal-overlay" id="add-expense-modal">
@@ -3042,6 +3310,7 @@ function navigate(page) {
     'late-fees':        'Late Fees',
     'ai':               'AI Assistant',
     'system-health':    'System Health',
+    'tickets':          'Tickets / Violations',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -3076,6 +3345,7 @@ function navigate(page) {
   else if (page === 'ai') loadAiInsights();
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
   else if (page === 'late-fees') loadLateFees();
+  else if (page === 'tickets') loadTickets();
 }
 
 function refreshCurrentPage() {
@@ -3107,6 +3377,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'block-dates') loadBlockedDates();
   else if (currentPage === 'settings') loadSiteContent();
   else if (currentPage === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
+  else if (currentPage === 'tickets') loadTickets();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -9413,6 +9684,445 @@ function dismissChecklist() {
     return _orig(page);
   };
 })();
+
+// ── Tickets / Violations ────────────────────────────────────────────────────
+
+const TICKETS_KEY = 'sly_tickets';
+let allTickets = [];
+let ticketFilterActive = 'all';
+let viewingTicketId = null;
+
+function loadTicketsFromStorage() {
+  try { return JSON.parse(localStorage.getItem(TICKETS_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveTicketsToStorage(tickets) {
+  localStorage.setItem(TICKETS_KEY, JSON.stringify(tickets));
+}
+
+function loadTickets() {
+  const loading = document.getElementById('tickets-loading');
+  const wrap    = document.getElementById('tickets-table-wrap');
+  const empty   = document.getElementById('tickets-empty');
+  if (loading) loading.style.display = 'block';
+  if (wrap)    wrap.style.display    = 'none';
+  if (empty)   empty.style.display   = 'none';
+
+  allTickets = loadTicketsFromStorage();
+
+  // Populate vehicle filter dropdown
+  const vSel = document.getElementById('ticket-filter-vehicle');
+  if (vSel) {
+    const existing = new Set([...vSel.options].map((o) => o.value));
+    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    Object.entries(vMap).forEach(([id, v]) => {
+      if (!existing.has(id)) {
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = v.vehicle_name || id;
+        vSel.appendChild(opt);
+      }
+    });
+  }
+
+  if (loading) loading.style.display = 'none';
+  applyTicketFilters();
+  updateTicketsBadge();
+}
+
+const TICKET_PENDING_STATUSES = new Set(['new', 'matched', 'transfer_ready']);
+
+function updateTicketsBadge() {
+  const badge = document.getElementById('tickets-badge');
+  if (!badge) return;
+  const pending = allTickets.filter((t) => TICKET_PENDING_STATUSES.has(t.status)).length;
+  if (pending > 0) { badge.textContent = pending; badge.style.display = ''; }
+  else              { badge.style.display = 'none'; }
+}
+
+function setTicketFilter(filter) {
+  ticketFilterActive = filter;
+  document.querySelectorAll('.ticket-tab').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.filter === filter);
+  });
+  applyTicketFilters();
+}
+
+function applyTicketFilters() {
+  const search  = (document.getElementById('ticket-search')?.value || '').toLowerCase().trim();
+  const vehicle = document.getElementById('ticket-filter-vehicle')?.value || '';
+
+  let filtered = allTickets.filter((t) => {
+    if (ticketFilterActive === 'pending'   && !TICKET_PENDING_STATUSES.has(t.status)) return false;
+    if (ticketFilterActive === 'submitted' && t.status !== 'submitted')  return false;
+    if (ticketFilterActive === 'charged'   && t.status !== 'charged')    return false;
+    if (ticketFilterActive === 'closed'    && t.status !== 'closed')     return false;
+    if (vehicle && t.vehicleId !== vehicle) return false;
+    if (search) {
+      const haystack = [t.ticketNumber, t.vehicleName, t.matchedRenterName, t.location]
+        .join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  renderTicketsTable(filtered);
+}
+
+const TICKET_STATUS_LABELS = {
+  new:            'New',
+  matched:        'Matched',
+  transfer_ready: 'Transfer Ready',
+  submitted:      'Submitted',
+  approved:       'Approved',
+  rejected:       'Rejected',
+  charged:        'Charged',
+  closed:         'Closed',
+};
+
+function ticketBadge(status) {
+  const label = TICKET_STATUS_LABELS[status] || status;
+  return `<span class="badge badge-ticket-${status}">${label}</span>`;
+}
+
+function renderTicketsTable(tickets) {
+  const wrap  = document.getElementById('tickets-table-wrap');
+  const empty = document.getElementById('tickets-empty');
+  const tbody = document.getElementById('tickets-tbody');
+  if (!tbody) return;
+
+  if (!tickets.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = tickets.map((t) => {
+    const date = t.violationDate ? new Date(t.violationDate).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    const renter = t.matchedRenterName
+      ? `<span style="color:var(--text);">${esc(t.matchedRenterName)}</span>`
+      : `<span style="color:var(--text-sub);font-style:italic;">No match</span>`;
+    return `<tr>
+      <td><strong>${esc(t.ticketNumber)}</strong><br><span style="font-size:11px;color:var(--text-sub);text-transform:capitalize;">${esc(t.type)}</span></td>
+      <td>${esc(t.vehicleName || t.vehicleId)}</td>
+      <td>${renter}</td>
+      <td><strong>$${Number(t.amount).toFixed(2)}</strong></td>
+      <td>${ticketBadge(t.status)}</td>
+      <td>${date}</td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openTicketDetail('${esc(t.id)}')">View</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Add Ticket Modal ────────────────────────────────────────────────────────
+
+function openAddTicketModal() {
+  // Populate vehicle dropdown
+  const vSel = document.getElementById('atk-vehicle');
+  if (vSel) {
+    vSel.innerHTML = '<option value="">Select vehicle…</option>';
+    const vMap = allVehicles && Object.keys(allVehicles).length ? allVehicles : {};
+    Object.entries(vMap).forEach(([id, v]) => {
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = v.vehicle_name || id;
+      vSel.appendChild(opt);
+    });
+    // If vehicles haven't loaded yet, fall back to vehicles.json keys
+    if (!Object.keys(vMap).length) {
+      ['camry', 'camry2013'].forEach((id) => {
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = id;
+        vSel.appendChild(opt);
+      });
+    }
+  }
+
+  // Set default date/time to now
+  const dtInput = document.getElementById('atk-date');
+  if (dtInput && !dtInput.value) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    dtInput.value = now.toISOString().slice(0, 16);
+  }
+
+  // Clear fields
+  ['atk-number','atk-amount','atk-location','atk-notes'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const typeEl = document.getElementById('atk-type');
+  if (typeEl) typeEl.value = 'parking';
+  const preview = document.getElementById('atk-match-preview');
+  if (preview) preview.style.display = 'none';
+
+  openModal('add-ticket-modal');
+}
+
+function tryAutoMatch(vehicleId, dateStr) {
+  if (!vehicleId || !dateStr || !allBookings.length) return null;
+  const violationMs = new Date(dateStr).getTime();
+  if (isNaN(violationMs)) return null;
+  return allBookings.find((b) => {
+    if (b.vehicle_id !== vehicleId && b.vehicleId !== vehicleId) return false;
+    const pickup = new Date(b.pickup_date || b.pickupDate).getTime();
+    const ret    = new Date(b.return_date || b.returnDate).getTime();
+    return !isNaN(pickup) && !isNaN(ret) && violationMs >= pickup && violationMs <= ret;
+  }) || null;
+}
+
+function saveTicket() {
+  const btn = document.getElementById('atk-submit-btn');
+  const ticketNumber = document.getElementById('atk-number')?.value.trim();
+  const vehicleId    = document.getElementById('atk-vehicle')?.value;
+  const dateVal      = document.getElementById('atk-date')?.value;
+  const amountVal    = document.getElementById('atk-amount')?.value;
+  const type         = document.getElementById('atk-type')?.value || 'parking';
+  const location     = document.getElementById('atk-location')?.value.trim() || '';
+  const notes        = document.getElementById('atk-notes')?.value.trim() || '';
+
+  if (!ticketNumber) { showToast('Ticket number is required.', 'error'); return; }
+  if (!vehicleId)    { showToast('Please select a vehicle.', 'error'); return; }
+  if (!dateVal)      { showToast('Violation date is required.', 'error'); return; }
+  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
+    showToast('Please enter a valid amount.', 'error'); return;
+  }
+
+  const vehicleName = (allVehicles[vehicleId]?.vehicle_name) || vehicleId;
+  const match = tryAutoMatch(vehicleId, dateVal);
+
+  const ticket = {
+    id:               crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+    ticketNumber,
+    vehicleId,
+    vehicleName,
+    violationDate:    dateVal,
+    amount:           Number(amountVal),
+    type,
+    location,
+    notes,
+    status:           match ? 'matched' : 'new',
+    createdAt:        new Date().toISOString(),
+    matchedBookingId: match ? (match.booking_ref || match.bookingId || match.id || null) : null,
+    matchedRenterName: match ? (match.customer_name || match.name || null) : null,
+    matchedRenterPhone: match ? (match.phone || null) : null,
+    matchedRenterEmail: match ? (match.email || null) : null,
+    matchedPickupDate:  match ? (match.pickup_date || match.pickupDate || null) : null,
+    matchedReturnDate:  match ? (match.return_date || match.returnDate || null) : null,
+    activityLog: [
+      { date: new Date().toISOString(), action: 'Ticket created', note: notes || '' }
+    ],
+  };
+  if (match) {
+    ticket.activityLog.push({ date: new Date().toISOString(), action: `Auto-matched to booking ${ticket.matchedBookingId || ''}`, note: '' });
+  }
+
+  allTickets.unshift(ticket);
+  saveTicketsToStorage(allTickets);
+  updateTicketsBadge();
+  closeModal('add-ticket-modal');
+  applyTicketFilters();
+
+  const matchMsg = match
+    ? `✅ Matched to: ${match.customer_name || 'Renter'} (${ticket.matchedBookingId || 'Booking'})`
+    : '⚠ No booking found for that vehicle/date.';
+  showToast(`Ticket saved. ${matchMsg}`, match ? 'success' : 'warning');
+}
+
+// ── Ticket Detail Modal ─────────────────────────────────────────────────────
+
+const PROGRESS_STEPS = [
+  { key: 'new',      label: 'New'       },
+  { key: 'matched',  label: 'Matched'   },
+  { key: 'submitted',label: 'Submitted' },
+  { key: 'approved', label: 'Approved',  altKey: 'rejected', altLabel: 'Rejected' },
+  { key: 'closed',   label: 'Closed'    },
+];
+const STEP_ORDER = ['new','matched','transfer_ready','submitted','approved','rejected','charged','closed'];
+
+function getProgressIndex(status) {
+  const map = { new:0, matched:1, transfer_ready:1, submitted:2, approved:3, rejected:3, charged:3, closed:4 };
+  return map[status] ?? 0;
+}
+
+function renderProgressBar(status) {
+  const current = getProgressIndex(status);
+  const isRejected = status === 'rejected';
+  return `<div class="ticket-progress">${PROGRESS_STEPS.map((step, i) => {
+    let cls = 'tp-step';
+    if (i < current) cls += ' done';
+    else if (i === current) cls += isRejected && step.altKey ? ' reject' : ' active';
+    const label = (isRejected && i === current && step.altLabel) ? step.altLabel : step.label;
+    return `<div class="${cls}"><div class="tp-dot">${i + 1}</div><div class="tp-label">${label}</div></div>`;
+  }).join('')}</div>`;
+}
+
+function openTicketDetail(ticketId) {
+  const ticket = allTickets.find((t) => t.id === ticketId);
+  if (!ticket) return;
+  viewingTicketId = ticketId;
+
+  // Title + badge
+  document.getElementById('td-title').textContent = `Ticket #${ticket.ticketNumber}`;
+  document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
+
+  // Progress bar
+  document.getElementById('td-progress').innerHTML = renderProgressBar(ticket.status);
+
+  // Match banner
+  const bannerEl = document.getElementById('td-match-banner');
+  if (ticket.matchedBookingId) {
+    bannerEl.innerHTML = `<div class="ticket-match-banner matched">✅ Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.matchedBookingId)})</div>`;
+  } else {
+    bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">⚠ No booking found for this vehicle on the violation date.</div>`;
+  }
+
+  // A. Ticket Info
+  document.getElementById('td-info').innerHTML = [
+    ['Ticket #',       ticket.ticketNumber],
+    ['Type',           ticket.type ? ticket.type.charAt(0).toUpperCase() + ticket.type.slice(1) : '—'],
+    ['Violation Date', ticket.violationDate ? new Date(ticket.violationDate).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '—'],
+    ['Amount',         `$${Number(ticket.amount).toFixed(2)}`],
+    ['Location',       ticket.location || '—'],
+    ['Vehicle',        ticket.vehicleName || ticket.vehicleId],
+    ['Status',         TICKET_STATUS_LABELS[ticket.status] || ticket.status],
+  ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+
+  // B. Renter Info
+  const renterEl = document.getElementById('td-renter');
+  if (ticket.matchedRenterName) {
+    renterEl.innerHTML = [
+      ['Name',  ticket.matchedRenterName],
+      ['Phone', ticket.matchedRenterPhone || '—'],
+      ['Email', ticket.matchedRenterEmail || '—'],
+    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+  } else {
+    renterEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No renter matched for this ticket.</div>';
+  }
+
+  // C. Booking Info
+  const bookingEl = document.getElementById('td-booking');
+  if (ticket.matchedBookingId) {
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    bookingEl.innerHTML = [
+      ['Booking ID',  ticket.matchedBookingId],
+      ['Pickup Date', fmtDate(ticket.matchedPickupDate)],
+      ['Return Date', fmtDate(ticket.matchedReturnDate)],
+      ['Vehicle',     ticket.vehicleName || ticket.vehicleId],
+    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+  } else {
+    bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
+  }
+
+  // D. Documents
+  const docsEl = document.getElementById('td-docs');
+  if (ticket.matchedBookingId) {
+    docsEl.innerHTML = `<a href="../rental-agreement.html?ref=${encodeURIComponent(ticket.matchedBookingId)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;">📄 View Rental Agreement</a>`;
+  } else {
+    docsEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No documents available — link a booking first.</div>';
+  }
+
+  // E. Action buttons
+  const actionGrid = document.getElementById('td-actions-grid');
+  actionGrid.innerHTML = buildTicketActionButtons(ticket);
+
+  // Note input
+  const noteInput = document.getElementById('td-note-input');
+  if (noteInput) noteInput.value = '';
+
+  // Activity log
+  renderTicketLog(ticket);
+
+  openModal('ticket-detail-modal');
+}
+
+function buildTicketActionButtons(ticket) {
+  const s = ticket.status;
+  const btns = [];
+
+  if (['new','matched','transfer_ready'].includes(s)) {
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('transfer_ready')">📋 Generate Transfer Docs</button>`);
+  }
+  if (s === 'transfer_ready' || s === 'matched') {
+    btns.push(`<button class="btn btn-primary btn-sm" onclick="ticketAction('submitted')">📤 Mark Submitted</button>`);
+  }
+  if (s === 'submitted') {
+    btns.push(`<button class="btn btn-success btn-sm" onclick="ticketAction('approved')">✅ Mark Approved</button>`);
+    btns.push(`<button class="btn btn-danger btn-sm"  onclick="ticketAction('rejected')">❌ Mark Rejected</button>`);
+  }
+  if (s === 'approved') {
+    btns.push(`<button class="btn btn-warning btn-sm" onclick="ticketAction('charged')">💳 Charge Renter</button>`);
+  }
+  if (s === 'charged' || s === 'approved') {
+    btns.push(`<button class="btn btn-secondary btn-sm" onclick="ticketAction('closed')">🔒 Mark Closed</button>`);
+  }
+  if (!btns.length) {
+    btns.push(`<div style="color:var(--text-sub);font-size:13px;font-style:italic;grid-column:1/-1;">No further actions available.</div>`);
+  }
+  return btns.join('');
+}
+
+function ticketAction(newStatus) {
+  const ticket = allTickets.find((t) => t.id === viewingTicketId);
+  if (!ticket) return;
+  const oldStatus = ticket.status;
+  ticket.status = newStatus;
+  ticket.activityLog = ticket.activityLog || [];
+  ticket.activityLog.push({ date: new Date().toISOString(), action: `Status changed: ${TICKET_STATUS_LABELS[oldStatus] || oldStatus} → ${TICKET_STATUS_LABELS[newStatus] || newStatus}`, note: '' });
+  saveTicketsToStorage(allTickets);
+  updateTicketsBadge();
+  applyTicketFilters();
+  // Refresh detail modal in place
+  openTicketDetail(viewingTicketId);
+  showToast(`Ticket ${TICKET_STATUS_LABELS[newStatus] || newStatus}.`, 'success');
+}
+
+function addTicketNote() {
+  const input  = document.getElementById('td-note-input');
+  const note   = input?.value.trim();
+  if (!note) return;
+  const ticket = allTickets.find((t) => t.id === viewingTicketId);
+  if (!ticket) return;
+  ticket.activityLog = ticket.activityLog || [];
+  ticket.activityLog.push({ date: new Date().toISOString(), action: 'Note added', note });
+  saveTicketsToStorage(allTickets);
+  if (input) input.value = '';
+  renderTicketLog(ticket);
+  showToast('Note added.', 'success');
+}
+
+function renderTicketLog(ticket) {
+  const logEl = document.getElementById('td-log');
+  if (!logEl) return;
+  const entries = (ticket.activityLog || []).slice().reverse();
+  if (!entries.length) {
+    logEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No activity yet.</div>';
+    return;
+  }
+  logEl.innerHTML = entries.map((e) => {
+    const d = new Date(e.date).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+    return `<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <span style="color:var(--text-sub);white-space:nowrap;flex-shrink:0;">${d}</span>
+      <div>
+        <span style="font-weight:600;">${esc(e.action)}</span>
+        ${e.note ? `<span style="color:var(--text-sub);"> — ${esc(e.note)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteCurrentTicket() {
+  if (!viewingTicketId) return;
+  if (!confirm('Delete this ticket? This cannot be undone.')) return;
+  allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
+  saveTicketsToStorage(allTickets);
+  updateTicketsBadge();
+  closeModal('ticket-detail-modal');
+  applyTicketFilters();
+  showToast('Ticket deleted.', 'success');
+}
 </script>
 
 <script src="voice-assistant.js"></script>
