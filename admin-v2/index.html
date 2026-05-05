@@ -80,8 +80,9 @@
       width: var(--sidebar-w); background: var(--sidebar-bg);
       position: fixed; top: 0; left: 0; bottom: 0;
       display: flex; flex-direction: column; z-index: 100;
-      overflow-y: auto; transition: transform 0.3s;
+      overflow: hidden; transition: transform 0.3s;
     }
+    .nav-scroll { flex: 1; overflow-y: auto; min-height: 0; }
     .sidebar-logo {
       padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
       border-bottom: 1px solid #1e2130;
@@ -107,7 +108,7 @@
     }
 
     .sidebar-footer {
-      margin-top: auto; padding: 16px 12px;
+      margin-top: 0; padding: 16px 12px;
       border-top: 1px solid #1e2130;
     }
     .sidebar-user { display: flex; align-items: center; gap: 10px; }
@@ -998,6 +999,7 @@
       </div>
     </div>
 
+    <div class="nav-scroll">
     <nav class="nav-section">
       <div class="nav-section-label">Overview</div>
       <a class="nav-item active" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;">
@@ -1109,6 +1111,7 @@
         Settings
       </a>
     </nav>
+    </div><!-- /nav-scroll -->
 
     <div class="sidebar-footer">
       <div class="sidebar-user">
