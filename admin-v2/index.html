@@ -4982,6 +4982,29 @@ function viewBooking(bookingId, vehicleId) {
       ` : '<div style="font-size:12px;color:var(--text-sub);">No extension payment records stored yet.</div>'}
     </div>
     ` : ''}
+    ${(() => {
+      const linked = allTickets.filter((t) => t.booking_ref === b.bookingId);
+      if (!linked.length) return '';
+      const rows = linked.map((t) => {
+        const tDate = t.violation_date
+          ? new Date(t.violation_date).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+          : '—';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:0;">
+            <strong>${esc(t.ticket_number)}</strong>
+            <span style="color:var(--text-sub);margin-left:5px;text-transform:capitalize;">${esc(t.type)}</span>
+          </div>
+          <div style="color:var(--text-sub);font-size:11px;">${tDate}</div>
+          <div><strong>$${Number(t.amount).toFixed(2)}</strong></div>
+          <div>${ticketBadge(t.status)}</div>
+          <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openTicketDetail('${esc(t.id)}')">View</button>
+        </div>`;
+      }).join('');
+      return `<div style="margin-top:14px;padding:12px;background:#faf5ff;border-radius:8px;border:1px solid #e9d5ff;">
+        <div style="font-size:12px;font-weight:700;color:#6d28d9;text-transform:uppercase;margin-bottom:8px;">🎫 Violations / Tickets (${linked.length})</div>
+        ${rows}
+      </div>`;
+    })()}
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
       <div class="detail-sub-grid">
@@ -9998,7 +10021,8 @@ function renderTicketDetailModal(ticket, bookingDocs) {
       ['Pickup Date', fmtDate(linked?.pickup_date || linked?.pickupDate)],
       ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
       ['Vehicle',     vName],
-    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('');
+    ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('') +
+    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(ticket.booking_ref)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
   } else {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }
