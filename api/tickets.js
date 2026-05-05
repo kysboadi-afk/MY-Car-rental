@@ -133,6 +133,24 @@ async function actionCreate(sb, body, res) {
       .limit(10);
 
     if (candidates && candidates.length > 0) {
+      // Batch-fetch all extensions for all candidates in one query to avoid
+      // N sequential DB round-trips inside the loop.
+      const candidateRefs = candidates.map((c) => c.booking_ref).filter(Boolean);
+      let extensionsByRef = {};
+      if (candidateRefs.length > 0) {
+        const { data: allExts } = await sb
+          .from("booking_extensions")
+          .select("booking_id, new_return_date")
+          .in("booking_id", candidateRefs);
+        for (const ext of (allExts || [])) {
+          const d = ext.new_return_date ? String(ext.new_return_date).split("T")[0] : "";
+          if (!d) continue;
+          if (!extensionsByRef[ext.booking_id] || d > extensionsByRef[ext.booking_id]) {
+            extensionsByRef[ext.booking_id] = d;
+          }
+        }
+      }
+
       for (const candidate of candidates) {
         // Direct return_date coverage
         if (candidate.return_date >= violationDateStr) {
@@ -140,7 +158,8 @@ async function actionCreate(sb, body, res) {
           break;
         }
         // Violation date is after base return_date — check extensions
-        const finalDate = await getFinalReturnDate(sb, candidate.booking_ref, candidate.return_date);
+        const maxExtDate = extensionsByRef[candidate.booking_ref] || "";
+        const finalDate  = maxExtDate > candidate.return_date ? maxExtDate : candidate.return_date;
         if (finalDate >= violationDateStr) {
           matchedBooking = candidate;
           break;
@@ -358,37 +377,6 @@ async function actionDelete(sb, body, res) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Get the final effective return date for a booking by checking booking_extensions.
- * Returns the base return date when no extensions exist or queries fail.
- *
- * booking_extensions.booking_id stores the booking_ref (text) so we query by
- * the booking_ref (not the UUID), consistent with the rest of the codebase.
- *
- * @param {object} sb           - Supabase admin client
- * @param {string} bookingRef   - bookings.booking_ref (text ID, e.g. "bk-...")
- * @param {string} baseDate     - YYYY-MM-DD base return date
- * @returns {Promise<string>}   - YYYY-MM-DD final return date (max of base + extensions)
- */
-async function getFinalReturnDate(sb, bookingRef, baseDate) {
-  if (!sb || !bookingRef) return baseDate || "";
-  try {
-    const { data: exts } = await sb
-      .from("booking_extensions")
-      .select("new_return_date")
-      .eq("booking_id", bookingRef);
-
-    let max = baseDate || "";
-    for (const ext of (exts || [])) {
-      const d = ext.new_return_date ? String(ext.new_return_date).split("T")[0] : "";
-      if (d > max) max = d;
-    }
-    return max;
-  } catch {
-    return baseDate || "";
-  }
-}
 
 /**
  * Flatten a ticket row + optional customer join into a consistent shape
