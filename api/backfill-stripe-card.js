@@ -234,7 +234,15 @@ async function _backfillExtensionCards(sb, stripe, action, bookingRef = null) {
 
   const { data: extRefRows, error: extRefErr } = await extRefQuery;
   if (extRefErr) {
-    throw new Error(`Phase 2 booking_extensions pre-query failed: ${extRefErr.message}`);
+    // If the table doesn't exist yet (migration not yet applied), skip Phase 2 gracefully.
+    const msg = extRefErr.message || "";
+    if (msg.includes("schema cache") || msg.includes("does not exist") || msg.includes("relation") || msg.includes("booking_extensions")) {
+      return {
+        total: 0, recovered: 0, skipped: 0, unchanged: 0, rows: [],
+        message: "Phase 2 skipped: booking_extensions table not yet available in this environment.",
+      };
+    }
+    throw new Error(`Phase 2 booking_extensions pre-query failed: ${msg}`);
   }
 
   const refsWithExtensions = [...new Set((extRefRows || []).map((r) => r.booking_id))];
