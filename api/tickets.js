@@ -109,14 +109,17 @@ async function actionCreate(sb, body, res) {
 
   // Auto-match: find a booking on this vehicle whose date range covers the violation date
   const violationMs = new Date(violationDate).getTime();
+  const violationDateStr = !isNaN(violationMs)
+    ? new Date(violationDate).toISOString().slice(0, 10)
+    : null;
   let matchedBooking = null;
-  if (!isNaN(violationMs)) {
+  if (violationDateStr) {
     const { data: candidates } = await sb
       .from("bookings")
       .select("booking_ref, customer_id, pickup_date, return_date, status")
       .eq("vehicle_id", vehicleId)
-      .lte("pickup_date", new Date(violationDate).toISOString().slice(0, 10))
-      .gte("return_date",  new Date(violationDate).toISOString().slice(0, 10))
+      .lte("pickup_date", violationDateStr)
+      .gte("return_date",  violationDateStr)
       .in("status", ["booked_paid", "active_rental", "active", "completed", "completed_rental", "approved"])
       .order("pickup_date", { ascending: false })
       .limit(1);

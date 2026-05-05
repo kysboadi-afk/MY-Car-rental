@@ -89,9 +89,6 @@ export default async function handler(req, res) {
     // Build file path: customer-documents/<customerId>/<docType>-<random>.<ext>
     const extMap = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
     const ext = extMap[mime] || "bin";
-    const baseName = fileName
-      ? String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60)
-      : `${docType}-${randomBytes(4).toString("hex")}.${ext}`;
     const filePath = `${customerId}/${docType}-${Date.now()}-${randomBytes(4).toString("hex")}.${ext}`;
 
     const { error: uploadErr } = await sb.storage

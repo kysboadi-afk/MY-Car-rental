@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS tickets (
   id               uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_number    text          NOT NULL,
-  vehicle_id       text          NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
+  vehicle_id       text          REFERENCES vehicles(vehicle_id) ON DELETE SET NULL,
   booking_id       text          REFERENCES bookings(booking_ref) ON DELETE SET NULL,
   customer_id      uuid          REFERENCES customers(id) ON DELETE SET NULL,
   violation_date   timestamptz   NOT NULL,
