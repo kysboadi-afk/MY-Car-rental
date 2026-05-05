@@ -29,7 +29,7 @@ process.env.GITHUB_TOKEN          = "ghs_fake_for_tests";
 
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json
-const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [] };
+const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [], released: [] };
 let bookedDatesStore = {};
 let fleetStatusStore = {};
 const supabaseBookingsStore = {};
@@ -165,6 +165,7 @@ mock.module("./_booking-automation.js", {
     autoCreateBlockedDate:      async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
     extendBlockedDateForBooking: async ()           => {},
     autoActivateIfPickupArrived: async (b)         => { automationCalls.activated.push({ ...b }); return false; },
+    autoReleaseBlockedDateOnReturn: async (vehicleId, bookingRef) => { automationCalls.released.push({ vehicleId, bookingRef }); },
     parseTime12h: (timeStr) => {
       if (!timeStr || typeof timeStr !== "string") return null;
       const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
@@ -366,6 +367,7 @@ function resetCalls() {
   automationCalls.booking.length = 0;
   automationCalls.blocked.length = 0;
   automationCalls.activated.length = 0;
+  automationCalls.released.length = 0;
   supabaseDirectUpdates.length = 0;
   sentEmails.length = 0;
   skipSupabaseUpsertPi = null;
