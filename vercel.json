@@ -42,7 +42,10 @@
     "api/v2-system-health.js":              { "maxDuration": 30 },
     "api/system-health-fix-sms.js":         { "maxDuration": 30 },
     "api/system-health-fix-availability.js": { "maxDuration": 30 },
-    "api/scheduled-reminders.js":            { "maxDuration": 60 }
+    "api/scheduled-reminders.js":            { "maxDuration": 60 },
+    "api/tickets.js":                         { "maxDuration": 20 },
+    "api/upload-customer-doc.js":             { "maxDuration": 20 },
+    "api/booking-documents.js":               { "maxDuration": 30 }
   },
   "crons": [
     {

@@ -2302,7 +2302,8 @@ export default async function handler(req, res) {
       paymentType === "late_fee" ||
       paymentType === "damage_fee" ||
       paymentType === "lost_key_fee" ||
-      paymentType === "other_fee"
+      paymentType === "other_fee"    ||
+      paymentType === "violation_fee"
     ) {
       const meta         = paymentIntent.metadata || {};
       // booking_ref is the canonical field; booking_id is the legacy alias.
