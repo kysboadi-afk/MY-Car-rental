@@ -55,8 +55,12 @@ REVOKE ALL ON TABLE tickets FROM anon;
 REVOKE ALL ON TABLE tickets FROM authenticated;
 GRANT ALL ON TABLE tickets TO service_role;
 
-CREATE POLICY IF NOT EXISTS tickets_service_role_all
-  ON tickets FOR ALL TO service_role USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  CREATE POLICY tickets_service_role_all
+    ON tickets FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── 2. booking_documents table ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS booking_documents (
@@ -85,8 +89,12 @@ REVOKE ALL ON TABLE booking_documents FROM anon;
 REVOKE ALL ON TABLE booking_documents FROM authenticated;
 GRANT ALL ON TABLE booking_documents TO service_role;
 
-CREATE POLICY IF NOT EXISTS booking_documents_service_role_all
-  ON booking_documents FOR ALL TO service_role USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+  CREATE POLICY booking_documents_service_role_all
+    ON booking_documents FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ── 3. Customer document columns ──────────────────────────────────────────────
 ALTER TABLE customers
