@@ -1551,6 +1551,28 @@ async function sendBalancePaidOwnerEmail({
   });
 }
 
+/**
+ * Cancel a pending or reserved_unpaid booking by booking_ref.
+ * Only updates rows that are still in an unpaid state so that a successful
+ * retry (which sets status to booked_paid) is never overwritten.
+ *
+ * @param {object} sb           - Supabase admin client
+ * @param {string} bookingRef   - booking_ref value (e.g. "bk-abc123")
+ * @param {string} logPrefix    - prefix for log messages (e.g. "[PAYMENT_FAILED]")
+ */
+async function cancelPendingBooking(sb, bookingRef, logPrefix) {
+  const { error: cancelErr } = await sb
+    .from("bookings")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("booking_ref", bookingRef)
+    .in("status", ["pending", "reserved_unpaid"]);
+  if (cancelErr) {
+    console.warn(`${logPrefix} booking cancel update failed (non-fatal):`, cancelErr.message);
+  } else {
+    console.log(`${logPrefix} pending booking cancelled`, { bookingRef });
+  }
+}
+
 export default async function handler(req, res) {
   // ── Security note ────────────────────────────────────────────────────────────
   // This endpoint must NOT require an Authorization header.  Stripe sends
@@ -2928,11 +2950,11 @@ export default async function handler(req, res) {
   // Behaviour depends on the payment type:
   //
   //  • Initial booking payments (full_payment / reservation_deposit):
-  //    Cancel the pending booking so dates are immediately released and the
-  //    customer is not left with a phantom "balance_due" that blocks future
-  //    bookings.  If the customer retries on the same PI and succeeds, the
-  //    payment_intent.succeeded handler will upsert the booking back to
-  //    booked_paid — the cancellation is safely overwritten.
+  //    Cancel the pending/reserved_unpaid booking so dates are immediately
+  //    released and the customer is not left with a phantom "balance_due" that
+  //    blocks future bookings.  If the customer retries on the same PI and
+  //    succeeds, the payment_intent.succeeded handler will upsert the booking
+  //    back to booked_paid — the cancellation is safely overwritten.
   //
   //  • Post-rental payments (rental_extension, late_fee, violation_fee, etc.):
   //    Set balance_due on the booking so the customer can be notified via the
@@ -2961,19 +2983,7 @@ export default async function handler(req, res) {
           const nowIso = new Date().toISOString();
 
           if (isInitialBooking) {
-            // Cancel the pending booking — no money was collected so there is
-            // nothing owed.  Only cancel if the booking is still pending/unpaid
-            // to avoid overwriting a booking that was later paid via retry.
-            const { error: cancelErr } = await sbFail
-              .from("bookings")
-              .update({ status: "cancelled", updated_at: nowIso })
-              .eq("booking_ref", bookingRef)
-              .in("status", ["pending", "reserved_unpaid"]);
-            if (cancelErr) {
-              console.warn("[PAYMENT_FAILED] booking cancel update failed (non-fatal):", cancelErr.message);
-            } else {
-              console.log("[PAYMENT_FAILED] pending booking cancelled", { bookingRef, paymentType });
-            }
+            await cancelPendingBooking(sbFail, bookingRef, "[PAYMENT_FAILED]");
           } else if (amountDue > 0) {
             // Post-rental payment failure — set balance_due for retry reminders.
             const { error: failErr } = await sbFail
@@ -3012,8 +3022,8 @@ export default async function handler(req, res) {
   // ── payment_intent.canceled ────────────────────────────────────────────────
   // Fires when a Stripe PaymentIntent is explicitly cancelled (e.g. the PI
   // expires or is voided by the system).  For initial booking PIs cancel the
-  // corresponding pending booking so dates are released and the admin does not
-  // see phantom "Pending" entries.
+  // corresponding pending/reserved_unpaid booking so dates are released and the
+  // admin does not see phantom "Pending" entries.
   //
   // NOTE: This event must be enabled in the Stripe webhook dashboard under
   //   Developers → Webhooks → [your endpoint] → Events to send:
@@ -3037,16 +3047,7 @@ export default async function handler(req, res) {
       try {
         const sbCancel = getSupabaseAdmin();
         if (sbCancel) {
-          const { error: cancelErr } = await sbCancel
-            .from("bookings")
-            .update({ status: "cancelled", updated_at: new Date().toISOString() })
-            .eq("booking_ref", bookingRef)
-            .in("status", ["pending", "reserved_unpaid"]);
-          if (cancelErr) {
-            console.warn("[PAYMENT_CANCELED] booking cancel failed (non-fatal):", cancelErr.message);
-          } else {
-            console.log("[PAYMENT_CANCELED] pending booking cancelled", { bookingRef });
-          }
+          await cancelPendingBooking(sbCancel, bookingRef, "[PAYMENT_CANCELED]");
         }
       } catch (cancelCatchErr) {
         console.warn("[PAYMENT_CANCELED] booking cancel threw (non-fatal):", cancelCatchErr.message);

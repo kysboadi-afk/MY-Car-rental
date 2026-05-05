@@ -2448,7 +2448,7 @@ const STALE_PENDING_HOURS = 24;
 async function cancelStalePendingBookings(sb) {
   if (!sb) return;
   try {
-    const cutoff = new Date(Date.now() - STALE_PENDING_HOURS * 3_600_000).toISOString();
+    const cutoff = new Date(Date.now() - STALE_PENDING_HOURS * MS_PER_HOUR).toISOString();
     const { data: staleRows, error: queryErr } = await sb
       .from("bookings")
       .select("booking_ref, payment_intent_id, created_at")
