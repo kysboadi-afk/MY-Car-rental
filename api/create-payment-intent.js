@@ -269,7 +269,8 @@ export default async function handler(req, res) {
     // PaymentIntent is created.  This guarantees:
     //   1. The webhook can always resolve booking_ref → booking row.
     //   2. An orphan Stripe charge (no matching booking) is impossible.
-    //   3. blocked_dates are claimed immediately, preventing double-booking.
+    //   3. Availability was verified above; blocked_dates are NOT written here —
+    //      they are written by the webhook only after payment_intent.succeeded.
     //
     // If the pre-write fails we return 503 — no PI is created, no charge occurs.
     const preWriteRow = {
