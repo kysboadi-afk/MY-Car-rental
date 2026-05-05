@@ -565,17 +565,29 @@ export default async function handler(req, res) {
       }
     }
 
-    // Vehicles available: computed from the JS loop's activeOrOverdueBookings
-    // so it stays consistent with the booking counts above.
+    // Vehicles available: JS fallback — counts active vehicles from vehicles.json
+    // that have no active/overdue booking in the current loop.
     // Using v.vehicle_id (not v.id — vehicle objects don't have a plain `id` field).
     const vehicleList = Object.values(filteredVehicles);
     const unavailableVehicleIds = new Set(
       activeOrOverdueBookings
         .map((b) => b.vehicleId)
     );
-    const availableVehicles = vehicleList.filter(
+    let availableVehicles = vehicleList.filter(
       (v) => v.status === "active" && !unavailableVehicleIds.has(v.vehicle_id)
     ).length;
+
+    // When the admin_metrics_v2 view is healthy, prefer its pre-aggregated count
+    // over the JS calculation above.  The view's avail CTE queries the Supabase
+    // vehicles table directly (excluding phantom/inactive rows) and applies the
+    // same active/overdue status filter as the bookings table — making it the
+    // authoritative source.  The JS calculation stays as fallback when viewOk is false.
+    if (viewOk) {
+      const viewAvail = metricsView[`${vp}_available_vehicles`];
+      if (viewAvail != null) {
+        availableVehicles = Number(viewAvail);
+      }
+    }
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
