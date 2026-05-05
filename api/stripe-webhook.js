@@ -1551,6 +1551,41 @@ async function sendBalancePaidOwnerEmail({
   });
 }
 
+/**
+ * Returns true for payment types that represent an initial booking payment
+ * (not a post-rental charge like an extension or late fee).
+ * Used to decide whether a failed/canceled PaymentIntent should cancel the
+ * pending booking or set balance_due for retry collection.
+ *
+ * @param {string} paymentType - piMeta.payment_type || piMeta.type
+ * @returns {boolean}
+ */
+function isInitialBookingPayment(paymentType) {
+  return paymentType === "full_payment" || paymentType === "reservation_deposit";
+}
+
+/**
+ * Cancel a pending or reserved_unpaid booking by booking_ref.
+ * Only updates rows that are still in an unpaid state so that a successful
+ * retry (which sets status to booked_paid) is never overwritten.
+ *
+ * @param {object} sb           - Supabase admin client
+ * @param {string} bookingRef   - booking_ref value (e.g. "bk-abc123")
+ * @param {string} logPrefix    - prefix for log messages (e.g. "[PAYMENT_FAILED]")
+ */
+async function cancelPendingBooking(sb, bookingRef, logPrefix) {
+  const { error: cancelErr } = await sb
+    .from("bookings")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("booking_ref", bookingRef)
+    .in("status", ["pending", "reserved_unpaid"]);
+  if (cancelErr) {
+    console.warn(`${logPrefix} booking cancel update failed (non-fatal):`, cancelErr.message);
+  } else {
+    console.log(`${logPrefix} pending booking cancelled`, { bookingRef });
+  }
+}
+
 export default async function handler(req, res) {
   // ── Security note ────────────────────────────────────────────────────────────
   // This endpoint must NOT require an Authorization header.  Stripe sends
@@ -2925,9 +2960,18 @@ export default async function handler(req, res) {
   }
 
   // ── payment_intent.payment_failed ─────────────────────────────────────────
-  // When a Stripe payment fails, record the outstanding amount on the booking
-  // as balance_due so the customer can be blocked from new bookings and notified
-  // via the balance_due retry SMS system in scheduled-reminders.js.
+  // Behaviour depends on the payment type:
+  //
+  //  • Initial booking payments (full_payment / reservation_deposit):
+  //    Cancel the pending/reserved_unpaid booking so dates are immediately
+  //    released and the customer is not left with a phantom "balance_due" that
+  //    blocks future bookings.  If the customer retries on the same PI and
+  //    succeeds, the payment_intent.succeeded handler will upsert the booking
+  //    back to booked_paid — the cancellation is safely overwritten.
+  //
+  //  • Post-rental payments (rental_extension, late_fee, violation_fee, etc.):
+  //    Set balance_due on the booking so the customer can be notified via the
+  //    balance_due retry SMS system in scheduled-reminders.js.
   if (event.type === "payment_intent.payment_failed") {
     const paymentIntent = event.data.object;
     const piMeta = paymentIntent.metadata || {};
@@ -2942,37 +2986,80 @@ export default async function handler(req, res) {
       amount_due:   amountDue,
     });
 
-    if (bookingRef && bookingRef.startsWith("bk-") && amountDue > 0) {
+    const isInitialBooking = isInitialBookingPayment(paymentType);
+
+    if (bookingRef && bookingRef.startsWith("bk-")) {
       try {
         const sbFail = getSupabaseAdmin();
         if (sbFail) {
           const nowIso = new Date().toISOString();
-          const { error: failErr } = await sbFail
-            .from("bookings")
-            .update({
-              balance_due: amountDue,
-              updated_at:  nowIso,
-            })
-            .eq("booking_ref", bookingRef);
-          if (failErr) {
-            console.warn("[PAYMENT_FAILED] balance_due update failed (non-fatal):", failErr.message);
-          } else {
-            console.log("[PAYMENT_FAILED] balance_due set", { bookingRef, amountDue });
-            // Belt-and-suspenders: set balance_due_set_at only when not already
-            // set.  The DB trigger (migration 0120) handles this automatically,
-            // but this guard ensures correctness if the migration has not run yet.
-            const { error: setAtErr } = await sbFail
+
+          if (isInitialBooking) {
+            await cancelPendingBooking(sbFail, bookingRef, "[PAYMENT_FAILED]");
+          } else if (amountDue > 0) {
+            // Post-rental payment failure — set balance_due for retry reminders.
+            const { error: failErr } = await sbFail
               .from("bookings")
-              .update({ balance_due_set_at: nowIso })
-              .eq("booking_ref", bookingRef)
-              .is("balance_due_set_at", null);
-            if (setAtErr) {
-              console.warn("[PAYMENT_FAILED] balance_due_set_at update failed (non-fatal):", setAtErr.message);
+              .update({
+                balance_due: amountDue,
+                updated_at:  nowIso,
+              })
+              .eq("booking_ref", bookingRef);
+            if (failErr) {
+              console.warn("[PAYMENT_FAILED] balance_due update failed (non-fatal):", failErr.message);
+            } else {
+              console.log("[PAYMENT_FAILED] balance_due set", { bookingRef, amountDue });
+              // Belt-and-suspenders: set balance_due_set_at only when not already
+              // set.  The DB trigger (migration 0120) handles this automatically,
+              // but this guard ensures correctness if the migration has not run yet.
+              const { error: setAtErr } = await sbFail
+                .from("bookings")
+                .update({ balance_due_set_at: nowIso })
+                .eq("booking_ref", bookingRef)
+                .is("balance_due_set_at", null);
+              if (setAtErr) {
+                console.warn("[PAYMENT_FAILED] balance_due_set_at update failed (non-fatal):", setAtErr.message);
+              }
             }
           }
         }
       } catch (failCatchErr) {
-        console.warn("[PAYMENT_FAILED] balance_due update threw (non-fatal):", failCatchErr.message);
+        console.warn("[PAYMENT_FAILED] booking update threw (non-fatal):", failCatchErr.message);
+      }
+    }
+
+    return res.status(200).json({ received: true });
+  }
+
+  // ── payment_intent.canceled ────────────────────────────────────────────────
+  // Fires when a Stripe PaymentIntent is explicitly cancelled (e.g. the PI
+  // expires or is voided by the system).  For initial booking PIs cancel the
+  // corresponding pending/reserved_unpaid booking so dates are released and the
+  // admin does not see phantom "Pending" entries.
+  //
+  // NOTE: This event must be enabled in the Stripe webhook dashboard under
+  //   Developers → Webhooks → [your endpoint] → Events to send:
+  //   add "payment_intent.canceled".
+  if (event.type === "payment_intent.canceled") {
+    const paymentIntent = event.data.object;
+    const piMeta = paymentIntent.metadata || {};
+    const paymentType = piMeta.payment_type || piMeta.type || "";
+    const bookingRef  = piMeta.booking_id || "";
+
+    console.log("[PAYMENT_CANCELED]", {
+      pi_id:        paymentIntent.id,
+      payment_type: paymentType,
+      booking_ref:  bookingRef,
+    });
+
+    if (bookingRef && bookingRef.startsWith("bk-") && isInitialBookingPayment(paymentType)) {
+      try {
+        const sbCancel = getSupabaseAdmin();
+        if (sbCancel) {
+          await cancelPendingBooking(sbCancel, bookingRef, "[PAYMENT_CANCELED]");
+        }
+      } catch (cancelCatchErr) {
+        console.warn("[PAYMENT_CANCELED] booking cancel threw (non-fatal):", cancelCatchErr.message);
       }
     }
 

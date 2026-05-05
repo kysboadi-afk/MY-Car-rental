@@ -2429,6 +2429,60 @@ async function processBalanceDue(allBookings, now, sentMarks) {
   }
 }
 
+/**
+ * Cancel stale pending bookings created via the Stripe payment flow that were
+ * never paid.  This is a safety net for abandoned checkout sessions where the
+ * customer loaded the payment form but never entered card details (so no Stripe
+ * webhook event ever fires to clean up the pending row).
+ *
+ * Only targets bookings that:
+ *   • status = "pending" (pre-payment state set by create-payment-intent.js)
+ *   • payment_intent_id starts with "pi_" (created via Stripe; not manual)
+ *   • created_at is older than STALE_PENDING_HOURS hours ago
+ *
+ * Manual/admin bookings (payment_intent_id = "manual_*") are intentionally
+ * excluded so legitimate offline bookings are never auto-cancelled.
+ */
+const STALE_PENDING_HOURS = 24;
+
+async function cancelStalePendingBookings(sb) {
+  if (!sb) return;
+  try {
+    const cutoff = new Date(Date.now() - STALE_PENDING_HOURS * MS_PER_HOUR).toISOString();
+    const { data: staleRows, error: queryErr } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("status", "pending")
+      .like("payment_intent_id", "pi_%")
+      .not("booking_ref", "is", null)
+      .lt("created_at", cutoff);
+
+    if (queryErr) {
+      console.warn("scheduled-reminders cancelStalePendingBookings: query failed (non-fatal):", queryErr.message);
+      return;
+    }
+
+    if (!staleRows || staleRows.length === 0) return;
+
+    const refs = staleRows.map((r) => r.booking_ref);
+    if (refs.length === 0) return;
+
+    const { error: updateErr } = await sb
+      .from("bookings")
+      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .in("booking_ref", refs)
+      .eq("status", "pending"); // re-filter to avoid race-condition overwrites
+
+    if (updateErr) {
+      console.warn("scheduled-reminders cancelStalePendingBookings: cancel update failed (non-fatal):", updateErr.message);
+    } else {
+      console.log(`[STALE_PENDING_CLEANUP] cancelled ${refs.length} stale pending booking(s):`, refs);
+    }
+  } catch (err) {
+    console.warn("scheduled-reminders cancelStalePendingBookings: unexpected error (non-fatal):", err.message);
+  }
+}
+
 export default async function handler(req, res) {
   // Accept GET (Vercel cron) or POST (manual admin trigger)
   if (req.method !== "GET" && req.method !== "POST") {
@@ -2499,6 +2553,11 @@ export default async function handler(req, res) {
   // These must run on every cron tick so overdue bookings never stay stuck.
   await processAutoActivations(allBookings, now);
   await processAutoCompletions(allBookings, now);
+
+  // Cancel stale pending bookings from abandoned Stripe checkout sessions.
+  // Safety net for cases where the customer loaded the payment form but never
+  // entered card details (no Stripe webhook fires for abandoned PIs).
+  await cancelStalePendingBookings(sbClient);
 
   // Reconcile Stripe payments against revenue_records (runs every tick, non-fatal).
   await runReconciliation();
