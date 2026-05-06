@@ -229,22 +229,26 @@ test("blocked_dates row with end_time makes vehicle unavailable with time-aware 
 
 test("expired block (end_date today, end_time in the past) shows vehicle as available", async () => {
   resetMock();
-  // Simulate a block that ends today but at 00:01 — always in the past by the time tests run.
+  // Simulate a block that ends today at 00:00 (midnight).  The expiry check is
+  // `blockMins <= nowMinutesLA` so when both equal 0 at midnight the block is
+  // already considered expired, and it is definitely expired for every minute
+  // of the rest of the day.  Using 00:00 avoids the 1-minute race window that
+  // 00:01 had when tests ran between 00:00 and 00:00:59 LA time.
   const todayLA = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Los_Angeles",
     year: "numeric", month: "2-digit", day: "2-digit",
   }).format(new Date());
 
   sbMock.blockedDateRows = [
-    { vehicle_id: "camry", end_date: todayLA, end_time: "00:01" },
+    { vehicle_id: "camry", end_date: todayLA, end_time: "00:00" },
   ];
 
   const res = makeRes();
   await handler(makeReq(), res);
 
   assert.equal(res._status, 200);
-  // Block has already expired (00:01 is always in the past during test runs) —
-  // the vehicle should now be available.
+  // Block has already expired (00:00 is always <= nowMinutesLA for any clock
+  // reading) — the vehicle should now be available.
   assert.equal(res._body.camry?.available, true, "camry should be available after block expiry");
   assert.equal(res._body.camry?.available_at, null, "available_at should be null when available");
 });

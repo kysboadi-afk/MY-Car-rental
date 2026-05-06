@@ -300,16 +300,16 @@
 
       <button type="button" id="slBookBtn" style="margin-top:10px" disabled>Book Now 🔒</button>
       <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable booking.</p>
-
-      <!-- Stripe payment form (shown after booking creation) -->
-      <div id="slPaymentForm" style="display:none">
-        <div id="slBookingSummary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
-        <div id="sl-payment-element"></div>
-        <div id="sl-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
-        <button id="sl-submit-payment" type="button">Pay $<span id="slPayAmount">0</span> Now 🔒</button>
-        <button id="sl-cancel-payment" type="button">← Change booking details</button>
-      </div>
     </section>
+
+    <!-- Stripe payment form (shown after booking creation, outside bookingSection) -->
+    <div id="slPaymentForm" class="booking" style="display:none">
+      <div id="slBookingSummary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
+      <div id="sl-payment-element"></div>
+      <div id="sl-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+      <button id="sl-submit-payment" type="button">Pay $<span id="slPayAmount">0</span> Now 🔒</button>
+      <button id="sl-cancel-payment" type="button">← Change booking details</button>
+    </div>
 
     <!-- ── Extend Rental Section ── -->
     <section class="booking" id="extendSection" style="display:none">
