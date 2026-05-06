@@ -36,10 +36,23 @@ const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
 // Bouncie IMEI: 15-digit numeric string, or empty string (to clear the mapping)
 const BOUNCIE_IMEI_RE = /^\d{15}$/;
 
-// Derive the canonical category ("car" | "slingshot") for a vehicle.
-// Uses the explicit category field when present; falls back to type/id/name
-// patterns for backward compatibility with records that pre-date the field.
-// This is the ONLY function that should determine which page a vehicle shows on.
+
+/**
+ * Derive the canonical category ("car" | "slingshot") for a vehicle.
+ *
+ * This is the ONLY function that should determine which page a vehicle
+ * appears on.  It first checks the explicit `category` field; if that is
+ * absent or invalid it falls back to inspecting `type`, `vehicleId`, and
+ * `vehicleName` for backward compatibility with records that pre-date the
+ * field.  All new and edited vehicles must always supply an explicit
+ * `category` value so this fallback path is never reached for them.
+ *
+ * @param {string} category  - The vehicle's stored category value.
+ * @param {string} type      - The vehicle's stored type (e.g. "economy", "slingshot").
+ * @param {string} vehicleId - The vehicle's ID (e.g. "camry", "slingshot-red").
+ * @param {string} vehicleName - The vehicle's display name.
+ * @returns {"car"|"slingshot"}
+ */
 function deriveCategory(category, type, vehicleId, vehicleName) {
   const cat = (category || "").toLowerCase().trim();
   if (cat === "car" || cat === "slingshot") return cat;
