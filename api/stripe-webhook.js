@@ -789,7 +789,9 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // Signature is included when available (storedDocs); the document is still
   // valid and attachable even when the frontend did not supply a signature.
   try {
-    const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
+    const vehicleInfo = (vehicle_id && CARS[vehicle_id])
+      ? CARS[vehicle_id]
+      : (await getVehicleById(vehicle_id).catch(() => null)) || {};
     const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
     const hasProtectionPlan = !!protection_plan_tier;
 

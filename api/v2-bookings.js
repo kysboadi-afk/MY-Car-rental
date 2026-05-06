@@ -1409,6 +1409,12 @@ export default async function handler(req, res) {
         console.warn("v2-bookings resend_confirmation: pending_booking_docs read failed (non-fatal):", docsErr.message);
       }
 
+      // Pre-fetch vehicle data from DB for non-CARS vehicles (e.g. slingshots) so
+      // VIN, make, year, etc. are available for both PDF regeneration and email bodies.
+      const _vehicleDbData = (bVid && CARS[bVid])
+        ? null
+        : await getVehicleById(bVid).catch(() => null);
+
       const attachments = [];
 
       // Rental agreement PDF: use the pre-stored PDF when available; regenerate
@@ -1437,7 +1443,7 @@ export default async function handler(req, res) {
         }
 
         if (!pdfBuffer) {
-          const vehicleInfo = (bVid && CARS[bVid]) ? CARS[bVid] : {};
+          const vehicleInfo = (bVid && CARS[bVid]) ? CARS[bVid] : (_vehicleDbData || {});
           const hasProtectionPlan = !!(storedDocs?.protection_plan_tier || booking.protectionPlanTier || booking.protectionPlan);
           const protectionPlanTier = storedDocs?.protection_plan_tier || booking.protectionPlanTier || null;
           const pdfBody = {
@@ -1528,7 +1534,7 @@ export default async function handler(req, res) {
           const pricingSettings = await loadPricingSettings();
           const isKnownEconomy = (bVid === "camry" || bVid === "camry2013");
           const vehicleDataForBreakdown = !isKnownEconomy
-            ? await getVehicleById(bVid).catch(() => null)
+            ? (_vehicleDbData ?? await getVehicleById(bVid).catch(() => null))
             : null;
           breakdownLines = computeBreakdownLinesFromSettings(
             bVid,
@@ -1570,11 +1576,11 @@ export default async function handler(req, res) {
         bookingId,
         vehicleName,
         vehicleId:          bVid,
-        vehicleMake:        CARS[bVid]?.make || null,
-        vehicleModel:       CARS[bVid]?.model || null,
-        vehicleYear:        CARS[bVid]?.year || null,
-        vehicleVin:         CARS[bVid]?.vin || null,
-        vehicleColor:       CARS[bVid]?.color || null,
+        vehicleMake:        CARS[bVid]?.make || _vehicleDbData?.make || null,
+        vehicleModel:       CARS[bVid]?.model || _vehicleDbData?.model || null,
+        vehicleYear:        CARS[bVid]?.year || _vehicleDbData?.year || null,
+        vehicleVin:         CARS[bVid]?.vin || _vehicleDbData?.vin || null,
+        vehicleColor:       CARS[bVid]?.color || _vehicleDbData?.color || null,
         renterName:         name,
         renterEmail:        email,
         renterPhone:        phone,
@@ -1627,11 +1633,11 @@ export default async function handler(req, res) {
           bookingId,
           vehicleName,
           vehicleId:          bVid,
-          vehicleMake:        CARS[bVid]?.make || null,
-          vehicleModel:       CARS[bVid]?.model || null,
-          vehicleYear:        CARS[bVid]?.year || null,
-          vehicleVin:         CARS[bVid]?.vin || null,
-          vehicleColor:       CARS[bVid]?.color || null,
+          vehicleMake:        CARS[bVid]?.make || _vehicleDbData?.make || null,
+          vehicleModel:       CARS[bVid]?.model || _vehicleDbData?.model || null,
+          vehicleYear:        CARS[bVid]?.year || _vehicleDbData?.year || null,
+          vehicleVin:         CARS[bVid]?.vin || _vehicleDbData?.vin || null,
+          vehicleColor:       CARS[bVid]?.color || _vehicleDbData?.color || null,
           renterName:         name,
           renterEmail:        email,
           renterPhone:        phone,
