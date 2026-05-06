@@ -5054,6 +5054,7 @@ function viewBooking(bookingId, vehicleId) {
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
+    <button class="btn btn-secondary" onclick="downloadRentalAgreement('${esc(b.bookingId || '')}', this)" title="Download the rental agreement PDF for this booking">📄 Download Agreement</button>
     <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit Booking</button>
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
@@ -5082,6 +5083,25 @@ function openEditBookingModal(bookingId) {
   document.getElementById('be-notes').value            = b.notes          || '';
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
+}
+
+async function downloadRentalAgreement(bookingId, btn) {
+  if (!bookingId) { showToast('Booking ID missing.', 'error'); return; }
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
+  try {
+    const data = await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'get_agreement_url', bookingId });
+    if (data && data.url) {
+      window.open(data.url, '_blank', 'noopener,noreferrer');
+      showToast('Agreement PDF opened in new tab.', 'success');
+    } else {
+      showToast(data?.error || 'Agreement PDF not found for this booking.', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to retrieve agreement: ' + (err.message || err), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 async function saveEditBooking(btn) {

@@ -28,6 +28,7 @@ import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
+import { generateSlingshotRentalAgreementPdf } from "./_slingshot-rental-agreement.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h } from "./_time.js";
@@ -2842,6 +2843,354 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ received: true });
     }
+
+    // ── Slingshot full-payment ─────────────────────────────────────────────────
+    // Slingshot bookings have payment_type="full_payment" AND booking_type="slingshot"
+    // in the PI metadata.  They need a slingshot-specific rental agreement PDF and
+    // confirmation emails that reflect hourly-package pricing, not car rental terms.
+    // This branch intercepts them BEFORE the generic full_payment path so that path
+    // never runs for slingshots.
+    if (paymentType === "full_payment" && piMeta.booking_type === "slingshot") {
+      logWebhookRouting(paymentIntent, "slingshot full_payment — processing with slingshot booking path");
+
+      const {
+        booking_id:      sl_booking_id,
+        renter_name:     sl_renter_name,
+        renter_phone:    sl_renter_phone,
+        renter_email:    sl_renter_email,
+        vehicle_id:      sl_vehicle_id,
+        vehicle_name:    sl_vehicle_name,
+        package_key:     sl_package_key,
+        package_label:   sl_package_label,
+        package_price:   sl_package_price,
+        deposit_amount:  sl_deposit_amount,
+        pickup_date:     sl_pickup_date,
+        return_date:     sl_return_date,
+        pickup_time:     sl_pickup_time,
+        return_time:     sl_return_time,
+        stripe_customer_id: sl_stripe_customer_id,
+        full_rental_amount: sl_full_rental_amount,
+      } = piMeta;
+
+      const slTotalDollars = paymentIntent.amount ? (paymentIntent.amount / 100) : Number(sl_full_rental_amount || 0);
+      const slDepositDollars = Number(sl_deposit_amount || 500);
+      const slBaseRate = Number(sl_package_price || 0);
+
+      // ── Step 1: Notifications first (DB failure must not silence them) ────
+      // Build & send emails (owner + renter) with slingshot agreement PDF.
+      try {
+        if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+          console.warn("stripe-webhook: [SLINGSHOT] SMTP not configured — skipping notification emails");
+        } else {
+          const slTransporter = nodemailer.createTransport({
+            host:   process.env.SMTP_HOST,
+            port:   parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_PORT === "465",
+            auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+
+          // Get vehicle data for VIN / plate.
+          const slVehicleData = sl_vehicle_id
+            ? await getVehicleById(sl_vehicle_id).catch(() => null)
+            : null;
+
+          const slStartDt = sl_pickup_date
+            ? `${sl_pickup_date}${sl_pickup_time ? " at " + sl_pickup_time : ""}`
+            : "—";
+          const slEndDt = sl_return_date
+            ? `${sl_return_date}${sl_return_time ? " at " + sl_return_time : ""}`
+            : "—";
+
+          // Generate slingshot rental agreement PDF.
+          let slPdfBuffer = null;
+          let slPdfFilename = "slingshot-rental-agreement.pdf";
+          const slIpAddress = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim() || null;
+          try {
+            slPdfBuffer = await generateSlingshotRentalAgreementPdf(
+              {
+                bookingId:        sl_booking_id    || "",
+                paymentIntentId:  paymentIntent.id || "",
+                stripeCustomerId: sl_stripe_customer_id || paymentIntent.customer || "",
+                renterName:       sl_renter_name   || "",
+                renterPhone:      sl_renter_phone  || "",
+                renterEmail:      sl_renter_email  || "",
+                vehicleVin:       slVehicleData?.vin        || "",
+                vehicleName:      sl_vehicle_name   || slVehicleData?.name || "Polaris Slingshot",
+                licensePlate:     slVehicleData?.licensePlate || slVehicleData?.license_plate || "",
+                vehicleId:        sl_vehicle_id    || "",
+                startDatetime:    slStartDt,
+                endDatetime:      slEndDt,
+                packageLabel:     sl_package_label || sl_package_key || "",
+                baseRate:         slBaseRate,
+                totalPrice:       slTotalDollars,
+                securityDeposit:  slDepositDollars,
+                paymentStatus:    "paid",
+                licenseVerified:  false,
+                identityVerified: false,
+              },
+              slIpAddress
+            );
+
+            const safeName = (sl_renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase().slice(0, 30);
+            const safeDate = (sl_pickup_date || "booking").replace(/[^0-9-]/g, "");
+            slPdfFilename = `slingshot-agreement-${safeName}-${safeDate}.pdf`;
+
+            console.log(`stripe-webhook: [SLINGSHOT] agreement PDF generated for PI ${paymentIntent.id}`);
+          } catch (slPdfErr) {
+            console.error("stripe-webhook: [SLINGSHOT] PDF generation failed (non-fatal):", slPdfErr.message);
+          }
+
+          // Upload agreement PDF to Supabase Storage and persist path.
+          if (slPdfBuffer && sl_booking_id) {
+            try {
+              const slSbPdf = getSupabaseAdmin();
+              if (slSbPdf) {
+                const slStoragePath = `${sl_booking_id}/${slPdfFilename}`;
+                const { error: slUploadErr } = await slSbPdf.storage
+                  .from("rental-agreements")
+                  .upload(slStoragePath, slPdfBuffer, { contentType: "application/pdf", upsert: true });
+                if (slUploadErr) {
+                  console.warn("stripe-webhook: [SLINGSHOT] PDF storage upload failed (non-fatal):", slUploadErr.message);
+                } else {
+                  await slSbPdf.from("pending_booking_docs").upsert(
+                    {
+                      booking_id:        sl_booking_id,
+                      booking_type:      "slingshot",
+                      agreement_pdf_url: slStoragePath,
+                      email_sent:        false,
+                    },
+                    { onConflict: "booking_id" }
+                  );
+                  console.log(`stripe-webhook: [SLINGSHOT] PDF stored at ${slStoragePath}`);
+                }
+              }
+            } catch (slStorageErr) {
+              console.warn("stripe-webhook: [SLINGSHOT] PDF storage/persist failed (non-fatal):", slStorageErr.message);
+            }
+          }
+
+          const slAttachments = [];
+          if (slPdfBuffer) {
+            slAttachments.push({
+              filename:    slPdfFilename,
+              content:     slPdfBuffer,
+              contentType: "application/pdf",
+            });
+          }
+
+          // Check if ID photos are stored in pending_booking_docs (from store-booking-docs.js).
+          try {
+            const slSbDocs = getSupabaseAdmin();
+            if (slSbDocs && sl_booking_id) {
+              const { data: slDocsRow } = await slSbDocs
+                .from("pending_booking_docs")
+                .select("id_base64,id_filename,id_mimetype,id_back_base64,id_back_filename,id_back_mimetype")
+                .eq("booking_id", sl_booking_id)
+                .maybeSingle();
+              if (slDocsRow?.id_base64 && slDocsRow?.id_filename) {
+                slAttachments.push({
+                  filename:    slDocsRow.id_filename,
+                  content:     Buffer.from(slDocsRow.id_base64, "base64"),
+                  contentType: slDocsRow.id_mimetype || "application/octet-stream",
+                });
+              }
+              if (slDocsRow?.id_back_base64 && slDocsRow?.id_back_filename) {
+                slAttachments.push({
+                  filename:    slDocsRow.id_back_filename,
+                  content:     Buffer.from(slDocsRow.id_back_base64, "base64"),
+                  contentType: slDocsRow.id_back_mimetype || "application/octet-stream",
+                });
+              }
+            }
+          } catch (slDocsErr) {
+            console.warn("stripe-webhook: [SLINGSHOT] ID attachment lookup failed (non-fatal):", slDocsErr.message);
+          }
+
+          // Owner confirmation email.
+          const slOwnerEmailSent = process.env.OWNER_EMAIL
+            ? await slTransporter.sendMail({
+                from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+                to:          OWNER_EMAIL,
+                ...(sl_renter_email ? { replyTo: sl_renter_email } : {}),
+                subject:     `✅ Slingshot Booking — ${esc(sl_renter_name || "New Renter")} — ${esc(sl_vehicle_name || "")} — ${esc(sl_pickup_date || "")}`,
+                attachments: slAttachments,
+                html: `
+                  <h2>✅ New Slingshot Booking Confirmed</h2>
+                  <p>A slingshot rental has been paid and confirmed.</p>
+                  <table style="border-collapse:collapse;width:100%;margin:12px 0">
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_booking_id || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_name || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_phone || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_email || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_vehicle_name || sl_vehicle_id || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_package_label || sl_package_key || "N/A")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slStartDt)}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slEndDt)}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(slTotalDollars.toFixed(2))}</strong></td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Base Rate (pkg)</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slBaseRate.toFixed(2))}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe PI</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(paymentIntent.id)}</code></td></tr>
+                  </table>
+                  ${slPdfBuffer ? "<p>📄 Signed rental agreement is attached.</p>" : ""}
+                `,
+                text: [
+                  "✅ New Slingshot Booking Confirmed",
+                  "",
+                  `Booking ID   : ${sl_booking_id || "N/A"}`,
+                  `Renter       : ${sl_renter_name || "N/A"}`,
+                  `Phone        : ${sl_renter_phone || "N/A"}`,
+                  `Email        : ${sl_renter_email || "N/A"}`,
+                  `Vehicle      : ${sl_vehicle_name || sl_vehicle_id || "N/A"}`,
+                  `Package      : ${sl_package_label || sl_package_key || "N/A"}`,
+                  `Pickup       : ${slStartDt}`,
+                  `Return       : ${slEndDt}`,
+                  `Total        : $${slTotalDollars.toFixed(2)}`,
+                  `Stripe PI    : ${paymentIntent.id}`,
+                ].join("\n"),
+              }).catch((err) => {
+                console.error("stripe-webhook: [SLINGSHOT] owner email failed:", err.message);
+              })
+            : null;
+
+          // Renter confirmation email.
+          if (sl_renter_email) {
+            const slFirstName = (sl_renter_name || "").split(" ")[0] || "there";
+            await slTransporter.sendMail({
+              from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+              to:          sl_renter_email,
+              subject:     `✅ Your Slingshot Booking is Confirmed — ${esc(sl_vehicle_name || "Polaris Slingshot")}`,
+              attachments: slPdfBuffer ? slAttachments.filter((a) => a.filename === slPdfFilename) : [],
+              html: `
+                <h2>✅ Slingshot Booking Confirmed</h2>
+                <p>Hi ${esc(slFirstName)}, your booking is confirmed and your payment has been received!</p>
+                <table style="border-collapse:collapse;width:100%;margin:12px 0">
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_booking_id || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_vehicle_name || "Polaris Slingshot")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_package_label || sl_package_key || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slStartDt)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slEndDt)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(slTotalDollars.toFixed(2))}</strong></td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))} (refundable after inspection)</td></tr>
+                </table>
+                ${slPdfBuffer ? "<p>📄 Your signed rental agreement is attached. Please keep it for your records.</p>" : ""}
+                <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
+                <p>Thank you for choosing LA Slingshot Rentals!</p>
+              `,
+              text: [
+                "✅ Slingshot Booking Confirmed",
+                "",
+                `Hi ${slFirstName},`,
+                "Your booking is confirmed and payment has been received.",
+                ...(slPdfBuffer ? ["Your signed rental agreement is attached."] : []),
+                "",
+                `Booking ID      : ${sl_booking_id || "N/A"}`,
+                `Vehicle         : ${sl_vehicle_name || "Polaris Slingshot"}`,
+                `Package         : ${sl_package_label || sl_package_key || "N/A"}`,
+                `Pickup          : ${slStartDt}`,
+                `Return          : ${slEndDt}`,
+                `Total Charged   : $${slTotalDollars.toFixed(2)}`,
+                `Security Deposit: $${slDepositDollars.toFixed(2)} (refundable)`,
+                "",
+                "Questions? Call (844) 511-4059.",
+              ].join("\n"),
+            }).catch((err) => {
+              console.error("stripe-webhook: [SLINGSHOT] renter email failed:", err.message);
+            });
+
+            // Mark email_sent in pending_booking_docs.
+            try {
+              const slSbMark = getSupabaseAdmin();
+              if (slSbMark && sl_booking_id) {
+                await slSbMark.from("pending_booking_docs").upsert(
+                  { booking_id: sl_booking_id, booking_type: "slingshot", email_sent: true },
+                  { onConflict: "booking_id" }
+                );
+              }
+            } catch (slMarkErr) {
+              console.warn("stripe-webhook: [SLINGSHOT] email_sent mark failed (non-fatal):", slMarkErr.message);
+            }
+          }
+        }
+      } catch (slEmailErr) {
+        console.error("stripe-webhook: [SLINGSHOT] notification step failed (non-fatal):", slEmailErr.message);
+      }
+
+      // ── Step 2: Owner SMS ──────────────────────────────────────────────────
+      if (process.env.OWNER_PHONE && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        try {
+          const slOwnerSms = [
+            `🏎️ Slingshot booking: ${sanitizeSmsValue(sl_renter_name || "Unknown")}`,
+            `Vehicle: ${sanitizeSmsValue(sl_vehicle_name || sl_vehicle_id || "")}`,
+            `Package: ${sanitizeSmsValue(sl_package_label || sl_package_key || "")}`,
+            `Pickup: ${sl_pickup_date || ""} at ${sl_pickup_time || ""}`,
+            `Total: $${slTotalDollars.toFixed(2)}`,
+          ].join("\n");
+          await sendSms(normalizePhone(process.env.OWNER_PHONE), slOwnerSms.slice(0, MAX_ALERT_SMS_LENGTH));
+        } catch (slOwnerSmsErr) {
+          console.error("stripe-webhook: [SLINGSHOT] owner SMS error (non-fatal):", slOwnerSmsErr.message);
+        }
+      }
+
+      // ── Step 3: Renter SMS confirmation ───────────────────────────────────
+      if (sl_renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        try {
+          await sendSms(
+            normalizePhone(sl_renter_phone),
+            render(BOOKING_CONFIRMED, {
+              customer_name:    sanitizeSmsValue(sl_renter_name || ""),
+              vehicle:          sanitizeSmsValue(sl_vehicle_name || "your slingshot"),
+              pickup_date:      sl_pickup_date || "",
+              pickup_time:      sl_pickup_time || "",
+              return_date:      sl_return_date || "",
+              return_time_line: sl_return_time ? ` at ${sl_return_time}\n` : "\n",
+              location:         DEFAULT_LOCATION,
+            })
+          );
+        } catch (slRenterSmsErr) {
+          console.error("stripe-webhook: [SLINGSHOT] renter SMS error (non-fatal):", slRenterSmsErr.message);
+        }
+      }
+
+      // ── Step 4: Persist booking + revenue ─────────────────────────────────
+      let slFeeFields = null;
+      try {
+        slFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+      } catch (slFeeErr) {
+        console.warn("stripe-webhook: [SLINGSHOT] fee resolution failed (non-fatal):", slFeeErr.message);
+      }
+
+      let slPersistedBookingId = sl_booking_id || null;
+      try {
+        const slPersistResult = await saveWebhookBookingRecord(paymentIntent, slFeeFields || {});
+        slPersistedBookingId = slPersistResult?.bookingId || slPersistedBookingId;
+      } catch (slPersistErr) {
+        console.error("stripe-webhook: [SLINGSHOT] saveWebhookBookingRecord error:", slPersistErr.message);
+      }
+
+      // Block availability dates.
+      if (sl_vehicle_id && sl_pickup_date && sl_return_date) {
+        try {
+          await blockBookedDates(sl_vehicle_id, sl_pickup_date, sl_return_date, sl_pickup_time || "", sl_return_time || "");
+        } catch (slBlockErr) {
+          console.error("stripe-webhook: [SLINGSHOT] blockBookedDates error:", slBlockErr.message);
+        }
+      }
+
+      // Revenue record.
+      try {
+        await processStripePayment(stripe, paymentIntent, {
+          bookingId:        slPersistedBookingId || undefined,
+          preResolvedGross: slFeeFields ? (slTotalDollars) : undefined,
+          preResolvedFee:   slFeeFields?.stripeFee ?? undefined,
+          preResolvedNet:   slFeeFields?.stripeNet ?? undefined,
+        });
+      } catch (slPspErr) {
+        console.warn("stripe-webhook: [SLINGSHOT] processStripePayment failed (non-fatal):", slPspErr.message);
+      }
+
+      return res.status(200).json({ received: true });
+    }
+    // ── END slingshot full-payment ────────────────────────────────────────────
 
 
     const { vehicle_id, pickup_date, return_date, pickup_time: meta_pickup_time, return_time: meta_return_time } = paymentIntent.metadata || {};
