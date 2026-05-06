@@ -220,6 +220,7 @@ body {
   flex-direction: column;
   gap: 14px;
   align-items: center;
+  justify-content: center;
 }
 
 .hero-image .hero-btns .hero-btn {
