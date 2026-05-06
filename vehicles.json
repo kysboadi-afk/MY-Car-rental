@@ -89,5 +89,37 @@
         "label": "24 Hours"
       }
     }
+  },
+  "slingshot4": {
+    "vehicle_id": "slingshot4",
+    "vehicle_name": "SLINGSHOT SL",
+    "type": "slingshot",
+    "vehicle_year": null,
+    "purchase_price": 0,
+    "purchase_date": "",
+    "status": "active",
+    "cover_image": "https://kdobrxffhtsigyiwnahs.supabase.co/storage/v1/object/public/vehicle-images/slingshot3-1778045491142-e9a48054.jpg",
+    "hourlyTiers": {
+      "2hr": {
+        "hours": 2,
+        "price": 150,
+        "label": "2 Hours"
+      },
+      "3hr": {
+        "hours": 3,
+        "price": 200,
+        "label": "3 Hours"
+      },
+      "6hr": {
+        "hours": 6,
+        "price": 250,
+        "label": "6 Hours"
+      },
+      "24hr": {
+        "hours": 24,
+        "price": 350,
+        "label": "24 Hours"
+      }
+    }
   }
 }
