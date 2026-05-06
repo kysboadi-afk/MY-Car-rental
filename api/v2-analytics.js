@@ -141,9 +141,12 @@ export default async function handler(req, res) {
     }
 
     /** Returns true if vehicleId matches the requested scope. */
+    const ANALYTICS_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
     function inScope(vid) {
       if (!scope) return true;
-      const t = vehicleTypeMap[vid] || "";
+      const t = (vehicleTypeMap[vid] || "").toLowerCase();
+      if (scope === "car" || scope === "cars") return ANALYTICS_CAR_TYPES.has(t) || t === "";
+      if (scope === "slingshot") return t === "slingshot";
       return true;
     }
 
