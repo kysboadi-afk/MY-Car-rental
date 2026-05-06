@@ -2050,6 +2050,7 @@ stripeBtn.addEventListener("click", async () => {
         insuranceCoverageChoice,
         // Pass file names so the server can enforce upload requirements as a server-side gate.
         idFileName: idFileName || null,
+        idBackFileName: idBackFileName || null,
         insuranceFileName: insuranceCoverageChoice === "yes" ? (insuranceFileName || null) : null,
         paymentMode,
         adminOverride: ADMIN_OVERRIDE,
