@@ -113,7 +113,7 @@ function clearPayError() {
         }
         // Also refresh the earnings block in case the weekly rate changed.
         // Skip for slingshot vehicles — the earnings block is hidden for them.
-        if (carData.type !== "slingshot") updateEarningsBlock();
+        if (carData.category !== "slingshot") updateEarningsBlock();
       }
     })
     .catch(function(err) {
@@ -165,6 +165,7 @@ function normalizeApiVehicle(v) {
     vin:           v.vin   || "",
     color:         v.color || "",
     type:          v.type  || "",
+    category:      (v.category || "").toLowerCase() || (v.type === "slingshot" ? "slingshot" : "car"),
     scarcity_text: v.scarcity_text || "",
     earnings_tagline: v.earnings_tagline || "",
     earnings_title:   v.earnings_title   || "",
@@ -249,26 +250,43 @@ function installEarningsTranslationHook() {
 function initCarDisplay() {
   document.getElementById("carName").textContent = carData.name;
 
-  // ── Slingshot-aware navigation ─────────────────────────────────────────
-  // When the booked vehicle is a slingshot the nav links and back button must
-  // point to slingshots.html, not the car-rental pages.
-  const isSlingshot = carData.type === "slingshot";
-  if (isSlingshot) {
-    // Update header nav: Home → slingshots.html, "Browse Cars" → "Browse Slingshots"
-    const homeLink = document.querySelector(".site-nav a[data-i18n='nav.homeLink']");
-    if (homeLink) homeLink.href = "slingshots.html";
-    const browseLink = document.querySelector(".site-nav a[href='cars.html']");
-    if (browseLink) { browseLink.href = "slingshots.html"; browseLink.textContent = "Browse Slingshots"; }
-    // Logo link
-    const logoLink = document.querySelector(".logo-link");
-    if (logoLink) logoLink.href = "slingshots.html";
-    // Back button
-    const backBtnEl = document.getElementById("backBtn");
-    if (backBtnEl) backBtnEl.onclick = function(e) { e.preventDefault(); window.location.href = "slingshots.html"; };
-    // Hide the Uber/Lyft rideshare earnings block — not relevant for slingshots
-    const earningsBlock = document.getElementById("earningsBlock");
-    if (earningsBlock) earningsBlock.style.display = "none";
+  // ── Category-aware navigation ───────────────────────────────────────────
+  // Completely rebuild the nav for each category so no car links ever appear
+  // on the slingshot booking page and vice-versa.  innerHTML replacement is
+  // used instead of attribute mutations to avoid fragile selector dependencies
+  // and to guarantee the correct set of links regardless of the HTML defaults.
+  const isSlingshot = carData.category === "slingshot";
+  const nav = document.querySelector(".site-nav");
+  if (nav) {
+    if (isSlingshot) {
+      // Slingshot mode: no car links — Home, Slingshots, Manage Booking only
+      nav.innerHTML =
+        '<a href="slingshots.html">Home</a>' +
+        '<a href="slingshots.html">Slingshots</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    } else {
+      // Car mode: restore default car nav in case another vehicle was selected
+      nav.innerHTML =
+        '<a href="index.html" data-i18n="nav.homeLink">Home</a>' +
+        '<a href="cars.html">Browse Cars</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    }
   }
+  // Logo link
+  const logoLink = document.querySelector(".logo-link");
+  if (logoLink) logoLink.href = isSlingshot ? "slingshots.html" : "index.html";
+  // Back button
+  const backBtnEl = document.getElementById("backBtn");
+  if (backBtnEl) {
+    if (isSlingshot) {
+      backBtnEl.onclick = function(e) { e.preventDefault(); window.location.href = "slingshots.html"; };
+    } else {
+      backBtnEl.onclick = null; // rely on the default listener that goes to cars.html
+    }
+  }
+  // Rideshare earnings block — only relevant for cars
+  const earningsBlock = document.getElementById("earningsBlock");
+  if (earningsBlock) earningsBlock.style.display = isSlingshot ? "none" : "";
 
   // Point the "Complete Booking" header button to the booking section of this vehicle's page.
   const completeBookingBtn = document.getElementById("completeBookingBtn");

@@ -23,6 +23,10 @@ import { uiVehicleId } from "./_vehicle-id.js";
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
 const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "slingshot", "other"];
+// category is the single authoritative field that controls which page a vehicle
+// appears on.  "car" → cars page; "slingshot" → slingshots page.  No other
+// values are accepted so bad data can never cause mixing between pages.
+const ALLOWED_CATEGORIES    = ["car", "slingshot"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
@@ -31,6 +35,34 @@ const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
 
 // Bouncie IMEI: 15-digit numeric string, or empty string (to clear the mapping)
 const BOUNCIE_IMEI_RE = /^\d{15}$/;
+
+
+/**
+ * Derive the canonical category ("car" | "slingshot") for a vehicle.
+ *
+ * This is the ONLY function that should determine which page a vehicle
+ * appears on.  It first checks the explicit `category` field; if that is
+ * absent or invalid it falls back to inspecting `type`, `vehicleId`, and
+ * `vehicleName` for backward compatibility with records that pre-date the
+ * field.  All new and edited vehicles must always supply an explicit
+ * `category` value so this fallback path is never reached for them.
+ *
+ * @param {string} category  - The vehicle's stored category value.
+ * @param {string} type      - The vehicle's stored type (e.g. "economy", "slingshot").
+ * @param {string} vehicleId - The vehicle's ID (e.g. "camry", "slingshot-red").
+ * @param {string} vehicleName - The vehicle's display name.
+ * @returns {"car"|"slingshot"}
+ */
+function deriveCategory(category, type, vehicleId, vehicleName) {
+  const cat = (category || "").toLowerCase().trim();
+  if (cat === "car" || cat === "slingshot") return cat;
+  // Backward-compat: infer from type or id/name when category is absent
+  const t  = (type        || "").toLowerCase();
+  const id = (vehicleId   || "").toLowerCase();
+  const nm = (vehicleName || "").toLowerCase();
+  if (t === "slingshot" || id.includes("slingshot") || nm.includes("slingshot")) return "slingshot";
+  return "car";
+}
 
 // Normalize cover_image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
@@ -83,30 +115,15 @@ export default async function handler(req, res) {
     // Prevent CDN/browser caches from serving stale vehicle lists after creation.
     res.setHeader("Cache-Control", "no-store");
 
-    // Optional scope filter: ?scope=car → car-type vehicles only; ?scope=slingshot → slingshots only
+    // Optional scope filter: ?scope=car → car-category vehicles only; ?scope=slingshot → slingshots only
     const scope = (req.query?.scope || "").toLowerCase();
-    // Returns true when the given vehicle type belongs to the requested scope.
-    const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-    // Returns true when a vehicle_id or vehicle_name indicates a slingshot,
-    // regardless of how the type field is stored in the database.
-    function looksLikeSlingshot(vehicleId, vehicleName) {
-      const id   = (vehicleId   || "").toLowerCase();
-      const name = (vehicleName || "").toLowerCase();
-      return id.includes("slingshot") || name.includes("slingshot");
-    }
-    function inScopeGET(type, vehicleId, vehicleName) {
+    // Filtering is now entirely driven by the category field (derived via deriveCategory
+    // when the field is absent) so bad type values can never cause cross-page leaks.
+    function inScopeGET(category, type, vehicleId, vehicleName) {
       if (!scope) return true;
-      const t = (type || "").toLowerCase();
-      // Extra guard: treat vehicles that look like slingshots as type="slingshot"
-      // even when the type field is missing or incorrectly set in the database.
-      const effectiveSlingshot = t === "slingshot" || looksLikeSlingshot(vehicleId, vehicleName);
-      if (scope === "car" || scope === "cars") {
-        if (effectiveSlingshot) return false;
-        // Require an explicit car type — do NOT include vehicles with no type set,
-        // since an unset/wrong type is how slingshots leak onto the car page.
-        return CAR_TYPES.has(t);
-      }
-      if (scope === "slingshot") return effectiveSlingshot;
+      const cat = deriveCategory(category, type, vehicleId, vehicleName);
+      if (scope === "car" || scope === "cars")   return cat === "car";
+      if (scope === "slingshot")                 return cat === "slingshot";
       return true;
     }
     const supabase = getSupabaseAdmin();
@@ -136,7 +153,8 @@ export default async function handler(req, res) {
           const status = row.data?.status;
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
-          if (!inScopeGET(type, row.vehicle_id, row.data?.vehicle_name)) continue;
+          const rowCategory = row.data?.category || "";
+          if (!inScopeGET(rowCategory, type, row.vehicle_id, row.data?.vehicle_name)) continue;
 
           const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
           const obj = {
@@ -151,6 +169,8 @@ export default async function handler(req, res) {
             // tracked = true when a Bouncie IMEI is assigned (independent of rental status)
             tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
             vehicle_id: id,
+            // Always expose a canonical category so frontend never has to guess
+            category: deriveCategory(rowCategory, type, row.vehicle_id, row.data?.vehicle_name),
           };
           // Overlay vehicle_pricing table values so the booking page always
           // reflects the latest rates set via the Vehicle Pricing admin page.
@@ -177,9 +197,14 @@ export default async function handler(req, res) {
         const status = v.status;
         if (status && status !== "active") continue;
         const type = v.type || "";
-        if (!inScopeGET(type, v.vehicle_id, v.vehicle_name)) continue;
+        if (!inScopeGET(v.category || "", type, v.vehicle_id, v.vehicle_name)) continue;
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
-        let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
+        let next = {
+          ...v,
+          vehicle_id: id,
+          tracked: !!v.bouncie_device_id,
+          category: deriveCategory(v.category || "", type, v.vehicle_id, v.vehicle_name),
+        };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
         resultById[id] = mergeVehicleRecords(resultById[id], next);
       }
@@ -213,14 +238,13 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      // scope: "car" → car-type vehicles only; "slingshot" → slingshots only; omit → all
+      // scope: "car" → category=car vehicles only; "slingshot" → category=slingshot; omit → all
       const scope = (body.scope || "").toLowerCase();
-      const SCOPE_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-      const scopeFilter = (type) => {
+      const scopeFilter = (category, type, vehicleId, vehicleName) => {
         if (!scope) return true;
-        const t = (type || "").toLowerCase();
-        if (scope === "car" || scope === "cars") return SCOPE_CAR_TYPES.has(t) || t === "";
-        if (scope === "slingshot") return t === "slingshot";
+        const cat = deriveCategory(category, type, vehicleId, vehicleName);
+        if (scope === "car" || scope === "cars") return cat === "car";
+        if (scope === "slingshot") return cat === "slingshot";
         return true;
       };
 
@@ -241,7 +265,8 @@ export default async function handler(req, res) {
           const vehicles = {};
           for (const row of rows || []) {
             const type = row.data?.type || row.data?.vehicle_type || "";
-            if (!scopeFilter(type)) continue;
+            const rowCategory = row.data?.category || "";
+            if (!scopeFilter(rowCategory, type, row.vehicle_id, row.data?.vehicle_name)) continue;
             const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
             const next = {
               ...(row.data || {}),
@@ -253,6 +278,7 @@ export default async function handler(req, res) {
               last_tire_change_mileage: row.last_tire_change_mileage != null ? Number(row.last_tire_change_mileage) : null,
               tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
               vehicle_id: id,
+              category: deriveCategory(rowCategory, type, row.vehicle_id, row.data?.vehicle_name),
             };
             // Overlay vehicle_pricing table values so the admin cache and booking
             // page always reflect the latest rates from the Vehicle Pricing admin.
@@ -275,9 +301,15 @@ export default async function handler(req, res) {
       const { data: rawVehicles } = await loadVehicles();
       const vehicles = {};
       for (const [id, v] of Object.entries(rawVehicles)) {
-        if (!scopeFilter(v.type || "")) continue;
+        const type = v.type || "";
+        if (!scopeFilter(v.category || "", type, v.vehicle_id || id, v.vehicle_name)) continue;
         const uiId = uiVehicleId(v.vehicle_id || id) || (v.vehicle_id || id);
-        let next = { ...v, vehicle_id: uiId, tracked: !!v.bouncie_device_id };
+        let next = {
+          ...v,
+          vehicle_id: uiId,
+          tracked: !!v.bouncie_device_id,
+          category: deriveCategory(v.category || "", type, v.vehicle_id || id, v.vehicle_name),
+        };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
         vehicles[uiId] = mergeVehicleRecords(vehicles[uiId], next);
       }
@@ -299,7 +331,7 @@ export default async function handler(req, res) {
       const safeUpdates = {};
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
-        "vehicle_name", "vehicle_year", "type", "cover_image", "gallery_images",
+        "vehicle_name", "vehicle_year", "type", "category", "cover_image", "gallery_images",
         "bouncie_device_id", "vin", "scarcity_text", "make",
         "earnings_tagline", "earnings_title", "earnings_row1", "earnings_cta",
       ];
@@ -311,6 +343,9 @@ export default async function handler(req, res) {
           }
           if (f === "type" && val && !ALLOWED_TYPES.includes(val)) {
             return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(", ")}` });
+          }
+          if (f === "category" && val && !ALLOWED_CATEGORIES.includes((val || "").toLowerCase())) {
+            return res.status(400).json({ error: `category must be one of: ${ALLOWED_CATEGORIES.join(", ")}` });
           }
           if (f === "purchase_price" || f === "vehicle_year") {
             const n = Number(val);
@@ -345,6 +380,8 @@ export default async function handler(req, res) {
               return res.status(400).json({ error: "bouncie_device_id must be a 15-digit IMEI or empty" });
             }
             safeUpdates[f] = trimmed || null;
+          } else if (f === "category") {
+            safeUpdates[f] = typeof val === "string" ? val.toLowerCase().trim() : val;
           } else if (["earnings_tagline", "earnings_title", "earnings_row1", "earnings_cta"].includes(f)) {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : (val || null);
           } else {
@@ -447,7 +484,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, make, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta, hourlyTiers } = body;
+      const { vehicleId, vehicleName, type, category, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, make, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta, hourlyTiers } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -460,6 +497,14 @@ export default async function handler(req, res) {
       if (!ALLOWED_TYPES.includes(vehicleType)) {
         return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(", ")}` });
       }
+
+      // category is required on create; derive from type when not provided for
+      // backward compatibility but reject any explicitly invalid value.
+      const rawCategory = (category || "").toLowerCase().trim();
+      if (rawCategory && !ALLOWED_CATEGORIES.includes(rawCategory)) {
+        return res.status(400).json({ error: `category must be one of: ${ALLOWED_CATEGORIES.join(", ")}` });
+      }
+      const vehicleCategory = rawCategory || deriveCategory("", vehicleType, vehicleId, vehicleName);
 
       const vehicleStatus = status || "active";
       if (!ALLOWED_STATUSES.includes(vehicleStatus)) {
@@ -504,6 +549,7 @@ export default async function handler(req, res) {
         vehicle_id:     vehicleId,
         vehicle_name:   vehicleName.trim().slice(0, MAX_VEHICLE_NAME_LEN),
         type:           vehicleType,
+        category:       vehicleCategory,
         vehicle_year:   vehicleYear ? Math.round(Number(vehicleYear)) : null,
         purchase_price: purchasePrice ? Math.round(parseFloat(purchasePrice) * 100) / 100 : 0,
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",

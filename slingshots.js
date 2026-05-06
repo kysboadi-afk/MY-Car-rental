@@ -221,9 +221,15 @@ async function loadSlingshotFleet() {
     console.warn("Could not load slingshot fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    v.type === "slingshot" && (!v.status || v.status === "active")
-  );
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+    if (v.status && v.status !== "active") return false;
+    const cat = (v.category || "").toLowerCase();
+    if (!cat || (cat !== "car" && cat !== "slingshot")) {
+      console.error("[slingshots.js] Vehicle skipped — missing or invalid category:", v.vehicle_id, cat || "(none)");
+      return false;
+    }
+    return cat === "slingshot";
+  });
 
   if (!active.length) {
     if (!grid.querySelector(".car-card")) {

@@ -2562,7 +2562,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
+        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev');syncCategoryFromType('ev')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2571,6 +2571,14 @@
           <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="ev-category">Category *</label>
+        <select class="form-select" id="ev-category">
+          <option value="car">Car</option>
+          <option value="slingshot">Slingshot</option>
+        </select>
+        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -2679,7 +2687,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av');toggleVehicleTypeFields('av')">
+        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av');toggleVehicleTypeFields('av');syncCategoryFromType('av')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2688,6 +2696,14 @@
           <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="av-category">Category *</label>
+        <select class="form-select" id="av-category">
+          <option value="car">Car</option>
+          <option value="slingshot">Slingshot</option>
+        </select>
+        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -3885,6 +3901,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-name').value = v.vehicle_name || '';
   document.getElementById('ev-make').value = v.make || '';
   document.getElementById('ev-type').value = v.type || 'economy';
+  document.getElementById('ev-category').value = v.category || (v.type === 'slingshot' ? 'slingshot' : 'car');
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
@@ -3910,6 +3927,7 @@ async function saveVehicle() {
     vehicle_name:      document.getElementById('ev-name').value.trim(),
     make:              document.getElementById('ev-make').value.trim() || null,
     type:              document.getElementById('ev-type').value,
+    category:          document.getElementById('ev-category').value,
     status:            document.getElementById('ev-status').value,
     vehicle_year:      Number(document.getElementById('ev-year').value) || null,
     purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
@@ -4292,6 +4310,15 @@ async function markVehicleServiced(vehicleId, serviceType) {
 }
 
 // ── Add Vehicle ────────────────────────────────────────────────────────────
+// Auto-sync category from type when type changes: selecting "Slingshot" sets
+// category to "slingshot"; any other type sets it to "car".
+function syncCategoryFromType(prefix) {
+  const typeEl     = document.getElementById(prefix + '-type');
+  const categoryEl = document.getElementById(prefix + '-category');
+  if (!typeEl || !categoryEl) return;
+  categoryEl.value = typeEl.value === 'slingshot' ? 'slingshot' : 'car';
+}
+
 function toggleVehicleTypeFields(prefix) {
   const type = (document.getElementById(prefix + '-type') || {}).value || '';
   const isSlingshot = type === 'slingshot';
@@ -4311,6 +4338,7 @@ function openAddVehicle() {
   document.getElementById('av-name').value = '';
   document.getElementById('av-make').value = '';
   document.getElementById('av-type').value = 'economy';
+  document.getElementById('av-category').value = 'car';
   document.getElementById('av-status').value = 'active';
   document.getElementById('av-year').value = '';
   document.getElementById('av-purchase-price').value = '';
@@ -4345,6 +4373,7 @@ async function saveNewVehicle() {
   const vehicleId       = (document.getElementById('av-id').value || '').trim().toLowerCase();
   const vehicleName     = document.getElementById('av-name').value.trim();
   const type            = document.getElementById('av-type').value;
+  const category        = document.getElementById('av-category').value;
   const status          = document.getElementById('av-status').value;
   const vehicleYear     = parseInt(document.getElementById('av-year').value, 10) || null;
   const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
@@ -4390,6 +4419,11 @@ async function saveNewVehicle() {
     msgEl.textContent = 'Vehicle Name is required.';
     return;
   }
+  if (!category || (category !== 'car' && category !== 'slingshot')) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Category is required — select Car or Slingshot.';
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Adding…';
@@ -4399,7 +4433,7 @@ async function saveNewVehicle() {
   try {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
-      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      vehicleId, vehicleName, type, category, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
       ...(make         ? { make }         : {}),
       ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),

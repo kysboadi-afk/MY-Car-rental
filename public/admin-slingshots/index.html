@@ -2562,7 +2562,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
+        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev');syncCategoryFromType('ev')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2571,6 +2571,14 @@
           <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-select" id="ev-category">
+          <option value="car">Car</option>
+          <option value="slingshot">Slingshot</option>
+        </select>
+        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -3864,6 +3872,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-name').value = v.vehicle_name || '';
   document.getElementById('ev-make').value = v.make || '';
   document.getElementById('ev-type').value = v.type || 'economy';
+  document.getElementById('ev-category').value = v.category || (v.type === 'slingshot' ? 'slingshot' : 'car');
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
@@ -3889,6 +3898,7 @@ async function saveVehicle() {
     vehicle_name:      document.getElementById('ev-name').value.trim(),
     make:              document.getElementById('ev-make').value.trim() || null,
     type:              document.getElementById('ev-type').value,
+    category:          document.getElementById('ev-category').value,
     status:            document.getElementById('ev-status').value,
     vehicle_year:      Number(document.getElementById('ev-year').value) || null,
     purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
@@ -4183,6 +4193,13 @@ function startBouncieConnect() {
  * Show/hide the "not tracked" warning in the Edit or Add Vehicle modal.
  * @param {'ev'|'av'} prefix - modal field ID prefix
  */
+function syncCategoryFromType(prefix) {
+  const typeEl     = document.getElementById(prefix + '-type');
+  const categoryEl = document.getElementById(prefix + '-category');
+  if (!typeEl || !categoryEl) return;
+  categoryEl.value = typeEl.value === 'slingshot' ? 'slingshot' : 'car';
+}
+
 function updateBouncieWarning(prefix) {
   const typeEl    = document.getElementById(prefix + '-type');
   const imeiEl    = document.getElementById(prefix + '-bouncie-id');

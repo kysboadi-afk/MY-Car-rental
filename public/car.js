@@ -171,6 +171,8 @@ function buildCarDataFromAPI(v) {
     earnings_title:   v.earnings_title   || "",
     earnings_row1:    v.earnings_row1    || "",
     earnings_cta:     v.earnings_cta     || "",
+    // category drives page-level UI switching — "car" or "slingshot"
+    category:         (v.category || "").toLowerCase() || (v.type === "slingshot" ? "slingshot" : "car"),
   };
 }
 
@@ -199,6 +201,40 @@ function initCarPage() {
   document.getElementById("carPrice").textContent = carData.weekly
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+  // ── Category-aware navigation ───────────────────────────────────────────
+  // Completely rebuild the nav based on category so no car links appear for
+  // slingshots and no slingshot links appear for cars.
+  const isSlingshot = carData.category === "slingshot";
+  const nav = document.querySelector(".site-nav");
+  if (nav) {
+    if (isSlingshot) {
+      nav.innerHTML =
+        '<a href="slingshots.html">Home</a>' +
+        '<a href="slingshots.html">Slingshots</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    } else {
+      nav.innerHTML =
+        '<a href="index.html" data-i18n="nav.homeLink">Home</a>' +
+        '<a href="cars.html">Browse Cars</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    }
+  }
+  // Logo link
+  const logoLink = document.querySelector(".logo-link");
+  if (logoLink) logoLink.href = isSlingshot ? "slingshots.html" : "index.html";
+  // Back button — default listener goes to cars.html; override for slingshots
+  const backBtnEl = document.getElementById("backBtn");
+  if (backBtnEl) {
+    if (isSlingshot) {
+      backBtnEl.onclick = function(e) { e.preventDefault(); window.location.href = "slingshots.html"; };
+    } else {
+      backBtnEl.onclick = null;
+    }
+  }
+  // Rideshare earnings block — only shown for cars
+  const earningsBlock = document.getElementById("earningsBlock");
+  if (earningsBlock) earningsBlock.style.display = isSlingshot ? "none" : "";
 
   if (IS_TEST_MODE_OVERRIDE) {
     const bookingSection = document.querySelector(".booking");
@@ -231,9 +267,11 @@ function initCarPage() {
   updateDepositButton();
 
   // Update the earnings block with this vehicle's data and install the translation
-  // hook so language switches keep it correct.
-  updateEarningsBlock();
-  installEarningsTranslationHook();
+  // hook so language switches keep it correct — only for cars.
+  if (!isSlingshot) {
+    updateEarningsBlock();
+    installEarningsTranslationHook();
+  }
 }
 
 // Average weekly rideshare earnings range used in the earnings example block.
