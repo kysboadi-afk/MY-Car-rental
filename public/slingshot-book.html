@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Book a Slingshot rental with Sly Transportation Services LLC. Choose your package, select a date and time, upload your ID and pay securely online.">
+  <title>Sly Transportation Services LLC | Book a Slingshot</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-H3K1LZSB9H"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-H3K1LZSB9H');
+  </script>
+  <!-- End Google tag -->
+  <style>
+    /* ── Slingshot-specific styles ──────────────────────────────────────── */
+    .package-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 480px) {
+      .package-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .package-btn {
+      background: #1e1e1e;
+      border: 2px solid #2a2a2a;
+      border-radius: 10px;
+      color: #eee;
+      cursor: pointer;
+      padding: 14px 10px;
+      text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+      width: 100%;
+    }
+    .package-btn:hover {
+      border-color: #ffb400;
+      background: #252525;
+    }
+    .package-btn.selected {
+      border-color: #ffb400;
+      background: #2a2500;
+    }
+    .package-btn .pkg-duration {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffb400;
+      display: block;
+    }
+    .package-btn .pkg-price {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      display: block;
+      margin-top: 2px;
+    }
+    .package-btn .pkg-sub {
+      font-size: 12px;
+      color: #888;
+      display: block;
+      margin-top: 2px;
+    }
+    .return-time-box {
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      display: none;
+    }
+    .return-time-box .rt-label {
+      color: #aaa;
+      margin: 0 0 4px;
+    }
+    .return-time-box .rt-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffb400;
+      margin: 0;
+    }
+    .deposit-notice {
+      background: #1a2400;
+      border: 1px solid #3a4e00;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #c8e070;
+    }
+    .deposit-notice strong { color: #e8ff80; }
+    .total-breakdown {
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+    }
+    .total-breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      color: #ccc;
+      margin-bottom: 6px;
+    }
+    .total-breakdown-row.total-row {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      border-top: 1px solid #333;
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+    .total-breakdown-row.deposit-row { color: #c8e070; }
+    .slingshot-hours-badge {
+      display: inline-block;
+      background: #ffb400;
+      color: #000;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .pay-hint-slingshot {
+      font-size: 13px;
+      color: #888;
+      margin-top: 6px;
+    }
+    /* Extension package picker */
+    .ext-pkg-label {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ddd;
+      margin-bottom: 8px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+  <nav class="site-nav">
+    <a href="index.html">Home</a>
+    <a href="slingshots.html">Slingshots</a>
+    <a href="cars.html">Browse Cars</a>
+    <a href="index.html#about">About</a>
+  </nav>
+  <a href="https://www.slytrans.com/manage-booking.html" class="header-complete-booking-btn">Manage Booking</a>
+  <a href="tel:+18445114059" class="header-phone">📞 (844) 511-4059</a>
+</header>
+
+<div class="container">
+
+  <button id="backBtn" class="back-btn">⬅ Back to Slingshots</button>
+
+  <div class="booking-layout">
+
+    <!-- Vehicle image + info -->
+    <div class="car-slider" id="carSlider">
+      <div class="slider" id="sliderContainer"></div>
+      <div class="slider-controls">
+        <button id="prevSlide">&#10094;</button>
+        <button id="nextSlide">&#10095;</button>
+      </div>
+      <div class="slider-dots" id="sliderDots"></div>
+      <div class="car-info">
+        <h3 id="carName">Slingshot</h3>
+        <p class="car-subtitle" id="carSubtitle">Experience Los Angeles in style</p>
+        <p class="price" id="carPrice"></p>
+      </div>
+    </div>
+
+    <!-- ── Regular Booking Form ── -->
+    <section class="booking" id="bookingSection">
+      <h2 id="bookingHeading">Complete Your Reservation</h2>
+
+      <div id="paymentRetryBanner" class="payment-retry-banner" style="display:none" role="alert">
+        <strong>⚠️ Payment not completed.</strong> Your booking details have been pre-filled. Please review and try again.
+      </div>
+
+      <!-- Package selector -->
+      <label style="display:block;margin-bottom:8px;font-weight:600">Select Rental Package</label>
+      <div class="package-grid" id="packageGrid">
+        <button type="button" class="package-btn" data-pkg="2hr">
+          <span class="pkg-duration">2 Hours</span>
+          <span class="pkg-price">$150</span>
+          <span class="pkg-sub">Rental only</span>
+        </button>
+        <button type="button" class="package-btn" data-pkg="3hr">
+          <span class="pkg-duration">3 Hours</span>
+          <span class="pkg-price">$200</span>
+          <span class="pkg-sub">Rental only</span>
+        </button>
+        <button type="button" class="package-btn" data-pkg="6hr">
+          <span class="pkg-duration">6 Hours</span>
+          <span class="pkg-price">$250</span>
+          <span class="pkg-sub">Rental only</span>
+        </button>
+        <button type="button" class="package-btn" data-pkg="24hr">
+          <span class="pkg-duration">24 Hours</span>
+          <span class="pkg-price">$350</span>
+          <span class="pkg-sub">Full day</span>
+        </button>
+      </div>
+      <p id="pkgNote" style="display:none;color:#c62828;font-size:.875rem;margin-bottom:12px">Please select a rental package above.</p>
+
+      <!-- Pickup date -->
+      <label for="slPickupDate">Pickup Date <span style="font-size:12px;color:#aaa">(Los Angeles time)</span></label>
+      <input type="date" id="slPickupDate" required>
+
+      <!-- Pickup time -->
+      <label for="slPickupTime">Pickup Time <span style="font-size:12px;color:#aaa">(Los Angeles time)</span></label>
+      <select id="slPickupTime" required>
+        <option value="">— Select a pickup time —</option>
+      </select>
+      <p id="noTimesMsg" style="display:none;color:#c62828;font-size:.875rem;margin-top:.25rem">No available times for this package and date. Please choose a different time or package.</p>
+
+      <!-- Computed return time -->
+      <div class="return-time-box" id="returnTimeBox">
+        <p class="rt-label">Estimated return by (Los Angeles time):</p>
+        <p class="rt-value" id="returnTimeDisplay">—</p>
+      </div>
+
+      <!-- Contact info -->
+      <label for="slName">Full Name</label>
+      <input type="text" id="slName" placeholder="Enter your full name" autocomplete="off" required>
+
+      <label for="slEmail">Email Address</label>
+      <input type="email" id="slEmail" placeholder="Enter your email" autocomplete="email">
+
+      <label for="slPhone">Phone Number</label>
+      <input type="tel" id="slPhone" placeholder="Enter your phone number" autocomplete="tel" required>
+
+      <p class="sms-consent">By submitting this form, you agree to receive SMS messaging regarding your reservation. Reply STOP to opt out.</p>
+
+      <!-- ID upload -->
+      <div class="id-upload-section">
+        <p class="id-note">A valid government-issued ID is required to confirm your rental.</p>
+        <label for="slIdUpload">📎 Front of Driver's License / ID <span class="required">*</span></label>
+        <input type="file" id="slIdUpload" accept=".jpg,.jpeg,.png,.pdf">
+        <div id="slFileInfo">
+          <span class="file-name">No file selected</span>
+          <span class="file-size"></span>
+        </div>
+        <label for="slIdBackUpload" style="margin-top:12px;display:block">📎 Back of Driver's License / ID <span class="required">*</span></label>
+        <input type="file" id="slIdBackUpload" accept=".jpg,.jpeg,.png,.pdf">
+        <div id="slFileInfoBack">
+          <span class="file-name">No file selected</span>
+          <span class="file-size"></span>
+        </div>
+        <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
+      </div>
+
+      <!-- Deposit notice + total breakdown -->
+      <div class="deposit-notice">
+        <strong>$500 Refundable Security Deposit Required.</strong> This deposit is collected at booking and returned after the vehicle is inspected upon return (typically within 5–7 business days).
+      </div>
+
+      <div class="total-breakdown" id="totalBreakdown" style="display:none">
+        <div class="total-breakdown-row">
+          <span id="pkgBreakdownLabel">Rental package</span>
+          <span id="pkgBreakdownPrice">—</span>
+        </div>
+        <div class="total-breakdown-row deposit-row">
+          <span>Refundable deposit</span>
+          <span>$500.00</span>
+        </div>
+        <div class="total-breakdown-row" style="font-size:12px;color:#888;margin-bottom:2px">
+          <span>No tax on slingshot rentals</span>
+          <span>$0.00</span>
+        </div>
+        <div class="total-breakdown-row total-row">
+          <span>Total charged today</span>
+          <span>$<span id="totalAmountDisplay">0</span></span>
+        </div>
+      </div>
+
+      <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
+
+      <button type="button" id="slBookBtn" style="margin-top:10px" disabled>Book Now 🔒</button>
+      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable booking.</p>
+
+      <!-- Stripe payment form (shown after booking creation) -->
+      <div id="slPaymentForm" style="display:none">
+        <div id="slBookingSummary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
+        <div id="sl-payment-element"></div>
+        <div id="sl-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+        <button id="sl-submit-payment" type="button">Pay $<span id="slPayAmount">0</span> Now 🔒</button>
+        <button id="sl-cancel-payment" type="button">← Change booking details</button>
+      </div>
+    </section>
+
+    <!-- ── Extend Rental Section ── -->
+    <section class="booking" id="extendSection" style="display:none">
+      <h2>⏱️ Extend Your Slingshot Rental</h2>
+      <p class="waitlist-subtitle" id="extSubtitle">This slingshot is currently rented. If you are the current renter, enter your contact info and select an extension package below.</p>
+
+      <div id="extendRentalForm">
+        <label for="extEmail">Email Address</label>
+        <input type="email" id="extEmail" placeholder="Enter your booking email" autocomplete="email">
+
+        <label for="extPhone">Phone Number <span style="font-size:12px;font-weight:400;color:#aaa">(if email doesn't work)</span></label>
+        <input type="tel" id="extPhone" placeholder="Enter your phone number" autocomplete="tel">
+
+        <span class="ext-pkg-label" style="margin-top:8px">Select Extension Package</span>
+        <div class="package-grid" id="extPackageGrid">
+          <button type="button" class="package-btn" data-pkg="2hr">
+            <span class="pkg-duration">2 Hours</span>
+            <span class="pkg-price">$150</span>
+          </button>
+          <button type="button" class="package-btn" data-pkg="3hr">
+            <span class="pkg-duration">3 Hours</span>
+            <span class="pkg-price">$200</span>
+          </button>
+          <button type="button" class="package-btn" data-pkg="6hr">
+            <span class="pkg-duration">6 Hours</span>
+            <span class="pkg-price">$250</span>
+          </button>
+          <button type="button" class="package-btn" data-pkg="24hr">
+            <span class="pkg-duration">24 Hours</span>
+            <span class="pkg-price">$350</span>
+          </button>
+        </div>
+        <p id="extBusinessHoursNote" style="display:none;font-size:13px;color:#aaa;margin-bottom:10px">
+          ℹ️ Non-24hr packages must return by 8:00 PM Los Angeles time.
+        </p>
+
+        <button id="extSubmitBtn" class="extend-btn" disabled>⏱️ Extend Rental</button>
+        <p class="pay-hint" id="extPayHint">Enter your email or phone and select an extension package to continue.</p>
+      </div>
+
+      <!-- Stripe payment form for extension -->
+      <div id="extPaymentForm" style="display:none">
+        <div id="ext-rental-summary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
+        <div id="ext-payment-element"></div>
+        <div id="ext-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+        <button id="ext-submit-payment" type="button">Pay $<span id="extPayAmount">0</span> Now 🔒</button>
+        <button id="ext-cancel-payment" type="button">← Change details</button>
+      </div>
+    </section>
+
+  </div><!-- /.booking-layout -->
+</div>
+
+<footer>
+  <span>&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp;
+  <a href="tel:+18445114059" class="footer-phone">(844) 511-4059</a> &nbsp;|&nbsp;
+  <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a> &nbsp;|&nbsp;
+  <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+</footer>
+
+<script src="la-date.js"></script>
+<script src="site-settings.js"></script>
+<script src="slingshot-book.js"></script>
+<script src="chatbot.js"></script>
+
+</body>
+</html>

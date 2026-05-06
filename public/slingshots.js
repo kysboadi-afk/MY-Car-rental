@@ -1,7 +1,7 @@
 // slingshots.js — Slingshot fleet page
-// Fetches active slingshot vehicles from /api/v2-vehicles and live pricing from
-// /api/public-pricing, then renders a card per vehicle so each slingshot can
-// be booked individually via the standard car.html booking flow (Stripe).
+// Fetches active slingshot vehicles from /api/v2-vehicles and renders a card
+// per vehicle so each slingshot can be booked via slingshot-book.html (package
+// pricing: 2hr $150 / 3hr $200 / 6hr $250 / 24hr $350).  No tax applies.
 
 const API_BASE = "https://sly-rides.vercel.app";
 const SlyLA = window.SlyLA;
@@ -51,9 +51,6 @@ function buildSlingshotCard(v, pricing) {
   const subtitle = esc(v.subtitle || "3-Wheeler \u2022 Open-Air");
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 
-  const daily    = fmtMoney(v.daily_price    ?? v.pricePerDay  ?? pricing?.slingshot?.daily    ?? 120);
-  const weekly   = fmtMoney(v.weekly_price   ?? v.weekly       ?? pricing?.slingshot?.weekly   ?? 699);
-
   return `<div class="car-card" data-category="slingshot" data-vehicle="${vid}">
     <img src="${img}" alt="${name}" loading="lazy">
     <div class="car-info">
@@ -64,13 +61,16 @@ function buildSlingshotCard(v, pricing) {
         <span class="rideshare-badge">&#127937; Thrill Ride</span>
         <span class="rideshare-badge">&#127804; Scenic Cruising</span>
       </div>
-      <p class="price-list-label">Rental Plans</p>
+      <p class="price-list-label">Rental Packages (No Tax)</p>
       <div class="price-list">
-        <div class="price-item">${daily} / day</div>
-        <div class="price-item price-item--popular">${weekly} / week <span class="popular-tag">Most Popular</span></div>
+        <div class="price-item">$150 / 2 hrs</div>
+        <div class="price-item">$200 / 3 hrs</div>
+        <div class="price-item">$250 / 6 hrs</div>
+        <div class="price-item price-item--popular">$350 / 24 hrs <span class="popular-tag">Best Value</span></div>
       </div>
+      <p style="font-size:12px;color:#aaa;margin:4px 0 8px">+$500 refundable deposit required</p>
       ${scarcity}
-      <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
+      <a href="slingshot-book.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
         <button class="select-btn" id="select-btn-${vid}">Book Now</button>
       </a>
     </div>
@@ -122,7 +122,7 @@ function applyFleetStatus(fleetStatus) {
       btn.style.display = "";
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
-      link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
+      link.href = `slingshot-book.html?vehicle=${encodeURIComponent(vid)}`;
 
       const todayBadge = document.createElement("span");
       todayBadge.className = "available-today-badge";
@@ -148,7 +148,7 @@ function applyFleetStatus(fleetStatus) {
         link.href = "https://www.slytrans.com/manage-booking.html";
       } else {
         btn.textContent = "\u23F1\uFE0F Extend Rental";
-        link.href = `car.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
+        link.href = `slingshot-book.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
       }
       btn.disabled = false;
       btn.style.display = "";
