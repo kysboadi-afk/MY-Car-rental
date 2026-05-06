@@ -191,7 +191,9 @@ export default async function handler(req, res) {
 
     // Regenerate if we still don't have a buffer.
     if (!pdfBuffer) {
-      const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
+      const vehicleInfo = (vehicle_id && CARS[vehicle_id])
+        ? CARS[vehicle_id]
+        : (await getVehicleById(vehicle_id).catch(() => null)) || {};
       const rentalDays = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
       const hasProtectionPlan = !!protection_plan_tier;
 
