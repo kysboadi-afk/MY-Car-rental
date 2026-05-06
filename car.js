@@ -113,7 +113,7 @@ function clearPayError() {
         }
         // Also refresh the earnings block in case the weekly rate changed.
         // Skip for slingshot vehicles — the earnings block is hidden for them.
-        if (carData.type !== "slingshot") updateEarningsBlock();
+        if (carData.category !== "slingshot") updateEarningsBlock();
       }
     })
     .catch(function(err) {
@@ -165,6 +165,7 @@ function normalizeApiVehicle(v) {
     vin:           v.vin   || "",
     color:         v.color || "",
     type:          v.type  || "",
+    category:      (v.category || "").toLowerCase() || (v.type === "slingshot" ? "slingshot" : "car"),
     scarcity_text: v.scarcity_text || "",
     earnings_tagline: v.earnings_tagline || "",
     earnings_title:   v.earnings_title   || "",
@@ -252,7 +253,7 @@ function initCarDisplay() {
   // ── Slingshot-aware navigation ─────────────────────────────────────────
   // When the booked vehicle is a slingshot the nav links and back button must
   // point to slingshots.html, not the car-rental pages.
-  const isSlingshot = carData.type === "slingshot";
+  const isSlingshot = carData.category === "slingshot";
   if (isSlingshot) {
     // Update header nav: Home → slingshots.html, "Browse Cars" → "Browse Slingshots"
     const homeLink = document.querySelector(".site-nav a[data-i18n='nav.homeLink']");

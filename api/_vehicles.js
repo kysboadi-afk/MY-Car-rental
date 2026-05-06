@@ -25,9 +25,9 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const VEHICLES_PATH      = "vehicles.json";
 
 const EMPTY_VEHICLES = {
-  camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",       type: "economy",   vehicle_year: 2012, purchase_date: "", purchase_price: 0, status: "active" },
-  camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE",    type: "economy",   vehicle_year: 2013, purchase_date: "", purchase_price: 0, status: "active" },
-  fusion2017: { vehicle_id: "fusion2017", vehicle_name: "Ford Fusion 2017", type: "economy",   vehicle_year: 2017, purchase_date: "", purchase_price: 0, status: "active" },
+  camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",       type: "economy",   category: "car", vehicle_year: 2012, purchase_date: "", purchase_price: 0, status: "active" },
+  camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE",    type: "economy",   category: "car", vehicle_year: 2013, purchase_date: "", purchase_price: 0, status: "active" },
+  fusion2017: { vehicle_id: "fusion2017", vehicle_name: "Ford Fusion 2017", type: "economy",   category: "car", vehicle_year: 2017, purchase_date: "", purchase_price: 0, status: "active" },
 };
 
 function ghHeaders() {

@@ -228,7 +228,7 @@ async function loadFleet() {
 
   try {
     const [vRes, pRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=car"),
       fetch(API_BASE + "/api/public-pricing"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
@@ -237,9 +237,15 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    !v.status || v.status === "active"
-  );
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+    if (v.status && v.status !== "active") return false;
+    const cat = (v.category || "").toLowerCase();
+    if (!cat || (cat !== "car" && cat !== "slingshot")) {
+      console.error("[cars.js] Vehicle skipped — missing or invalid category:", v.vehicle_id, cat || "(none)");
+      return false;
+    }
+    return cat === "car";
+  });
 
   // Only replace the grid if the API returned valid vehicles.
   // If the API failed or returned nothing, keep any static cards already in the HTML.
