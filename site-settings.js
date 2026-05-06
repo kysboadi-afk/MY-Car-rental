@@ -38,6 +38,13 @@
       // Only allow http/https/relative URLs to guard against javascript: injection
       var logoUrl = /^https?:\/\//i.test(s.logo_url) || s.logo_url.startsWith('/')
         ? s.logo_url : '';
+      // Do not apply a slingshot-branded logo to car-rental pages.
+      // The slingshot page (slingshots.html) manages its own logo directly in HTML
+      // and does not load this script. Applying the slingshot logo here would
+      // replace the SLY Transportation branding on index.html, car.html, and cars.html.
+      if (logoUrl && /slingshot/i.test(logoUrl)) {
+        logoUrl = '';
+      }
       if (logoUrl) {
         document.querySelectorAll('img.site-logo, img.ty-logo').forEach(function (img) {
           img.src = logoUrl;
