@@ -9784,3 +9784,398 @@ WHERE vehicle_id NOT IN ('camry', 'camry2013')
   AND EXISTS (
     SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
   );
+
+
+-- ===========================================================================
+-- 0125_site_settings_hero_image_url.sql
+-- ===========================================================================
+-- add hero_image_url to site_settings
+
+INSERT INTO site_settings (key, value, updated_at)
+VALUES ('hero_image_url', '', NOW())
+ON CONFLICT (key) DO NOTHING;
+
+
+-- ===========================================================================
+-- 0126_expense_categories.sql
+-- ===========================================================================
+-- Upgrades expense categories to a two-level hierarchy stored in a dedicated
+-- table, and adds a nullable category_id FK to expenses.
+
+-- ── 1. expense_categories table ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text        NOT NULL,
+  group_name  text        NOT NULL,
+  is_default  boolean     NOT NULL DEFAULT false,
+  is_active   boolean     NOT NULL DEFAULT true,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (name, group_name)
+);
+
+CREATE INDEX IF NOT EXISTS expense_categories_group_idx  ON expense_categories (group_name);
+CREATE INDEX IF NOT EXISTS expense_categories_active_idx ON expense_categories (is_active);
+
+-- ── 2. Default categories ─────────────────────────────────────────────────────
+INSERT INTO expense_categories (name, group_name, is_default, is_active) VALUES
+  ('Loan / Lease',          'Ownership',   true, true),
+  ('Insurance',             'Ownership',   true, true),
+  ('Registration',          'Ownership',   true, true),
+  ('Taxes',                 'Ownership',   true, true),
+  ('Fuel',                  'Usage',       true, true),
+  ('EV Charging',           'Usage',       true, true),
+  ('Parking',               'Usage',       true, true),
+  ('Tolls',                 'Usage',       true, true),
+  ('Oil Change',            'Maintenance', true, true),
+  ('Tires',                 'Maintenance', true, true),
+  ('Brakes',                'Maintenance', true, true),
+  ('Fluids',                'Maintenance', true, true),
+  ('Filters',               'Maintenance', true, true),
+  ('Battery',               'Maintenance', true, true),
+  ('Inspection / Emissions','Maintenance', true, true),
+  ('Repair (General)',      'Repairs',     true, true),
+  ('Parts',                 'Repairs',     true, true),
+  ('Labor',                 'Repairs',     true, true),
+  ('Diagnostics',           'Repairs',     true, true),
+  ('Car Wash',              'Cleaning',    true, true),
+  ('Detailing',             'Cleaning',    true, true),
+  ('Accessories',           'Extras',      true, true),
+  ('Mods / Upgrades',       'Extras',      true, true),
+  ('Subscriptions',         'Extras',      true, true),
+  ('Fines / Tickets',       'Incidents',   true, true),
+  ('Towing',                'Incidents',   true, true),
+  ('Accident / Damage',     'Incidents',   true, true),
+  ('Insurance Deductible',  'Incidents',   true, true),
+  ('Depreciation',          'Advanced',    true, false),
+  ('Mileage',               'Advanced',    true, false),
+  ('Rental / Replacement',  'Advanced',    true, false),
+  ('Other',                 'Other',       true, false)
+ON CONFLICT (name, group_name) DO NOTHING;
+
+-- ── 3. Add category_id FK to expenses ────────────────────────────────────────
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS category_id uuid;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'expenses_category_id_fkey'
+      AND table_name = 'expenses'
+  ) THEN
+    ALTER TABLE expenses
+      ADD CONSTRAINT expenses_category_id_fkey
+      FOREIGN KEY (category_id) REFERENCES expense_categories(id);
+  END IF;
+END$$;
+
+-- ── 4. Backfill existing rows ─────────────────────────────────────────────────
+UPDATE expenses
+SET    category_id = ec.id
+FROM   expense_categories ec
+WHERE  expenses.category_id IS NULL
+  AND (
+      (expenses.category = 'maintenance'   AND ec.name = 'Oil Change'        AND ec.group_name = 'Maintenance')
+   OR (expenses.category = 'insurance'     AND ec.name = 'Insurance'         AND ec.group_name = 'Ownership')
+   OR (expenses.category = 'repair'        AND ec.name = 'Repair (General)'  AND ec.group_name = 'Repairs')
+   OR (expenses.category = 'fuel'          AND ec.name = 'Fuel'              AND ec.group_name = 'Usage')
+   OR (expenses.category = 'registration'  AND ec.name = 'Registration'      AND ec.group_name = 'Ownership')
+   OR (expenses.category IN ('other', '')  AND ec.name = 'Other'             AND ec.group_name = 'Other')
+  );
+
+-- ── 5. Relax the CHECK constraint on expenses.category ───────────────────────
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_category_check;
+
+
+-- ===========================================================================
+-- 0127_extension_stripe_card_columns.sql
+-- ===========================================================================
+-- Store the Stripe card used for rental extensions separately so it can be
+-- used as a fallback for off-session charges.
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS extension_stripe_customer_id       TEXT,
+  ADD COLUMN IF NOT EXISTS extension_stripe_payment_method_id TEXT;
+
+
+-- ===========================================================================
+-- 0128_late_fee_pending_collection.sql
+-- ===========================================================================
+-- Add 'pending_collection' to the late_fee_status CHECK constraint.
+
+DO $$
+DECLARE
+  v_con text;
+BEGIN
+  SELECT conname INTO v_con
+  FROM pg_constraint
+  WHERE conrelid = 'bookings'::regclass
+    AND contype  = 'c'
+    AND pg_get_constraintdef(oid) LIKE '%late_fee_status%';
+  IF v_con IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE bookings DROP CONSTRAINT %I', v_con);
+  END IF;
+END $$;
+
+ALTER TABLE bookings
+  ADD CONSTRAINT bookings_late_fee_status_check
+  CHECK (late_fee_status IN (
+    'pending_approval',
+    'approved',
+    'dismissed',
+    'failed',
+    'paid',
+    'pending_collection'
+  ));
+
+
+-- ===========================================================================
+-- 0129_remove_phantom_vehicles_updated_fleet.sql
+-- ===========================================================================
+-- Canonical fleet: camry, camry2013, fusion2017
+
+DELETE FROM vehicles
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND NOT EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{status}', '"inactive"')
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+
+-- ===========================================================================
+-- 0130_remove_phantom_vehicles_fleet_v3.sql
+-- ===========================================================================
+-- Fleet v3 cleanup pass (same canonical set: camry, camry2013, fusion2017)
+
+DELETE FROM vehicles
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND NOT EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{status}', '"inactive"')
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+
+-- ===========================================================================
+-- 0133_tickets_and_documents.sql  +  0134_tickets_fk_uuid_and_review_fixes.sql
+-- +  0135_ticket_charge_automation.sql  +  0136_repair_tickets_schema.sql
+-- ===========================================================================
+-- Tickets / Violations system — fully idempotent combined form.
+-- (0136 is the authoritative repair migration; its content covers everything
+--  from 0133–0135 and is safe to run on any state of the database.)
+
+-- ── tickets table ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tickets (
+  id                       uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_number            text          NOT NULL,
+  vehicle_id               text          REFERENCES vehicles(vehicle_id) ON DELETE SET NULL,
+  booking_id               uuid          REFERENCES bookings(id) ON DELETE SET NULL,
+  booking_ref              text,
+  customer_id              uuid          REFERENCES customers(id) ON DELETE SET NULL,
+  violation_date           timestamptz   NOT NULL,
+  location                 text,
+  amount                   numeric(10,2) NOT NULL CHECK (amount > 0),
+  type                     text          NOT NULL DEFAULT 'parking',
+  status                   text          NOT NULL DEFAULT 'new',
+  notes                    text,
+  activity_log             jsonb         NOT NULL DEFAULT '[]'::jsonb,
+  renter_responsible       boolean       DEFAULT false,
+  admin_fee                numeric(10,2) DEFAULT 25,
+  charge_status            text,
+  transfer_submitted_at    timestamptz,
+  charge_retry_count       integer       NOT NULL DEFAULT 0,
+  charge_last_attempted_at timestamptz,
+  created_at               timestamptz   NOT NULL DEFAULT now(),
+  updated_at               timestamptz   NOT NULL DEFAULT now()
+);
+
+ALTER TABLE tickets
+  ADD COLUMN IF NOT EXISTS booking_ref              text,
+  ADD COLUMN IF NOT EXISTS renter_responsible       boolean       DEFAULT false,
+  ADD COLUMN IF NOT EXISTS admin_fee                numeric(10,2) DEFAULT 25,
+  ADD COLUMN IF NOT EXISTS charge_status            text,
+  ADD COLUMN IF NOT EXISTS transfer_submitted_at    timestamptz,
+  ADD COLUMN IF NOT EXISTS charge_retry_count       integer       NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS charge_last_attempted_at timestamptz;
+
+-- Migrate booking_id from text → uuid if it was created as text
+DO $$
+DECLARE
+  col_type text;
+BEGIN
+  SELECT data_type
+    INTO col_type
+    FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name   = 'tickets'
+     AND column_name  = 'booking_id';
+
+  IF col_type = 'text' THEN
+    UPDATE tickets t
+       SET booking_ref = t.booking_id
+     WHERE t.booking_id IS NOT NULL
+       AND t.booking_ref IS NULL;
+
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS booking_id_uuid uuid;
+
+    UPDATE tickets t
+       SET booking_id_uuid = b.id
+      FROM bookings b
+     WHERE b.booking_ref = t.booking_id
+       AND t.booking_id IS NOT NULL;
+
+    ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_booking_id_fkey;
+    ALTER TABLE tickets DROP COLUMN IF EXISTS booking_id;
+    ALTER TABLE tickets RENAME COLUMN booking_id_uuid TO booking_id;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE tickets
+    ADD CONSTRAINT tickets_booking_id_fkey
+    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE tickets ADD CONSTRAINT tickets_type_check
+    CHECK (type IN ('parking','toll','camera','other'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE tickets ADD CONSTRAINT tickets_status_check
+    CHECK (status IN ('new','matched','transfer_ready','submitted','approved','rejected','charged','closed'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS tickets_vehicle_id_idx      ON tickets (vehicle_id);
+CREATE INDEX IF NOT EXISTS tickets_booking_id_idx      ON tickets (booking_id);
+CREATE INDEX IF NOT EXISTS tickets_customer_id_idx     ON tickets (customer_id);
+CREATE INDEX IF NOT EXISTS tickets_status_idx          ON tickets (status);
+CREATE INDEX IF NOT EXISTS tickets_violation_date_idx  ON tickets (violation_date DESC);
+CREATE INDEX IF NOT EXISTS tickets_created_at_idx      ON tickets (created_at DESC);
+
+DROP TRIGGER IF EXISTS tickets_updated_at ON tickets;
+CREATE TRIGGER tickets_updated_at
+  BEFORE UPDATE ON tickets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE tickets FROM anon;
+REVOKE ALL ON TABLE tickets FROM authenticated;
+GRANT ALL ON TABLE tickets TO service_role;
+
+DO $$
+BEGIN
+  CREATE POLICY tickets_service_role_all
+    ON tickets FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ── booking_documents table ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS booking_documents (
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id  uuid        NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+  type        text        NOT NULL DEFAULT 'other',
+  file_url    text        NOT NULL,
+  file_name   text,
+  mime_type   text,
+  uploaded_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Migrate booking_id from text → uuid if it was created as text
+DO $$
+DECLARE
+  col_type text;
+BEGIN
+  SELECT data_type
+    INTO col_type
+    FROM information_schema.columns
+   WHERE table_schema = 'public'
+     AND table_name   = 'booking_documents'
+     AND column_name  = 'booking_id';
+
+  IF col_type = 'text' THEN
+    ALTER TABLE booking_documents ADD COLUMN IF NOT EXISTS booking_id_uuid uuid;
+
+    UPDATE booking_documents bd
+       SET booking_id_uuid = b.id
+      FROM bookings b
+     WHERE b.booking_ref = bd.booking_id;
+
+    DELETE FROM booking_documents WHERE booking_id_uuid IS NULL;
+
+    ALTER TABLE booking_documents DROP CONSTRAINT IF EXISTS booking_documents_booking_id_fkey;
+    ALTER TABLE booking_documents DROP COLUMN IF EXISTS booking_id;
+    ALTER TABLE booking_documents RENAME COLUMN booking_id_uuid TO booking_id;
+    ALTER TABLE booking_documents ALTER COLUMN booking_id SET NOT NULL;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE booking_documents
+    ADD CONSTRAINT booking_documents_booking_id_fkey
+    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE booking_documents DROP CONSTRAINT IF EXISTS booking_documents_type_check;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE booking_documents
+    ADD CONSTRAINT booking_documents_type_check
+    CHECK (type IN ('agreement','insurance','other','id_copy'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DROP   INDEX IF EXISTS booking_documents_booking_id_idx;
+CREATE INDEX IF NOT EXISTS booking_documents_booking_id_idx ON booking_documents (booking_id);
+CREATE INDEX IF NOT EXISTS booking_documents_type_idx       ON booking_documents (type);
+
+ALTER TABLE booking_documents ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE booking_documents FROM anon;
+REVOKE ALL ON TABLE booking_documents FROM authenticated;
+GRANT ALL ON TABLE booking_documents TO service_role;
+
+DO $$
+BEGIN
+  CREATE POLICY booking_documents_service_role_all
+    ON booking_documents FOR ALL TO service_role USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ── customers: document columns ───────────────────────────────────────────────
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS license_front_url   text,
+  ADD COLUMN IF NOT EXISTS license_uploaded_at timestamptz,
+  ADD COLUMN IF NOT EXISTS license_back_url    text;
+
+-- ── system_settings: seed violation_admin_fee ─────────────────────────────────
+INSERT INTO system_settings (key, value, description, category)
+VALUES (
+  'violation_admin_fee',
+  '25',
+  'Admin processing fee added to violation ticket charge (USD)',
+  'fees'
+)
+ON CONFLICT (key) DO NOTHING;
