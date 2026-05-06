@@ -77,9 +77,10 @@
 
     if (!file) return;
 
-    const allowed = ["image/jpeg", "image/png", "application/pdf"];
-    if (!allowed.includes(file.type)) {
-      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Only JPG, PNG, or PDF files are accepted.");
+    const allowed = ["image/jpeg", "image/png", "application/pdf", "image/heic", "image/heif", "image/webp"];
+    const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
+    if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted.");
       licenseInfo.style.color = "#f44336";
       this.value = "";
       return;
@@ -147,9 +148,10 @@
       if (insFileInfo) { insFileInfo.textContent = ""; insFileInfo.style.color = ""; }
 
       if (!file) return;
-      const allowed = ["image/jpeg", "image/png", "application/pdf"];
-      if (!allowed.includes(file.type)) {
-        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, or PDF files are accepted."); insFileInfo.style.color = "#f44336"; }
+      const allowed = ["image/jpeg", "image/png", "application/pdf", "image/heic", "image/heif", "image/webp"];
+      const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
+      if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
       }
