@@ -6,6 +6,10 @@
 const API_BASE = "https://sly-rides.vercel.app";
 const SlyLA = window.SlyLA;
 
+// Mark the session as slingshot context so shared pages (manage-booking, contact)
+// can apply slingshot branding when the user navigates there from this page.
+try { sessionStorage.setItem('slyCategory', 'slingshot'); } catch (_) {}
+
 // ─── Fleet-status API contract ────────────────────────────────────────────────
 const FLEET_STATUS_EXPECTED_KEYS = ["available", "rental_status", "available_at", "next_available_display"];
 
