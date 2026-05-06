@@ -86,13 +86,6 @@
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File must be under 5\u00a0MB.");
-      licenseInfo.style.color = "#f44336";
-      this.value = "";
-      return;
-    }
-
     licenseFile = file;
     licenseInfo.textContent = "\u2713 " + file.name;
     licenseInfo.style.color = "#4caf50";
@@ -152,11 +145,6 @@
       const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
       if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
         if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted."); insFileInfo.style.color = "#f44336"; }
-        this.value = "";
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File must be under 5\u00a0MB."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
       }
