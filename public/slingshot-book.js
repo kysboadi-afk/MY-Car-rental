@@ -128,13 +128,11 @@ function buildSlider(images, vehicleName) {
 
   var imgs = images && images.length > 0 ? images : ["/images/slingshot.jpg"];
   imgs.forEach(function(src, i) {
-    var slide = document.createElement("div");
-    slide.className = "slide" + (i === 0 ? " active" : "");
     var img = document.createElement("img");
     img.src = src;
     img.alt = vehicleName;
-    slide.appendChild(img);
-    container.appendChild(slide);
+    img.className = "slide" + (i === 0 ? " active" : "");
+    container.appendChild(img);
 
     if (dotsEl) {
       var dot = document.createElement("span");

@@ -3211,7 +3211,7 @@ function signIn() {
   document.getElementById('auth-btn').textContent = 'Signing in…';
   document.getElementById('auth-btn').disabled = true;
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => {
       dashboardData = data;
       document.getElementById('auth-screen').style.display = 'none';
@@ -3414,7 +3414,7 @@ function navigateToUnpaidBookings() {
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
     .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
 }
@@ -3592,8 +3592,8 @@ function loadVehicles() {
   document.getElementById('vehicles-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' }),
-    apiPost('/api/v2-dashboard', { secret: adminSecret }),
+    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' }),
+    apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' }),
   ]).then(([vData, dash]) => {
     const freshVehicles = vData.vehicles || {};
     // Preserve bouncie_device_id from the in-memory cache when the fresh API
@@ -3692,7 +3692,7 @@ function showVehicleProfile(vehicleId) {
   document.getElementById('page-title').textContent = v.vehicle_name || getVehicleLabel(vehicleId);
 
   // Load fresh stats
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((dash) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
       cachedVehicleStats[vehicleId] = s;
@@ -4460,7 +4460,7 @@ function loadLateFees() {
   document.getElementById('lf-table-wrap').style.display = 'none';
   document.getElementById('lf-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
@@ -4758,7 +4758,7 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
@@ -6207,8 +6207,8 @@ function loadRevenue() {
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking' }),
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi', scope: 'car' }),
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {
@@ -6716,8 +6716,8 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
   ]).then(([fleetData, trendData]) => {
     renderAnalytics(fleetData.fleet || {}, trendData.trend || [], fleetData.kpi_total_revenue ?? null);
     document.getElementById('analytics-loading').style.display = 'none';

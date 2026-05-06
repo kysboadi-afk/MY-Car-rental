@@ -470,23 +470,64 @@ export default async function handler(req, res) {
     // sums gross_amount from revenue_records WHERE is_cancelled = false.  This
     // is the canonical, ledger-based KPI — independent of payment_intent_id or
     // any Stripe-specific aggregation.
+    // When scope='slingshot' or scope='car' is provided, revenue is filtered to
+    // only the matching fleet type by querying revenue_records directly.
     if (action === "kpi") {
+      // Resolve scope → vehicle IDs when a scope filter is requested.
+      let kpiScopedVehicleIds = null;
+      if (body.scope) {
+        try {
+          const REVENUE_CAR_TYPES_KPI = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = (body.scope || "").toLowerCase();
+          const { data: vData } = await loadVehicles();
+          kpiScopedVehicleIds = Object.values(vData || {})
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              // Vehicles with no type recorded default to the car fleet.
+              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_KPI.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-revenue kpi: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
       if (sb) {
         try {
-          const { data, error } = await sb
-            .from("total_revenue_kpi")
-            .select("total_revenue")
-            .single();
-          if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
-          if (!isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+          if (kpiScopedVehicleIds && kpiScopedVehicleIds.length > 0) {
+            // Scoped KPI: query revenue_records directly with vehicle filter.
+            const { data, error } = await sb
+              .from("revenue_records")
+              .select("gross_amount")
+              .eq("is_cancelled", false)
+              .in("vehicle_id", kpiScopedVehicleIds);
+            if (!error) {
+              const total = (data || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0);
+              return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
+            }
+            if (!isSchemaError(error)) console.error("v2-revenue kpi (scoped) error:", error.message);
+          } else {
+            // No scope — use the pre-aggregated view for efficiency.
+            const { data, error } = await sb
+              .from("total_revenue_kpi")
+              .select("total_revenue")
+              .single();
+            if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
+            if (!isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+          }
         } catch (kpiErr) {
           console.error("v2-revenue kpi error:", kpiErr);
         }
       }
       // GitHub fallback: compute from revenue-records.json
       const { data: ghRecords } = await loadRecordsFromGitHub();
+      const kpiScopedSet = kpiScopedVehicleIds ? new Set(kpiScopedVehicleIds) : null;
       const total = ghRecords
         .filter((r) => !r.is_cancelled)
+        .filter((r) => !kpiScopedSet || kpiScopedSet.has(r.vehicle_id))
         .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
       return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
     }

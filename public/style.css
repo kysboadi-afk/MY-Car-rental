@@ -62,7 +62,11 @@ body {
 }
 
 .site-logo {
-  height: 80px;
+  height: 60px;
+  max-width: 180px;
+  object-fit: contain;
+  display: block;
+  width: auto;
 }
 
 .site-header a.logo-link {
@@ -982,7 +986,8 @@ body {
 .slider img.slide {
   width: 100%;
   height: 550px;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center;
   display: none;
 }
 .slider img.slide.active { display: block; }
@@ -1988,6 +1993,11 @@ footer {
     flex-direction: column;
     gap: 14px;
     padding: 16px 20px;
+  }
+
+  .site-logo {
+    height: 48px;
+    width: auto;
   }
 
   .company-banner {

@@ -51,7 +51,7 @@ import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
-import { getVehicleById } from "./_vehicles.js";
+import { getVehicleById, loadVehicles } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -170,7 +170,35 @@ export default async function handler(req, res) {
     // bookings saved by saveWebhookBookingRecord).  Falls back to bookings.json
     // so the admin always sees data even when Supabase is unreachable.
     if (action === "list" || !action) {
-      const { vehicleId, status } = body;
+      const { vehicleId, status, scope } = body;
+
+      // When scope='car' or scope='slingshot' is provided, restrict the vehicle
+      // list to the matching fleet type so each admin panel only sees its own
+      // bookings.
+      let effectiveVehicles = ALLOWED_VEHICLES;
+      if (scope) {
+        try {
+          const BOOKING_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = scope.toLowerCase();
+          const { data: vData } = await loadVehicles();
+          const scopedIds = Object.values(vData || {})
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              // Vehicles with no type recorded default to the car fleet.
+              if (sc === "car" || sc === "cars") return BOOKING_CAR_TYPES.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+          if (scopedIds.length > 0) {
+            const scopedSet = new Set(scopedIds);
+            effectiveVehicles = ALLOWED_VEHICLES.filter((id) => scopedSet.has(id));
+          }
+        } catch (scopeErr) {
+          console.warn("v2-bookings list: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
 
       const sb = getSupabaseAdmin();
       if (sb) {
@@ -210,10 +238,10 @@ export default async function handler(req, res) {
             customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
           `);
 
-        if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
+        if (vehicleId && effectiveVehicles.includes(vehicleId)) {
           q = q.eq("vehicle_id", vehicleId);
         } else {
-          q = q.in("vehicle_id", ALLOWED_VEHICLES);
+          q = q.in("vehicle_id", effectiveVehicles);
         }
         if (status) {
           q = q.eq("status", status);
@@ -334,10 +362,10 @@ export default async function handler(req, res) {
       // Fallback: bookings.json
       const { data } = await loadBookings();
       let result = [];
-      if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
+      if (vehicleId && effectiveVehicles.includes(vehicleId)) {
         result = data[vehicleId] || [];
       } else {
-        for (const vid of ALLOWED_VEHICLES) {
+        for (const vid of effectiveVehicles) {
           result = result.concat((data[vid] || []).map((b) => ({ ...b, vehicleId: b.vehicleId || vid })));
         }
       }
