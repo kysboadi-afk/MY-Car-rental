@@ -6207,8 +6207,8 @@ function loadRevenue() {
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking' }),
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi', scope: 'car' }),
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {
