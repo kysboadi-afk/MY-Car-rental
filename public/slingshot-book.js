@@ -31,10 +31,11 @@ var selectedPackage = null; // "2hr" | "3hr" | "6hr" | "24hr"
 var extSelectedPackage = null;
 var uploadedFileFront = null;
 var uploadedFileBack  = null;
-var pendingBookingId  = null; // returned by create-slingshot-booking
-var carData = null;           // vehicle data from API
-var agreementSigned = false;  // true once renter signs the rental agreement
-var agreementSignature = "";  // typed name used as electronic signature
+var pendingBookingId       = null;  // returned by create-slingshot-booking
+var paymentFormSubmitted   = false; // set to true once the Pay button is clicked
+var carData = null;                 // vehicle data from API
+var agreementSigned = false;        // true once renter signs the rental agreement
+var agreementSignature = "";        // typed name used as electronic signature
 
 // ----- Helpers -----
 function escHtml(str) {
@@ -56,6 +57,41 @@ function clearPayError() {
   var el = document.getElementById("payError");
   if (el) { el.textContent = ""; el.style.display = "none"; }
 }
+
+/**
+ * Cancel the current pending booking (if any) via the public API.
+ * Safe to call multiple times — idempotent on the server.
+ * Uses sendBeacon when available (page-unload safe), otherwise fetch.
+ * @param {boolean} [useBeacon] - true to use sendBeacon (for pagehide)
+ */
+function cancelPendingBooking(useBeacon) {
+  if (!pendingBookingId) return;
+  var bookingIdToCancel = pendingBookingId;
+  pendingBookingId = null; // clear immediately to prevent double-cancel
+  var url  = API_BASE + "/api/cancel-pending-booking";
+  var body = JSON.stringify({ bookingId: bookingIdToCancel });
+  if (useBeacon && navigator.sendBeacon) {
+    var blob = new Blob([body], { type: "application/json" });
+    navigator.sendBeacon(url, blob);
+  } else {
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body,
+    }).catch(function(e) {
+      console.warn("cancel-pending-booking fetch error:", e);
+    });
+  }
+}
+
+// Cancel the pending booking when the user navigates away without paying.
+// paymentFormSubmitted is set to true right before stripe.confirmPayment() so
+// a successful Stripe redirect to success.html does NOT trigger a cancel.
+window.addEventListener("pagehide", function() {
+  if (pendingBookingId && !paymentFormSubmitted) {
+    cancelPendingBooking(true);
+  }
+});
 
 /**
  * Format a 24-hour "HH:MM" string as "h:MM AM/PM".
@@ -591,6 +627,10 @@ async function launchSlingshotPayment() {
       submitBtn.innerHTML = "Processing…";
       if (msgEl) msgEl.textContent = "";
 
+      // Mark payment as submitted so the pagehide handler does NOT cancel the
+      // pending booking — Stripe is about to redirect to success.html on success.
+      paymentFormSubmitted = true;
+
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -600,6 +640,8 @@ async function launchSlingshotPayment() {
       });
 
       if (result.error) {
+        // Payment failed or was cancelled — allow the user to try again or cancel.
+        paymentFormSubmitted = false;
         if (msgEl) msgEl.textContent = result.error.message;
         submitBtn.disabled = false;
         submitBtn.innerHTML = "Pay $" + total.toFixed(2) + " Now 🔒";
@@ -616,6 +658,8 @@ async function launchSlingshotPayment() {
       if (payForm) payForm.style.display = "none";
       if (bookingSection) bookingSection.style.display = "";
       if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now 🔒"; }
+      // Cancel the pre-written pending booking so it no longer appears in admin.
+      cancelPendingBooking(false);
     }, { once: true });
 
   } catch (err) {
