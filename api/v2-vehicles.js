@@ -432,7 +432,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, make, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, make, dailyRate, weeklyRate, biweeklyRate, monthlyRate, earningsTagline, earningsTitle, earningsRow1, earningsCta, hourlyTiers } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -514,6 +514,7 @@ export default async function handler(req, res) {
         ...(parsedWeekly   ? { weekly_price:   parsedWeekly }   : {}),
         ...(parsedBiweekly ? { biweekly_price: parsedBiweekly } : {}),
         ...(parsedMonthly  ? { monthly_price:  parsedMonthly }  : {}),
+        ...(hourlyTiers && typeof hourlyTiers === 'object' ? { hourlyTiers } : {}),
       };
 
       if (supabase) {

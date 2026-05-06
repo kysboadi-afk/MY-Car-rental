@@ -2672,14 +2672,14 @@
         <label class="form-label">Vehicle Name *</label>
         <input type="text" class="form-input" id="av-name" placeholder="e.g. Camry 2022 SE" maxlength="200">
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Make</label>
         <input type="text" class="form-input" id="av-make" placeholder="e.g. Toyota, Ford, Honda" maxlength="100">
         <div class="form-hint">Vehicle manufacturer (required for the rental agreement).</div>
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av')">
+        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av');toggleVehicleTypeFields('av')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2697,15 +2697,15 @@
           <option value="inactive">Inactive</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group av-car-only">
         <label class="form-label">Vehicle Year</label>
         <input type="number" class="form-input" id="av-year" min="1990" max="2030" placeholder="e.g. 2022">
       </div>
-      <div class="form-group">
+      <div class="form-group av-car-only">
         <label class="form-label">Purchase Price ($)</label>
         <input type="number" class="form-input" id="av-purchase-price" min="0" step="100" placeholder="0">
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Purchase Date</label>
         <input type="date" class="form-input" id="av-purchase-date">
       </div>
@@ -2721,29 +2721,29 @@
         <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
         <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
         <div id="av-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('av')">+ Add Photo</button>
         <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('av')">
         <div id="av-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Enables automatic mileage tracking.</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">VIN</label>
         <input type="text" class="form-input" id="av-vin" placeholder="e.g. 1HGCM82633A123456" maxlength="50">
         <div class="form-hint">17-character Vehicle Identification Number (optional).</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Scarcity Notice</label>
         <input type="text" class="form-input" id="av-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
         <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
       </div>
-      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+      <div class="form-group full av-car-only" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Earnings Block (Booking Page)</div>
         <div class="form-hint" style="margin-bottom:12px;">These lines appear in the gold earnings box on the booking page. Leave blank to use the default text. The "Weekly rental" and "Estimated take-home" rows are always auto-calculated from the vehicle's weekly rate.</div>
         <div class="form-group full">
@@ -2763,7 +2763,7 @@
           <input type="text" class="form-input" id="av-earnings-cta" placeholder="e.g. Limited vehicles available — reserve today" maxlength="500">
         </div>
       </div>
-      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+      <div id="av-car-pricing" class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing</div>
         <div class="form-grid" style="margin:0;">
           <div class="form-group">
@@ -2785,7 +2785,28 @@
         </div>
         <div class="form-hint">Rates are saved to the booking database so renters are charged correctly. Leave blank to set up later.</div>
       </div>
-    </div>
+      <div id="av-slingshot-pricing" class="form-group full" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing (Hourly Packages)</div>
+        <div class="form-grid" style="margin:0;">
+          <div class="form-group">
+            <label class="form-label">2-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-2hr" min="0" step="1" placeholder="e.g. 150">
+          </div>
+          <div class="form-group">
+            <label class="form-label">3-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-3hr" min="0" step="1" placeholder="e.g. 200">
+          </div>
+          <div class="form-group">
+            <label class="form-label">6-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-6hr" min="0" step="1" placeholder="e.g. 250">
+          </div>
+          <div class="form-group">
+            <label class="form-label">24-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-24hr" min="0" step="1" placeholder="e.g. 350">
+          </div>
+        </div>
+        <div class="form-hint">Set the price for each rental package. A $500 refundable security deposit is always collected automatically.</div>
+      </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-vehicle-modal')">Cancel</button>
@@ -4271,6 +4292,20 @@ async function markVehicleServiced(vehicleId, serviceType) {
 }
 
 // ── Add Vehicle ────────────────────────────────────────────────────────────
+function toggleVehicleTypeFields(prefix) {
+  const type = (document.getElementById(prefix + '-type') || {}).value || '';
+  const isSlingshot = type === 'slingshot';
+  // Show/hide car-only fields
+  document.querySelectorAll('.' + prefix + '-car-only').forEach(el => {
+    el.style.display = isSlingshot ? 'none' : '';
+  });
+  // Show car pricing or slingshot pricing
+  const carPricing = document.getElementById(prefix + '-car-pricing');
+  if (carPricing) carPricing.style.display = isSlingshot ? 'none' : '';
+  const slingshotPricing = document.getElementById(prefix + '-slingshot-pricing');
+  if (slingshotPricing) slingshotPricing.style.display = isSlingshot ? '' : 'none';
+}
+
 function openAddVehicle() {
   document.getElementById('av-id').value = '';
   document.getElementById('av-name').value = '';
@@ -4292,12 +4327,17 @@ function openAddVehicle() {
   document.getElementById('av-weekly-rate').value = '';
   document.getElementById('av-biweekly-rate').value = '';
   document.getElementById('av-monthly-rate').value = '';
+  document.getElementById('av-price-2hr').value  = '';
+  document.getElementById('av-price-3hr').value  = '';
+  document.getElementById('av-price-6hr').value  = '';
+  document.getElementById('av-price-24hr').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   renderGallery('av', []);
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
   updateBouncieWarning('av');
+  toggleVehicleTypeFields('av');
   openModal('add-vehicle-modal');
 }
 
@@ -4323,6 +4363,19 @@ async function saveNewVehicle() {
   const weeklyRate      = parseFloat(document.getElementById('av-weekly-rate').value)   || null;
   const biweeklyRate    = parseFloat(document.getElementById('av-biweekly-rate').value) || null;
   const monthlyRate     = parseFloat(document.getElementById('av-monthly-rate').value)  || null;
+
+  // Slingshot hourly package prices
+  const isSlingshot = type === 'slingshot';
+  const price2hr    = parseFloat(document.getElementById('av-price-2hr').value)  || null;
+  const price3hr    = parseFloat(document.getElementById('av-price-3hr').value)  || null;
+  const price6hr    = parseFloat(document.getElementById('av-price-6hr').value)  || null;
+  const price24hr   = parseFloat(document.getElementById('av-price-24hr').value) || null;
+  const hourlyTiers = isSlingshot ? {
+    '2hr':  { hours: 2,  price: price2hr  ?? 150, label: '2 Hours' },
+    '3hr':  { hours: 3,  price: price3hr  ?? 200, label: '3 Hours' },
+    '6hr':  { hours: 6,  price: price6hr  ?? 250, label: '6 Hours' },
+    '24hr': { hours: 24, price: price24hr ?? 350, label: '24 Hours' },
+  } : null;
 
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
@@ -4360,6 +4413,7 @@ async function saveNewVehicle() {
       ...(weeklyRate   ? { weeklyRate }   : {}),
       ...(biweeklyRate ? { biweeklyRate } : {}),
       ...(monthlyRate  ? { monthlyRate }  : {}),
+      ...(hourlyTiers  ? { hourlyTiers }  : {}),
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
