@@ -1798,6 +1798,46 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
+    // ── GET_AGREEMENT_URL — return a short-lived signed URL for the rental ─────
+    // agreement PDF stored in Supabase Storage (rental-agreements bucket).
+    // Used by the admin dashboard "Download Agreement" button.
+    if (action === "get_agreement_url") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const sbAg = getSupabaseAdmin();
+      if (!sbAg) return res.status(503).json({ error: "Database not configured" });
+
+      // Look up the stored path from pending_booking_docs.
+      const { data: agDocsRow, error: agDocsErr } = await sbAg
+        .from("pending_booking_docs")
+        .select("agreement_pdf_url, booking_type")
+        .eq("booking_id", bookingId)
+        .maybeSingle();
+
+      if (agDocsErr) {
+        return res.status(500).json({ error: `Failed to fetch agreement record: ${agDocsErr.message}` });
+      }
+      if (!agDocsRow?.agreement_pdf_url) {
+        return res.status(404).json({ error: "No agreement PDF found for this booking." });
+      }
+
+      // Generate a signed URL valid for 60 minutes.
+      const { data: signedData, error: signedErr } = await sbAg.storage
+        .from("rental-agreements")
+        .createSignedUrl(agDocsRow.agreement_pdf_url, 3600);
+
+      if (signedErr) {
+        return res.status(500).json({ error: `Failed to generate signed URL: ${signedErr.message}` });
+      }
+
+      return res.status(200).json({
+        url:         signedData.signedUrl,
+        bookingType: agDocsRow.booking_type || null,
+        path:        agDocsRow.agreement_pdf_url,
+      });
+    }
+
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error("v2-bookings error:", err);
