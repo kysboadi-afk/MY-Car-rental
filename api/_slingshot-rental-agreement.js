@@ -42,7 +42,9 @@ const POLICY = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function safeStr(v) {
+const DEFAULT_LICENSE_TEXT = "Provided (ID on file)";
+
+function toStringOrEmpty(v) {
   if (v == null) return "";
   return String(v);
 }
@@ -117,7 +119,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
       paymentIntentId   = "",
       stripeCustomerId  = "",
       renterName        = "",
-      driverLicenseNumber = "Provided (ID on file)",
+      driverLicenseNumber = DEFAULT_LICENSE_TEXT,
       renterPhone       = "",
       renterEmail       = "",
       vehicleVin        = "",
@@ -185,7 +187,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
       doc.font("Helvetica-Bold").fontSize(8.5).fillColor(BLACK)
         .text(label, 55, rowY + 4, { width: lW - 10 });
       doc.font("Helvetica").fontSize(8.5).fillColor(BLACK)
-        .text(safeStr(value) || "—", 55 + lW, rowY + 4, { width: vW - 10 });
+        .text(toStringOrEmpty(value) || "—", 55 + lW, rowY + 4, { width: vW - 10 });
 
       doc.y = rowY + rowH;
     }
@@ -223,7 +225,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
       .text(`Company: ${POLICY.companyName}   |   ${POLICY.companyPhone}   |   ${POLICY.companyEmail}`, 55, bannerY);
     doc.y = bannerY + 17;
     kv("Renter Name",         renterName        || "—");
-    kv("Driver's License #",  driverLicenseNumber || "Provided (ID on file)");
+    kv("Driver's License #",  driverLicenseNumber || DEFAULT_LICENSE_TEXT);
     kv("Phone",               renterPhone       || "—");
     kv("Email",               renterEmail       || "—");
 
@@ -246,7 +248,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
     kv("Base Rate",          `$${Number(baseRate).toFixed(2)}`);
     kv("Security Deposit",   `$${Number(securityDeposit).toFixed(2)}`);
     kv("Total Charged",      `$${Number(totalPrice).toFixed(2)}`);
-    kv("Payment Status",     safeStr(paymentStatus).toUpperCase());
+    kv("Payment Status",     toStringOrEmpty(paymentStatus).toUpperCase());
     kv("Stripe Payment ID",  paymentIntentId || "—");
 
     // ── Section 4 — Security Deposit Terms ────────────────────────────────────
