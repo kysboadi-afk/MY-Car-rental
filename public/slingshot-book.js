@@ -126,7 +126,7 @@ function buildSlider(images, vehicleName) {
   container.innerHTML = "";
   if (dotsEl) dotsEl.innerHTML = "";
 
-  var imgs = images && images.length > 0 ? images : ["/images/car2.jpg"];
+  var imgs = images && images.length > 0 ? images : ["/images/slingshot.jpg"];
   imgs.forEach(function(src, i) {
     var slide = document.createElement("div");
     slide.className = "slide" + (i === 0 ? " active" : "");
@@ -174,7 +174,12 @@ async function loadVehicleData() {
     carData = {
       name:   v.vehicle_name || v.name || "Slingshot",
       type:   v.type || v.vehicle_type || "slingshot",
-      images: v.images || (v.cover_image ? [v.cover_image] : []),
+      images: (function() {
+        var gallery = Array.isArray(v.gallery_images) ? v.gallery_images : [];
+        var cover   = v.cover_image ? [v.cover_image] : [];
+        var all     = cover.concat(gallery.filter(function(u) { return u !== v.cover_image; }));
+        return all.length > 0 ? all : [];
+      })(),
     };
 
     var nameEl = document.getElementById("carName");
