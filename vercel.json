@@ -1,4 +1,7 @@
 {
+  "redirects": [
+    { "source": "/slingshot.html", "destination": "/slingshots.html", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/api/admin-chat",
