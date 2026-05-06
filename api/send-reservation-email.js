@@ -587,7 +587,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice } = hydratedBody;
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice } = hydratedBody;
   const normalizedPaymentStatus = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
 
   const pickupTime = normalizeClockTime(rawPickupTime);
@@ -728,6 +728,14 @@ export default async function handler(req, res) {
         contentType: idMimeType || "application/octet-stream",
       });
     }
+    if (idBackBase64 && idBackFileName) {
+      attachments.push({
+        filename: idBackFileName,
+        content: idBackBase64,
+        encoding: "base64",
+        contentType: idBackMimeType || "application/octet-stream",
+      });
+    }
     if (insuranceBase64 && insuranceFileName) {
       attachments.push({
         filename: insuranceFileName,
@@ -814,7 +822,8 @@ export default async function handler(req, res) {
         signature ? `Digital Signature: ${signature}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         "",
-        idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
+        idBase64 && idFileName ? `ID (front) attached: ${idFileName}` : "No ID front was uploaded by the renter.",
+        idBackBase64 && idBackFileName ? `ID (back) attached: ${idBackFileName}` : "No ID back was uploaded by the renter.",
         (insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter.")),
         isConfirmed && signature ? `Signed Rental Agreement: attached (${agreementPdfFilename})` : "",
         "",
@@ -851,7 +860,8 @@ export default async function handler(req, res) {
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-        ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
+        ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID (front) is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID front was uploaded by the renter.</p>`}
+        ${idBackBase64 && idBackFileName ? `<p>📎 <strong>Renter's ID (back) is attached</strong> to this email (${esc(idBackFileName)}).</p>` : `<p>⚠️ No ID back was uploaded by the renter.</p>`}
         ${insuranceBase64 && insuranceFileName
           ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>`
           : (protectionPlan

@@ -256,7 +256,7 @@ export default async function handler(req, res) {
     console.error("admin-resend-booking: PDF generation failed (non-fatal):", pdfErr.message);
   }
 
-  // Renter ID photo
+  // Renter ID front photo
   if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
     try {
       attachments.push({
@@ -265,7 +265,20 @@ export default async function handler(req, res) {
         contentType: storedDocs.id_mimetype || "application/octet-stream",
       });
     } catch (idErr) {
-      console.error("admin-resend-booking: ID attachment failed (non-fatal):", idErr.message);
+      console.error("admin-resend-booking: ID front attachment failed (non-fatal):", idErr.message);
+    }
+  }
+
+  // Renter ID back photo
+  if (storedDocs && storedDocs.id_back_base64 && storedDocs.id_back_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.id_back_filename,
+        content:     Buffer.from(storedDocs.id_back_base64, "base64"),
+        contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+      });
+    } catch (idBackErr) {
+      console.error("admin-resend-booking: ID back attachment failed (non-fatal):", idBackErr.message);
     }
   }
 
@@ -329,7 +342,7 @@ export default async function handler(req, res) {
   }
 
   const missingItemNotes = buildDocumentNotes({
-    idUploaded:        !!storedDocs?.id_base64,
+    idUploaded:        !!(storedDocs?.id_base64 && storedDocs?.id_back_base64),
     signatureUploaded: !!storedDocs?.signature,
     insuranceUploaded: !!storedDocs?.insurance_base64,
     insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
