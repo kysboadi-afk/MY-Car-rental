@@ -44,6 +44,30 @@ function fmtMoney(n) {
 }
 
 // ─── Card builder ─────────────────────────────────────────────────────────────
+
+// Default hourly tiers shown when a slingshot vehicle has no hourlyTiers data.
+const DEFAULT_SLINGSHOT_TIERS = [
+  { label: "2 Hours",   price: 150, popular: false },
+  { label: "3 Hours",   price: 200, popular: true  },
+  { label: "6 Hours",   price: 250, popular: false },
+  { label: "24 Hours",  price: 350, popular: false },
+];
+
+// Derive a display-ready tier list from a vehicle's hourlyTiers map.
+// Returns [{label, price, popular}] sorted by ascending hour count.
+function getSlingshotTiers(v) {
+  const raw = v.hourlyTiers;
+  if (!raw || typeof raw !== "object" || !Object.keys(raw).length) {
+    return DEFAULT_SLINGSHOT_TIERS;
+  }
+  const entries = Object.values(raw)
+    .filter(t => t && t.label && t.price != null)
+    .sort((a, b) => (a.hours || 0) - (b.hours || 0));
+  if (!entries.length) return DEFAULT_SLINGSHOT_TIERS;
+  // Mark the second entry (index 1) as "Most Popular" to highlight the 3-hour tier.
+  return entries.map((t, i) => ({ label: t.label, price: t.price, popular: i === 1 }));
+}
+
 function buildSlingshotCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
   const name     = esc(v.vehicle_name || v.vehicle_id);
@@ -51,8 +75,15 @@ function buildSlingshotCard(v, pricing) {
   const subtitle = esc(v.subtitle || "3-Wheeler \u2022 Open-Air");
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 
-  const daily    = fmtMoney(v.daily_price    ?? v.pricePerDay  ?? pricing?.slingshot?.daily    ?? 120);
-  const weekly   = fmtMoney(v.weekly_price   ?? v.weekly       ?? pricing?.slingshot?.weekly   ?? 699);
+  const tiers = getSlingshotTiers(v);
+  const tierHtml = tiers.map(t => {
+    const amt = fmtMoney(t.price);
+    const lbl = esc(t.label);
+    if (t.popular) {
+      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">Most Popular</span></div>`;
+    }
+    return `<div class="price-item">${amt} / ${lbl}</div>`;
+  }).join("");
 
   return `<div class="car-card" data-category="slingshot" data-vehicle="${vid}">
     <img src="${img}" alt="${name}" loading="lazy">
@@ -66,8 +97,7 @@ function buildSlingshotCard(v, pricing) {
       </div>
       <p class="price-list-label">Rental Plans</p>
       <div class="price-list">
-        <div class="price-item">${daily} / day</div>
-        <div class="price-item price-item--popular">${weekly} / week <span class="popular-tag">Most Popular</span></div>
+        ${tierHtml}
       </div>
       ${scarcity}
       <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
@@ -182,7 +212,7 @@ async function loadSlingshotFleet() {
 
   try {
     const [vRes, pRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=slingshot"),
       fetch(API_BASE + "/api/public-pricing"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
