@@ -246,7 +246,7 @@ test("owner email notes when no ID was uploaded", async () => {
   await handler(req, res);
 
   const { html } = sentMails[0];
-  assert.ok(html.includes("No ID was uploaded"), "Should warn when no ID uploaded");
+  assert.ok(html.includes("No ID front was uploaded"), "Should warn when no ID uploaded");
 });
 
 test("owner email notes when ID is attached", async () => {
@@ -264,8 +264,8 @@ test("owner email notes when ID is attached", async () => {
 
   const ownerMail = sentMails[0];
   assert.ok(
-    ownerMail.html.includes("Renter&#39;s ID is attached") ||
-    ownerMail.html.includes("Renter's ID is attached"),
+    ownerMail.html.includes("Renter&#39;s ID (front) is attached") ||
+    ownerMail.html.includes("Renter's ID (front) is attached"),
     "Should mention attached ID"
   );
   assert.equal(ownerMail.attachments.length, 1, "Should have one attachment");
