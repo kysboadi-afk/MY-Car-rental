@@ -125,6 +125,11 @@ function normalizeVehicleData(vehicleId, vdata) {
     biweekly:    toNum(vdata.biweekly_price ?? vdata.biweekly_rate ?? vdata.biweekly),
     monthly:     toNum(vdata.monthly_price  ?? vdata.monthly_rate  ?? vdata.monthly),
     deposit:     toNum(vdata.deposit),
+    make:        vdata.make  || null,
+    model:       vdata.model || null,
+    year:        vdata.vehicle_year ? Math.round(Number(vdata.vehicle_year)) : null,
+    vin:         vdata.vin   || null,
+    color:       vdata.color || null,
   };
 }
 
@@ -162,6 +167,11 @@ export async function getVehicleById(vehicleId) {
       biweekly:    car.biweekly    || null,
       monthly:     car.monthly     || null,
       deposit:     car.deposit     || null,
+      make:        car.make  || null,
+      model:       car.model || null,
+      year:        car.year  || null,
+      vin:         car.vin   || null,
+      color:       car.color || null,
     };
   }
 

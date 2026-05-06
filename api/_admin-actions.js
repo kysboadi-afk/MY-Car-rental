@@ -3673,6 +3673,11 @@ async function toolResendBookingConfirmation({ bookingId }) {
   }
 
   // ── Build attachments ────────────────────────────────────────────────────
+  // Pre-fetch vehicle data from DB for non-CARS vehicles (e.g. slingshots) so
+  // VIN, make, year, etc. are available for both PDF regeneration and email bodies.
+  const _vehicleDbData = (vehicleId && CARS[vehicleId])
+    ? null
+    : await getVehicleById(vehicleId).catch(() => null);
   const attachments = [];
 
   // Rental agreement PDF: use the pre-stored PDF when available; regenerate
@@ -3706,7 +3711,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
 
     // Regenerate if we still don't have a buffer.
     if (!pdfBuffer) {
-      const vehicleInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : {};
+      const vehicleInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : (_vehicleDbData || {});
       const rentalDays  = (pickupDate && returnDate) ? computeRentalDays(pickupDate, returnDate) : 0;
       const hasProtectionPlan = !!(storedDocs?.protection_plan_tier || booking.protectionPlanTier);
       // storedDocs.protection_plan_tier is the authoritative source (captured at booking time);
@@ -3813,7 +3818,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
       const pricingSettings = await loadPricingSettings();
       const isKnownEconomy = (vehicleId === "camry" || vehicleId === "camry2013");
       const vehicleDataForBreakdown = !isKnownEconomy
-        ? await getVehicleById(vehicleId).catch(() => null)
+        ? (_vehicleDbData ?? await getVehicleById(vehicleId).catch(() => null))
         : null;
       breakdownLines = computeBreakdownLinesFromSettings(
         vehicleId,
@@ -3853,11 +3858,11 @@ async function toolResendBookingConfirmation({ bookingId }) {
     bookingId,
     vehicleName,
     vehicleId,
-    vehicleMake:        CARS[vehicleId]?.make || null,
-    vehicleModel:       CARS[vehicleId]?.model || null,
-    vehicleYear:        CARS[vehicleId]?.year || null,
-    vehicleVin:         CARS[vehicleId]?.vin || null,
-    vehicleColor:       CARS[vehicleId]?.color || null,
+    vehicleMake:        CARS[vehicleId]?.make || _vehicleDbData?.make || null,
+    vehicleModel:       CARS[vehicleId]?.model || _vehicleDbData?.model || null,
+    vehicleYear:        CARS[vehicleId]?.year || _vehicleDbData?.year || null,
+    vehicleVin:         CARS[vehicleId]?.vin || _vehicleDbData?.vin || null,
+    vehicleColor:       CARS[vehicleId]?.color || _vehicleDbData?.color || null,
     renterName:         name,
     renterEmail:        email,
     renterPhone:        phone,
@@ -3899,11 +3904,11 @@ async function toolResendBookingConfirmation({ bookingId }) {
       bookingId,
       vehicleName,
       vehicleId,
-      vehicleMake:        CARS[vehicleId]?.make || null,
-      vehicleModel:       CARS[vehicleId]?.model || null,
-      vehicleYear:        CARS[vehicleId]?.year || null,
-      vehicleVin:         CARS[vehicleId]?.vin || null,
-      vehicleColor:       CARS[vehicleId]?.color || null,
+      vehicleMake:        CARS[vehicleId]?.make || _vehicleDbData?.make || null,
+      vehicleModel:       CARS[vehicleId]?.model || _vehicleDbData?.model || null,
+      vehicleYear:        CARS[vehicleId]?.year || _vehicleDbData?.year || null,
+      vehicleVin:         CARS[vehicleId]?.vin || _vehicleDbData?.vin || null,
+      vehicleColor:       CARS[vehicleId]?.color || _vehicleDbData?.color || null,
       renterName:         name,
       renterEmail:        email,
       renterPhone:        phone,
