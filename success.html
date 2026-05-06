@@ -110,8 +110,20 @@
       // param so we can send the user straight back to their booking.
       var urlParams = new URLSearchParams(window.location.search);
       var vehicleId = urlParams.get("vehicle");
+      // Peek at the stored booking to detect slingshot vs car booking (without
+      // removing it — proceedWithConfirmation() handles the actual removal later).
+      var _isSlingshot = false;
+      try {
+        var _peekRaw = sessionStorage.getItem("slyRidesBooking");
+        if (_peekRaw) {
+          var _peekData = JSON.parse(_peekRaw);
+          if (_peekData && _peekData.slingshotPackage) _isSlingshot = true;
+        }
+      } catch (e) {}
       var tryAgainHref = vehicleId
-        ? "car.html?vehicle=" + encodeURIComponent(vehicleId)
+        ? (_isSlingshot
+            ? "slingshot-book.html?vehicle=" + encodeURIComponent(vehicleId)
+            : "car.html?vehicle=" + encodeURIComponent(vehicleId))
         : "cars.html";
 
       // Read and immediately clear the stored PaymentIntent client secret so it
