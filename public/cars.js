@@ -228,7 +228,7 @@ async function loadFleet() {
 
   try {
     const [vRes, pRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=car"),
       fetch(API_BASE + "/api/public-pricing"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
@@ -237,9 +237,17 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    !v.status || v.status === "active"
-  );
+  const CAR_SCOPE_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van", "other"]);
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+    if (v.status && v.status !== "active") return false;
+    const type = (v.type || "").toLowerCase();
+    const id   = (v.vehicle_id   || "").toLowerCase();
+    const name = (v.vehicle_name || "").toLowerCase();
+    // Exclude slingshots both by explicit type and by id/name pattern
+    if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return false;
+    // Also require an explicit car-compatible type to prevent wrongly-typed slingshots from leaking
+    return CAR_SCOPE_TYPES.has(type);
+  });
 
   // Only replace the grid if the API returned valid vehicles.
   // If the API failed or returned nothing, keep any static cards already in the HTML.
