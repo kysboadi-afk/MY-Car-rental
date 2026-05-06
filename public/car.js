@@ -617,17 +617,6 @@ idUpload.addEventListener("change", function(e) {
     return;
   }
 
-  // Validate file size (5MB max)
-  const maxSize = 5 * 1024 * 1024; // 5MB in bytes
-  if (file.size > maxSize) {
-    alert(window.slyI18n.t("booking.alertFileSize"));
-    e.target.value = '';
-    uploadedFile = null;
-    resetFileInfo();
-    updatePayBtn();
-    return;
-  }
-
   uploadedFile = file;
   const fileInfoEl = document.getElementById("fileInfo");
   fileInfoEl.querySelector(".file-name").textContent = file.name;
@@ -657,16 +646,6 @@ idBackUpload.addEventListener("change", function(e) {
     return;
   }
 
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    alert(window.slyI18n.t("booking.alertFileSize"));
-    e.target.value = '';
-    uploadedFileBack = null;
-    resetBackFileInfo();
-    updatePayBtn();
-    return;
-  }
-
   uploadedFileBack = file;
   const backInfoEl = document.getElementById("fileInfoBack");
   backInfoEl.querySelector(".file-name").textContent = file.name;
@@ -689,16 +668,6 @@ insuranceUpload.addEventListener("change", function(e) {
   const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
   if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
     alert(window.slyI18n.t("booking.alertInsuranceType"));
-    e.target.value = '';
-    uploadedInsurance = null;
-    resetInsuranceFileInfo();
-    updatePayBtn();
-    return;
-  }
-
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    alert(window.slyI18n.t("booking.alertFileSize"));
     e.target.value = '';
     uploadedInsurance = null;
     resetInsuranceFileInfo();
