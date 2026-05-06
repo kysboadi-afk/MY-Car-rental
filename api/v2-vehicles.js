@@ -87,11 +87,24 @@ export default async function handler(req, res) {
     const scope = (req.query?.scope || "").toLowerCase();
     // Returns true when the given vehicle type belongs to the requested scope.
     const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-    function inScopeGET(type) {
+    // Returns true when a vehicle_id or vehicle_name indicates a slingshot,
+    // regardless of how the type field is stored in the database.
+    function looksLikeSlingshot(vehicleId, vehicleName) {
+      const id   = (vehicleId   || "").toLowerCase();
+      const name = (vehicleName || "").toLowerCase();
+      return id.includes("slingshot") || name.includes("slingshot");
+    }
+    function inScopeGET(type, vehicleId, vehicleName) {
       if (!scope) return true;
       const t = (type || "").toLowerCase();
-      if (scope === "car" || scope === "cars") return CAR_TYPES.has(t) || t === "";
-      if (scope === "slingshot") return t === "slingshot";
+      // Extra guard: treat vehicles that look like slingshots as type="slingshot"
+      // even when the type field is missing or incorrectly set in the database.
+      const effectiveSlingshot = t === "slingshot" || looksLikeSlingshot(vehicleId, vehicleName);
+      if (scope === "car" || scope === "cars") {
+        if (effectiveSlingshot) return false;
+        return CAR_TYPES.has(t) || t === "";
+      }
+      if (scope === "slingshot") return effectiveSlingshot;
       return true;
     }
     const supabase = getSupabaseAdmin();
@@ -121,7 +134,7 @@ export default async function handler(req, res) {
           const status = row.data?.status;
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
-          if (!inScopeGET(type)) continue;
+          if (!inScopeGET(type, row.vehicle_id, row.data?.vehicle_name)) continue;
 
           const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
           const obj = {
@@ -162,7 +175,7 @@ export default async function handler(req, res) {
         const status = v.status;
         if (status && status !== "active") continue;
         const type = v.type || "";
-        if (!inScopeGET(type)) continue;
+        if (!inScopeGET(type, v.vehicle_id, v.vehicle_name)) continue;
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
         let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };

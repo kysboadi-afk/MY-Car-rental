@@ -244,9 +244,14 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    (!v.status || v.status === "active") && v.type !== "slingshot"
-  );
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+    if (v.status && v.status !== "active") return false;
+    const type = (v.type || "").toLowerCase();
+    const id   = (v.vehicle_id   || "").toLowerCase();
+    const name = (v.vehicle_name || "").toLowerCase();
+    // Exclude slingshots regardless of how the type field is set in the DB
+    return type !== "slingshot" && !id.includes("slingshot") && !name.includes("slingshot");
+  });
 
   // Only replace the grid if the API returned valid vehicles.
   // If the API failed or returned nothing, keep any static cards already in the HTML.
