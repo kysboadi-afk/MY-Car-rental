@@ -17,6 +17,7 @@ import { getVehicleById } from "./_vehicles.js";
 import {
   getSlingshotPackage,
   SLINGSHOT_DEPOSIT,
+  MS_PER_HOUR,
   computeSlingshotReturn,
   isReturnWithinBusinessHours,
   splitDatetimeLA,

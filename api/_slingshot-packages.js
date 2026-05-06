@@ -8,6 +8,9 @@
 //   • A $500 refundable security deposit is collected at booking time.
 //   • No sales tax is applied to slingshot bookings.
 
+/** Milliseconds in one hour — used for return-time arithmetic. */
+export const MS_PER_HOUR = 3_600_000;
+
 /** All valid slingshot rental packages. */
 export const SLINGSHOT_PACKAGES = {
   "2hr":  { hours: 2,  price: 150, label: "2 Hours" },
@@ -42,7 +45,7 @@ export function getSlingshotPackage(key) {
 export function computeSlingshotReturn(pickupDateTime, packageKey) {
   const pkg = getSlingshotPackage(packageKey);
   if (!pkg) return null;
-  return new Date(pickupDateTime.getTime() + pkg.hours * 3_600_000);
+  return new Date(pickupDateTime.getTime() + pkg.hours * MS_PER_HOUR);
 }
 
 /**
