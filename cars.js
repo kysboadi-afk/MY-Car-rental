@@ -244,7 +244,6 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
-  const CAR_SCOPE_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van", "other"]);
   const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
     if (v.status && v.status !== "active") return false;
     const cat = (v.category || "").toLowerCase();
