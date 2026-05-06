@@ -102,7 +102,9 @@ export default async function handler(req, res) {
       const effectiveSlingshot = t === "slingshot" || looksLikeSlingshot(vehicleId, vehicleName);
       if (scope === "car" || scope === "cars") {
         if (effectiveSlingshot) return false;
-        return CAR_TYPES.has(t) || t === "";
+        // Require an explicit car type — do NOT include vehicles with no type set,
+        // since an unset/wrong type is how slingshots leak onto the car page.
+        return CAR_TYPES.has(t);
       }
       if (scope === "slingshot") return effectiveSlingshot;
       return true;

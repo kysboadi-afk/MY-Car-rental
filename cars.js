@@ -244,13 +244,16 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
+  const CAR_SCOPE_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van", "other", ""]);
   const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
     if (v.status && v.status !== "active") return false;
     const type = (v.type || "").toLowerCase();
     const id   = (v.vehicle_id   || "").toLowerCase();
     const name = (v.vehicle_name || "").toLowerCase();
-    // Exclude slingshots regardless of how the type field is set in the DB
-    return type !== "slingshot" && !id.includes("slingshot") && !name.includes("slingshot");
+    // Exclude slingshots both by explicit type and by id/name pattern
+    if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return false;
+    // Also require an explicit car-compatible type to prevent wrongly-typed slingshots from leaking
+    return CAR_SCOPE_TYPES.has(type);
   });
 
   // Only replace the grid if the API returned valid vehicles.
