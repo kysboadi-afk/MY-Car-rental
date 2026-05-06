@@ -346,11 +346,13 @@ const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
 const agreeCheckbox = document.getElementById("agree");
 const idUpload = document.getElementById("idUpload");
+const idBackUpload = document.getElementById("idBackUpload");
 const insuranceUpload = document.getElementById("insuranceUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
+let uploadedFileBack = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
 let currentSubtotal = 0;
@@ -490,6 +492,13 @@ function resetFileInfo() {
   fileInfoEl.classList.remove("has-file");
 }
 
+function resetBackFileInfo() {
+  const el = document.getElementById("fileInfoBack");
+  el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
+  el.querySelector(".file-size").textContent = "";
+  el.classList.remove("has-file");
+}
+
 function resetInsuranceFileInfo() {
   const el = document.getElementById("insuranceFileInfo");
   el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
@@ -584,6 +593,44 @@ idUpload.addEventListener("change", function(e) {
   fileInfoEl.querySelector(".file-name").textContent = file.name;
   fileInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
   fileInfoEl.classList.add("has-file");
+  updatePayBtn();
+});
+
+idBackUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+
+  if (!file) {
+    uploadedFileBack = null;
+    resetBackFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert(window.slyI18n.t("booking.alertIdType"));
+    e.target.value = '';
+    uploadedFileBack = null;
+    resetBackFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert(window.slyI18n.t("booking.alertFileSize"));
+    e.target.value = '';
+    uploadedFileBack = null;
+    resetBackFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  uploadedFileBack = file;
+  const backInfoEl = document.getElementById("fileInfoBack");
+  backInfoEl.querySelector(".file-name").textContent = file.name;
+  backInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  backInfoEl.classList.add("has-file");
   updatePayBtn();
 });
 
@@ -1112,7 +1159,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     "pickup", "pickupTime", "returnDateSection",
     "name", "email", "phone",
     "nameError",
-    "idSection", "idUpload", "fileInfo",
+    "idSection", "idUpload", "idBackUpload", "fileInfo", "fileInfoBack",
     "insuranceSection",
     "hasInsurance", "noInsurance",
     "insuranceUploadSection", "protectionPlanSection",
@@ -1130,7 +1177,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   // Also hide labels and blocks that only have for= attributes, using a broader selector
   bookingSection.querySelectorAll(
     'label[for="pickup"], label[for="pickupTime"], label[for="return"], label[for="returnTime"], ' +
-    'label[for="name"], label[for="email"], label[for="phone"], label[for="idUpload"], ' +
+    'label[for="name"], label[for="email"], label[for="phone"], label[for="idUpload"], label[for="idBackUpload"], ' +
     'label[for="insuranceUpload"], ' +
     '.sms-consent, .total, .pay-hint, .insurance-question, .insurance-options, ' +
     '.id-section, .insurance-upload-section, .protection-plan-section, ' +
@@ -1534,6 +1581,17 @@ function restoreFailedBooking() {
               }
             }
 
+            if (fileData.idBackBase64 && fileData.idBackFileName && fileData.idBackMimeType) {
+              const blob = base64ToBlob(fileData.idBackBase64, fileData.idBackMimeType);
+              uploadedFileBack = new File([blob], fileData.idBackFileName, { type: fileData.idBackMimeType });
+              const backInfoEl = document.getElementById("fileInfoBack");
+              if (backInfoEl) {
+                backInfoEl.querySelector(".file-name").textContent = fileData.idBackFileName;
+                backInfoEl.querySelector(".file-size").textContent = `(${(blob.size / 1024).toFixed(1)} KB)`;
+                backInfoEl.classList.add("has-file");
+              }
+            }
+
             if (choice === "yes" && fileData.insuranceBase64 && fileData.insuranceFileName && fileData.insuranceMimeType) {
               const blob = base64ToBlob(fileData.insuranceBase64, fileData.insuranceMimeType);
               uploadedInsurance = new File([blob], fileData.insuranceFileName, { type: fileData.insuranceMimeType });
@@ -1572,6 +1630,9 @@ window.addEventListener("pageshow", function(e) {
   idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
+  idBackUpload.value = "";
+  uploadedFileBack = null;
+  resetBackFileInfo();
   clearInsuranceFile();
   // Reset insurance coverage radio buttons
   const hasInsuranceRadio = document.getElementById("hasInsurance");
@@ -1646,7 +1707,7 @@ function updatePayBtn() {
   // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = pickup.value && hasTimeWindow;
-  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
+  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && (idBackUpload.files.length > 0 || uploadedFileBack !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
@@ -1834,6 +1895,32 @@ stripeBtn.addEventListener("click", async () => {
     }
   }
 
+  // Pre-encode the back of ID file
+  let idBackBase64 = null;
+  let idBackFileName = null;
+  let idBackMimeType = null;
+  if (uploadedFileBack) {
+    try {
+      idBackBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedFileBack);
+      });
+      idBackFileName = uploadedFileBack.name;
+      idBackMimeType = uploadedFileBack.type;
+    } catch (err) {
+      console.error("ID back encoding error:", err);
+      stripeBtn.disabled = false;
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      const reserveBtn = document.getElementById("reserveBtn");
+      if (reserveBtn) reserveBtn.disabled = false;
+      _pendingPaymentMode = null;
+      showPayError("Could not read the back of your ID file. Please try re-uploading it and try again.");
+      return;
+    }
+  }
+
   // Pre-encode the insurance file
   let insuranceBase64 = null;
   let insuranceFileName = null;
@@ -1981,6 +2068,8 @@ stripeBtn.addEventListener("click", async () => {
           days: currentDayCount,
           idFileName,
           idMimeType,
+          idBackFileName,
+          idBackMimeType,
           insuranceFileName,
           insuranceMimeType,
           insuranceCoverageChoice,
@@ -1990,7 +2079,7 @@ stripeBtn.addEventListener("click", async () => {
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
 
-        if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
+        if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
           try {
             await new Promise((resolve) => {
               const idbReq = indexedDB.open("slyRidesDB", 1);
@@ -1999,7 +2088,7 @@ stripeBtn.addEventListener("click", async () => {
                 const db = e.target.result;
                 try {
                   const tx = db.transaction("files", "readwrite");
-                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
                   tx.oncomplete = () => { db.close(); resolve(); };
                   tx.onerror = () => { db.close(); resolve(); };
                 } catch (idbErr) { db.close(); resolve(); }
@@ -2026,6 +2115,9 @@ stripeBtn.addEventListener("click", async () => {
                   idBase64: idBase64 || null,
                   idFileName: idFileName || null,
                   idMimeType: idMimeType || null,
+                  idBackBase64: idBackBase64 || null,
+                  idBackFileName: idBackFileName || null,
+                  idBackMimeType: idBackMimeType || null,
                   insuranceBase64: insuranceBase64 || null,
                   insuranceFileName: insuranceFileName || null,
                   insuranceMimeType: insuranceMimeType || null,
@@ -2141,6 +2233,8 @@ stripeBtn.addEventListener("click", async () => {
         days: currentDayCount,
         idFileName,
         idMimeType,
+        idBackFileName,
+        idBackMimeType,
         insuranceFileName,
         insuranceMimeType,
         insuranceCoverageChoice,
@@ -2152,14 +2246,14 @@ stripeBtn.addEventListener("click", async () => {
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
+      if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
         const idbReq = indexedDB.open("slyRidesDB", 1);
         idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
         idbReq.onsuccess = e => {
           const db = e.target.result;
           try {
             const tx = db.transaction("files", "readwrite");
-            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
             tx.oncomplete = () => db.close();
             tx.onerror = () => db.close();
           } catch (idbErr) { db.close(); }
@@ -2182,6 +2276,9 @@ stripeBtn.addEventListener("click", async () => {
                 idBase64: idBase64 || null,
                 idFileName: idFileName || null,
                 idMimeType: idMimeType || null,
+                idBackBase64: idBackBase64 || null,
+                idBackFileName: idBackFileName || null,
+                idBackMimeType: idBackMimeType || null,
                 insuranceBase64: insuranceBase64 || null,
                 insuranceFileName: insuranceFileName || null,
                 insuranceMimeType: insuranceMimeType || null,

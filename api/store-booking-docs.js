@@ -12,6 +12,7 @@
 // Body: {
 //   bookingId, signature,
 //   idBase64, idFileName, idMimeType,
+//   idBackBase64, idBackFileName, idBackMimeType,
 //   insuranceBase64, insuranceFileName, insuranceMimeType,
 //   insuranceCoverageChoice
 // }
@@ -19,11 +20,11 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
-// Allow large bodies (ID photo + insurance doc can be several MB base64-encoded).
+// Allow large bodies (ID front + back + insurance doc can be several MB base64-encoded).
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: "20mb",
+      sizeLimit: "30mb",
     },
   },
 };
@@ -44,6 +45,7 @@ export default async function handler(req, res) {
     bookingId,
     signature,
     idBase64, idFileName, idMimeType,
+    idBackBase64, idBackFileName, idBackMimeType,
     insuranceBase64, insuranceFileName, insuranceMimeType,
     insuranceCoverageChoice,
   } = req.body || {};
@@ -67,6 +69,9 @@ export default async function handler(req, res) {
         id_base64:                idBase64 || null,
         id_filename:              idFileName || null,
         id_mimetype:              idMimeType || null,
+        id_back_base64:           idBackBase64 || null,
+        id_back_filename:         idBackFileName || null,
+        id_back_mimetype:         idBackMimeType || null,
         insurance_base64:         insuranceBase64 || null,
         insurance_filename:       insuranceFileName || null,
         insurance_mimetype:       insuranceMimeType || null,

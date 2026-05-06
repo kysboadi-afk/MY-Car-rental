@@ -871,6 +871,19 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     }
   }
 
+  // Attach renter's ID back photo if available.
+  if (storedDocs && storedDocs.id_back_base64 && storedDocs.id_back_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.id_back_filename,
+        content:     Buffer.from(storedDocs.id_back_base64, "base64"),
+        contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+      });
+    } catch (idBackErr) {
+      console.error("stripe-webhook: ID back attachment failed (non-fatal):", idBackErr.message);
+    }
+  }
+
   // Attach insurance document if available.
   if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
     try {
@@ -925,7 +938,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
             : "Not selected / No protection plan"));
 
   const missingItemNotes = buildDocumentNotes({
-    idUploaded:        !!storedDocs?.id_base64,
+    idUploaded:        !!(storedDocs?.id_base64 && storedDocs?.id_back_base64),
     signatureUploaded: !!storedDocs?.signature,
     insuranceUploaded: !!storedDocs?.insurance_base64,
     insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",

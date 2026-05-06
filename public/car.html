@@ -115,10 +115,16 @@
     <p class="sms-consent" data-i18n="booking.smsConsent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
 
     <div class="id-upload-section">
-      <label for="idUpload"><span data-i18n="booking.uploadId">📎 Upload Driver's License / ID</span> <span class="required">*</span></label>
       <p class="id-note" data-i18n="booking.idNote">A valid government-issued ID is required to confirm your rental.</p>
+      <label for="idUpload"><span data-i18n="booking.uploadIdFront">📎 Front of Driver's License / ID</span> <span class="required">*</span></label>
       <input type="file" id="idUpload" accept=".jpg,.jpeg,.png,.pdf">
       <div id="fileInfo">
+        <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
+        <span class="file-size"></span>
+      </div>
+      <label for="idBackUpload" style="margin-top:12px;display:block"><span data-i18n="booking.uploadIdBack">📎 Back of Driver's License / ID</span> <span class="required">*</span></label>
+      <input type="file" id="idBackUpload" accept=".jpg,.jpeg,.png,.pdf">
+      <div id="fileInfoBack">
         <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
         <span class="file-size"></span>
       </div>
@@ -329,7 +335,7 @@
     <p class="total"><span data-i18n="booking.subtotalLabel">Subtotal:</span> $<span id="subtotal">0</span></p>
     <p class="total tax-line" id="taxLine" style="display:none"><span data-i18n="booking.salesTaxLabel">Sales Tax:</span> $<span id="tax">0.00</span></p>
     <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote" data-i18n="booking.taxNote">(+ applicable sales tax)</span></p>
-    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name, email, and phone number, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name, email, and phone number, upload the front and back of your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
     <!-- Inline payment error — shown instead of alert() so Chrome cannot suppress it -->
     <div id="payError" role="alert" style="display:none"></div>
     <!-- Reserve-deposit button — shown by car.js for all vehicles; allows renter to pay only a
