@@ -37,8 +37,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid request body." });
   }
 
-  // Validate format — must look like a real booking ref.
-  if (!bookingId || !bookingId.startsWith("bk-") || bookingId.length < 6) {
+  // Validate format — must be exactly "bk-" followed by 12 lowercase hex chars.
+  if (!bookingId || !/^bk-[0-9a-f]{12}$/.test(bookingId)) {
     return res.status(400).json({ error: "Invalid bookingId." });
   }
 
@@ -61,14 +61,13 @@ export default async function handler(req, res) {
 
     if (updateErr) {
       console.error("[CANCEL_PENDING_BOOKING] update error:", updateErr.message);
-      // Return 200 anyway — the client doesn't need to retry.
-      return res.status(200).json({ ok: true, warn: "db_update_failed" });
+      return res.status(500).json({ ok: false, error: "Failed to cancel booking." });
     }
 
     console.log("[CANCEL_PENDING_BOOKING]", { bookingId });
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("[CANCEL_PENDING_BOOKING] unexpected error:", err.message);
-    return res.status(200).json({ ok: true, warn: "unexpected_error" });
+    return res.status(500).json({ ok: false, error: "Failed to cancel booking." });
   }
 }

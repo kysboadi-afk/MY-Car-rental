@@ -652,7 +652,6 @@ async function launchSlingshotPayment() {
 
     cancelBtn.addEventListener("click", function() {
       submitting = false;
-      paymentFormSubmitted = false;
       submitBtn.removeEventListener("click", handleSubmit);
       paymentElement.unmount();
       if (msgEl) msgEl.textContent = "";
