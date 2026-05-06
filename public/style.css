@@ -1423,6 +1423,7 @@ body {
 }
 
 #fileInfo,
+#fileInfoBack,
 #insuranceFileInfo {
   margin-top: 8px;
   font-size: 12px;
@@ -1436,18 +1437,21 @@ body {
 }
 
 #fileInfo.has-file,
+#fileInfoBack.has-file,
 #insuranceFileInfo.has-file {
   background: #1a2e1a;
   color: #66bb6a;
 }
 
 #fileInfo .file-size,
+#fileInfoBack .file-size,
 #insuranceFileInfo .file-size {
   color: #888;
   font-size: 11px;
 }
 
 #fileInfo.has-file .file-size,
+#fileInfoBack.has-file .file-size,
 #insuranceFileInfo.has-file .file-size {
   color: #66bb6a;
 }

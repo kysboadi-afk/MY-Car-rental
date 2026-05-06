@@ -146,7 +146,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
     .select(
       "id, booking_ref, stripe_customer_id, stripe_payment_method_id, " +
       "extension_stripe_customer_id, extension_stripe_payment_method_id, " +
-      "vehicle_id, customers(id, name, email, phone)"
+      "vehicle_id, customers(id, name, email, phone, license_front_url, license_back_url)"
     )
     .eq("booking_ref", ticket.booking_ref)
     .maybeSingle();
@@ -180,6 +180,8 @@ async function actionCharge(sb, ticketId, isRetry, res) {
   const renterEmail = booking.customers?.email || null;
   const renterPhone = booking.customers?.phone || null;
   const customerId  = booking.customers?.id    || null;
+  const licenseFrontUrl = booking.customers?.license_front_url || null;
+  const licenseBackUrl  = booking.customers?.license_back_url  || null;
 
   // ── 5. Create off-session Stripe PaymentIntent ────────────────────────────
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -328,6 +330,17 @@ async function actionCharge(sb, ticketId, isRetry, res) {
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd;color:#e53935"><strong>${esc(formattedTotal)}</strong></td></tr>
       </table>`;
 
+    const licenseLinksHtml = [
+      licenseFrontUrl ? `<a href="${esc(licenseFrontUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-right:10px;margin-bottom:6px;padding:6px 14px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:4px;font-size:13px;">🪪 License Front</a>` : `<span style="font-size:13px;color:#e53935;">⚠️ No license front on file</span>`,
+      licenseBackUrl  ? `<a href="${esc(licenseBackUrl)}"  target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-bottom:6px;padding:6px 14px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:4px;font-size:13px;">🪪 License Back</a>`  : `<span style="font-size:13px;color:#e53935;margin-left:10px;">⚠️ No license back on file</span>`,
+    ].join(" ");
+    const licenseLinksBlock = `<div style="margin:12px 0"><strong>Driver License:</strong><br style="margin-bottom:6px">${licenseLinksHtml}</div>`;
+
+    const licenseLinesText = [
+      `Driver License Front : ${licenseFrontUrl || "Not on file"}`,
+      `Driver License Back  : ${licenseBackUrl  || "Not on file"}`,
+    ].join("\n");
+
     const emailPromises = [];
 
     if (stripeStatus === "succeeded") {
@@ -377,8 +390,20 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               <h2>\u2705 Violation Charge Succeeded</h2>
               <p>A violation ticket charge completed successfully.</p>
               ${detailTable}
+              ${licenseLinksBlock}
               <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
             `,
+            text: [
+              `Violation Charge Succeeded`,
+              ``,
+              `Ticket Amount : $${Number(ticket.amount).toFixed(2)}`,
+              `Admin Fee     : $${effectiveAdminFee.toFixed(2)}`,
+              `Total         : ${formattedTotal}`,
+              `Customer      : ${renterName}`,
+              `Booking       : ${ticket.booking_ref || "N/A"}`,
+              ``,
+              licenseLinesText,
+            ].join("\n"),
           }).catch((e) => console.error("ticket-charge: owner email failed:", e.message))
         );
       }
@@ -394,10 +419,22 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               <h2>\u274c Violation Charge Failed</h2>
               <p>A violation ticket charge attempt failed.</p>
               ${detailTable}
+              ${licenseLinksBlock}
               <p><strong>Error:</strong> ${esc(stripeError || "Unknown error")}</p>
               <p>Retry count: ${ticketPatch.charge_retry_count}</p>
               <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
             `,
+            text: [
+              `Violation Charge Failed`,
+              ``,
+              `Ticket #      : ${ticket.ticket_number}`,
+              `Customer      : ${renterName}`,
+              `Booking       : ${ticket.booking_ref || "N/A"}`,
+              `Error         : ${stripeError || "Unknown error"}`,
+              `Retry count   : ${ticketPatch.charge_retry_count}`,
+              ``,
+              licenseLinesText,
+            ].join("\n"),
           }).catch((e) => console.error("ticket-charge: owner failure email failed:", e.message))
         );
       }

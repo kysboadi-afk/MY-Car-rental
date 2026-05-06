@@ -76,7 +76,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, idFileName, insuranceFileName, adminOverride, testMode } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, idFileName, idBackFileName, insuranceFileName, adminOverride, testMode } = req.body;
     const adminOverrideEnabled = adminOverride === true || /^(true|1)$/i.test(String(adminOverride || ""));
     const testModeEnabled = testMode === true || /^(true|1)$/i.test(String(testMode || ""));
     const testAvailabilityOverride = adminOverrideEnabled && testModeEnabled;
@@ -118,6 +118,11 @@ export default async function handler(req, res) {
     const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
     if (!trimmedIdFileName) {
       return res.status(400).json({ error: "A government-issued ID is required for all bookings. Please upload your Driver's License or ID." });
+    }
+    // Back of ID is also required — both sides must be uploaded before payment is allowed.
+    const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
+    if (!trimmedIdBackFileName) {
+      return res.status(400).json({ error: "The back of your Driver's License / ID is required for all bookings. Please upload both sides of your ID." });
     }
 
     // Proof of insurance is required when the renter claims personal auto coverage.
