@@ -8,6 +8,7 @@
     "purchase_price": 0,
     "status": "active",
     "cover_image": "images/IMG_0046.png",
+    "gallery_images": ["images/camry-beach-hero.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg"],
     "scarcity_text": "🔥 High demand — reserve today"
   },
   "camry2013": {
@@ -19,6 +20,7 @@
     "purchase_price": 0,
     "status": "active",
     "cover_image": "images/IMG_5144.png",
+    "gallery_images": ["images/IMG_5145.png", "images/IMG_4486.jpeg"],
     "scarcity_text": "⚡ Limited vehicles available"
   },
   "fusion2017": {
