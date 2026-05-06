@@ -275,7 +275,7 @@
       <!-- Rental Agreement -->
       <div class="sign-agreement">
         <p class="sign-agreement-label">📄 Step 1: Read &amp; Sign your Rental Agreement</p>
-        <p id="slSignAgreementStatus" aria-live="polite" style="display:none"></p>
+        <p id="slSignAgreementStatus" aria-live="polite"></p>
         <button type="button" id="slSignAgreementBtn" class="sign-agreement-btn">
           ✍ Review &amp; Sign Rental Agreement
         </button>
@@ -356,7 +356,7 @@
         </div>
 
         <label class="agree">
-          <input type="checkbox" id="slAgree" disabled>
+          <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
           <span>I have read and signed the Rental Agreement &amp; Terms</span>
         </label>
       </div>

@@ -37,6 +37,14 @@ var agreementSigned = false;  // true once renter signs the rental agreement
 var agreementSignature = "";  // typed name used as electronic signature
 
 // ----- Helpers -----
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 function showPayError(msg) {
   var el = document.getElementById("payError");
   if (!el) { console.error("Payment error:", msg); return; }
@@ -847,15 +855,15 @@ function initBookingForm() {
       if (introEl) {
         var dateInput  = document.getElementById("slPickupDate");
         var timeSelect = document.getElementById("slPickupTime");
-        var namePart   = renterName ? "<strong>" + renterName + "</strong>" : "<strong>[Renter]</strong>";
+        var namePart   = renterName ? "<strong>" + escHtml(renterName) + "</strong>" : "<strong>[Renter]</strong>";
         var pickPart   = (dateInput && timeSelect && dateInput.value && timeSelect.value)
-          ? "<strong>" + SlyLA.formatLocalDateTime(dateInput.value, timeSelect.value) + "</strong>"
+          ? "<strong>" + escHtml(SlyLA.formatLocalDateTime(dateInput.value, timeSelect.value)) + "</strong>"
           : "<strong>[pickup date/time]</strong>";
         introEl.innerHTML = "This Rental Agreement is entered into between LA Slingshot Rentals (\"Company\") and " + namePart + " (\"Renter\") for the rental of a <strong>Polaris Slingshot</strong> starting " + pickPart + ".";
       }
       if (slAgreementBox) slAgreementBox.style.display = "";
       slSignBtn.style.display = "none";
-      if (slSignStatus) slSignStatus.style.display = "none";
+      if (slSignStatus) slSignStatus.textContent = "";
     });
   }
 
@@ -891,7 +899,6 @@ function initBookingForm() {
         slSignBtn.textContent = "✅ Rental Agreement Signed";
       }
       if (slSignStatus) {
-        slSignStatus.style.display = "";
         slSignStatus.style.color   = "#4caf50";
         slSignStatus.textContent   = "Signed by " + sig + ". Check the box below to confirm.";
       }
