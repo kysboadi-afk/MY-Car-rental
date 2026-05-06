@@ -33,8 +33,18 @@ var uploadedFileFront = null;
 var uploadedFileBack  = null;
 var pendingBookingId  = null; // returned by create-slingshot-booking
 var carData = null;           // vehicle data from API
+var agreementSigned = false;  // true once renter signs the rental agreement
+var agreementSignature = "";  // typed name used as electronic signature
 
 // ----- Helpers -----
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 function showPayError(msg) {
   var el = document.getElementById("payError");
   if (!el) { console.error("Payment error:", msg); return; }
@@ -311,8 +321,10 @@ function updateBookBtn() {
   var phoneOk  = !!(phoneInput && phoneInput.value.trim().length >= 7);
   var idFront  = !!uploadedFileFront;
   var idBack   = !!uploadedFileBack;
+  var agreeEl  = document.getElementById("slAgree");
+  var agreeOk  = !!(agreeEl && agreeEl.checked);
 
-  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && idFront && idBack;
+  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && idFront && idBack && agreeOk;
   btn.disabled = !ready;
   if (hintEl) hintEl.style.display = ready ? "none" : "";
 }
@@ -394,6 +406,9 @@ async function launchSlingshotPayment() {
   if (!phone) { showPayError("Phone number is required."); return; }
   if (!uploadedFileFront) { showPayError("Please upload the front of your ID."); return; }
   if (!uploadedFileBack)  { showPayError("Please upload the back of your ID."); return; }
+  if (!agreementSigned)   { showPayError("Please read and sign the Rental Agreement before booking."); return; }
+  var agreeEl = document.getElementById("slAgree");
+  if (!agreeEl || !agreeEl.checked) { showPayError("Please check the box to confirm you have signed the Rental Agreement."); return; }
 
   if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Loading payment…"; }
 
@@ -470,6 +485,7 @@ async function launchSlingshotPayment() {
       idMimeType,
       idBackFileName,
       idBackMimeType,
+      agreementSignature: agreementSignature || null,
     };
 
     sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
@@ -815,6 +831,92 @@ function initBookingForm() {
     uploadedFileBack = file;
     updateBookBtn();
   });
+
+  // Rental agreement signing
+  var slSignBtn       = document.getElementById("slSignAgreementBtn");
+  var slAgreementBox  = document.getElementById("slRentalAgreementBox");
+  var slSigInput      = document.getElementById("slSignatureInput");
+  var slConfirmBtn    = document.getElementById("slConfirmSignBtn");
+  var slCancelSignBtn = document.getElementById("slCancelSignBtn");
+  var slAgreeCheck    = document.getElementById("slAgree");
+  var slSignStatus    = document.getElementById("slSignAgreementStatus");
+
+  if (slSignBtn) {
+    slSignBtn.addEventListener("click", function() {
+      // Pre-fill signature field with renter name if already typed
+      var renterName = (document.getElementById("slName") || {}).value || "";
+      renterName = renterName.trim();
+      if (slSigInput && renterName && !slSigInput.value) {
+        slSigInput.value = renterName;
+        if (slConfirmBtn) slConfirmBtn.disabled = false;
+      }
+      // Populate agreement intro with booking details
+      var introEl = document.getElementById("slAgreementIntro");
+      if (introEl) {
+        var dateInput  = document.getElementById("slPickupDate");
+        var timeSelect = document.getElementById("slPickupTime");
+        var namePart   = renterName ? "<strong>" + escHtml(renterName) + "</strong>" : "<strong>[Renter]</strong>";
+        var pickPart   = (dateInput && timeSelect && dateInput.value && timeSelect.value)
+          ? "<strong>" + escHtml(SlyLA.formatLocalDateTime(dateInput.value, timeSelect.value)) + "</strong>"
+          : "<strong>[pickup date/time]</strong>";
+        introEl.innerHTML = "This Rental Agreement is entered into between LA Slingshot Rentals (\"Company\") and " + namePart + " (\"Renter\") for the rental of a <strong>Polaris Slingshot</strong> starting " + pickPart + ".";
+      }
+      if (slAgreementBox) slAgreementBox.style.display = "";
+      slSignBtn.style.display = "none";
+      if (slSignStatus) slSignStatus.textContent = "";
+    });
+  }
+
+  if (slSigInput) {
+    slSigInput.addEventListener("input", function() {
+      if (slConfirmBtn) slConfirmBtn.disabled = slSigInput.value.trim() === "";
+      var sigErr = document.getElementById("slSignatureError");
+      if (sigErr) { sigErr.style.display = "none"; sigErr.textContent = ""; }
+    });
+  }
+
+  if (slConfirmBtn) {
+    slConfirmBtn.addEventListener("click", function() {
+      var sig = slSigInput ? slSigInput.value.trim() : "";
+      if (!sig) return;
+      // Signature must match the full name in the booking form
+      var renterName = (document.getElementById("slName") || {}).value || "";
+      renterName = renterName.trim();
+      var sigErr = document.getElementById("slSignatureError");
+      if (renterName && sig.toLowerCase() !== renterName.toLowerCase()) {
+        if (sigErr) {
+          sigErr.textContent = "Signature must match the full name entered in the booking form.";
+          sigErr.style.display = "";
+        }
+        return;
+      }
+      agreementSigned   = true;
+      agreementSignature = sig;
+      if (slAgreementBox) slAgreementBox.style.display = "none";
+      if (slSignBtn) {
+        slSignBtn.style.display = "";
+        slSignBtn.classList.add("signed");
+        slSignBtn.textContent = "✅ Rental Agreement Signed";
+      }
+      if (slSignStatus) {
+        slSignStatus.style.color   = "#4caf50";
+        slSignStatus.textContent   = "Signed by " + sig + ". Check the box below to confirm.";
+      }
+      if (slAgreeCheck) slAgreeCheck.disabled = false;
+      updateBookBtn();
+    });
+  }
+
+  if (slCancelSignBtn) {
+    slCancelSignBtn.addEventListener("click", function() {
+      if (slAgreementBox) slAgreementBox.style.display = "none";
+      if (slSignBtn) slSignBtn.style.display = "";
+    });
+  }
+
+  if (slAgreeCheck) {
+    slAgreeCheck.addEventListener("change", updateBookBtn);
+  }
 
   // Book button
   var bookBtn = document.getElementById("slBookBtn");
