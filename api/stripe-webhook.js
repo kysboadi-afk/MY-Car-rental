@@ -2904,6 +2904,7 @@ export default async function handler(req, res) {
           // Generate slingshot rental agreement PDF.
           let slPdfBuffer = null;
           let slPdfFilename = "slingshot-rental-agreement.pdf";
+          const slIpAddress = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim() || null;
           try {
             slPdfBuffer = await generateSlingshotRentalAgreementPdf(
               {
@@ -2926,7 +2927,8 @@ export default async function handler(req, res) {
                 paymentStatus:    "paid",
                 licenseVerified:  false,
                 identityVerified: false,
-              }
+              },
+              slIpAddress
             );
 
             const safeName = (sl_renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase().slice(0, 30);

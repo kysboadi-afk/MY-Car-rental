@@ -265,7 +265,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
     sectionHeader(5, "Driver Eligibility");
     body("Renter confirms:");
     bullets([
-      `Age: 21+ (must be ${POLICY.minAge}+)`,
+      `Age: ${POLICY.minAge}+ years (must be ${POLICY.minAge} or older)`,
       `Valid driver's license uploaded: ${licenseVerified ? "Yes ✓" : "Pending — required at pickup"}`,
       `Identity verification status: ${identityVerified ? "Verified ✓" : "Pending"}`,
     ]);
