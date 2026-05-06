@@ -235,7 +235,7 @@ async function loadFleet() {
 
   try {
     const [vRes, pRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=car"),
       fetch(API_BASE + "/api/public-pricing"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
