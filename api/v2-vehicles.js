@@ -22,7 +22,7 @@ import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "slingshot", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
