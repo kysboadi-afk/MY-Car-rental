@@ -35,7 +35,7 @@ import { render, MAINTENANCE_AVAILABILITY_REQUEST } from "./_sms-templates.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 // ── Priority alert helpers ────────────────────────────────────────────────────

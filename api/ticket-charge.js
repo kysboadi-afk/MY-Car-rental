@@ -343,7 +343,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               <p>Hi ${esc(renterName.split(" ")[0])},</p>
               <p>A charge of <strong>${esc(formattedTotal)}</strong> has been applied to your card for a violation ticket recorded during your rental.</p>
               ${detailTable}
-              <p>Questions? Contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18332521093">(833) 252-1093</a>.</p>
+              <p>Questions? Contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
               <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
             `,
             text: [
@@ -358,7 +358,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               `Total         : ${formattedTotal}`,
               `Booking       : ${ticket.booking_ref || "N/A"}`,
               ``,
-              `Questions? Call (833) 252-1093 or email ${OWNER_EMAIL}.`,
+              `Questions? Call (844) 511-4059 or email ${OWNER_EMAIL}.`,
               ``,
               `Sly Transportation Services LLC`,
             ].join("\n"),

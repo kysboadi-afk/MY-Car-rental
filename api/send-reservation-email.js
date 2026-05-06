@@ -207,7 +207,7 @@ function generateRentalAgreementHtml(body) {
   <p style="text-align:center;font-size:13px;color:#555">Generated: ${esc(signedAt)} (Pacific Time)</p>
 
   <h4>PARTIES</h4>
-  <p><strong>Owner:</strong> SLY Transportation Services &mdash; (833) 252-1093 &mdash; info@slytrans.com</p>
+  <p><strong>Owner:</strong> SLY Transportation Services &mdash; (844) 511-4059 &mdash; info@slytrans.com</p>
   <p><strong>Renter:</strong> ${esc(name || "Not provided")}</p>
 
   <h4>RENTER INFORMATION</h4>

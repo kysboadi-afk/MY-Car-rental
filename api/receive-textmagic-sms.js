@@ -387,7 +387,7 @@ async function validatePaymentLinkForSms(fullLink, bookingId, templateKey) {
 async function handleExtend(fromPhone, allBookings, data, sha) {
   const match = findActiveRental(allBookings, fromPhone);
   if (!match) {
-    await sendSms(fromPhone, "We couldn\u2019t find an active rental for this number. Please call us at (833) 252-1093.");
+    await sendSms(fromPhone, "We couldn\u2019t find an active rental for this number. Please call us at (844) 511-4059.");
     return;
   }
   const { vehicleId, booking } = match;

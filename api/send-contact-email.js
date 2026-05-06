@@ -12,7 +12,7 @@
 import nodemailer from "nodemailer";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
-const BUSINESS_PHONE = "(833) 252-1093";
+const BUSINESS_PHONE = "(844) 511-4059";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Escape special HTML characters to prevent XSS in email templates
@@ -127,7 +127,7 @@ export default async function handler(req, res) {
         `If you need immediate assistance, call us at ${BUSINESS_PHONE}.`,
         "",
         "– Sly Transportation Services LLC",
-        "5101 Santa Monica Blvd, Los Angeles, CA",
+        "475 The Promenade N, Long Beach, CA 90802",
       ].join("\n"),
       html: `
         <div style="font-family:sans-serif;max-width:520px">
@@ -139,9 +139,9 @@ export default async function handler(req, res) {
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Expected Reply</strong></td><td style="padding:8px;border:1px solid #ddd">5–15 minutes</td></tr>
           </table>
           <p>If you need immediate assistance, please call us directly:</p>
-          <p style="font-size:20px;font-weight:700"><a href="tel:+18332521093" style="color:#ffb400;text-decoration:none">${BUSINESS_PHONE}</a></p>
+          <p style="font-size:20px;font-weight:700"><a href="tel:+18445114059" style="color:#ffb400;text-decoration:none">${BUSINESS_PHONE}</a></p>
           <hr style="border:none;border-top:1px solid #ddd;margin:24px 0">
-          <p style="font-size:12px;color:#888">– Sly Transportation Services LLC · 5101 Santa Monica Blvd, Los Angeles, CA</p>
+          <p style="font-size:12px;color:#888">– Sly Transportation Services LLC · 475 The Promenade N, Long Beach, CA 90802</p>
         </div>
       `,
     });

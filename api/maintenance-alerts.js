@@ -12,7 +12,7 @@
 //   ≥100% (urgent):   Send driver SMS urgent   — once per booking per service type
 //   ≥100% + 48 h after urgent, no service recorded → escalate:
 //     • Driver SMS final notice
-//     • Owner SMS  → OWNER_PHONE (env var, default +18332521093)
+//     • Owner SMS  → OWNER_PHONE (env var, default +18445114059)
 //     • Owner email → OWNER_EMAIL (env var, default slyservices@supports-info.com)
 //     • booking.maintenance_status = "non_compliant" persisted to bookings.json
 //     • vehicle.data.service_required = true persisted to Supabase
@@ -45,7 +45,7 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 

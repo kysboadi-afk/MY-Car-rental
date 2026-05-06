@@ -1724,7 +1724,7 @@ export default async function handler(req, res) {
               <p>Here is your link to manage your reservation. It expires in 72 hours.</p>
               <p><a href="${manageLink}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Manage Your Booking</a></p>
               ${balanceLink ? `<p>Or <a href="${balanceLink}">pay your remaining balance here</a>.</p>` : ""}
-              <p>Questions? Call us at (833) 252-1093.</p>
+              <p>Questions? Call us at (844) 511-4059.</p>
             `,
           });
         } catch (emailErr) {

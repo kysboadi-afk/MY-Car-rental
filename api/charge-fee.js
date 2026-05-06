@@ -255,7 +255,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
             <p>Hi ${esc(renterName.split(" ")[0])},</p>
             <p>An additional charge of <strong>${esc(formattedAmount)}</strong> has been applied to your rental for <strong>${esc(label)}</strong>.</p>
             ${sharedTable}
-            <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18332521093">(833) 252-1093</a>.</p>
+            <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
             <p><strong>Sly Transportation Services LLC 🚗</strong></p>
           `,
           text: [
@@ -271,7 +271,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
             `Amount       : ${formattedAmount}`,
             notes ? `Note         : ${notes}` : "",
             ``,
-            `If you have any questions contact us at ${OWNER_EMAIL} or call (833) 252-1093.`,
+            `If you have any questions contact us at ${OWNER_EMAIL} or call (844) 511-4059.`,
             ``,
             `Sly Transportation Services LLC`,
           ].filter((l) => l !== undefined).join("\n"),

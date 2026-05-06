@@ -64,7 +64,7 @@ import { buildDateTimeLA, DEFAULT_RETURN_TIME }      from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 
 // Stale reservation threshold
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;  // 24 hours
