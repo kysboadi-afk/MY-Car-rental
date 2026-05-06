@@ -112,16 +112,16 @@
       var vehicleId = urlParams.get("vehicle");
       // Peek at the stored booking to detect slingshot vs car booking (without
       // removing it — proceedWithConfirmation() handles the actual removal later).
-      var _isSlingshot = false;
+      var isSlingshot = false;
       try {
-        var _peekRaw = sessionStorage.getItem("slyRidesBooking");
-        if (_peekRaw) {
-          var _peekData = JSON.parse(_peekRaw);
-          if (_peekData && _peekData.slingshotPackage) _isSlingshot = true;
+        var peekRaw = sessionStorage.getItem("slyRidesBooking");
+        if (peekRaw) {
+          var peekData = JSON.parse(peekRaw);
+          if (peekData && peekData.slingshotPackage) isSlingshot = true;
         }
       } catch (e) {}
       var tryAgainHref = vehicleId
-        ? (_isSlingshot
+        ? (isSlingshot
             ? "slingshot-book.html?vehicle=" + encodeURIComponent(vehicleId)
             : "car.html?vehicle=" + encodeURIComponent(vehicleId))
         : "cars.html";
