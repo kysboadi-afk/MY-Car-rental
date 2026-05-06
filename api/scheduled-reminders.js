@@ -2443,7 +2443,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
  * Manual/admin bookings (payment_intent_id = "manual_*") are intentionally
  * excluded so legitimate offline bookings are never auto-cancelled.
  */
-const STALE_PENDING_HOURS = 24;
+const STALE_PENDING_HOURS = 2;
 
 async function cancelStalePendingBookings(sb) {
   if (!sb) return;
