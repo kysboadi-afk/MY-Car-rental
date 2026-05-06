@@ -211,11 +211,18 @@ body {
 }
 
 /* Button overlaid right after where image text ends (~79% down) */
-.hero-image .hero-btn {
+.hero-image .hero-btns {
   position: absolute;
   top: 80%;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.hero-image .hero-btns .hero-btn {
   font-size: 18px;
   font-weight: 900;
   padding: 14px 48px;
@@ -237,6 +244,36 @@ body {
 .hero-btn:hover {
   background: #e0a000;
   transform: scale(1.04);
+}
+
+.hero-btn--secondary {
+  background: transparent;
+  color: #ffb400;
+  border: 2px solid #ffb400 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 5px;
+}
+
+.hero-btn--secondary:hover {
+  background: #ffb40022;
+  color: #ffb400;
+}
+
+/* How It Works browse link */
+.hiw-browse-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #ffb400;
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.hiw-browse-link:hover {
+  text-decoration: underline;
 }
 
 /* STATS SECTION */
@@ -2033,9 +2070,9 @@ footer {
     font-size: 14px;
   }
 
-  .hero-image .hero-btn {
+  .hero-image .hero-btns .hero-btn {
     font-size: 15px;
-    padding: 11px 32px;
+    padding: 11px 28px;
   }
 
   .hiw-steps {
