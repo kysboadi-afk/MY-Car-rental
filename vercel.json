@@ -1,5 +1,11 @@
 {
   "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "slytrans.com" }],
+      "destination": "https://www.slytrans.com/$1",
+      "permanent": true
+    },
     { "source": "/slingshot.html", "destination": "/slingshots.html", "permanent": true }
   ],
   "headers": [
