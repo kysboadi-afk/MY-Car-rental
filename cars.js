@@ -7,6 +7,10 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
+// Mark the session as car context so shared pages (manage-booking, contact)
+// can apply car branding when the user navigates there from this page.
+try { sessionStorage.setItem('slyCategory', 'car'); } catch (_) {}
+
 // ─── Fleet-status API contract ────────────────────────────────────────────────
 // Canonical fields returned per vehicle by api/fleet-status.js.
 // If this list drifts from the actual API response, loadFleetStatus() will
