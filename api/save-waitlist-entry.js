@@ -302,7 +302,7 @@ export default async function handler(req, res) {
               "• You will have 12–24 hours to complete payment. If you don't pay in time, the next person in the queue is contacted.",
               "• Your $50 deposit goes toward your total rental cost.",
               "",
-              `Questions? Call us at (833) 252-1093 or email ${OWNER_EMAIL}.`,
+              `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
               "",
               "— Sly Transportation Services LLC Team",
             ].join("\n"),
@@ -329,7 +329,7 @@ export default async function handler(req, res) {
                 <li>You have <strong>12–24 hours</strong> to complete payment — otherwise the next person in line is contacted.</li>
                 <li>Your <strong>$50 deposit goes toward your total rental cost</strong>.</li>
               </ul>
-              <p>Questions? Call us at <strong>(833) 252-1093</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+              <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
               <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
             `,
           });

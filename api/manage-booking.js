@@ -214,7 +214,7 @@ async function sendChangeConfirmationEmail({
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(newBalanceDue?.toFixed(2)))}</td></tr>
         </table>
         <p><a href="${esc(balanceLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Pay Remaining Balance</a></p>
-        <p>If you have questions, call us at (833) 252-1093.</p>
+        <p>If you have questions, call us at (844) 511-4059.</p>
       `,
     });
   } catch (emailErr) {
@@ -418,10 +418,10 @@ export default async function handler(req, res) {
 
   if (action === "create_balance_payment_intent") {
     if (!process.env.STRIPE_SECRET_KEY) {
-      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (833) 252-1093." });
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (844) 511-4059." });
     }
     if (!process.env.STRIPE_PUBLISHABLE_KEY) {
-      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (833) 252-1093." });
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (844) 511-4059." });
     }
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
@@ -674,11 +674,11 @@ export default async function handler(req, res) {
   if (action === "initiate_paid_change") {
     if (!process.env.STRIPE_SECRET_KEY) {
       console.error("manage-booking initiate_paid_change: STRIPE_SECRET_KEY is not set");
-      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (833) 252-1093." });
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (844) 511-4059." });
     }
     if (!process.env.STRIPE_PUBLISHABLE_KEY) {
       console.error("manage-booking initiate_paid_change: STRIPE_PUBLISHABLE_KEY is not set");
-      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (833) 252-1093." });
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (844) 511-4059." });
     }
 
     const row = await fetchBookingFromSupabase(bookingId);

@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <meta name="description" content="SLYTRANS Fleet Control — Admin Dashboard">
+  <meta name="description" content="SLYTRANS Slingshot Control — Admin Dashboard">
   <meta name="robots" content="noindex, nofollow">
-  <title>SLYTRANS Fleet Control</title>
+  <title>SLYTRANS Slingshot Control</title>
   <link rel="icon" href="../images/logo.jpg" type="image/jpeg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -970,11 +970,11 @@
       <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
       <div>
         <span>SLYTRANS</span>
-        <small>Fleet Control v2</small>
+        <small>Slingshot Control v2</small>
       </div>
     </div>
     <h2>Admin Sign In</h2>
-    <p>Enter your admin password to access Fleet Control.</p>
+    <p>Enter your admin password to access Slingshot Control.</p>
     <div class="auth-field">
       <label>Admin Password</label>
       <input type="password" id="auth-password" placeholder="Enter admin password" autocomplete="current-password">
@@ -995,7 +995,7 @@
       <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
       <div class="brand">
         <div class="brand-name">SLYTRANS</div>
-        <div class="brand-sub">Fleet Control</div>
+        <div class="brand-sub">Slingshot Control</div>
       </div>
     </div>
 
@@ -1118,7 +1118,7 @@
         <div class="user-avatar">A</div>
         <div>
           <div class="user-name">Admin</div>
-          <div class="user-role">Fleet Control v2</div>
+          <div class="user-role">Slingshot Control v2</div>
         </div>
         <button class="logout-btn" onclick="logout()" title="Sign Out">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -2990,7 +2990,7 @@ let _firstVehicleId = '';
 async function loadVehiclesFromApi() {
   if (window.DEMO_MODE) return; // demo data is loaded by initDemoMode()
   try {
-    const res  = await fetch(API_BASE + '/api/v2-vehicles');
+    const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=slingshot');
     if (!res.ok) return;
     const vehicles = await res.json();
     if (!Array.isArray(vehicles)) return;
@@ -3211,7 +3211,7 @@ function signIn() {
   document.getElementById('auth-btn').textContent = 'Signing in…';
   document.getElementById('auth-btn').disabled = true;
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' })
     .then((data) => {
       dashboardData = data;
       document.getElementById('auth-screen').style.display = 'none';
@@ -3414,7 +3414,7 @@ function navigateToUnpaidBookings() {
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' })
     .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
     .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
 }
@@ -3592,8 +3592,8 @@ function loadVehicles() {
   document.getElementById('vehicles-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' }),
-    apiPost('/api/v2-dashboard', { secret: adminSecret }),
+    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'slingshot' }),
+    apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' }),
   ]).then(([vData, dash]) => {
     const freshVehicles = vData.vehicles || {};
     // Preserve bouncie_device_id from the in-memory cache when the fresh API
@@ -3692,7 +3692,7 @@ function showVehicleProfile(vehicleId) {
   document.getElementById('page-title').textContent = v.vehicle_name || getVehicleLabel(vehicleId);
 
   // Load fresh stats
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' })
     .then((dash) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
       cachedVehicleStats[vehicleId] = s;
@@ -6207,7 +6207,7 @@ function loadRevenue() {
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'slingshot' }),
     apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
     expensesPromise,
   ])
@@ -6716,8 +6716,8 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'slingshot' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'slingshot' }),
   ]).then(([fleetData, trendData]) => {
     renderAnalytics(fleetData.fleet || {}, trendData.trend || [], fleetData.kpi_total_revenue ?? null);
     document.getElementById('analytics-loading').style.display = 'none';

@@ -22,7 +22,7 @@ import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "slingshot", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
@@ -83,8 +83,17 @@ export default async function handler(req, res) {
     // Prevent CDN/browser caches from serving stale vehicle lists after creation.
     res.setHeader("Cache-Control", "no-store");
 
-    // Optional scope filter: ?scope=car → exclude non-car types
+    // Optional scope filter: ?scope=car → car-type vehicles only; ?scope=slingshot → slingshots only
     const scope = (req.query?.scope || "").toLowerCase();
+    // Returns true when the given vehicle type belongs to the requested scope.
+    const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+    function inScopeGET(type) {
+      if (!scope) return true;
+      const t = (type || "").toLowerCase();
+      if (scope === "car" || scope === "cars") return CAR_TYPES.has(t) || t === "";
+      if (scope === "slingshot") return t === "slingshot";
+      return true;
+    }
     const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
@@ -112,8 +121,7 @@ export default async function handler(req, res) {
           const status = row.data?.status;
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
-          if (scope === "cars" || scope === "car") {
-          }
+          if (!inScopeGET(type)) continue;
 
           const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
           const obj = {
@@ -154,8 +162,7 @@ export default async function handler(req, res) {
         const status = v.status;
         if (status && status !== "active") continue;
         const type = v.type || "";
-        if (scope === "cars" || scope === "car") {
-        }
+        if (!inScopeGET(type)) continue;
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
         let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
@@ -191,10 +198,14 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      // scope: "car" → economy type; omit → all
+      // scope: "car" → car-type vehicles only; "slingshot" → slingshots only; omit → all
       const scope = (body.scope || "").toLowerCase();
+      const SCOPE_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
       const scopeFilter = (type) => {
-        if (scope === "car" || scope === "cars") return true;
+        if (!scope) return true;
+        const t = (type || "").toLowerCase();
+        if (scope === "car" || scope === "cars") return SCOPE_CAR_TYPES.has(t) || t === "";
+        if (scope === "slingshot") return t === "slingshot";
         return true;
       };
 

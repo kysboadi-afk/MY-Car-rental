@@ -70,6 +70,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("extension-config: Stripe error:", err.message);
-    return res.status(500).json({ error: "Failed to load extension details. Please try again or call us at (833) 252-1093." });
+    return res.status(500).json({ error: "Failed to load extension details. Please try again or call us at (844) 511-4059." });
   }
 }

@@ -105,13 +105,20 @@ export default async function handler(req, res) {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
       // When a scope filter is requested, resolve the matching vehicle IDs first.
-      // scope='car' → economy vehicles only.
+      // scope='car' → car-type vehicles only; scope='slingshot' → slingshot only.
       let scopedVehicleIds = null;
       if (body.scope) {
         try {
+          const REVENUE_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = (body.scope || "").toLowerCase();
           const { data: vData } = await loadVehicles();
           scopedVehicleIds = Object.values(vData || {})
-            
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
             .map((v) => v.vehicle_id)
             .filter(Boolean);
         } catch (scopeErr) {
@@ -497,9 +504,16 @@ export default async function handler(req, res) {
       let scopedVehicleIds = null;
       if (body.scope) {
         try {
+          const REVENUE_CAR_TYPES_LB = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = (body.scope || "").toLowerCase();
           const { data: vData } = await loadVehicles();
           scopedVehicleIds = Object.values(vData || {})
-            
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_LB.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
             .map((v) => v.vehicle_id)
             .filter(Boolean);
         } catch (scopeErr) {

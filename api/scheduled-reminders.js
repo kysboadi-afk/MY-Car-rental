@@ -114,7 +114,7 @@ const MAX_FEE_OVERDUE_HOURS = 8;
 // Spec section 2: auto-clean fires at now > return_date + 24 h.
 const AUTO_COMPLETE_HOURS = 24;
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -1852,7 +1852,7 @@ export async function processAutoCompletions(allBookings, now) {
                     <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.returnDate || "—")}</td></tr>
                   </table>
                   <p>Ready to book again? Visit <a href="https://www.slytrans.com/cars.html">www.slytrans.com</a>.</p>
-                  <p>Questions? Call us at <a href="tel:+18332521093">(833) 252-1093</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
+                  <p>Questions? Call us at <a href="tel:+18445114059">(844) 511-4059</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
                   <p style="color:#666;font-size:13px">Sly Transportation Services LLC · Los Angeles, CA</p>
                 `,
               });

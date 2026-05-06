@@ -234,11 +234,11 @@
       if (isLocked) {
         $lockNotice.style.display = "block";
         if (statusKey === "approved" || statusKey === "active") {
-          $lockNotice.innerHTML = "✅ Your booking has been confirmed. Dates and vehicle cannot be changed online. Please call <a href=\"tel:+18332521093\">(833) 252-1093</a> if you need assistance.";
+          $lockNotice.innerHTML = "✅ Your booking has been confirmed. Dates and vehicle cannot be changed online. Please call <a href=\"tel:+18445114059\">(844) 511-4059</a> if you need assistance.";
         } else if (statusKey === "pending_verification") {
-          $lockNotice.innerHTML = "⏳ Your booking is under review. Please call <a href=\"tel:+18332521093\">(833) 252-1093</a> if you need to make changes.";
+          $lockNotice.innerHTML = "⏳ Your booking is under review. Please call <a href=\"tel:+18445114059\">(844) 511-4059</a> if you need to make changes.";
         } else {
-          $lockNotice.innerHTML = "ℹ️ Your booking is currently locked. Please call <a href=\"tel:+18332521093\">(833) 252-1093</a> for assistance.";
+          $lockNotice.innerHTML = "ℹ️ Your booking is currently locked. Please call <a href=\"tel:+18445114059\">(844) 511-4059</a> for assistance.";
         }
         $editSection.style.display = "none";
       }
@@ -255,7 +255,7 @@
       $loading.style.display = "none";
       $main.style.display    = "block";
     } catch (err) {
-      showError("Network error — please try again or call (833) 252-1093.");
+      showError("Network error — please try again or call (844) 511-4059.");
       console.error("manage-booking load error:", err);
     }
   }

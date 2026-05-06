@@ -246,14 +246,19 @@ export default async function handler(req, res) {
     const viewOk = !!metricsView && !metricsViewResult?.error;
 
     // Scope prefix selects the right pre-aggregated column set:
-    //   "car"/"cars" → car_ prefix
-    //   (none)       → total_ prefix
-    const vp = (scope === "car" || scope === "cars") ? "car" : "total";
+    //   "car"/"cars"    → car_ prefix
+    //   "slingshot"     → slingshot_ prefix (falls back to total_ if column absent)
+    //   (none)          → total_ prefix
+    const vp = (scope === "car" || scope === "cars") ? "car"
+             : (scope === "slingshot")               ? "slingshot"
+             : "total";
 
-    // Filter vehicles by scope: "car" → exclude non-car types
+    // Filter vehicles by scope: "car" → car-type vehicles; "slingshot" → slingshot type; none → all
+    const DASHBOARD_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
-      const type = v.type || "";
-      if (scope === "car" || scope === "cars") return true;
+      const type = (v.type || "").toLowerCase();
+      if (scope === "car" || scope === "cars") return DASHBOARD_CAR_TYPES.has(type) || type === "";
+      if (scope === "slingshot") return type === "slingshot";
       return true;
     });
     const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);

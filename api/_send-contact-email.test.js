@@ -240,9 +240,9 @@ test("auto-reply body contains the business phone number", async () => {
   const res = makeRes();
   await handler(makeReq("POST", makeValidBody()), res);
   const autoReply = sentMails[1];
-  assert.ok(autoReply.text.includes("(833) 252-1093"),
+  assert.ok(autoReply.text.includes("(844) 511-4059"),
     "Auto-reply text should contain business phone number");
-  assert.ok(autoReply.html.includes("(833) 252-1093"),
+  assert.ok(autoReply.html.includes("(844) 511-4059"),
     "Auto-reply HTML should contain business phone number");
 });
 

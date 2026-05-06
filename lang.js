@@ -280,7 +280,7 @@
         title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
         depositHeading: "SECURITY DEPOSIT (Refundable)",
         partiesHeading: "PARTIES",
-        partiesOwner: "<strong>Owner:</strong> SLY Transportation Services \u2014 (833) 252-1093 \u2014 info@slytrans.com",
+        partiesOwner: "<strong>Owner:</strong> SLY Transportation Services \u2014 (844) 511-4059 \u2014 info@slytrans.com",
         partiesRenter: "<strong>Renter:</strong> Name, address, phone, email, driver\u2019s license number, and date of birth as provided at time of booking.",
         vehicleHeading: "VEHICLE INFORMATION",
         vehicleMake: "Make",
@@ -380,8 +380,8 @@
         verifyEmailFirst:  "Please verify your email address before submitting.",
         enterOtpCode:      "Please enter the verification code sent to your email.",
         sending:           "Sending\u2026",
-        generalError:      "Something went wrong. Please try again or call us at (833) 252-1093.",
-        networkErrorFull:  "Network error. Please check your connection or call us at (833) 252-1093."
+        generalError:      "Something went wrong. Please try again or call us at (844) 511-4059.",
+        networkErrorFull:  "Network error. Please check your connection or call us at (844) 511-4059."
       },
       // success.html
       success: {
@@ -422,7 +422,7 @@
         reviewDetail:   "Our team at <strong>Sly Transportation Services LLC</strong> will review your application and contact you within <strong>24 hours</strong>. Check your email and phone for updates.",
         declinedTitle:  "Application Update",
         declinedSub:    "We were unable to approve your application at this time.",
-        declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(833) 252-1093</strong>."
+        declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(844) 511-4059</strong>."
       },
       // chatbot UI
       chatbot: {
@@ -712,7 +712,7 @@
         title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
         depositHeading: "DEP\u00D3SITO DE SEGURIDAD (Reembolsable)",
         partiesHeading: "PARTES",
-        partiesOwner: "<strong>Propietario:</strong> SLY Transportation Services \u2014 (833) 252-1093 \u2014 info@slytrans.com",
+        partiesOwner: "<strong>Propietario:</strong> SLY Transportation Services \u2014 (844) 511-4059 \u2014 info@slytrans.com",
         partiesRenter: "<strong>Arrendatario:</strong> Nombre, direcci\u00F3n, tel\u00E9fono, correo electr\u00F3nico, n\u00FAmero de licencia de conducir y fecha de nacimiento seg\u00FAn proporcionado al momento de la reserva.",
         vehicleHeading: "INFORMACI\u00D3N DEL VEH\u00CDCULO",
         vehicleMake: "Marca",
@@ -811,8 +811,8 @@
         verifyEmailFirst:  "Por favor verifica tu correo electr\u00F3nico antes de enviar.",
         enterOtpCode:      "Por favor ingresa el c\u00F3digo de verificaci\u00F3n enviado a tu correo.",
         sending:           "Enviando\u2026",
-        generalError:      "Algo sali\u00F3 mal. Por favor int\u00E9ntalo de nuevo o ll\u00E1manos al (833) 252-1093.",
-        networkErrorFull:  "Error de red. Por favor verifica tu conexi\u00F3n o ll\u00E1manos al (833) 252-1093."
+        generalError:      "Algo sali\u00F3 mal. Por favor int\u00E9ntalo de nuevo o ll\u00E1manos al (844) 511-4059.",
+        networkErrorFull:  "Error de red. Por favor verifica tu conexi\u00F3n o ll\u00E1manos al (844) 511-4059."
       },
       success: {
         title:      "\u2705 \u00A1Pago Exitoso!",
@@ -850,7 +850,7 @@
         reviewDetail:   "Nuestro equipo en <strong>Sly Transportation Services LLC</strong> revisar\u00E1 tu solicitud y se comunicar\u00E1 contigo en <strong>24 horas</strong>. Revisa tu correo y tel\u00E9fono para actualizaciones.",
         declinedTitle:  "Actualizaci\u00F3n de Solicitud",
         declinedSub:    "No pudimos aprobar tu solicitud en este momento.",
-        declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(833) 252-1093</strong>."
+        declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(844) 511-4059</strong>."
       },
       chatbot: {
         headerTitle:  "\uD83D\uDE97 Asistente de Sly Transportation Services LLC",

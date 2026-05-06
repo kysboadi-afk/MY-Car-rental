@@ -28,7 +28,7 @@
 // Optional:
 //   TEXTMAGIC_USERNAME + TEXTMAGIC_API_KEY
 //   SMTP_HOST/PORT/USER/PASS
-//   OWNER_PHONE  — default +18332521093
+//   OWNER_PHONE  — default +18445114059
 //   OWNER_EMAIL  — default slyservices@supports-info.com
 //   ADMIN_SECRET / CRON_SECRET — for manual POST trigger
 //   VERCEL_URL   — used to build scheduling links
@@ -40,7 +40,7 @@ import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_b
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const SITE_BASE = process.env.VERCEL_URL

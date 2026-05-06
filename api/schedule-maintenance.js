@@ -19,7 +19,7 @@
 // Required environment variables:
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 // Optional:
-//   OWNER_PHONE              — default +18332521093
+//   OWNER_PHONE              — default +18445114059
 //   OWNER_EMAIL              — default slyservices@supports-info.com
 //   TEXTMAGIC_USERNAME + TEXTMAGIC_API_KEY — for owner SMS
 //   SMTP_HOST/PORT/USER/PASS — for approval emails
@@ -34,7 +34,7 @@ import { sendSms }           from "./_textmagic.js";
 import { normalizePhone, loadBookings } from "./_bookings.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const SERVICE_LABELS = {
