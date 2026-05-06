@@ -172,7 +172,14 @@ async function loadVehicleData() {
     carData = {
       name:   v.vehicle_name || v.name || "Slingshot",
       type:   v.type || v.vehicle_type || "slingshot",
-      images: v.images || (v.cover_image ? [v.cover_image] : []),
+      images: (function() {
+        if (Array.isArray(v.images) && v.images.length) return v.images;
+        var imgs = v.cover_image ? [v.cover_image] : [];
+        if (Array.isArray(v.gallery_images)) {
+          v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
+        }
+        return imgs;
+      })(),
     };
 
     var nameEl = document.getElementById("carName");
