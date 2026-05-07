@@ -4758,15 +4758,17 @@ function bookingIdKey(value) {
   return String(value ?? '').trim();
 }
 
+function bookingCanonicalId(booking) {
+  return bookingIdKey(booking?.bookingId || booking?.booking_ref || booking?.id);
+}
+
 function findBookingByAnyId(bookingId) {
   const target = bookingIdKey(bookingId);
   if (!target) return null;
   return allBookings.find((x) => {
-    const primary = bookingIdKey(x?.bookingId);
-    const legacy  = bookingIdKey(x?.booking_ref);
-    const rowId   = bookingIdKey(x?.id);
+    const primary = bookingCanonicalId(x);
     const piId    = bookingIdKey(x?.paymentIntentId);
-    return target === primary || target === legacy || target === rowId || target === piId;
+    return target === primary || target === piId;
   }) || null;
 }
 
@@ -4930,7 +4932,7 @@ function viewBooking(bookingId, vehicleId) {
     apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
       .then((data) => {
         if ((data.recovered || 0) > 0) {
-          const idx = allBookings.findIndex((x) => bookingIdKey(x?.bookingId || x?.booking_ref || x?.id) === bookingIdKey(bookingId));
+          const idx = allBookings.findIndex((x) => bookingCanonicalId(x) === bookingIdKey(bookingId));
           if (idx !== -1) allBookings[idx].hasSavedCard = true;
         }
       })
@@ -5150,7 +5152,7 @@ async function saveEditBooking(btn) {
   try {
     await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
     // Patch local cache
-    const idx = allBookings.findIndex((x) => bookingIdKey(x?.bookingId || x?.booking_ref || x?.id) === bookingIdKey(bookingId));
+    const idx = allBookings.findIndex((x) => bookingCanonicalId(x) === bookingIdKey(bookingId));
     if (idx !== -1) {
       if (updates.customerName  !== undefined) allBookings[idx].name          = updates.customerName;
       if (updates.customerPhone !== undefined) allBookings[idx].phone         = updates.customerPhone;

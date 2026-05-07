@@ -3100,7 +3100,8 @@ export default async function handler(req, res) {
             });
 
           }
-          // Mark email_sent in pending_booking_docs only after owner send succeeds.
+          // Mark email_sent in pending_booking_docs only after owner send succeeds
+          // and the slingshot booking_id exists.
           if (slOwnerEmailSent && sl_booking_id) {
             try {
               const slSbMark = getSupabaseAdmin();
