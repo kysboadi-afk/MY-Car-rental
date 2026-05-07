@@ -342,46 +342,68 @@ export async function sendExtensionConfirmationEmails({
 
   // ── Renter confirmation ────────────────────────────────────────────────────
   if (renterEmail) {
+    const renterEmailOpts = {
+      from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      to:          renterEmail,
+      subject:     "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+      attachments: pdfAttachment,
+      html: `
+        <h2>✅ Rental Extension Confirmed</h2>
+        <p>Hi ${esc(renterName ? renterName.split(" ")[0] : "there")}, your rental extension payment has been received!</p>
+        ${pdfBuffer ? "<p>📄 <strong>Your updated Rental Agreement is attached — please save it for your records.</strong></p>" : ""}
+        <table style="border-collapse:collapse;width:100%;margin-top:12px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
+        </table>
+        <p style="margin-top:16px">Your rental period has been updated. Please return the vehicle by <strong>${esc(newReturnDisplay)}</strong>.</p>
+        <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
+        <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+      `,
+      text: [
+        "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+        "",
+        `Hi ${renterName ? renterName.split(" ")[0] : "there"}, your rental extension payment has been received!`,
+        pdfBuffer ? "Your updated Rental Agreement is attached — please save it for your records." : "",
+        "",
+        `Vehicle        : ${vehicleName}`,
+        `Extension      : ${extensionLabel}`,
+        `New Return Date: ${newReturnDisplay}`,
+        `Amount Charged : $${amountDollars}`,
+        "",
+        `Your rental period has been updated. Please return the vehicle by ${newReturnDisplay}.`,
+        `Questions? Contact us at ${OWNER_EMAIL} or call (844) 511-4059.`,
+        "",
+        "Sly Transportation Services LLC",
+      ].filter(Boolean).join("\n"),
+    };
     try {
-      await transporter.sendMail({
-        from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-        to:          renterEmail,
-        subject:     "\u2705 Rental Extension Confirmed \u2014 Sly Transportation Services LLC",
-        attachments: pdfAttachment,
-        html: `
-          <h2>\u2705 Rental Extension Confirmed</h2>
-          <p>Hi ${esc(renterName ? renterName.split(" ")[0] : "there")}, your rental extension payment has been received!</p>
-          ${pdfBuffer ? "<p>\ud83d\udcc4 <strong>Your updated Rental Agreement is attached \u2014 please save it for your records.</strong></p>" : ""}
-          <table style="border-collapse:collapse;width:100%;margin-top:12px">
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
-          </table>
-          <p style="margin-top:16px">Your rental period has been updated. Please return the vehicle by <strong>${esc(newReturnDisplay)}</strong>.</p>
-          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
-          <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
-        `,
-        text: [
-          "\u2705 Rental Extension Confirmed \u2014 Sly Transportation Services LLC",
-          "",
-          `Hi ${renterName ? renterName.split(" ")[0] : "there"}, your rental extension payment has been received!`,
-          pdfBuffer ? "Your updated Rental Agreement is attached \u2014 please save it for your records." : "",
-          "",
-          `Vehicle        : ${vehicleName}`,
-          `Extension      : ${extensionLabel}`,
-          `New Return Date: ${newReturnDisplay}`,
-          `Amount Charged : $${amountDollars}`,
-          "",
-          `Your rental period has been updated. Please return the vehicle by ${newReturnDisplay}.`,
-          `Questions? Contact us at ${OWNER_EMAIL} or call (844) 511-4059.`,
-          "",
-          "Sly Transportation Services LLC",
-        ].filter(Boolean).join("\n"),
-      });
+      await transporter.sendMail(renterEmailOpts);
       console.log(`_extension-email: extension renter email sent to ${renterEmail} for PI ${paymentIntent.id}`);
     } catch (renterEmailErr) {
       console.error("_extension-email: extension renter email failed:", renterEmailErr.message);
+      if (pdfAttachment.length > 0) {
+        try {
+          await transporter.sendMail({
+            ...renterEmailOpts,
+            attachments: [],
+            text: [
+              renterEmailOpts.text,
+              "",
+              "⚠️ Your updated rental agreement could not be attached due to an attachment delivery error.",
+              "Your extension payment is still confirmed.",
+            ].join("\n"),
+            html: `
+              ${renterEmailOpts.html}
+              <p>⚠️ Your updated rental agreement could not be attached due to an attachment delivery error. Your extension payment is still confirmed.</p>
+            `,
+          });
+          console.warn(`_extension-email: extension renter email sent without PDF for PI ${paymentIntent.id} after attachment delivery failure`);
+        } catch (renterRetryErr) {
+          console.error("_extension-email: extension renter retry without PDF failed:", renterRetryErr.message);
+        }
+      }
     }
   }
 }

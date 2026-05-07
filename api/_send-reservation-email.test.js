@@ -644,6 +644,35 @@ test("customer email failure returns 200 — owner already received the booking 
   }
 });
 
+test("customer email retries without agreement attachment when attachment delivery fails", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  let callCount = 0;
+  mockSendMail.mock.mockImplementation(async (opts) => {
+    callCount++;
+    if (callCount === 2) throw new Error("Message too large");
+    sentMails.push(opts);
+  });
+
+  const req = makeReq("POST", { ...VALID_BODY, signature: "Jane Doe" });
+  const res = makeRes();
+  try {
+    await handler(req, res);
+    assert.equal(res._status, 200, "Should still succeed when customer attachment send fails");
+    assert.equal(sentMails.length, 2, "Owner email and customer retry should both be sent");
+    const customerRetryMail = sentMails[1];
+    assert.equal(customerRetryMail.to, VALID_BODY.email, "Retry should target renter email");
+    assert.equal(customerRetryMail.attachments.length, 0, "Retry should drop customer attachment");
+    assert.ok(
+      customerRetryMail.text.includes("could not be attached"),
+      "Retry email should explain attachment delivery issue"
+    );
+  } finally {
+    mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
+  }
+});
+
 test("owner email notes when insurance is attached", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
