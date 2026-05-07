@@ -671,6 +671,35 @@ test("owner email plain-text notes insurance attachment", async () => {
   assert.ok(ownerMail.text.includes("Insurance attached: insurance.jpg"), "Plain-text should note insurance filename");
 });
 
+test("owner email omits oversized attachments but still sends successfully", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const largeBase64A = Buffer.alloc(8 * 1024 * 1024, 1).toString("base64");
+  const largeBase64B = Buffer.alloc(8 * 1024 * 1024, 2).toString("base64");
+
+  const req = makeReq("POST", {
+    ...VALID_BODY,
+    idBase64: largeBase64A,
+    idFileName: "id-front-large.jpg",
+    idMimeType: "image/jpeg",
+    idBackBase64: largeBase64B,
+    idBackFileName: "id-back-large.jpg",
+    idBackMimeType: "image/jpeg",
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200, "Owner email should still succeed when attachments are oversized");
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should be sent");
+  assert.equal(ownerMail.attachments.length, 1, "One oversized attachment should be omitted to stay within budget");
+  assert.ok(
+    ownerMail.text.includes("Attachments omitted due to email size limit"),
+    "Owner plain-text should explain attachment omission"
+  );
+});
+
 // ─── markVehicleUnavailable tests ─────────────────────────────────────────
 
 test("markVehicleUnavailable: fleet-status.json is updated to available:false after confirmed booking", async () => {
@@ -971,4 +1000,3 @@ test("non-deposit full-payment email does NOT include 'Pay Balance Online' link"
     "Full-payment email should NOT include a 'Pay Balance Online' link"
   );
 });
-

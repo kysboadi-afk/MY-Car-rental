@@ -37,6 +37,7 @@ export const config = {
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -141,6 +142,40 @@ function esc(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function estimateBase64Bytes(base64Value) {
+  if (!base64Value || typeof base64Value !== "string") return 0;
+  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==") ? 2 : (normalized.endsWith("=") ? 1 : 0);
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function estimateAttachmentBytes(att) {
+  if (!att) return 0;
+  if (Buffer.isBuffer(att.content)) return att.content.length;
+  if (typeof att.content === "string") {
+    if (att.encoding === "base64") return estimateBase64Bytes(att.content);
+    return Buffer.byteLength(att.content, "utf8");
+  }
+  return 0;
+}
+
+function selectOwnerEmailAttachments(candidates, maxBytes) {
+  const attachments = [];
+  const omitted = [];
+  let totalBytes = 0;
+  for (const c of candidates) {
+    const sizeBytes = estimateAttachmentBytes(c.attachment);
+    if (totalBytes + sizeBytes > maxBytes) {
+      omitted.push(c.label || c.attachment?.filename || "attachment");
+      continue;
+    }
+    totalBytes += sizeBytes;
+    attachments.push(c.attachment);
+  }
+  return { attachments, omitted, totalBytes };
 }
 
 /**
@@ -719,29 +754,38 @@ export default async function handler(req, res) {
     const cardLast4 = isConfirmed && paymentIntentId ? await fetchCardLast4(paymentIntentId) : null;
 
     // Build attachment list for the owner email
-    const attachments = [];
+    const ownerAttachmentCandidates = [];
     if (idBase64 && idFileName) {
-      attachments.push({
+      ownerAttachmentCandidates.push({
+        label: `ID front (${idFileName})`,
+        attachment: {
         filename: idFileName,
         content: idBase64,
         encoding: "base64",
         contentType: idMimeType || "application/octet-stream",
+        },
       });
     }
     if (idBackBase64 && idBackFileName) {
-      attachments.push({
+      ownerAttachmentCandidates.push({
+        label: `ID back (${idBackFileName})`,
+        attachment: {
         filename: idBackFileName,
         content: idBackBase64,
         encoding: "base64",
         contentType: idBackMimeType || "application/octet-stream",
+        },
       });
     }
     if (insuranceBase64 && insuranceFileName) {
-      attachments.push({
+      ownerAttachmentCandidates.push({
+        label: `Insurance (${insuranceFileName})`,
+        attachment: {
         filename: insuranceFileName,
         content: insuranceBase64,
         encoding: "base64",
         contentType: insuranceMimeType || "application/octet-stream",
+        },
       });
     }
     // Generate a signed PDF rental agreement for confirmed payments with a signature.
@@ -753,12 +797,24 @@ export default async function handler(req, res) {
       const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
       agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
       agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
-      attachments.push({
-        filename: agreementPdfFilename,
-        content: agreementPdfBuffer,
-        contentType: "application/pdf",
+      ownerAttachmentCandidates.push({
+        label: `Rental agreement (${agreementPdfFilename})`,
+        attachment: {
+          filename: agreementPdfFilename,
+          content: agreementPdfBuffer,
+          contentType: "application/pdf",
+        },
       });
     }
+    const { attachments, omitted: omittedAttachmentNotes } = selectOwnerEmailAttachments(
+      ownerAttachmentCandidates,
+      MAX_OWNER_EMAIL_ATTACHMENT_BYTES
+    );
+    const attachedOwnerFiles = new Set(attachments.map((a) => a.filename));
+    const idFrontAttached = !!(idBase64 && idFileName && attachedOwnerFiles.has(idFileName));
+    const idBackAttached = !!(idBackBase64 && idBackFileName && attachedOwnerFiles.has(idBackFileName));
+    const insuranceAttached = !!(insuranceBase64 && insuranceFileName && attachedOwnerFiles.has(insuranceFileName));
+    const agreementAttached = !!(agreementPdfBuffer && agreementPdfFilename && attachedOwnerFiles.has(agreementPdfFilename));
 
     // --- Notify owner ---
     // Skip the owner email when the Stripe webhook already sent the full
@@ -822,10 +878,16 @@ export default async function handler(req, res) {
         signature ? `Digital Signature: ${signature}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         "",
-        idBase64 && idFileName ? `ID (front) attached: ${idFileName}` : "No ID front was uploaded by the renter.",
-        idBackBase64 && idBackFileName ? `ID (back) attached: ${idBackFileName}` : "No ID back was uploaded by the renter.",
-        (insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter.")),
-        isConfirmed && signature ? `Signed Rental Agreement: attached (${agreementPdfFilename})` : "",
+        idFrontAttached ? `ID (front) attached: ${idFileName}` : (idBase64 && idFileName ? `ID (front) omitted from email due to attachment size limit: ${idFileName}` : "No ID front was uploaded by the renter."),
+        idBackAttached ? `ID (back) attached: ${idBackFileName}` : (idBackBase64 && idBackFileName ? `ID (back) omitted from email due to attachment size limit: ${idBackFileName}` : "No ID back was uploaded by the renter."),
+        (insuranceAttached
+          ? `Insurance attached: ${insuranceFileName}`
+          : (insuranceBase64 && insuranceFileName
+              ? `Insurance omitted from email due to attachment size limit: ${insuranceFileName}`
+              : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter."))),
+        agreementAttached ? `Signed Rental Agreement: attached (${agreementPdfFilename})` : (isConfirmed && signature && agreementPdfFilename ? `Signed Rental Agreement omitted from email due to attachment size limit: ${agreementPdfFilename}` : ""),
+        omittedAttachmentNotes.length ? `Attachments omitted due to email size limit: ${omittedAttachmentNotes.join(", ")}` : "",
+        omittedAttachmentNotes.length ? "Documents are still stored server-side and can be resent from admin." : "",
         "",
         footerText,
       ].filter((line) => line !== undefined).join("\n"),
@@ -860,15 +922,18 @@ export default async function handler(req, res) {
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-        ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID (front) is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID front was uploaded by the renter.</p>`}
-        ${idBackBase64 && idBackFileName ? `<p>📎 <strong>Renter's ID (back) is attached</strong> to this email (${esc(idBackFileName)}).</p>` : `<p>⚠️ No ID back was uploaded by the renter.</p>`}
-        ${insuranceBase64 && insuranceFileName
+        ${idFrontAttached ? `<p>📎 <strong>Renter's ID (front) is attached</strong> to this email (${esc(idFileName)}).</p>` : (idBase64 && idFileName ? `<p>⚠️ Renter's ID (front) was uploaded but omitted from this email due to attachment size limit (${esc(idFileName)}).</p>` : `<p>⚠️ No ID front was uploaded by the renter.</p>`)}
+        ${idBackAttached ? `<p>📎 <strong>Renter's ID (back) is attached</strong> to this email (${esc(idBackFileName)}).</p>` : (idBackBase64 && idBackFileName ? `<p>⚠️ Renter's ID (back) was uploaded but omitted from this email due to attachment size limit (${esc(idBackFileName)}).</p>` : `<p>⚠️ No ID back was uploaded by the renter.</p>`)}
+        ${insuranceAttached
           ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>`
-          : (protectionPlan
+          : (insuranceBase64 && insuranceFileName
+              ? `<p>⚠️ Renter's insurance document was uploaded but omitted from this email due to attachment size limit (${esc(insuranceFileName)}).</p>`
+              : (protectionPlan
               ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>`
-              : `<p>⚠️ Renter declared own insurance but did not upload proof — <strong>verify insurance at pickup before releasing the vehicle</strong>.</p>`)
+              : `<p>⚠️ Renter declared own insurance but did not upload proof — <strong>verify insurance at pickup before releasing the vehicle</strong>.</p>`))
         }
-        ${isConfirmed && signature ? `<p>📄 <strong>Signed Rental Agreement is attached</strong> to this email as a PDF file.</p>` : ""}
+        ${agreementAttached ? `<p>📄 <strong>Signed Rental Agreement is attached</strong> to this email as a PDF file.</p>` : (isConfirmed && signature && agreementPdfFilename ? `<p>⚠️ Signed Rental Agreement was generated but omitted from this email due to attachment size limit (${esc(agreementPdfFilename)}).</p>` : "")}
+        ${omittedAttachmentNotes.length ? `<p>⚠️ The following attachments were omitted due to email size limit: ${esc(omittedAttachmentNotes.join(", "))}. Documents remain stored server-side and can be resent from admin tools.</p>` : ""}
         <p>${footerText}</p>
         ${isConfirmed && vehicleId && pickup && returnDate ? `
         <hr style="margin:24px 0;border:none;border-top:1px solid #ddd">

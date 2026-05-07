@@ -48,6 +48,7 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
+const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
 // Pre-parsed default return time used when a booking has no return_time set.
 const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 
@@ -89,6 +90,40 @@ function esc(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function estimateBase64Bytes(base64Value) {
+  if (!base64Value || typeof base64Value !== "string") return 0;
+  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==") ? 2 : (normalized.endsWith("=") ? 1 : 0);
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function estimateAttachmentBytes(att) {
+  if (!att) return 0;
+  if (Buffer.isBuffer(att.content)) return att.content.length;
+  if (typeof att.content === "string") {
+    if (att.encoding === "base64") return estimateBase64Bytes(att.content);
+    return Buffer.byteLength(att.content, "utf8");
+  }
+  return 0;
+}
+
+function selectOwnerEmailAttachments(candidates, maxBytes) {
+  const attachments = [];
+  const omitted = [];
+  let totalBytes = 0;
+  for (const c of candidates) {
+    const sizeBytes = estimateAttachmentBytes(c.attachment);
+    if (totalBytes + sizeBytes > maxBytes) {
+      omitted.push(c.label || c.attachment?.filename || "attachment");
+      continue;
+    }
+    totalBytes += sizeBytes;
+    attachments.push(c.attachment);
+  }
+  return { attachments, omitted, totalBytes };
 }
 
 /**
@@ -784,7 +819,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   }
 
   // ── Build attachments from stored docs ────────────────────────────────────
-  const attachments = [];
+  const ownerAttachmentCandidates = [];
 
   // Always generate the rental agreement PDF from payment-intent metadata.
   // Signature is included when available (storedDocs); the document is still
@@ -827,10 +862,13 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
     const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
     const pdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
-    attachments.push({
-      filename:    pdfFilename,
-      content:     pdfBuffer,
-      contentType: "application/pdf",
+    ownerAttachmentCandidates.push({
+      label: `Rental agreement (${pdfFilename})`,
+      attachment: {
+        filename:    pdfFilename,
+        content:     pdfBuffer,
+        contentType: "application/pdf",
+      },
     });
     console.log(`stripe-webhook: rental agreement PDF generated for PI ${paymentIntent.id}`);
 
@@ -864,10 +902,13 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // Attach renter's ID photo if available.
   if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
     try {
-      attachments.push({
-        filename:    storedDocs.id_filename,
-        content:     Buffer.from(storedDocs.id_base64, "base64"),
-        contentType: storedDocs.id_mimetype || "application/octet-stream",
+      ownerAttachmentCandidates.push({
+        label: `ID front (${storedDocs.id_filename})`,
+        attachment: {
+          filename:    storedDocs.id_filename,
+          content:     Buffer.from(storedDocs.id_base64, "base64"),
+          contentType: storedDocs.id_mimetype || "application/octet-stream",
+        },
       });
     } catch (idErr) {
       console.error("stripe-webhook: ID attachment failed (non-fatal):", idErr.message);
@@ -877,10 +918,13 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // Attach renter's ID back photo if available.
   if (storedDocs && storedDocs.id_back_base64 && storedDocs.id_back_filename) {
     try {
-      attachments.push({
-        filename:    storedDocs.id_back_filename,
-        content:     Buffer.from(storedDocs.id_back_base64, "base64"),
-        contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+      ownerAttachmentCandidates.push({
+        label: `ID back (${storedDocs.id_back_filename})`,
+        attachment: {
+          filename:    storedDocs.id_back_filename,
+          content:     Buffer.from(storedDocs.id_back_base64, "base64"),
+          contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+        },
       });
     } catch (idBackErr) {
       console.error("stripe-webhook: ID back attachment failed (non-fatal):", idBackErr.message);
@@ -890,16 +934,23 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // Attach insurance document if available.
   if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
     try {
-      attachments.push({
-        filename:    storedDocs.insurance_filename,
-        content:     Buffer.from(storedDocs.insurance_base64, "base64"),
-        contentType: storedDocs.insurance_mimetype || "application/octet-stream",
+      ownerAttachmentCandidates.push({
+        label: `Insurance (${storedDocs.insurance_filename})`,
+        attachment: {
+          filename:    storedDocs.insurance_filename,
+          content:     Buffer.from(storedDocs.insurance_base64, "base64"),
+          contentType: storedDocs.insurance_mimetype || "application/octet-stream",
+        },
       });
     } catch (insErr) {
       console.error("stripe-webhook: insurance attachment failed (non-fatal):", insErr.message);
     }
   }
 
+  const { attachments, omitted: omittedAttachmentNotes } = selectOwnerEmailAttachments(
+    ownerAttachmentCandidates,
+    MAX_OWNER_EMAIL_ATTACHMENT_BYTES
+  );
   const hasFullDocs = attachments.length > 0;
   console.log(`stripe-webhook: attachments built for booking_id ${booking_id}: count=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
   const insuranceStatusMeta = String(meta.insurance_status || "").toLowerCase();
@@ -970,6 +1021,12 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     pricingBreakdownLines: breakdownLines || [],
     missingItemNotes: [
       ...missingItemNotes,
+      ...(omittedAttachmentNotes.length
+        ? [
+            `Attachments omitted due to email size limit: ${omittedAttachmentNotes.join(", ")}`,
+            "Documents remain stored in pending_booking_docs and can be resent from admin.",
+          ]
+        : []),
       ...(attachments.length ? [`Attachments: ${attachments.map(a => a.filename).join(", ")}`] : []),
     ],
   });
