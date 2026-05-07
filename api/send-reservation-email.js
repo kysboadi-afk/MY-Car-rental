@@ -179,6 +179,13 @@ function selectOwnerEmailAttachments(candidates, maxBytes) {
   return { attachments, omitted, totalBytes };
 }
 
+function isLikelyAttachmentDeliveryError(err) {
+  const responseCode = Number(err?.responseCode);
+  if (responseCode === 552 || responseCode === 554) return true;
+  const message = String(err?.message || err || "").toLowerCase();
+  return /attachment|message too large|size limit|content too large|exceed|mime/.test(message);
+}
+
 /**
  * Build a self-contained HTML document representing the signed rental agreement.
  * This is generated server-side from the verified booking data so it can be
@@ -1006,7 +1013,7 @@ export default async function handler(req, res) {
       await transporter.sendMail(ownerEmailOpts);
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
-      if (attachments.length > 0) {
+      if (attachments.length > 0 && isLikelyAttachmentDeliveryError(ownerErr)) {
         try {
           await transporter.sendMail({
             ...ownerEmailOpts,
@@ -1117,7 +1124,7 @@ export default async function handler(req, res) {
         await transporter.sendMail(customerEmailOpts);
       } catch (custErr) {
         console.error("Customer confirmation email failed:", custErr);
-        if (customerAttachments.length > 0) {
+        if (customerAttachments.length > 0 && isLikelyAttachmentDeliveryError(custErr)) {
           try {
             await transporter.sendMail({
               from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,

@@ -127,6 +127,13 @@ function selectOwnerEmailAttachments(candidates, maxBytes) {
   return { attachments, omitted, totalBytes };
 }
 
+function isLikelyAttachmentDeliveryError(err) {
+  const responseCode = Number(err?.responseCode);
+  if (responseCode === 552 || responseCode === 554) return true;
+  const message = String(err?.message || err || "").toLowerCase();
+  return /attachment|message too large|size limit|content too large|exceed|mime/.test(message);
+}
+
 /**
  * Determines the booking status for a Stripe payment based on payment_type.
  * Deposit-only payment types leave the booking in "reserved_unpaid" since
@@ -1051,7 +1058,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
     console.error("stripe-webhook: owner email failed:", emailErr);
-    if (attachments.length > 0) {
+    if (attachments.length > 0 && isLikelyAttachmentDeliveryError(emailErr)) {
       try {
         await transporter.sendMail({
           from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
@@ -1623,22 +1630,27 @@ async function sendBalancePaidCustomerEmail({
     await transporter.sendMail(customerMailOpts);
   } catch (customerErr) {
     console.error("stripe-webhook: balance_paid customer email failed:", customerErr.message);
-    if (agreementAttachment.length > 0) {
-      await transporter.sendMail({
-        ...customerMailOpts,
-        attachments: [],
-        html: `
-          ${customerMailOpts.html}
-          <p>⚠️ Your updated rental agreement could not be attached due to an attachment delivery error. Your balance payment is still confirmed.</p>
-        `,
-        text: [
-          customerMailOpts.text,
-          "",
-          "⚠️ Your updated rental agreement could not be attached due to an attachment delivery error.",
-          "Your balance payment is still confirmed.",
-        ].join("\n"),
-      });
-      console.warn("stripe-webhook: balance_paid customer email sent without agreement attachment after attachment delivery failure");
+    if (agreementAttachment.length > 0 && isLikelyAttachmentDeliveryError(customerErr)) {
+      try {
+        await transporter.sendMail({
+          ...customerMailOpts,
+          attachments: [],
+          html: `
+            ${customerMailOpts.html}
+            <p>⚠️ Your updated rental agreement could not be attached due to an attachment delivery error. Your balance payment is still confirmed.</p>
+          `,
+          text: [
+            customerMailOpts.text,
+            "",
+            "⚠️ Your updated rental agreement could not be attached due to an attachment delivery error.",
+            "Your balance payment is still confirmed.",
+          ].join("\n"),
+        });
+        console.warn("stripe-webhook: balance_paid customer email sent without agreement attachment after attachment delivery failure");
+      } catch (retryErr) {
+        console.error("stripe-webhook: balance_paid customer retry without attachment failed:", retryErr.message);
+        throw retryErr;
+      }
     } else {
       throw customerErr;
     }
@@ -3219,7 +3231,7 @@ export default async function handler(req, res) {
               await slTransporter.sendMail(slRenterMailOpts);
             } catch (err) {
               console.error("stripe-webhook: [SLINGSHOT] renter email failed:", err.message);
-              if (slRenterAttachments.length > 0) {
+              if (slRenterAttachments.length > 0 && isLikelyAttachmentDeliveryError(err)) {
                 try {
                   await slTransporter.sendMail({
                     ...slRenterMailOpts,

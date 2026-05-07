@@ -9,6 +9,13 @@ import { CARS } from "./_pricing.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
+function isLikelyAttachmentDeliveryError(err) {
+  const responseCode = Number(err?.responseCode);
+  if (responseCode === 552 || responseCode === 554) return true;
+  const message = String(err?.message || err || "").toLowerCase();
+  return /attachment|message too large|size limit|content too large|exceed|mime/.test(message);
+}
+
 /**
  * Escape HTML special characters to prevent XSS in email templates.
  * @param {string} str
@@ -297,7 +304,7 @@ export async function sendExtensionConfirmationEmails({
     console.log(`_extension-email: extension owner email sent for PI ${paymentIntent.id}`);
   } catch (ownerEmailErr) {
     console.error("_extension-email: extension owner email failed:", ownerEmailErr.message);
-    if (pdfAttachment.length > 0) {
+    if (pdfAttachment.length > 0 && isLikelyAttachmentDeliveryError(ownerEmailErr)) {
       try {
         await transporter.sendMail({
           from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
@@ -383,7 +390,7 @@ export async function sendExtensionConfirmationEmails({
       console.log(`_extension-email: extension renter email sent to ${renterEmail} for PI ${paymentIntent.id}`);
     } catch (renterEmailErr) {
       console.error("_extension-email: extension renter email failed:", renterEmailErr.message);
-      if (pdfAttachment.length > 0) {
+      if (pdfAttachment.length > 0 && isLikelyAttachmentDeliveryError(renterEmailErr)) {
         try {
           await transporter.sendMail({
             ...renterEmailOpts,
