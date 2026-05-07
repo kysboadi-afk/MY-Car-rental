@@ -98,16 +98,44 @@
       color: #ffb400;
       margin: 0;
     }
-    .deposit-notice {
-      background: #1a2400;
-      border: 1px solid #3a4e00;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      color: #c8e070;
+    .sl-book-cta {
+      width: 100%;
+      margin-top: 10px;
+      padding: 16px 18px;
+      border: none;
+      border-radius: 10px;
+      background: #ffb400;
+      color: #111;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      box-shadow: 0 6px 18px rgba(255, 180, 0, 0.28);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
     }
-    .deposit-notice strong { color: #e8ff80; }
+    .sl-book-cta:hover:not(:disabled) {
+      background: #ffbf24;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(255, 180, 0, 0.34);
+    }
+    .sl-book-cta:disabled {
+      background: #6f6f6f;
+      color: #d2d2d2;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+    .sl-book-urgency {
+      margin: 8px 0 6px;
+      font-size: 12px;
+      color: #ff8a65;
+      font-weight: 600;
+    }
+    .deposit-notice {
+      margin: 0 0 6px;
+      font-size: 12px;
+      color: #bdbdbd;
+      line-height: 1.4;
+    }
     .total-breakdown {
       background: #1e1e1e;
       border: 1px solid #2a2a2a;
@@ -355,15 +383,6 @@
           </div>
         </div>
 
-        <label class="agree">
-          <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
-          <span>I have read and signed the Rental Agreement &amp; Terms</span>
-        </label>
-      </div>
-
-      <!-- Deposit notice + total breakdown -->
-      <div class="deposit-notice">
-        <strong>$500 Refundable Security Deposit Required.</strong> This deposit is collected at booking and returned after the vehicle is inspected upon return (typically within 5–7 business days).
       </div>
 
       <div class="total-breakdown" id="totalBreakdown" style="display:none">
@@ -375,10 +394,6 @@
           <span>Refundable deposit</span>
           <span>$500.00</span>
         </div>
-        <div class="total-breakdown-row" style="font-size:12px;color:#888;margin-bottom:2px">
-          <span>No tax on slingshot rentals</span>
-          <span>$0.00</span>
-        </div>
         <div class="total-breakdown-row total-row">
           <span>Total charged today</span>
           <span>$<span id="totalAmountDisplay">0</span></span>
@@ -387,7 +402,13 @@
 
       <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
 
-      <button type="button" id="slBookBtn" style="margin-top:10px" disabled>Book Now 🔒</button>
+      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Book Now — Secure Your Slingshot</button>
+      <p class="sl-book-urgency">Limited availability — weekends sell out fast</p>
+      <p class="deposit-notice">$500 refundable deposit — returned after inspection</p>
+      <label class="agree" style="margin-top:8px">
+        <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
+        <span>I have read and signed the Rental Agreement &amp; Terms</span>
+      </label>
       <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable booking.</p>
     </section>
 

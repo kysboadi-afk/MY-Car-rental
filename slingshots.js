@@ -49,28 +49,13 @@ function fmtMoney(n) {
 
 // ─── Card builder ─────────────────────────────────────────────────────────────
 
-// Default hourly tiers shown when a slingshot vehicle has no hourlyTiers data.
-const DEFAULT_SLINGSHOT_TIERS = [
-  { label: "2 Hours",   price: 150, popular: false },
-  { label: "3 Hours",   price: 200, popular: true  },
-  { label: "6 Hours",   price: 250, popular: false },
-  { label: "24 Hours",  price: 350, popular: false },
+// Standard hourly tiers shown on every slingshot card.
+const STANDARD_SLINGSHOT_TIERS = [
+  { label: "2 hrs",   price: 150, tag: "Best Value" },
+  { label: "3 hrs",   price: 200, tag: "" },
+  { label: "6 hrs",   price: 250, tag: "" },
+  { label: "24 hrs",  price: 350, tag: "Popular" },
 ];
-
-// Derive a display-ready tier list from a vehicle's hourlyTiers map.
-// Returns [{label, price, popular}] sorted by ascending hour count.
-function getSlingshotTiers(v) {
-  const raw = v.hourlyTiers;
-  if (!raw || typeof raw !== "object" || !Object.keys(raw).length) {
-    return DEFAULT_SLINGSHOT_TIERS;
-  }
-  const entries = Object.values(raw)
-    .filter(t => t && t.label && t.price != null)
-    .sort((a, b) => (a.hours || 0) - (b.hours || 0));
-  if (!entries.length) return DEFAULT_SLINGSHOT_TIERS;
-  // Mark the second entry (index 1) as "Most Popular" to highlight the 3-hour tier.
-  return entries.map((t, i) => ({ label: t.label, price: t.price, popular: i === 1 }));
-}
 
 function buildSlingshotCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
@@ -79,12 +64,12 @@ function buildSlingshotCard(v, pricing) {
   const subtitle = esc(v.subtitle || "3-Wheeler \u2022 Open-Air");
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 
-  const tiers = getSlingshotTiers(v);
-  const tierHtml = tiers.map(t => {
+  const tierHtml = STANDARD_SLINGSHOT_TIERS.map(t => {
     const amt = fmtMoney(t.price);
     const lbl = esc(t.label);
-    if (t.popular) {
-      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">Most Popular</span></div>`;
+    const tag = esc(t.tag || "");
+    if (tag) {
+      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">${tag}</span></div>`;
     }
     return `<div class="price-item">${amt} / ${lbl}</div>`;
   }).join("");
@@ -99,7 +84,7 @@ function buildSlingshotCard(v, pricing) {
         <span class="rideshare-badge">&#127937; Thrill Ride</span>
         <span class="rideshare-badge">&#127804; Scenic Cruising</span>
       </div>
-      <p class="price-list-label">Rental Plans</p>
+      <p class="price-list-label">Rental Packages</p>
       <div class="price-list">
         ${tierHtml}
       </div>

@@ -605,8 +605,7 @@ async function launchSlingshotPayment() {
         "Pickup: " + pickupDisplay + "<br>" +
         "Return by: " + returnDisplay + "<br>" +
         "Refundable deposit: $" + SLINGSHOT_DEPOSIT + "<br>" +
-        "<strong style='color:#ffb400'>Total charged today: $" + total.toFixed(2) + "</strong><br>" +
-        "<small style='color:#888'>No tax on slingshot rentals</small>";
+        "<strong style='color:#ffb400'>Total charged today: $" + total.toFixed(2) + "</strong>";
     }
 
     var payAmountEl = document.getElementById("slPayAmount");
@@ -657,7 +656,7 @@ async function launchSlingshotPayment() {
       if (msgEl) msgEl.textContent = "";
       if (payForm) payForm.style.display = "none";
       if (bookingSection) bookingSection.style.display = "";
-      if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now 🔒"; }
+      if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now — Secure Your Slingshot"; }
       // Cancel the pre-written pending booking so it no longer appears in admin.
       cancelPendingBooking(false);
     }, { once: true });
@@ -665,7 +664,7 @@ async function launchSlingshotPayment() {
   } catch (err) {
     console.error("slingshot-book payment error:", err);
     showPayError(err.message || "Payment initialization failed. Please try again or call (844) 511-4059.");
-    if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now 🔒"; }
+    if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now — Secure Your Slingshot"; }
   }
 }
 
@@ -746,7 +745,7 @@ async function launchExtendRentalPayment() {
         "Extension: " + extensionLabel + "<br>" +
         "<strong>New Return: " + returnDisplay + "</strong><br>" +
         "<strong style='color:#ffb400'>Total: $" + extensionAmount + "</strong><br>" +
-        "<small style='color:#888'>No tax · No additional deposit</small>";
+        "<small style='color:#888'>No additional deposit</small>";
     }
 
     var payAmtEl = document.getElementById("extPayAmount");
