@@ -47,22 +47,6 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMeth
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
-import { normalizeFleetCategory } from "./_category.js";
-
-// Legacy car bookings created before the `category` column was introduced have
-// category = NULL in Supabase.  When filtering for scope='car' we must include
-// those NULL rows so they are not silently hidden from the admin panel.
-function applyScopeCategoryFilter(query, scopeCategory) {
-  if (!scopeCategory) return query;
-  if (scopeCategory === "car") return query.or("category.eq.car,category.is.null");
-  return query.eq("category", scopeCategory);
-}
-function matchesScopeCategory(category, scopeCategory) {
-  if (!scopeCategory) return true;
-  const cat = normalizeFleetCategory(category);
-  if (scopeCategory === "car") return cat === "car" || cat === null;
-  return cat === scopeCategory;
-}
 import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
@@ -197,9 +181,34 @@ export default async function handler(req, res) {
     // so the admin always sees data even when Supabase is unreachable.
     if (action === "list" || !action) {
       const { vehicleId, status, scope } = body;
-      const scopeCategory = normalizeFleetCategory(scope === "cars" ? "car" : scope);
 
+      // When scope='car' or scope='slingshot' is provided, restrict the vehicle
+      // list to the matching fleet type so each admin panel only sees its own
+      // bookings.
       let effectiveVehicles = ALLOWED_VEHICLES;
+      if (scope) {
+        try {
+          const BOOKING_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = scope.toLowerCase();
+          const { data: vData } = await loadVehicles();
+          const scopedIds = Object.values(vData || {})
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              // Vehicles with no type recorded default to the car fleet.
+              if (sc === "car" || sc === "cars") return BOOKING_CAR_TYPES.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+          if (scopedIds.length > 0) {
+            const scopedSet = new Set(scopedIds);
+            effectiveVehicles = ALLOWED_VEHICLES.filter((id) => scopedSet.has(id));
+          }
+        } catch (scopeErr) {
+          console.warn("v2-bookings list: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
 
       const sb = getSupabaseAdmin();
       if (sb) {
@@ -222,7 +231,6 @@ export default async function handler(req, res) {
             payment_status,
             payment_method,
             payment_intent_id,
-            category,
             stripe_customer_id,
             stripe_payment_method_id,
             extension_stripe_customer_id,
@@ -248,7 +256,6 @@ export default async function handler(req, res) {
         if (status) {
           q = q.eq("status", status);
         }
-        q = applyScopeCategoryFilter(q, scopeCategory);
 
         const { data: rows, error } = await q.order("created_at", { ascending: false });
 
@@ -327,7 +334,6 @@ export default async function handler(req, res) {
               paymentStatus:   r.payment_status  || "",
               paymentMethod:   r.payment_method  || "",
               paymentIntentId: r.payment_intent_id || "",
-              category:        r.category || null,
               hasSavedCard:    !!(
                 (r.stripe_customer_id && r.stripe_payment_method_id) ||
                 (r.extension_stripe_customer_id && r.extension_stripe_payment_method_id)
@@ -373,9 +379,6 @@ export default async function handler(req, res) {
           result = result.concat((data[vid] || []).map((b) => ({ ...b, vehicleId: b.vehicleId || vid })));
         }
       }
-      if (scopeCategory) {
-        result = result.filter((b) => matchesScopeCategory(b.category, scopeCategory));
-      }
 
       if (status) {
         result = result.filter((b) => b.status === status);
@@ -394,10 +397,9 @@ export default async function handler(req, res) {
     // Falls back to the same flat-file data as "list" when Supabase is not
     // configured, so the admin never sees an empty table due to misconfiguration.
     if (action === "list_raw") {
-      const scopeCategory = normalizeFleetCategory((body.scope === "cars" ? "car" : body.scope) || "");
       const sb = getSupabaseAdmin();
       if (sb) {
-        let q = sb
+        const { data: rows, error } = await sb
           .from("bookings")
           .select(`
             id,
@@ -413,7 +415,6 @@ export default async function handler(req, res) {
             remaining_balance,
             payment_status,
             payment_method,
-            category,
             notes,
             created_at,
             updated_at,
@@ -422,8 +423,6 @@ export default async function handler(req, res) {
             customers ( id, name, phone, email )
           `)
           .order("created_at", { ascending: false });
-        if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
-        const { data: rows, error } = await q;
 
         if (error) {
           console.error("v2-bookings list_raw Supabase error:", error.message);
@@ -445,7 +444,6 @@ export default async function handler(req, res) {
             remaining:       Number(r.remaining_balance || 0),
             paymentStatus:   r.payment_status,
             paymentMethod:   r.payment_method || "",
-            category:        r.category || null,
             notes:           r.notes || "",
             createdAt:       r.created_at,
             activatedAt:     r.activated_at  || null,
@@ -461,9 +459,6 @@ export default async function handler(req, res) {
       let fbResult = [];
       for (const vid of ALLOWED_VEHICLES) {
         fbResult = fbResult.concat((fbData[vid] || []).map((b) => ({ ...b, vehicleId: b.vehicleId || vid, _source: "bookings_json" })));
-      }
-      if (scopeCategory) {
-        fbResult = fbResult.filter((b) => matchesScopeCategory(b.category, scopeCategory));
       }
       fbResult.sort((a, b) => (b.createdAt || b.pickupDate || "") > (a.createdAt || a.pickupDate || "") ? 1 : -1);
       return res.status(200).json({ bookings: fbResult, source: "bookings_json", total: fbResult.length });
