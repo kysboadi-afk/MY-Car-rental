@@ -4994,6 +4994,8 @@ function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
 
+  const now = new Date();
+
   // Silently attempt to recover missing Stripe card data in the background.
   if ((b.paymentMethod || '').toLowerCase() === 'stripe' && !b.hasSavedCard && b.paymentIntentId) {
     apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
@@ -5006,7 +5008,7 @@ function viewBooking(bookingId, vehicleId) {
       .catch(() => { /* non-fatal — ignore silently */ });
   }
 
-  const derived = bookingDerivedStatus(b, new Date());
+  const derived = bookingDerivedStatus(b, now);
   const tier    = computeBookingCustomerTier(b);
   const tierBadge = {
     vip:          '<span class="badge badge-blue">⭐ VIP</span>',
