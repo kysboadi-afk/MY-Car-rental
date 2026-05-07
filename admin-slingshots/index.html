@@ -4460,7 +4460,7 @@ function loadLateFees() {
   document.getElementById('lf-table-wrap').style.display = 'none';
   document.getElementById('lf-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
     .then((data) => {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
@@ -4758,7 +4758,7 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
     .then((data) => {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
@@ -5356,7 +5356,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'slingshot' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];
@@ -5548,7 +5548,7 @@ function loadExpenses() {
     : loadExpenseCategories();
 
   catPromise
-    .then(() => apiPost('/api/get-expenses', { secret: adminSecret, scope: 'slingshot' }))
+    .then(() => apiPost('/api/get-expenses', { secret: adminSecret }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -6224,7 +6224,7 @@ function loadRevenue() {
   // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
-    : apiPost('/api/get-expenses', { secret: adminSecret, scope: 'slingshot' });
+    : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
     apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'slingshot' }),

@@ -22,15 +22,6 @@ import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
-import { normalizeFleetCategory } from "./_category.js";
-
-// Legacy car bookings created before the `category` column was introduced have
-// category = NULL.  For scope='car' we must also include NULL rows.
-function applyScopeCategoryFilter(query, scopeCategory) {
-  if (!scopeCategory) return query;
-  if (scopeCategory === "car") return query.or("category.eq.car,category.is.null");
-  return query.eq("category", scopeCategory);
-}
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -110,7 +101,6 @@ export default async function handler(req, res) {
   }
 
   const { secret, scope } = req.body || {};
-  const scopeCategory = normalizeFleetCategory(scope === "cars" ? "car" : scope);
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -143,25 +133,23 @@ export default async function handler(req, res) {
     async function fetchBookingsKpis() {
       if (sb) {
         try {
-          let q = sb
+          const { data: rows, error } = await sb
             .from("bookings")
             .select(`
               booking_ref, vehicle_id, status,
               pickup_date, return_date, pickup_time, return_time,
-              deposit_paid, created_at, category,
+              deposit_paid, created_at,
               customers ( name )
             `)
             .in("vehicle_id", ALLOWED_VEHICLES)
             .order("created_at", { ascending: false });
-          if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
-          const { data: rows, error } = await q;
           if (error) throw error; // query error → propagate, do NOT fallback
+          return (rows || []).map((r) => ({
             bookingId:   r.booking_ref || String(r.id),
             vehicleId:   uiVehicleId(r.vehicle_id),
             vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
             name:        r.customers?.name || "",
-              status:      DB_TO_APP_STATUS[r.status] || r.status,
-              category:    r.category || null,
+            status:      DB_TO_APP_STATUS[r.status] || r.status,
             pickupDate:  r.pickup_date  || "",
             returnDate:  r.return_date  || "",
             returnTime:  r.return_time  || "",
@@ -191,24 +179,21 @@ export default async function handler(req, res) {
       : Promise.resolve({ data: null });
 
     const bookingsPromise = sb
-      ? (() => {
-          let q = sb.from("bookings")
+      ? sb.from("bookings")
           .select(`
             booking_ref, vehicle_id, status,
             pickup_date, return_date, pickup_time, return_time,
-            deposit_paid, created_at, category,
+            deposit_paid, created_at,
             customers ( name )
           `)
           .in("vehicle_id", ALLOWED_VEHICLES)
           .order("created_at", { ascending: false })
-          .limit(20);
-          if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
-          return q.then((r) => r, () => ({ data: null }));
-        })()
+          .limit(20)
+          .then((r) => r, () => ({ data: null }))
       : Promise.resolve({ data: null });
 
     // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
-    const kpiPromise = (sb && !scopeCategory)
+    const kpiPromise = sb
       ? sb.from("total_revenue_kpi").select("total_revenue").single()
           .then((r) => r, (e) => {
             console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
@@ -268,10 +253,12 @@ export default async function handler(req, res) {
              : (scope === "slingshot")               ? "slingshot"
              : "total";
 
-    // Filter vehicles by scope via the canonical vehicle category field.
+    // Filter vehicles by scope: "car" → car-type vehicles; "slingshot" → slingshot type; none → all
+    const DASHBOARD_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
-      const cat = normalizeFleetCategory(v.category);
-      if (scopeCategory) return cat === scopeCategory;
+      const type = (v.type || "").toLowerCase();
+      if (scope === "car" || scope === "cars") return DASHBOARD_CAR_TYPES.has(type) || type === "";
+      if (scope === "slingshot") return type === "slingshot";
       return true;
     });
     const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);
@@ -418,12 +405,11 @@ export default async function handler(req, res) {
     //      which would otherwise cause the dashboard to fall back to booking deposits.
     if (sb && (!viewOk || !financialsFromRevRecords)) {
       try {
-        let rrQuery = sb
+        const { data: rrRows, error: rrErr } = await sb
           .from("revenue_records_effective")
           .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
           .eq("payment_status", "paid");
-        if (scopeCategory) rrQuery = applyScopeCategoryFilter(rrQuery, scopeCategory);
-        const { data: rrRows, error: rrErr } = await rrQuery;
+
         if (rrErr) {
           console.error("v2-dashboard: revenue records unavailable, falling back to bookings.json:", rrErr.message);
         } else if ((rrRows || []).length > 0) {
@@ -545,10 +531,10 @@ export default async function handler(req, res) {
         let revenueTrackedPis = new Set();
         if (chargePiIds.length > 0) {
           try {
-          const { data: rrRows } = await sb
-            .from("revenue_records")
-            .select("payment_intent_id")
-            .in("payment_intent_id", chargePiIds);
+            const { data: rrRows } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", chargePiIds);
             revenueTrackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
           } catch (piLookupErr) {
             console.warn("v2-dashboard: charge PI dedup lookup failed (non-fatal):", piLookupErr.message);
@@ -746,7 +732,7 @@ export default async function handler(req, res) {
 
     // Override totalRevenue with the canonical total_revenue_kpi value when
     // available — same source used by the Revenue Tracker page KPI card.
-    const kpiRevenue = (!scopeCategory && kpiResult?.data?.total_revenue != null)
+    const kpiRevenue = kpiResult?.data?.total_revenue != null
       ? Number(kpiResult.data.total_revenue)
       : null;
     const finalTotalRevenue = kpiRevenue !== null

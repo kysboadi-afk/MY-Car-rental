@@ -29,7 +29,6 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { uiVehicleId } from "./_vehicle-id.js";
 import { computeAmount, getAllVehicleIds } from "./_pricing.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { normalizeFleetCategory } from "./_category.js";
 
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
@@ -121,7 +120,8 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
-  const scopeCategory = normalizeFleetCategory(body.scope === "cars" ? "car" : body.scope);
+  // scope: 'car' → economy vehicles; absent → all
+  const scope = body.scope || null;
 
   try {
     const [{ data: bookingsData }, vehicles, expenses] = await Promise.all([
@@ -134,11 +134,19 @@ export default async function handler(req, res) {
     const paidStatuses   = new Set(["booked_paid", "active_rental", "completed_rental"]);
     const activeStatuses = new Set(["booked_paid", "active_rental"]);
 
+    // Build vehicle-type lookup for scope filtering across all actions.
+    const vehicleTypeMap = {};
+    for (const [vid, v] of Object.entries(vehicles)) {
+      vehicleTypeMap[vid] = (v.type || "").toLowerCase();
+    }
+
     /** Returns true if vehicleId matches the requested scope. */
+    const ANALYTICS_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
     function inScope(vid) {
-      if (!scopeCategory) return true;
-      const category = normalizeFleetCategory(vehicles?.[vid]?.category);
-      if (category) return category === scopeCategory;
+      if (!scope) return true;
+      const t = (vehicleTypeMap[vid] || "").toLowerCase();
+      if (scope === "car" || scope === "cars") return ANALYTICS_CAR_TYPES.has(t) || t === "";
+      if (scope === "slingshot") return t === "slingshot";
       return true;
     }
 
@@ -165,16 +173,12 @@ export default async function handler(req, res) {
     let kpiTotalRevenue = null;
     if (sb) {
       try {
-        let kpiQuery = sb
-          .from("revenue_records_effective")
-          .select("gross_amount")
-          .eq("payment_status", "paid")
-          .eq("is_cancelled", false)
-          .eq("is_no_show", false);
-        if (scopeCategory) kpiQuery = kpiQuery.eq("category", scopeCategory);
-        const { data: kpiRows, error: kpiErr } = await kpiQuery;
-        if (!kpiErr && kpiRows != null) {
-          kpiTotalRevenue = Math.round((kpiRows || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0) * 100) / 100;
+        const { data: kpiRow, error: kpiErr } = await sb
+          .from("total_revenue_kpi")
+          .select("total_revenue")
+          .single();
+        if (!kpiErr && kpiRow != null) {
+          kpiTotalRevenue = Math.round(Number(kpiRow.total_revenue) * 100) / 100;
         } else if (kpiErr) {
           console.warn("v2-analytics: total_revenue_kpi query failed (non-fatal):", kpiErr.message);
         }
@@ -185,12 +189,10 @@ export default async function handler(req, res) {
 
     if (sb) {
       try {
-        let activeQuery = sb
+        const { data: activeRows, error: activeErr } = await sb
           .from("bookings")
-          .select("vehicle_id, category")
+          .select("vehicle_id")
           .in("status", ["active", "active_rental", "overdue"]);
-        if (scopeCategory) activeQuery = activeQuery.eq("category", scopeCategory);
-        const { data: activeRows, error: activeErr } = await activeQuery;
         if (!activeErr && activeRows) {
           for (const row of activeRows) {
             if (row.vehicle_id) activeVehicleIds.add(uiVehicleId(row.vehicle_id) || row.vehicle_id);
@@ -205,12 +207,12 @@ export default async function handler(req, res) {
 
     if (sb) {
       try {
-        let rrQuery = sb
+        const rrResult = await sb
           .from("revenue_records_effective")
           .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
           .eq("payment_status", "paid");
-        if (scopeCategory) rrQuery = rrQuery.eq("category", scopeCategory);
-        const { data: rrRows, error: rrErr } = await rrQuery;
+
+        const { data: rrRows, error: rrErr } = rrResult;
 
         if (rrErr) {
           console.error("v2-analytics: revenue records unavailable, falling back to bookings.json:", rrErr.message);
@@ -254,13 +256,11 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const allVehicleIds = await getAllVehicleIds(sb);
-        let bQuery = sb
+        const { data: bRows, error: bErr } = await sb
           .from("bookings")
-          .select("vehicle_id, pickup_date, category")
+          .select("vehicle_id, pickup_date")
           .in("vehicle_id", allVehicleIds)
           .in("status", [...paidStatuses]);
-        if (scopeCategory) bQuery = bQuery.eq("category", scopeCategory);
-        const { data: bRows, error: bErr } = await bQuery;
         if (!bErr && bRows) {
           for (const row of bRows) {
             const vid = uiVehicleId(row.vehicle_id) || row.vehicle_id;
@@ -531,3 +531,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
+
