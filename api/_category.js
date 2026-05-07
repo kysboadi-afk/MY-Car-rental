@@ -33,15 +33,17 @@ export async function resolveBookingCategory({ category, vehicleId } = {}) {
     }
   }
 
-  try {
-    const { data } = await loadVehicles();
-    const resolved = normalizeFleetCategory(
-      data?.[normalizedVehicleId]?.category
-      || Object.values(data || {}).find((v) => v?.vehicle_id === normalizedVehicleId)?.category
-    );
-    if (resolved) return resolved;
-  } catch {
-    // ignore lookup failures
+  if (process.env.GITHUB_TOKEN) {
+    try {
+      const { data } = await loadVehicles();
+      const resolved = normalizeFleetCategory(
+        data?.[normalizedVehicleId]?.category
+        || Object.values(data || {}).find((v) => v?.vehicle_id === normalizedVehicleId)?.category
+      );
+      if (resolved) return resolved;
+    } catch {
+      // ignore lookup failures
+    }
   }
 
   return null;
