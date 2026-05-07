@@ -125,7 +125,6 @@ function buildSlPricingText() {
     "  • 6 Hours  — $250",
     "  • 24 Hours — $350\n",
     "💰 $" + SL_DEPOSIT + " refundable security deposit required at booking.",
-    "🚫 No tax on slingshot rentals.",
     "\nChoose your package on our <a href=\"slingshots.html\">Slingshots page</a>!"
   ];
   return lines.join("\n");
@@ -134,8 +133,7 @@ function buildSlPricingText() {
 function buildSlDepositText() {
   return "Deposit info 💰\n\n" +
     "A <strong>$" + SL_DEPOSIT + " refundable security deposit</strong> is required at the time of booking.\n\n" +
-    "✅ The deposit is returned after the vehicle is returned undamaged.\n" +
-    "🚫 No sales tax applies to slingshot rentals.";
+    "✅ The deposit is returned after the vehicle is returned undamaged.";
 }
 
 function buildSlAvailabilityText() {
@@ -226,7 +224,7 @@ var slBotResponses = [
   },
   {
     patterns: ["pay","payment","stripe","credit","card","checkout"],
-    reply: "We accept all major credit and debit cards via Stripe 💳\n\nPayment is collected securely at checkout — you'll pay the rental package fee plus a $500 refundable security deposit.\n\nNo tax on slingshot rentals! 🎉"
+    reply: "We accept all major credit and debit cards via Stripe 💳\n\nPayment is collected securely at checkout — you'll pay the rental package fee plus a $500 refundable security deposit."
   },
   {
     patterns: ["location","where","pickup","pick up","pick-up","address"],

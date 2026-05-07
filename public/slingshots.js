@@ -61,7 +61,7 @@ function buildSlingshotCard(v, pricing) {
         <span class="rideshare-badge">&#127937; Thrill Ride</span>
         <span class="rideshare-badge">&#127804; Scenic Cruising</span>
       </div>
-      <p class="price-list-label">Rental Packages (No Tax)</p>
+      <p class="price-list-label">Rental Packages</p>
       <div class="price-list">
         <div class="price-item">$150 / 2 hrs</div>
         <div class="price-item">$200 / 3 hrs</div>

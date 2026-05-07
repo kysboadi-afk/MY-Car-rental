@@ -99,7 +99,7 @@ function buildSlingshotCard(v, pricing) {
         <span class="rideshare-badge">&#127937; Thrill Ride</span>
         <span class="rideshare-badge">&#127804; Scenic Cruising</span>
       </div>
-      <p class="price-list-label">Rental Plans</p>
+      <p class="price-list-label">Rental Packages</p>
       <div class="price-list">
         ${tierHtml}
       </div>
