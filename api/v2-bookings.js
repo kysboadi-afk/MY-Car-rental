@@ -516,7 +516,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime", "customerName", "customerPhone", "customerEmail", "pickupDate", "pickupTime", "paymentStatus", "vehicleId"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime", "customerName", "customerPhone", "customerEmail", "pickupDate", "pickupTime", "paymentStatus", "vehicleId", "forceCancel"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -555,6 +555,30 @@ export default async function handler(req, res) {
         // pending_approval status so the admin UI no longer shows it as an
         // unresolved action item.
         safeUpdates._autoDismissLateFee = true;
+      }
+
+      // Guard: require explicit forceCancel flag when cancelling an active rental.
+      // A booking in active_rental or overdue state means the vehicle has already
+      // been picked up by the customer.  Accidental cancellation of a live rental
+      // is a common operator error; this forces an explicit acknowledgement.
+      if (safeUpdates.status === "cancelled_rental") {
+        let currentStatusForCancel = null;
+        if (sbOnlyRow) {
+          currentStatusForCancel = DB_TO_APP_STATUS[sbOnlyRow.status] || null;
+        } else {
+          const currentBookingForCancel = (checkData[vehicleId] || []).find(
+            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+          );
+          currentStatusForCancel = currentBookingForCancel?.status || null;
+        }
+        if (
+          (currentStatusForCancel === "active_rental" || currentStatusForCancel === "overdue") &&
+          !safeUpdates.forceCancel
+        ) {
+          return res.status(409).json({
+            error: "Cannot cancel an active rental: the vehicle has already been picked up. Confirm the cancellation explicitly to proceed.",
+          });
+        }
       }
 
       // Guard: only allow booked_paid transition when a successful payment is
