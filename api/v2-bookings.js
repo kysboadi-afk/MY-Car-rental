@@ -463,8 +463,8 @@ export default async function handler(req, res) {
       }
 
       const hasGitHubToken = !!process.env.GITHUB_TOKEN;
-      const sbForWrites = getSupabaseAdmin();
-      if (!hasGitHubToken && !sbForWrites) {
+      const hasSupabase = !!getSupabaseAdmin();
+      if (!hasGitHubToken && !hasSupabase) {
         return res.status(500).json({ error: "Booking update is unavailable: GITHUB_TOKEN not configured and Supabase is unavailable" });
       }
 
@@ -789,7 +789,8 @@ export default async function handler(req, res) {
                 };
               }
             } catch (_refreshErr) {
-              // non-fatal fallback to local pre-check data below
+              // Non-fatal: if refresh fails we fall back to the pre-update
+              // booking snapshot from checkData (if available) just below.
             }
           }
           if (!updatedBooking) {
