@@ -14,6 +14,8 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses } from "./_expenses.js";
 import { enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { normalizeFleetCategory } from "./_category.js";
+import { loadVehicles } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -32,6 +34,7 @@ export default async function handler(req, res) {
   }
 
   const { secret, vehicle_id } = req.body || {};
+  const scopeCategory = normalizeFleetCategory((req.body?.scope === "cars" ? "car" : req.body?.scope) || "");
 
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -40,8 +43,24 @@ export default async function handler(req, res) {
   try {
     const sb = getSupabaseAdmin();
     let expenses;
+    let vehicleCategoryById = null;
 
     if (sb) {
+      try {
+        const { data: vehiclesData, error: vehiclesErr } = await sb
+          .from("vehicles")
+          .select("vehicle_id, data");
+        if (!vehiclesErr && Array.isArray(vehiclesData)) {
+          vehicleCategoryById = Object.fromEntries(
+            vehiclesData
+              .map((v) => [v.vehicle_id, normalizeFleetCategory(v?.data?.category)])
+              .filter(([id, c]) => id && c)
+          );
+        }
+      } catch {
+        // ignore; best-effort map for scope filtering
+      }
+
       // ── Supabase path (preferred) ──────────────────────────────────────
       let q = sb.from("expenses")
         .select("*, expense_categories!category_id(name, group_name)")
@@ -53,7 +72,14 @@ export default async function handler(req, res) {
         console.error("get-expenses supabase error:", error.message);
         expenses = null;
       } else {
-        expenses = (data || []).map((e) => {
+        let scopedRows = data || [];
+        if (scopeCategory) {
+          scopedRows = scopedRows.filter(
+            (e) => normalizeFleetCategory(vehicleCategoryById?.[e.vehicle_id]) === scopeCategory
+          );
+        }
+
+        expenses = scopedRows.map((e) => {
           const { category_name, category_group } = enrichExpenseCategory(e);
           // Remove the nested relation object; expose flat fields instead
           const { expense_categories: _rel, ...flat } = e;
@@ -66,6 +92,23 @@ export default async function handler(req, res) {
       // ── GitHub fallback ────────────────────────────────────────────────
       const { data } = await loadExpenses();
       let raw = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
+      if (scopeCategory) {
+        if (!vehicleCategoryById && process.env.GITHUB_TOKEN) {
+          try {
+            const { data: vehiclesJson } = await loadVehicles();
+            vehicleCategoryById = Object.fromEntries(
+              Object.entries(vehiclesJson || {})
+                .map(([id, row]) => [id, normalizeFleetCategory(row?.category)])
+                .filter(([id, c]) => id && c)
+            );
+          } catch {
+            vehicleCategoryById = vehicleCategoryById || {};
+          }
+        }
+        raw = raw.filter(
+          (e) => normalizeFleetCategory(vehicleCategoryById?.[e.vehicle_id]) === scopeCategory
+        );
+      }
       // Newest first (descending by date)
       raw.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
       // Enrich legacy records with category_name / category_group

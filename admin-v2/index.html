@@ -5390,7 +5390,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'car' })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];
@@ -5582,7 +5582,7 @@ function loadExpenses() {
     : loadExpenseCategories();
 
   catPromise
-    .then(() => apiPost('/api/get-expenses', { secret: adminSecret }))
+    .then(() => apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -6258,7 +6258,7 @@ function loadRevenue() {
   // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
-    : apiPost('/api/get-expenses', { secret: adminSecret });
+    : apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' });
 
   Promise.all([
     apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
