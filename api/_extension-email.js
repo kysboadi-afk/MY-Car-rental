@@ -297,6 +297,47 @@ export async function sendExtensionConfirmationEmails({
     console.log(`_extension-email: extension owner email sent for PI ${paymentIntent.id}`);
   } catch (ownerEmailErr) {
     console.error("_extension-email: extension owner email failed:", ownerEmailErr.message);
+    if (pdfAttachment.length > 0) {
+      try {
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          ...(renterEmail ? { replyTo: renterEmail } : {}),
+          subject: `⏱️ Rental Extension Confirmed — ${esc(vehicleName)} — ${esc(renterName || "Renter")}`,
+          html: `
+            <h2>⏱️ Rental Extension Confirmed</h2>
+            <p>⚠️ The updated rental agreement could not be attached due to an attachment delivery error.</p>
+            <table style="border-collapse:collapse;width:100%;margin-top:16px">
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterName || "N/A")}</td></tr>
+              ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
+              ${booking && booking.phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(booking.phone)}</td></tr>` : ""}
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
+            </table>
+            <p style="margin-top:16px">The booking has been updated with the new return date/time.</p>
+          `,
+          text: [
+            "⏱️ Rental Extension Confirmed",
+            "⚠️ Updated rental agreement could not be attached due to an attachment delivery error.",
+            "",
+            `Renter         : ${renterName || "N/A"}`,
+            renterEmail ? `Email          : ${renterEmail}` : "",
+            booking && booking.phone ? `Phone          : ${booking.phone}` : "",
+            `Vehicle        : ${vehicleName}`,
+            `Extension      : ${extensionLabel}`,
+            `New Return Date: ${newReturnDisplay}`,
+            `Amount Charged : $${amountDollars}`,
+            `Stripe PI      : ${paymentIntent.id}`,
+          ].filter(Boolean).join("\n"),
+        });
+        console.warn(`_extension-email: extension owner email sent without PDF for PI ${paymentIntent.id} after attachment delivery failure`);
+      } catch (ownerRetryErr) {
+        console.error("_extension-email: extension owner retry without PDF failed:", ownerRetryErr.message);
+      }
+    }
   }
 
   // ── Renter confirmation ────────────────────────────────────────────────────

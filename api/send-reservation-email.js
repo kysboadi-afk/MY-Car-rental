@@ -1006,7 +1006,30 @@ export default async function handler(req, res) {
       await transporter.sendMail(ownerEmailOpts);
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
-      ownerEmailErr = ownerErr;
+      if (attachments.length > 0) {
+        try {
+          await transporter.sendMail({
+            ...ownerEmailOpts,
+            attachments: [],
+            text: [
+              ownerEmailOpts.text,
+              "",
+              "⚠️ Documents could not be attached to this email due to an attachment delivery error.",
+              "The booking is still confirmed and documents remain stored server-side.",
+            ].join("\n"),
+            html: `
+              ${ownerEmailOpts.html}
+              <p>⚠️ Documents could not be attached to this email due to an attachment delivery error. The booking is still confirmed and documents remain stored server-side.</p>
+            `,
+          });
+          console.warn("Owner notification email sent without attachments after attachment delivery failure.");
+        } catch (retryErr) {
+          console.error("Owner notification email retry without attachments failed:", retryErr);
+          ownerEmailErr = retryErr;
+        }
+      } else {
+        ownerEmailErr = ownerErr;
+      }
     }
     } // end: else (!webhookAlreadySentOwnerEmail)
 

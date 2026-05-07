@@ -1051,6 +1051,30 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
     console.error("stripe-webhook: owner email failed:", emailErr);
+    if (attachments.length > 0) {
+      try {
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          ...(email ? { replyTo: email } : {}),
+          subject: ownerEmail.subject,
+          text: [
+            ownerEmail.text,
+            "",
+            "⚠️ Documents could not be attached to this email due to an attachment delivery error.",
+            "Booking documents remain stored server-side and can be resent from admin.",
+          ].join("\n"),
+          html: `
+            ${ownerEmail.html}
+            <p>⚠️ Documents could not be attached to this email due to an attachment delivery error. Booking documents remain stored server-side and can be resent from admin.</p>
+          `,
+        });
+        ownerEmailSent = true;
+        console.warn(`stripe-webhook: owner email sent without attachments for PI ${paymentIntent.id} after attachment delivery failure`);
+      } catch (retryErr) {
+        console.error("stripe-webhook: owner email retry without attachments failed:", retryErr);
+      }
+    }
   }
 
   // ── Mark docs as sent so the browser-side email skips the owner copy ──────
