@@ -51,14 +51,22 @@ function fmtMoney(n) {
 
 // Default hourly tiers shown when a slingshot vehicle has no hourlyTiers data.
 const DEFAULT_SLINGSHOT_TIERS = [
-  { label: "2 Hours",   price: 150, popular: false },
-  { label: "3 Hours",   price: 200, popular: true  },
-  { label: "6 Hours",   price: 250, popular: false },
-  { label: "24 Hours",  price: 350, popular: false },
+  { label: "2 Hours",   price: 150, tag: "Best Value" },
+  { label: "3 Hours",   price: 200, tag: "" },
+  { label: "6 Hours",   price: 250, tag: "" },
+  { label: "24 Hours",  price: 350, tag: "Popular" },
 ];
 
+function getSlingshotTierTag(tier) {
+  const hours = Number(tier && tier.hours);
+  const label = String((tier && tier.label) || "").toLowerCase();
+  if (hours === 2 || label.includes("2 hour") || label.includes("2 hr")) return "Best Value";
+  if (hours === 24 || label.includes("24 hour") || label.includes("24 hr")) return "Popular";
+  return "";
+}
+
 // Derive a display-ready tier list from a vehicle's hourlyTiers map.
-// Returns [{label, price, popular}] sorted by ascending hour count.
+// Returns [{label, price, tag}] sorted by ascending hour count.
 function getSlingshotTiers(v) {
   const raw = v.hourlyTiers;
   if (!raw || typeof raw !== "object" || !Object.keys(raw).length) {
@@ -68,8 +76,7 @@ function getSlingshotTiers(v) {
     .filter(t => t && t.label && t.price != null)
     .sort((a, b) => (a.hours || 0) - (b.hours || 0));
   if (!entries.length) return DEFAULT_SLINGSHOT_TIERS;
-  // Mark the second entry (index 1) as "Most Popular" to highlight the 3-hour tier.
-  return entries.map((t, i) => ({ label: t.label, price: t.price, popular: i === 1 }));
+  return entries.map(t => ({ label: t.label, price: t.price, tag: getSlingshotTierTag(t) }));
 }
 
 function buildSlingshotCard(v, pricing) {
@@ -83,8 +90,9 @@ function buildSlingshotCard(v, pricing) {
   const tierHtml = tiers.map(t => {
     const amt = fmtMoney(t.price);
     const lbl = esc(t.label);
-    if (t.popular) {
-      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">Most Popular</span></div>`;
+    const tag = esc(t.tag || "");
+    if (tag) {
+      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">${tag}</span></div>`;
     }
     return `<div class="price-item">${amt} / ${lbl}</div>`;
   }).join("");

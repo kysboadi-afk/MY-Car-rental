@@ -63,10 +63,10 @@ function buildSlingshotCard(v, pricing) {
       </div>
       <p class="price-list-label">Rental Packages</p>
       <div class="price-list">
-        <div class="price-item">$150 / 2 hrs</div>
+        <div class="price-item price-item--popular">$150 / 2 hrs <span class="popular-tag">Best Value</span></div>
         <div class="price-item">$200 / 3 hrs</div>
         <div class="price-item">$250 / 6 hrs</div>
-        <div class="price-item price-item--popular">$350 / 24 hrs <span class="popular-tag">Best Value</span></div>
+        <div class="price-item price-item--popular">$350 / 24 hrs <span class="popular-tag">Popular</span></div>
       </div>
       <p style="font-size:12px;color:#aaa;margin:4px 0 8px">+$500 refundable deposit required</p>
       ${scarcity}
