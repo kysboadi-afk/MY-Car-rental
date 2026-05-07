@@ -48,6 +48,15 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
+const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
+
+function resolveSmsPickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
+  const bt = String(bookingType || "").toLowerCase();
+  const haystack = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
+  return bt === "slingshot" || haystack.includes("slingshot")
+    ? SLINGSHOT_PICKUP_LOCATION
+    : DEFAULT_LOCATION;
+}
 // Pre-parsed default return time used when a booking has no return_time set.
 const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 
@@ -544,7 +553,11 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     pickupTime:            pickup_time  || "",
     returnDate:            return_date,
     returnTime:            return_time  || DEFAULT_RETURN_TIME,
-    location:              DEFAULT_LOCATION,
+    location:              resolveSmsPickupLocation({
+      bookingType: meta.booking_type,
+      vehicleId,
+      vehicleName: vehicle_name || vehicleId,
+    }),
     status,
     amountPaid,
     totalPrice,
@@ -2722,7 +2735,11 @@ export default async function handler(req, res) {
                 pickup_time:      preContact.pickupTime || "",
                 return_date:      preContact.returnDate || "",
                 return_time_line: preContact.returnTime ? ` at ${formatTime12h(preContact.returnTime) || preContact.returnTime}\n` : "\n",
-                location:         DEFAULT_LOCATION,
+                location:         resolveSmsPickupLocation({
+                  bookingType: meta.booking_type,
+                  vehicleId: preContact.vehicleId,
+                  vehicleName: preContact.vehicleName,
+                }),
               })
             );
           } catch (smsErr) {
@@ -3149,7 +3166,11 @@ export default async function handler(req, res) {
               pickup_time:      sl_pickup_time || "",
               return_date:      sl_return_date || "",
               return_time_line: sl_return_time ? ` at ${sl_return_time}\n` : "\n",
-              location:         DEFAULT_LOCATION,
+              location:         resolveSmsPickupLocation({
+                bookingType: "slingshot",
+                vehicleId: sl_vehicle_id,
+                vehicleName: sl_vehicle_name,
+              }),
             })
           );
         } catch (slRenterSmsErr) {
@@ -3252,7 +3273,11 @@ export default async function handler(req, res) {
               pickup_time:      _notifyMeta.pickup_time || "",
               return_date:      _notifyMeta.return_date || "",
               return_time_line: _notifyMeta.return_time ? ` at ${formatTime12h(_notifyMeta.return_time) || _notifyMeta.return_time}\n` : "\n",
-              location:         DEFAULT_LOCATION,
+              location:         resolveSmsPickupLocation({
+                bookingType: _notifyMeta.booking_type,
+                vehicleId: _notifyMeta.vehicle_id,
+                vehicleName: _notifyMeta.vehicle_name,
+              }),
             })
           );
         } catch (renterSmsErr) {

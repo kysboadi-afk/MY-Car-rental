@@ -59,6 +59,12 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
   fusion2017: "Ford Fusion 2017",
 };
+const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
+
+function resolveSmsPickupLocation({ vehicleId, vehicleName } = {}) {
+  const haystack = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
+  return haystack.includes("slingshot") ? SLINGSHOT_PICKUP_LOCATION : DEFAULT_LOCATION;
+}
 
 // Mapping from app-level status values (used in bookings.json and the admin UI)
 // to database-level status values (used in the Supabase bookings table).
@@ -893,7 +899,10 @@ export default async function handler(req, res) {
                 customer_name: (updatedBooking.name || "Customer").split(" ")[0],
                 pickup_date:   updatedBooking.pickupDate  || "",
                 pickup_time:   updatedBooking.pickupTime  || "",
-                location:      DEFAULT_LOCATION,
+                location:      resolveSmsPickupLocation({
+                  vehicleId: updatedBooking.vehicleId || "",
+                  vehicleName: updatedBooking.vehicleName || "",
+                }),
               })
             );
           } catch (smsErr) {
