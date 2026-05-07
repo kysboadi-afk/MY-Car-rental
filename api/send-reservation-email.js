@@ -1056,142 +1056,88 @@ export default async function handler(req, res) {
             contentType: "application/pdf",
           }]
         : [];
+      const customerEmailOpts = {
+        from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: customerSubject,
+        ...(customerAttachments.length ? { attachments: customerAttachments } : {}),
+        text: [
+          isBalancePayment ? "Balance Paid – Sly Transportation Services LLC" : "Payment Confirmed – Sly Transportation Services LLC",
+          "",
+          customerIntro,
+          "Here are your booking details:",
+          "",
+          `Payment Status : CONFIRMED`,
+          bookingId ? `Booking ID     : ${bookingId}` : "",
+          `Vehicle        : ${car || ""}`,
+          vehicleMake  ? `Make           : ${vehicleMake}`  : "",
+          vehicleModel ? `Model          : ${vehicleModel}` : "",
+          vehicleYear  ? `Year           : ${vehicleYear}`  : "",
+          vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
+          vehicleColor ? `Color          : ${vehicleColor}` : "",
+          `Pickup Date    : ${pickup || ""}`,
+          `Pickup Time    : ${formatTime12h(pickupTime) || "Not specified"}`,
+          `Return Date    : ${returnDate || ""}`,
+          `Return Time    : ${formatTime12h(returnTime) || "Not specified"}`,
+          isBalancePayment
+            ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
+            : `Total Charged  : $${total || "TBD"}`,
+          !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
+          !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
+          breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
+          "",
+          "Manage your booking at: https://www.slytrans.com/manage-booking.html",
+          "Use your phone number, email, or Booking ID to access it.",
+          "",
+          "We will be in touch shortly to confirm your rental pick-up details.",
+          `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
+          "",
+          "Sly Transportation Services LLC Team",
+        ].filter(line => line !== undefined).join("\n"),
+        html: `
+          <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Transportation Services LLC" : "✅ Payment Confirmed – Sly Transportation Services LLC"}</h2>
+          <p>${esc(customerIntro)} Here are your booking details:</p>
+          <table style="border-collapse:collapse;width:100%">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+            ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
+            ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
+            ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
+            ${vehicleYear  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Year</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(vehicleYear))}</td></tr>`  : ""}
+            ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
+            ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(pickupTime)) || "Not specified"}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(returnTime)) || "Not specified"}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
+            ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+            ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+          </table>
+          ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
+          <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
+          <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+          <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+        `,
+      };
       try {
-        const customerEmailOpts = {
-          from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-          to: email,
-          subject: customerSubject,
-          ...(customerAttachments.length ? { attachments: customerAttachments } : {}),
-          text: [
-            isBalancePayment ? "Balance Paid – Sly Transportation Services LLC" : "Payment Confirmed – Sly Transportation Services LLC",
-            "",
-            customerIntro,
-            "Here are your booking details:",
-            "",
-            `Payment Status : CONFIRMED`,
-            bookingId ? `Booking ID     : ${bookingId}` : "",
-            `Vehicle        : ${car || ""}`,
-            vehicleMake  ? `Make           : ${vehicleMake}`  : "",
-            vehicleModel ? `Model          : ${vehicleModel}` : "",
-            vehicleYear  ? `Year           : ${vehicleYear}`  : "",
-            vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
-            vehicleColor ? `Color          : ${vehicleColor}` : "",
-            `Pickup Date    : ${pickup || ""}`,
-            `Pickup Time    : ${formatTime12h(pickupTime) || "Not specified"}`,
-            `Return Date    : ${returnDate || ""}`,
-            `Return Time    : ${formatTime12h(returnTime) || "Not specified"}`,
-            isBalancePayment
-              ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
-              : `Total Charged  : $${total || "TBD"}`,
-            !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
-            !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
-            breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
-            "",
-            "Manage your booking at: https://www.slytrans.com/manage-booking.html",
-            "Use your phone number, email, or Booking ID to access it.",
-            "",
-            "We will be in touch shortly to confirm your rental pick-up details.",
-            `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
-            "",
-            "Sly Transportation Services LLC Team",
-          ].filter(line => line !== undefined).join("\n"),
-          html: `
-            <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Transportation Services LLC" : "✅ Payment Confirmed – Sly Transportation Services LLC"}</h2>
-            <p>${esc(customerIntro)} Here are your booking details:</p>
-            <table style="border-collapse:collapse;width:100%">
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-              ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
-              ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
-              ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
-              ${vehicleYear  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Year</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(vehicleYear))}</td></tr>`  : ""}
-              ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
-              ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(pickupTime)) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(returnTime)) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
-              ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
-              ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-            </table>
-            ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-            <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
-            <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-            <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
-          `,
-        };
         await transporter.sendMail(customerEmailOpts);
       } catch (custErr) {
         console.error("Customer confirmation email failed:", custErr);
         if (customerAttachments.length > 0 && isLikelyAttachmentDeliveryError(custErr)) {
           try {
             await transporter.sendMail({
-              from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-              to: email,
-              subject: customerSubject,
+              ...customerEmailOpts,
               attachments: [],
               text: [
-                isBalancePayment ? "Balance Paid – Sly Transportation Services LLC" : "Payment Confirmed – Sly Transportation Services LLC",
+                customerEmailOpts.text,
                 "",
-                customerIntro,
                 "⚠️ Your agreement PDF could not be attached due to an attachment delivery error.",
                 "Your booking is still confirmed.",
-                "",
-                "Here are your booking details:",
-                "",
-                `Payment Status : CONFIRMED`,
-                bookingId ? `Booking ID     : ${bookingId}` : "",
-                `Vehicle        : ${car || ""}`,
-                vehicleMake  ? `Make           : ${vehicleMake}`  : "",
-                vehicleModel ? `Model          : ${vehicleModel}` : "",
-                vehicleYear  ? `Year           : ${vehicleYear}`  : "",
-                vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
-                vehicleColor ? `Color          : ${vehicleColor}` : "",
-                `Pickup Date    : ${pickup || ""}`,
-                `Pickup Time    : ${formatTime12h(pickupTime) || "Not specified"}`,
-                `Return Date    : ${returnDate || ""}`,
-                `Return Time    : ${formatTime12h(returnTime) || "Not specified"}`,
-                isBalancePayment
-                  ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
-                  : `Total Charged  : $${total || "TBD"}`,
-                !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
-                !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
-                breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
-                "",
-                "Manage your booking at: https://www.slytrans.com/manage-booking.html",
-                "Use your phone number, email, or Booking ID to access it.",
-                "",
-                "We will be in touch shortly to confirm your rental pick-up details.",
-                `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
-                "",
-                "Sly Transportation Services LLC Team",
-              ].filter(line => line !== undefined).join("\n"),
+              ].join("\n"),
               html: `
-                <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Transportation Services LLC" : "✅ Payment Confirmed – Sly Transportation Services LLC"}</h2>
-                <p>${esc(customerIntro)} Here are your booking details:</p>
+                ${customerEmailOpts.html}
                 <p>⚠️ Your agreement PDF could not be attached due to an attachment delivery error. Your booking is still confirmed.</p>
-                <table style="border-collapse:collapse;width:100%">
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-                  ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
-                  ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
-                  ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
-                  ${vehicleYear  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Year</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(vehicleYear))}</td></tr>`  : ""}
-                  ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
-                  ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(pickupTime)) || "Not specified"}</td></tr>
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(formatTime12h(returnTime)) || "Not specified"}</td></tr>
-                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
-                  ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
-                  ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-                </table>
-                ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-                <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
-                <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-                <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
               `,
             });
             console.warn("Customer confirmation email sent without agreement attachment after attachment delivery failure.");
