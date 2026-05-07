@@ -4783,7 +4783,7 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
+  return apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
@@ -4928,8 +4928,13 @@ function applyBookingFilters() {
   }).join('');
 }
 
-function viewBooking(bookingId, vehicleId) {
-  const b = findBookingByAnyId(bookingId);
+async function viewBooking(bookingId, vehicleId) {
+  let b = findBookingByAnyId(bookingId);
+  if (!b) {
+    // Cache miss — silently reload booking data once before giving up.
+    try { await loadBookings(); } catch (err) { console.error('[viewBooking] Failed to reload bookings:', err); }
+    b = findBookingByAnyId(bookingId);
+  }
   if (!b) { showToast('Booking not found.', 'error'); return; }
 
   const now = new Date();
@@ -5095,27 +5100,37 @@ function viewBooking(bookingId, vehicleId) {
   openModal('booking-detail-modal');
 }
 
-function openEditBookingModal(bookingId) {
-  const b = findBookingByAnyId(bookingId);
+async function openEditBookingModal(bookingId) {
+  let b = findBookingByAnyId(bookingId);
+  if (!b) {
+    // Cache miss — silently reload booking data once before giving up.
+    try { await loadBookings(); } catch (err) { console.error('[openEditBookingModal] Failed to reload bookings:', err); }
+    b = findBookingByAnyId(bookingId);
+  }
   if (!b) { showToast('Booking not found.', 'error'); return; }
-  // Store the bookingId being edited
-  document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
-  document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
-  // Pre-fill fields
-  document.getElementById('be-name').value           = b.name          || '';
-  document.getElementById('be-phone').value          = b.phone         || '';
-  document.getElementById('be-email').value          = b.email         || '';
-  document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
-  document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
-  document.getElementById('be-return-date').value    = b.returnDate    || '';
-  document.getElementById('be-return-time').value    = b.returnTime    || '';
-  document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
-  document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
-  document.getElementById('be-booking-status').value   = b.status         || '';
-  document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
-  document.getElementById('be-notes').value            = b.notes          || '';
-  closeModal('booking-detail-modal');
-  openModal('booking-edit-modal');
+  try {
+    // Store the bookingId being edited
+    document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
+    document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
+    // Pre-fill fields
+    document.getElementById('be-name').value           = b.name          || '';
+    document.getElementById('be-phone').value          = b.phone         || '';
+    document.getElementById('be-email').value          = b.email         || '';
+    document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
+    document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
+    document.getElementById('be-return-date').value    = b.returnDate    || '';
+    document.getElementById('be-return-time').value    = b.returnTime    || '';
+    document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
+    document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
+    document.getElementById('be-booking-status').value   = b.status         || '';
+    document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
+    document.getElementById('be-notes').value            = b.notes          || '';
+    closeModal('booking-detail-modal');
+    openModal('booking-edit-modal');
+  } catch (err) {
+    console.error('[openEditBookingModal] error:', err);
+    showToast('Error opening edit form.', 'error');
+  }
 }
 
 async function saveEditBooking(btn) {
