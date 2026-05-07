@@ -1512,12 +1512,12 @@ export default async function handler(req, res) {
 
       // Retrieve stored docs for attachments (if available).
       let storedDocs = null;
-      const sbDocs = getSupabaseAdmin();
+      const sb = getSupabaseAdmin();
       try {
-        if (sbDocs) {
+        if (sb) {
           const documentLookupKeys = [...new Set([bookingId, paymentIntentId].map((v) => String(v || "").trim()).filter(Boolean))];
           for (const documentKey of documentLookupKeys) {
-            const { data: docsRow } = await sbDocs
+            const { data: docsRow } = await sb
               .from("pending_booking_docs")
               .select("*")
               .eq("booking_id", documentKey)
