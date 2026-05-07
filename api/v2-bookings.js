@@ -94,6 +94,10 @@ const DB_TO_APP_STATUS = {
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 
+// App-level status values that indicate a rental is in progress (vehicle picked up).
+// Used by the cancellation guard to require explicit confirmation before overriding.
+const ACTIVE_RENTAL_STATUSES = new Set(["active_rental", "overdue", "extended"]);
+
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
   const headers = {
@@ -574,8 +578,8 @@ export default async function handler(req, res) {
           );
           currentStatusForCancel = currentBookingForCancel?.status || null;
         }
-        const ACTIVE_STATUSES = ["active_rental", "overdue", "extended"];
-        if (ACTIVE_STATUSES.includes(currentStatusForCancel) && !forceCancel) {
+        const ACTIVE_STATUSES = ACTIVE_RENTAL_STATUSES;
+        if (ACTIVE_STATUSES.has(currentStatusForCancel) && !forceCancel) {
           return res.status(409).json({
             error: "Cannot cancel an active rental: the vehicle has already been picked up. Confirm the cancellation explicitly to proceed.",
           });
