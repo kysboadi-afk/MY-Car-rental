@@ -127,6 +127,13 @@ function selectOwnerEmailAttachments(candidates, maxBytes) {
   return { attachments, omitted, totalBytes };
 }
 
+function isLikelyAttachmentDeliveryError(err) {
+  const responseCode = Number(err?.responseCode);
+  if (responseCode === 552 || responseCode === 554) return true;
+  const message = String(err?.message || err || "").toLowerCase();
+  return /attachment|message too large|size limit|content too large|exceed|mime/.test(message);
+}
+
 /**
  * Determines the booking status for a Stripe payment based on payment_type.
  * Deposit-only payment types leave the booking in "reserved_unpaid" since
@@ -1051,6 +1058,30 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
     console.error("stripe-webhook: owner email failed:", emailErr);
+    if (attachments.length > 0 && isLikelyAttachmentDeliveryError(emailErr)) {
+      try {
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          ...(email ? { replyTo: email } : {}),
+          subject: ownerEmail.subject,
+          text: [
+            ownerEmail.text,
+            "",
+            "⚠️ Documents could not be attached to this email due to an attachment delivery error.",
+            "Booking documents remain stored server-side and can be resent from admin.",
+          ].join("\n"),
+          html: `
+            ${ownerEmail.html}
+            <p>⚠️ Documents could not be attached to this email due to an attachment delivery error. Booking documents remain stored server-side and can be resent from admin.</p>
+          `,
+        });
+        ownerEmailSent = true;
+        console.warn(`stripe-webhook: owner email sent without attachments for PI ${paymentIntent.id} after attachment delivery failure`);
+      } catch (retryErr) {
+        console.error("stripe-webhook: owner email retry without attachments failed:", retryErr);
+      }
+    }
   }
 
   // ── Mark docs as sent so the browser-side email skips the owner copy ──────
@@ -1560,7 +1591,7 @@ async function sendBalancePaidCustomerEmail({
     totalPrice,
     amountPaid,
   });
-  await transporter.sendMail({
+  const customerMailOpts = {
     from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
     to: renterEmail,
     subject: "✅ Payment Received — Your Rental is Fully Booked!",
@@ -1594,7 +1625,36 @@ async function sendBalancePaidCustomerEmail({
       "",
       "Questions? Call (844) 511-4059.",
     ].filter(Boolean).join("\n"),
-  });
+  };
+  try {
+    await transporter.sendMail(customerMailOpts);
+  } catch (customerErr) {
+    console.error("stripe-webhook: balance_paid customer email failed:", customerErr.message);
+    if (agreementAttachment.length > 0 && isLikelyAttachmentDeliveryError(customerErr)) {
+      try {
+        await transporter.sendMail({
+          ...customerMailOpts,
+          attachments: [],
+          html: `
+            ${customerMailOpts.html}
+            <p>⚠️ Your updated rental agreement could not be attached due to an attachment delivery error. Your balance payment is still confirmed.</p>
+          `,
+          text: [
+            customerMailOpts.text,
+            "",
+            "⚠️ Your updated rental agreement could not be attached due to an attachment delivery error.",
+            "Your balance payment is still confirmed.",
+          ].join("\n"),
+        });
+        console.warn("stripe-webhook: balance_paid customer email sent without agreement attachment after attachment delivery failure");
+      } catch (retryErr) {
+        console.error("stripe-webhook: balance_paid customer retry without attachment failed:", retryErr.message);
+        throw retryErr;
+      }
+    } else {
+      throw customerErr;
+    }
+  }
 }
 
 async function sendBalancePaidOwnerEmail({
@@ -3127,11 +3187,12 @@ export default async function handler(req, res) {
           // Renter confirmation email.
           if (sl_renter_email) {
             const slFirstName = (sl_renter_name || "").split(" ")[0] || "there";
-            await slTransporter.sendMail({
+            const slRenterAttachments = slPdfBuffer ? slAttachments.filter((a) => a.filename === slPdfFilename) : [];
+            const slRenterMailOpts = {
               from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
               to:          sl_renter_email,
               subject:     `✅ Your Slingshot Booking is Confirmed — ${esc(sl_vehicle_name || "Polaris Slingshot")}`,
-              attachments: slPdfBuffer ? slAttachments.filter((a) => a.filename === slPdfFilename) : [],
+              attachments: slRenterAttachments,
               html: `
                 <h2>✅ Slingshot Booking Confirmed</h2>
                 <p>Hi ${esc(slFirstName)}, your booking is confirmed and your payment has been received!</p>
@@ -3165,9 +3226,33 @@ export default async function handler(req, res) {
                 "",
                 "Questions? Call (844) 511-4059.",
               ].join("\n"),
-            }).catch((err) => {
+            };
+            try {
+              await slTransporter.sendMail(slRenterMailOpts);
+            } catch (err) {
               console.error("stripe-webhook: [SLINGSHOT] renter email failed:", err.message);
-            });
+              if (slRenterAttachments.length > 0 && isLikelyAttachmentDeliveryError(err)) {
+                try {
+                  await slTransporter.sendMail({
+                    ...slRenterMailOpts,
+                    attachments: [],
+                    html: `
+                      ${slRenterMailOpts.html}
+                      <p>⚠️ Your signed rental agreement could not be attached due to an attachment delivery error. Your booking is still confirmed.</p>
+                    `,
+                    text: [
+                      slRenterMailOpts.text,
+                      "",
+                      "⚠️ Your signed rental agreement could not be attached due to an attachment delivery error.",
+                      "Your booking is still confirmed.",
+                    ].join("\n"),
+                  });
+                  console.warn("stripe-webhook: [SLINGSHOT] renter email sent without agreement attachment after attachment delivery failure");
+                } catch (retryErr) {
+                  console.error("stripe-webhook: [SLINGSHOT] renter email retry without attachment failed:", retryErr.message);
+                }
+              }
+            }
 
           }
           // Mark email_sent for owner-notification dedupe only after owner email
