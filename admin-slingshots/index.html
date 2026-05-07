@@ -4460,7 +4460,7 @@ function loadLateFees() {
   document.getElementById('lf-table-wrap').style.display = 'none';
   document.getElementById('lf-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
@@ -4758,7 +4758,7 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
@@ -5356,7 +5356,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'slingshot' })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];

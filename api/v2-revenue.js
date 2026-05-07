@@ -18,11 +18,11 @@
 //     unavailable or the table does not yet exist, so saves never fail silently.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.js";
 import { getAllVehicleIds } from "./_pricing.js";
+import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -32,6 +32,11 @@ const RECORDS_FILE    = "revenue-records.json";
 /** Returns the Supabase client or null if not configured. */
 function getSupabase() {
   return getSupabaseAdmin();
+}
+
+function scopeToCategory(scope) {
+  if (scope === "cars") return "car";
+  return normalizeFleetCategory(scope);
 }
 
 // ── GitHub fallback helpers ───────────────────────────────────────────────────
@@ -104,27 +109,7 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
-      // When a scope filter is requested, resolve the matching vehicle IDs first.
-      // scope='car' → car-type vehicles only; scope='slingshot' → slingshot only.
-      let scopedVehicleIds = null;
-      if (body.scope) {
-        try {
-          const REVENUE_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-          const sc = (body.scope || "").toLowerCase();
-          const { data: vData } = await loadVehicles();
-          scopedVehicleIds = Object.values(vData || {})
-            .filter((v) => {
-              const t = (v.type || "").toLowerCase();
-              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
-              return true;
-            })
-            .map((v) => v.vehicle_id)
-            .filter(Boolean);
-        } catch (scopeErr) {
-          console.warn("v2-revenue: scope vehicle lookup failed (non-fatal):", scopeErr.message);
-        }
-      }
+      const scopeCategory = scopeToCategory((body.scope || "").toLowerCase());
 
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
@@ -135,7 +120,7 @@ export default async function handler(req, res) {
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
-          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          if (scopeCategory)   q = q.eq("category", scopeCategory);
           const { data, error } = await q;
           if (!error) {
             // If Supabase has records, return them directly.
@@ -155,7 +140,7 @@ export default async function handler(req, res) {
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
-      if (scopedVehicleIds) records = records.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
+      if (scopeCategory) records = records.filter((r) => normalizeFleetCategory(r.category) === scopeCategory);
       records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
       if (body.limit) records = records.slice(0, Number(body.limit));
       if (records.length > 0) return res.status(200).json({ records });
@@ -213,6 +198,7 @@ export default async function handler(req, res) {
         override_by_admin:  Boolean(body.override_by_admin),
         created_at:         new Date().toISOString(),
         updated_at:         new Date().toISOString(),
+        category:           normalizeFleetCategory(body.category) || await resolveBookingCategory({ vehicleId: vehicle_id }),
       };
 
       if (sb) {
@@ -247,7 +233,7 @@ export default async function handler(req, res) {
         "gross_amount","deposit_amount","refund_amount","payment_method","payment_status",
         "protection_plan_id","notes","is_no_show","is_cancelled","override_by_admin",
         "customer_name","customer_phone","customer_email","pickup_date","return_date",
-        "stripe_fee","stripe_net","stripe_charge_id","payment_intent_id",
+        "stripe_fee","stripe_net","stripe_charge_id","payment_intent_id","category",
       ];
       const updates = {};
       for (const f of allowed) {
@@ -261,6 +247,9 @@ export default async function handler(req, res) {
         } else {
           updates.vehicle_id = normalizeVehicleId(updates.vehicle_id);
         }
+      }
+      if ("category" in updates) {
+        updates.category = normalizeFleetCategory(updates.category);
       }
 
       if (sb) {
@@ -426,7 +415,7 @@ export default async function handler(req, res) {
         booking_id:          original_booking_id,
         booking_ref:         original_booking_id,
         original_booking_id: original_booking_id,
-        vehicle_id,
+        vehicle_id:          normalizeVehicleId(vehicle_id),
         gross_amount:        resolvedAmount,
         deposit_amount:      0,
         refund_amount:       0,
@@ -439,6 +428,7 @@ export default async function handler(req, res) {
         override_by_admin:   true,
         created_at:          new Date().toISOString(),
         updated_at:          new Date().toISOString(),
+        category:            normalizeFleetCategory(body.category) || await resolveBookingCategory({ vehicleId: vehicle_id }),
       };
 
       if (sb) {
@@ -473,37 +463,16 @@ export default async function handler(req, res) {
     // When scope='slingshot' or scope='car' is provided, revenue is filtered to
     // only the matching fleet type by querying revenue_records directly.
     if (action === "kpi") {
-      // Resolve scope → vehicle IDs when a scope filter is requested.
-      let kpiScopedVehicleIds = null;
-      if (body.scope) {
-        try {
-          const REVENUE_CAR_TYPES_KPI = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-          const sc = (body.scope || "").toLowerCase();
-          const { data: vData } = await loadVehicles();
-          kpiScopedVehicleIds = Object.values(vData || {})
-            .filter((v) => {
-              const t = (v.type || "").toLowerCase();
-              // Vehicles with no type recorded default to the car fleet.
-              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_KPI.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
-              return true;
-            })
-            .map((v) => v.vehicle_id)
-            .filter(Boolean);
-        } catch (scopeErr) {
-          console.warn("v2-revenue kpi: scope vehicle lookup failed (non-fatal):", scopeErr.message);
-        }
-      }
+      const scopeCategory = scopeToCategory((body.scope || "").toLowerCase());
 
       if (sb) {
         try {
-          if (kpiScopedVehicleIds && kpiScopedVehicleIds.length > 0) {
-            // Scoped KPI: query revenue_records directly with vehicle filter.
+          if (scopeCategory) {
             const { data, error } = await sb
               .from("revenue_records")
               .select("gross_amount")
               .eq("is_cancelled", false)
-              .in("vehicle_id", kpiScopedVehicleIds);
+              .eq("category", scopeCategory);
             if (!error) {
               const total = (data || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0);
               return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
@@ -524,10 +493,9 @@ export default async function handler(req, res) {
       }
       // GitHub fallback: compute from revenue-records.json
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      const kpiScopedSet = kpiScopedVehicleIds ? new Set(kpiScopedVehicleIds) : null;
       const total = ghRecords
         .filter((r) => !r.is_cancelled)
-        .filter((r) => !kpiScopedSet || kpiScopedSet.has(r.vehicle_id))
+        .filter((r) => !scopeCategory || normalizeFleetCategory(r.category) === scopeCategory)
         .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
       return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
     }
@@ -541,26 +509,7 @@ export default async function handler(req, res) {
     // does the grouping in SQL).  Falls back to loading all rows and grouping
     // in JavaScript when the view is unavailable (schema migration not yet run).
     if (action === "list_by_booking") {
-      // Resolve scope → vehicle IDs (same logic as the list action).
-      let scopedVehicleIds = null;
-      if (body.scope) {
-        try {
-          const REVENUE_CAR_TYPES_LB = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
-          const sc = (body.scope || "").toLowerCase();
-          const { data: vData } = await loadVehicles();
-          scopedVehicleIds = Object.values(vData || {})
-            .filter((v) => {
-              const t = (v.type || "").toLowerCase();
-              if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_LB.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
-              return true;
-            })
-            .map((v) => v.vehicle_id)
-            .filter(Boolean);
-        } catch (scopeErr) {
-          console.warn("v2-revenue list_by_booking: scope vehicle lookup failed (non-fatal):", scopeErr.message);
-        }
-      }
+      const scopeCategory = scopeToCategory((body.scope || "").toLowerCase());
 
       // ── Try booking_revenue_grouped view ────────────────────────────────
       if (sb) {
@@ -570,7 +519,7 @@ export default async function handler(req, res) {
             .select("*")
             .order("min_pickup_date", { ascending: false });
           if (body.vehicleId) q = q.in("vehicle_id", vehicleIdFamily(body.vehicleId));
-          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          if (scopeCategory) q = q.eq("category", scopeCategory);
           const { data, error } = await q;
           if (!error) {
             let groups = (data || []).map((g) => ({
@@ -611,7 +560,7 @@ export default async function handler(req, res) {
           if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
           if (body.endDate)    q = q.lte("return_date",  body.endDate);
-          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          if (scopeCategory)   q = q.eq("category", scopeCategory);
           const { data, error } = await q;
           if (!error) allRows = data || [];
         } catch (qErr) {
@@ -622,7 +571,7 @@ export default async function handler(req, res) {
       if (!allRows) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
         allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
-        if (scopedVehicleIds) allRows = allRows.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
+        if (scopeCategory) allRows = allRows.filter((r) => normalizeFleetCategory(r.category) === scopeCategory);
         if (body.vehicleId) allRows = allRows.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       }
 

@@ -28,6 +28,7 @@ import {
   parseTime12h,
 } from "./_booking-automation.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
+import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 
 // Booking statuses that represent a confirmed, paid booking.
 // Only paid/active bookings should create blocked_dates entries —
@@ -201,6 +202,24 @@ async function upsertBookingAndRevenueAtomic(traceId, booking) {
     });
     throw new Error("upsert_booking_revenue_atomic returned incomplete revenue data");
   }
+  const resolvedCategory = normalizeFleetCategory(booking.category);
+  if (resolvedCategory) {
+    const { error: bookingCatErr } = await sb
+      .from("bookings")
+      .update({ category: resolvedCategory, updated_at: new Date().toISOString() })
+      .eq("booking_ref", booking.bookingId);
+    if (bookingCatErr) {
+      throw new Error(`booking category update failed: ${formatError(bookingCatErr)}`);
+    }
+    const { error: revenueCatErr } = await sb
+      .from("revenue_records")
+      .update({ category: resolvedCategory, updated_at: new Date().toISOString() })
+      .eq("booking_id", booking.bookingId)
+      .eq("type", "rental");
+    if (revenueCatErr) {
+      throw new Error(`revenue category update failed: ${formatError(revenueCatErr)}`);
+    }
+  }
   pipelineLog("info", traceId, "db_atomic_success", {
     step: "upsert_booking_revenue_atomic",
     bookingRef: booking.bookingId,
@@ -320,6 +339,7 @@ export async function persistBooking(opts) {
     smsSentAt:       {},
     createdAt:       new Date().toISOString(),
     source:          opts.source          || "public_booking",
+    category:        normalizeFleetCategory(opts.category),
   };
 
   // Pass through any extra caller-provided fields not covered above
@@ -330,7 +350,7 @@ export async function persistBooking(opts) {
     "vehicleId","vehicleName","name","phone","email","pickupDate","pickupTime",
     "returnDate","returnTime","amountPaid","totalPrice","paymentMethod",
     "paymentIntentId","paymentLink","status","notes","source","location","bookingId",
-    "requireStripeFee","strictPersistence",
+    "requireStripeFee","strictPersistence","category",
   ]);
   for (const [key, val] of Object.entries(opts)) {
     if (!STANDARD_OPTS.has(key) && val !== undefined) {
@@ -345,6 +365,13 @@ export async function persistBooking(opts) {
     if (booking.stripeFee == null || !Number.isFinite(Number(booking.stripeFee))) {
       throw new Error(`missing stripeFee for booking ${bookingId} paymentIntentId=${booking.paymentIntentId}`);
     }
+  }
+
+  if (!booking.category) {
+    booking.category = await resolveBookingCategory({
+      category: opts.category,
+      vehicleId: booking.vehicleId,
+    });
   }
 
   // ── 3. Supabase persistence (BEFORE emails) ───────────────────────────────

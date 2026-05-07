@@ -5390,7 +5390,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'car' })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];

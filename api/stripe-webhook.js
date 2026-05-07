@@ -648,6 +648,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       remaining_balance:         Math.max(0, totalPrice - depositPaidAmount),
       payment_status:            isDepositPayment ? "partial" : "paid",
       payment_method:            "stripe",
+      category:                  (paymentIntent.metadata?.booking_type === "slingshot") ? "slingshot" : "car",
       payment_intent_id:         paymentIntent.id,
       stripe_customer_id:        persistPayload.stripeCustomerId        || null,
       stripe_payment_method_id:  persistPayload.stripePaymentMethodId   || null,

@@ -227,6 +227,7 @@ export default async function handler(req, res) {
       remaining_balance: totalAmount,
       payment_status:    "unpaid",
       payment_method:    "stripe",
+      category:          "slingshot",
       customer_name:     trimmedName  || null,
       customer_email:    email        || null,
       customer_phone:    trimmedPhone || null,

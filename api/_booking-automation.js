@@ -24,6 +24,7 @@ import { normalizeVehicleId } from "./_vehicle-id.js";
 import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { buildDateTimeLA } from "./_time.js";
+import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 
 // Hours the car is unavailable after a return before a new pickup can start.
 // Must match BOOKING_BUFFER_HOURS in _availability.js.
@@ -159,7 +160,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     // written at insert time carries correct linking fields.
     const { data: bookingRow, error: bookingLookupErr } = await sb
       .from("bookings")
-      .select("id, vehicle_id, pickup_date, return_date")
+      .select("id, vehicle_id, pickup_date, return_date, category")
       .eq("booking_ref", bookingRef)
       .maybeSingle();
     if (bookingLookupErr) {
@@ -176,6 +177,9 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     // value retrieved from the DB (e.g. a booking row still holding "camry2012"
     // before a data migration runs) is always written as the canonical "camry".
     const resolvedVehicleId = normalizeVehicleId(booking.vehicleId || bookingRow.vehicle_id);
+    const resolvedCategory = normalizeFleetCategory(booking.category)
+      || normalizeFleetCategory(bookingRow.category)
+      || await resolveBookingCategory({ vehicleId: resolvedVehicleId });
     const resolvedPickupDate = booking.pickupDate ||
       (bookingRow.pickup_date ? String(bookingRow.pickup_date).split("T")[0] : null);
 
@@ -229,7 +233,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (recordType === "rental") {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
-        .select("id, payment_intent_id, stripe_fee, stripe_net")
+        .select("id, payment_intent_id, stripe_fee, stripe_net, category")
         .eq("booking_id", bookingRef)
         .maybeSingle();
       if (existingByBookingErr) {
@@ -241,7 +245,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (!existingRecord && piId) {
       const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
-        .select("id, stripe_fee, stripe_net, return_date")
+        .select("id, stripe_fee, stripe_net, return_date, category")
         .eq("payment_intent_id", piId)
         .maybeSingle();
       if (existingByPIErr) {
@@ -299,6 +303,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       // otherwise leave null so stripe-reconcile.js can fill them in later.
       stripe_fee: stripeFee,
       stripe_net: isCash ? gross : (booking.stripeNet != null ? Number(booking.stripeNet) : null),
+      category:          resolvedCategory,
     };
 
     if (existingRecord?.id) {
@@ -355,6 +360,9 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       }
       if (record.payment_intent_id && !existingRecord.payment_intent_id) {
         updatePayload.payment_intent_id = record.payment_intent_id;
+      }
+      if (record.category && !existingRecord.category) {
+        updatePayload.category = record.category;
       }
       if (Object.keys(updatePayload).length > 1) {
         const { error } = await sb
@@ -431,6 +439,7 @@ export async function createOrphanRevenueRecord({
   notes,
   stripeFee = null,
   stripeNet = null,
+  category = null,
 }) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
@@ -453,6 +462,8 @@ export async function createOrphanRevenueRecord({
     }
 
     const gross = Number(amountPaid || 0);
+    const resolvedCategory = normalizeFleetCategory(category)
+      || await resolveBookingCategory({ vehicleId });
     const { error: insertErr } = await sb.from("revenue_records").insert({
       booking_id:       null,
       booking_ref:      null,  // orphan — no resolved booking; trigger is_orphan=true escape hatch applies
@@ -476,6 +487,7 @@ export async function createOrphanRevenueRecord({
       stripe_fee:       stripeFee,
       stripe_net:       stripeNet,
       is_orphan:        true,
+      category:         resolvedCategory,
     });
     if (insertErr) throw new Error(`revenue_records orphan insert failed: ${formatSupabaseError(insertErr)}`);
     console.log(`_booking-automation createOrphanRevenueRecord: created orphan revenue record for PI ${paymentIntentId} type=${type} amount=${gross}`);
@@ -709,6 +721,9 @@ export async function autoUpsertBooking(booking, opts = {}) {
       paymentStatus = "partial";
     }
 
+    const resolvedCategory = normalizeFleetCategory(booking.category)
+      || await resolveBookingCategory({ vehicleId: booking.vehicleId });
+
     const record = {
       customer_id:               customerId,
       vehicle_id:                normalizeVehicleId(booking.vehicleId) || null,
@@ -740,6 +755,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
       // idempotent re-syncs preserve the original timestamp.
       activated_at:              safeIso(booking.activatedAt),
       completed_at:              safeIso(booking.completedAt),
+      category:                  resolvedCategory,
     };
 
     // Check whether the booking already exists in Supabase (primary: booking_ref)
