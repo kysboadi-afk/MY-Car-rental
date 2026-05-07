@@ -4467,6 +4467,8 @@ function loadLateFees() {
       //  (b) lateFeeAmount is set (fee was assessed but status not yet written)
       const raw = (data.bookings || []).map((b) => ({
         ...b,
+        bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
+        vehicleId: b?.vehicleId || b?.vehicle_id || '',
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
       allLateFeesData = raw.filter((b) => b.lateFeeStatus || b.lateFeeAmount != null);
