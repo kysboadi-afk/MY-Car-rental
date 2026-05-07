@@ -759,11 +759,46 @@ export default async function handler(req, res) {
       } else if (!sbOnlyRow && !hasGitHubToken) {
         if (sbUpdateSuccess) {
           console.warn("v2-bookings: skipping bookings.json write because GITHUB_TOKEN is not configured");
-          const preCheckBooking = (checkData[vehicleId] || []).find(
-            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
-          );
-          if (preCheckBooking) {
-            updatedBooking = { ...preCheckBooking, ...safeUpdates };
+          if (sbInstance) {
+            try {
+              const { data: freshRow } = await sbInstance
+                .from("bookings")
+                .select("booking_ref, vehicle_id, pickup_date, pickup_time, return_date, return_time, total_price, deposit_paid, remaining_balance, payment_status, payment_method, payment_intent_id, notes, customer_name, customer_phone, customer_email, status")
+                .eq("booking_ref", bookingId)
+                .maybeSingle();
+              if (freshRow) {
+                updatedBooking = {
+                  bookingId:       freshRow.booking_ref || bookingId,
+                  vehicleId:       uiVehicleId(freshRow.vehicle_id || vehicleId),
+                  pickupDate:      freshRow.pickup_date || "",
+                  pickupTime:      freshRow.pickup_time || "",
+                  returnDate:      freshRow.return_date || "",
+                  returnTime:      freshRow.return_time || "",
+                  totalPrice:      Number(freshRow.total_price || 0),
+                  amountPaid:      Number(freshRow.deposit_paid || 0),
+                  remaining:       Number(freshRow.remaining_balance || 0),
+                  paymentStatus:   freshRow.payment_status || "",
+                  paymentMethod:   freshRow.payment_method || "",
+                  paymentIntentId: freshRow.payment_intent_id || "",
+                  notes:           freshRow.notes || "",
+                  name:            freshRow.customer_name || "",
+                  phone:           freshRow.customer_phone || "",
+                  email:           freshRow.customer_email || "",
+                  status:          DB_TO_APP_STATUS[freshRow.status] || freshRow.status || "",
+                  ...safeUpdates,
+                };
+              }
+            } catch (_refreshErr) {
+              // non-fatal fallback to local pre-check data below
+            }
+          }
+          if (!updatedBooking) {
+            const preCheckBooking = (checkData[vehicleId] || []).find(
+              (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+            );
+            if (preCheckBooking) {
+              updatedBooking = { ...preCheckBooking, ...safeUpdates };
+            }
           }
         } else {
           return res.status(500).json({ error: "Failed to update booking: GitHub write unavailable and database update failed" });
