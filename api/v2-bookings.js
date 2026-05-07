@@ -462,8 +462,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "vehicleId, bookingId, and updates are required" });
       }
 
-      if (!process.env.GITHUB_TOKEN) {
-        return res.status(500).json({ error: "GITHUB_TOKEN not configured" });
+      const hasGitHubToken = !!process.env.GITHUB_TOKEN;
+      const sbForWrites = getSupabaseAdmin();
+      if (!hasGitHubToken && !sbForWrites) {
+        return res.status(500).json({ error: "Booking update is unavailable: GITHUB_TOKEN not configured and Supabase is unavailable" });
       }
 
       // Validate booking exists before the retry loop
@@ -719,7 +721,7 @@ export default async function handler(req, res) {
       // Only attempt the bookings.json write when the booking exists there.
       // Supabase-only bookings (sbOnlyRow set) skip the GitHub write entirely
       // to avoid writing an unchanged file and creating a spurious commit.
-      if (!sbOnlyRow) {
+      if (!sbOnlyRow && hasGitHubToken) {
         try {
           await updateJsonFileWithRetry({
             load:    loadBookings,
@@ -753,6 +755,18 @@ export default async function handler(req, res) {
             // No Supabase fallback available — propagate the error to the client.
             throw githubErr;
           }
+        }
+      } else if (!sbOnlyRow && !hasGitHubToken) {
+        if (sbUpdateSuccess) {
+          console.warn("v2-bookings: skipping bookings.json write because GITHUB_TOKEN is not configured");
+          const preCheckBooking = (checkData[vehicleId] || []).find(
+            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+          );
+          if (preCheckBooking) {
+            updatedBooking = { ...preCheckBooking, ...safeUpdates };
+          }
+        } else {
+          return res.status(500).json({ error: "Failed to update booking: GitHub write unavailable and database update failed" });
         }
       }
 
