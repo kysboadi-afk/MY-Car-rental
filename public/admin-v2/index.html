@@ -4555,7 +4555,7 @@ function loadLateFees() {
       //  (b) lateFeeAmount is set (fee was assessed but status not yet written)
       const raw = (data.bookings || []).map((b) => ({
         ...b,
-        bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
+        bookingId: b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id != null ? String(b.id) : ''),
         vehicleId: b?.vehicleId || b?.vehicle_id || '',
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
@@ -4852,6 +4852,7 @@ function bookingCanonicalId(booking) {
   return bookingIdKey(
     booking?.bookingId
     || booking?.booking_ref
+    || booking?.booking_id
     || (booking?.id != null ? String(booking.id) : '')
   );
 }
@@ -4878,7 +4879,7 @@ function loadBookings() {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
         ...b,
-        bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
+        bookingId: b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id != null ? String(b.id) : ''),
         vehicleId: b?.vehicleId || b?.vehicle_id || '',
         paymentIntentId: b?.paymentIntentId || b?.payment_intent_id || '',
         status: b && b.status === 'active' ? 'active_rental' : b.status,
