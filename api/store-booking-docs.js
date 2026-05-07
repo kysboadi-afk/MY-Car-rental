@@ -30,6 +30,16 @@ export const config = {
 };
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total across docs
+
+function estimateBase64Bytes(base64Value) {
+  if (!base64Value || typeof base64Value !== "string") return 0;
+  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==") ? 2 : (normalized.endsWith("=") ? 1 : 0);
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -52,6 +62,30 @@ export default async function handler(req, res) {
 
   if (!bookingId || typeof bookingId !== "string" || !bookingId.trim()) {
     return res.status(400).json({ error: "bookingId is required." });
+  }
+
+  const docs = [
+    { key: "idFront", base64: idBase64, fileName: idFileName },
+    { key: "idBack", base64: idBackBase64, fileName: idBackFileName },
+    { key: "insurance", base64: insuranceBase64, fileName: insuranceFileName },
+  ];
+  let totalBytes = 0;
+  for (const doc of docs) {
+    const bytes = estimateBase64Bytes(doc.base64);
+    if (bytes > MAX_DOC_FILE_BYTES) {
+      return res.status(413).json({
+        error: `${doc.key} exceeds the ${Math.round(MAX_DOC_FILE_BYTES / (1024 * 1024))}MB per-file limit.`,
+        code: "DOC_FILE_TOO_LARGE",
+        field: doc.key,
+      });
+    }
+    totalBytes += bytes;
+  }
+  if (totalBytes > MAX_TOTAL_DOC_FILE_BYTES) {
+    return res.status(413).json({
+      error: `Combined document size exceeds the ${Math.round(MAX_TOTAL_DOC_FILE_BYTES / (1024 * 1024))}MB limit.`,
+      code: "DOC_TOTAL_TOO_LARGE",
+    });
   }
 
   const sb = getSupabaseAdmin();

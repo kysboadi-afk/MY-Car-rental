@@ -29,6 +29,8 @@ const pageParams = new URLSearchParams(window.location.search);
 const ADMIN_OVERRIDE = /^(true|1)$/i.test(pageParams.get("admin_override") || "");
 const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
 const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
+const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per document
+const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total for front/back/insurance
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -62,6 +64,22 @@ function showPayError(msg) {
 function clearPayError() {
   const el = document.getElementById("payError");
   if (el) { el.textContent = ""; el.style.display = "none"; }
+}
+
+function _formatDocSizeMB(bytes) {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+function validateDocUploadSelection(file, otherSelectedBytes) {
+  if (!file) return null;
+  if (file.size > MAX_DOC_FILE_BYTES) {
+    return `File "${file.name}" is too large (${_formatDocSizeMB(file.size)} MB). Maximum per file is ${_formatDocSizeMB(MAX_DOC_FILE_BYTES)} MB.`;
+  }
+  const combinedBytes = (otherSelectedBytes || 0) + file.size;
+  if (combinedBytes > MAX_TOTAL_DOC_FILE_BYTES) {
+    return `Combined document size is too large (${_formatDocSizeMB(combinedBytes)} MB). Maximum allowed is ${_formatDocSizeMB(MAX_TOTAL_DOC_FILE_BYTES)} MB across ID front, ID back, and insurance.`;
+  }
+  return null;
 }
 
 // ----- Dynamic Pricing -----
@@ -639,6 +657,17 @@ idUpload.addEventListener("change", function(e) {
     return;
   }
 
+  const idOtherBytes = (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0);
+  const idSizeErr = validateDocUploadSelection(file, idOtherBytes);
+  if (idSizeErr) {
+    alert(idSizeErr);
+    e.target.value = "";
+    uploadedFile = null;
+    resetFileInfo();
+    updatePayBtn();
+    return;
+  }
+
   uploadedFile = file;
   const fileInfoEl = document.getElementById("fileInfo");
   fileInfoEl.querySelector(".file-name").textContent = file.name;
@@ -668,6 +697,17 @@ idBackUpload.addEventListener("change", function(e) {
     return;
   }
 
+  const idBackOtherBytes = (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0);
+  const idBackSizeErr = validateDocUploadSelection(file, idBackOtherBytes);
+  if (idBackSizeErr) {
+    alert(idBackSizeErr);
+    e.target.value = "";
+    uploadedFileBack = null;
+    resetBackFileInfo();
+    updatePayBtn();
+    return;
+  }
+
   uploadedFileBack = file;
   const backInfoEl = document.getElementById("fileInfoBack");
   backInfoEl.querySelector(".file-name").textContent = file.name;
@@ -691,6 +731,17 @@ insuranceUpload.addEventListener("change", function(e) {
   if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
     alert(window.slyI18n.t("booking.alertInsuranceType"));
     e.target.value = '';
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const insuranceOtherBytes = (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0);
+  const insuranceSizeErr = validateDocUploadSelection(file, insuranceOtherBytes);
+  if (insuranceSizeErr) {
+    alert(insuranceSizeErr);
+    e.target.value = "";
     uploadedInsurance = null;
     resetInsuranceFileInfo();
     updatePayBtn();
@@ -1930,6 +1981,14 @@ stripeBtn.addEventListener("click", async () => {
       selectedProtectionTier !== "basic" && selectedProtectionTier !== "standard" && selectedProtectionTier !== "premium") {
     showPayError("Please select a Damage Protection Plan tier (Basic, Standard, or Premium).");
     return;
+  }
+  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
+  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
+  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
   }
   const isCamryDepositMode = paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
