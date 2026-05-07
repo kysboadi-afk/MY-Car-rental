@@ -48,6 +48,21 @@ import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { normalizeFleetCategory } from "./_category.js";
+
+// Legacy car bookings created before the `category` column was introduced have
+// category = NULL in Supabase.  When filtering for scope='car' we must include
+// those NULL rows so they are not silently hidden from the admin panel.
+function applyScopeCategoryFilter(query, scopeCategory) {
+  if (!scopeCategory) return query;
+  if (scopeCategory === "car") return query.or("category.eq.car,category.is.null");
+  return query.eq("category", scopeCategory);
+}
+function matchesScopeCategory(category, scopeCategory) {
+  if (!scopeCategory) return true;
+  const cat = normalizeFleetCategory(category);
+  if (scopeCategory === "car") return cat === "car" || cat === null;
+  return cat === scopeCategory;
+}
 import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
@@ -233,9 +248,7 @@ export default async function handler(req, res) {
         if (status) {
           q = q.eq("status", status);
         }
-        if (scopeCategory) {
-          q = q.eq("category", scopeCategory);
-        }
+        q = applyScopeCategoryFilter(q, scopeCategory);
 
         const { data: rows, error } = await q.order("created_at", { ascending: false });
 
@@ -361,7 +374,7 @@ export default async function handler(req, res) {
         }
       }
       if (scopeCategory) {
-        result = result.filter((b) => normalizeFleetCategory(b.category) === scopeCategory);
+        result = result.filter((b) => matchesScopeCategory(b.category, scopeCategory));
       }
 
       if (status) {
@@ -409,7 +422,7 @@ export default async function handler(req, res) {
             customers ( id, name, phone, email )
           `)
           .order("created_at", { ascending: false });
-        if (scopeCategory) q = q.eq("category", scopeCategory);
+        if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
         const { data: rows, error } = await q;
 
         if (error) {
@@ -450,7 +463,7 @@ export default async function handler(req, res) {
         fbResult = fbResult.concat((fbData[vid] || []).map((b) => ({ ...b, vehicleId: b.vehicleId || vid, _source: "bookings_json" })));
       }
       if (scopeCategory) {
-        fbResult = fbResult.filter((b) => normalizeFleetCategory(b.category) === scopeCategory);
+        fbResult = fbResult.filter((b) => matchesScopeCategory(b.category, scopeCategory));
       }
       fbResult.sort((a, b) => (b.createdAt || b.pickupDate || "") > (a.createdAt || a.pickupDate || "") ? 1 : -1);
       return res.status(200).json({ bookings: fbResult, source: "bookings_json", total: fbResult.length });

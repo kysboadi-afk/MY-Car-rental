@@ -23,6 +23,20 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.js";
 import { getAllVehicleIds } from "./_pricing.js";
 import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
+
+// Legacy car bookings created before the `category` column was introduced have
+// category = NULL.  For scope='car' we must also include NULL rows.
+function applyScopeCategoryFilter(query, scopeCategory) {
+  if (!scopeCategory) return query;
+  if (scopeCategory === "car") return query.or("category.eq.car,category.is.null");
+  return query.eq("category", scopeCategory);
+}
+function matchesScopeCategory(category, scopeCategory) {
+  if (!scopeCategory) return true;
+  const cat = normalizeFleetCategory(category);
+  if (scopeCategory === "car") return cat === "car" || cat === null;
+  return cat === scopeCategory;
+}
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -120,7 +134,7 @@ export default async function handler(req, res) {
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
-          if (scopeCategory)   q = q.eq("category", scopeCategory);
+          if (scopeCategory)   q = applyScopeCategoryFilter(q, scopeCategory);
           const { data, error } = await q;
           if (!error) {
             // If Supabase has records, return them directly.
@@ -140,7 +154,7 @@ export default async function handler(req, res) {
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
-      if (scopeCategory) records = records.filter((r) => normalizeFleetCategory(r.category) === scopeCategory);
+      if (scopeCategory) records = records.filter((r) => matchesScopeCategory(r.category, scopeCategory));
       records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
       if (body.limit) records = records.slice(0, Number(body.limit));
       if (records.length > 0) return res.status(200).json({ records });
@@ -468,11 +482,10 @@ export default async function handler(req, res) {
       if (sb) {
         try {
           if (scopeCategory) {
-            const { data, error } = await sb
-              .from("revenue_records")
-              .select("gross_amount")
-              .eq("is_cancelled", false)
-              .eq("category", scopeCategory);
+            const { data, error } = await applyScopeCategoryFilter(
+              sb.from("revenue_records").select("gross_amount").eq("is_cancelled", false),
+              scopeCategory
+            );
             if (!error) {
               const total = (data || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0);
               return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
@@ -495,7 +508,7 @@ export default async function handler(req, res) {
       const { data: ghRecords } = await loadRecordsFromGitHub();
       const total = ghRecords
         .filter((r) => !r.is_cancelled)
-        .filter((r) => !scopeCategory || normalizeFleetCategory(r.category) === scopeCategory)
+        .filter((r) => !scopeCategory || matchesScopeCategory(r.category, scopeCategory))
         .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
       return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
     }
@@ -519,7 +532,7 @@ export default async function handler(req, res) {
             .select("*")
             .order("min_pickup_date", { ascending: false });
           if (body.vehicleId) q = q.in("vehicle_id", vehicleIdFamily(body.vehicleId));
-          if (scopeCategory) q = q.eq("category", scopeCategory);
+          if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
           const { data, error } = await q;
           if (!error) {
             let groups = (data || []).map((g) => ({
@@ -560,7 +573,7 @@ export default async function handler(req, res) {
           if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
           if (body.endDate)    q = q.lte("return_date",  body.endDate);
-          if (scopeCategory)   q = q.eq("category", scopeCategory);
+          if (scopeCategory)   q = applyScopeCategoryFilter(q, scopeCategory);
           const { data, error } = await q;
           if (!error) allRows = data || [];
         } catch (qErr) {
@@ -571,7 +584,7 @@ export default async function handler(req, res) {
       if (!allRows) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
         allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
-        if (scopeCategory) allRows = allRows.filter((r) => normalizeFleetCategory(r.category) === scopeCategory);
+        if (scopeCategory) allRows = allRows.filter((r) => matchesScopeCategory(r.category, scopeCategory));
         if (body.vehicleId) allRows = allRows.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       }
 

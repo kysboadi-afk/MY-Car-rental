@@ -24,6 +24,14 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { normalizeFleetCategory } from "./_category.js";
 
+// Legacy car bookings created before the `category` column was introduced have
+// category = NULL.  For scope='car' we must also include NULL rows.
+function applyScopeCategoryFilter(query, scopeCategory) {
+  if (!scopeCategory) return query;
+  if (scopeCategory === "car") return query.or("category.eq.car,category.is.null");
+  return query.eq("category", scopeCategory);
+}
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
@@ -145,10 +153,9 @@ export default async function handler(req, res) {
             `)
             .in("vehicle_id", ALLOWED_VEHICLES)
             .order("created_at", { ascending: false });
-          if (scopeCategory) q = q.eq("category", scopeCategory);
+          if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
           const { data: rows, error } = await q;
           if (error) throw error; // query error → propagate, do NOT fallback
-          return (rows || []).map((r) => ({
             bookingId:   r.booking_ref || String(r.id),
             vehicleId:   uiVehicleId(r.vehicle_id),
             vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
@@ -195,7 +202,7 @@ export default async function handler(req, res) {
           .in("vehicle_id", ALLOWED_VEHICLES)
           .order("created_at", { ascending: false })
           .limit(20);
-          if (scopeCategory) q = q.eq("category", scopeCategory);
+          if (scopeCategory) q = applyScopeCategoryFilter(q, scopeCategory);
           return q.then((r) => r, () => ({ data: null }));
         })()
       : Promise.resolve({ data: null });
@@ -415,7 +422,7 @@ export default async function handler(req, res) {
           .from("revenue_records_effective")
           .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
           .eq("payment_status", "paid");
-        if (scopeCategory) rrQuery = rrQuery.eq("category", scopeCategory);
+        if (scopeCategory) rrQuery = applyScopeCategoryFilter(rrQuery, scopeCategory);
         const { data: rrRows, error: rrErr } = await rrQuery;
         if (rrErr) {
           console.error("v2-dashboard: revenue records unavailable, falling back to bookings.json:", rrErr.message);
