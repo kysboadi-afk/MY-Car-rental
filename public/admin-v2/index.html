@@ -4842,6 +4842,28 @@ function toggleBookingFlag(bookingId, flagValue, btn) {
     });
 }
 
+function bookingIdKey(value) {
+  return String(value ?? '').trim();
+}
+
+function bookingCanonicalId(booking) {
+  return bookingIdKey(
+    booking?.bookingId
+    || booking?.booking_ref
+    || (booking?.id != null ? String(booking.id) : '')
+  );
+}
+
+function findBookingByAnyId(bookingId) {
+  const target = bookingIdKey(bookingId);
+  if (!target) return null;
+  return allBookings.find((x) => {
+    const primary = bookingCanonicalId(x);
+    const piId    = bookingIdKey(x?.paymentIntentId);
+    return target === primary || target === piId;
+  }) || null;
+}
+
 function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
@@ -4851,6 +4873,7 @@ function loadBookings() {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
         ...b,
+        bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
       allBookings = normalizedBookings;
@@ -4991,7 +5014,7 @@ function applyBookingFilters() {
 }
 
 function viewBooking(bookingId, vehicleId) {
-  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const b = findBookingByAnyId(bookingId);
   if (!b) return;
 
   const now = new Date();
@@ -5001,7 +5024,7 @@ function viewBooking(bookingId, vehicleId) {
     apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
       .then((data) => {
         if ((data.recovered || 0) > 0) {
-          const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+          const idx = allBookings.findIndex((x) => bookingCanonicalId(x) === bookingIdKey(bookingId));
           if (idx !== -1) allBookings[idx].hasSavedCard = true;
         }
       })
@@ -5152,7 +5175,7 @@ function viewBooking(bookingId, vehicleId) {
 }
 
 function openEditBookingModal(bookingId) {
-  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const b = findBookingByAnyId(bookingId);
   if (!b) { showToast('Booking not found.', 'error'); return; }
   // Store the bookingId being edited
   document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
@@ -5180,7 +5203,7 @@ async function saveEditBooking(btn) {
   const vehicleId = modal.dataset.vehicleId;
   if (!bookingId || !vehicleId) { showToast('Unable to identify booking.', 'error'); return; }
 
-  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const b = findBookingByAnyId(bookingId);
   if (!b) { showToast('Booking not found.', 'error'); return; }
 
   // Build patch — only include fields that actually changed
@@ -5221,7 +5244,7 @@ async function saveEditBooking(btn) {
   try {
     await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
     // Patch local cache
-    const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+    const idx = allBookings.findIndex((x) => bookingCanonicalId(x) === bookingIdKey(bookingId));
     if (idx !== -1) {
       if (updates.customerName  !== undefined) allBookings[idx].name          = updates.customerName;
       if (updates.customerPhone !== undefined) allBookings[idx].phone         = updates.customerPhone;
@@ -6619,7 +6642,8 @@ function openAddRevenueModal() {
 }
 
 async function openEditRevenueModal(id) {
-  const rec = allRevenueRecords.find((r) => r.id === id);
+  const targetId = String(id ?? '').trim();
+  const rec = allRevenueRecords.find((r) => String(r?.id ?? '').trim() === targetId);
   if (!rec) return;
   document.getElementById('rev-modal-title').textContent = 'Edit Revenue Record';
   document.getElementById('rev-id').value         = rec.id;

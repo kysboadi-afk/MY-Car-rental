@@ -76,7 +76,7 @@ async function markVehicleUnavailable(vehicleId) {
   }
 }
 
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
 
 /**
  * Escape HTML special characters to prevent XSS in email templates.
@@ -3007,50 +3007,52 @@ export default async function handler(req, res) {
           }
 
           // Owner confirmation email.
-          const slOwnerEmailSent = process.env.OWNER_EMAIL
-            ? await slTransporter.sendMail({
-                from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
-                to:          OWNER_EMAIL,
-                ...(sl_renter_email ? { replyTo: sl_renter_email } : {}),
-                subject:     `✅ Slingshot Booking — ${esc(sl_renter_name || "New Renter")} — ${esc(sl_vehicle_name || "")} — ${esc(sl_pickup_date || "")}`,
-                attachments: slAttachments,
-                html: `
-                  <h2>✅ New Slingshot Booking Confirmed</h2>
-                  <p>A slingshot rental has been paid and confirmed.</p>
-                  <table style="border-collapse:collapse;width:100%;margin:12px 0">
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_booking_id || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_name || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_phone || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_email || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_vehicle_name || sl_vehicle_id || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_package_label || sl_package_key || "N/A")}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slStartDt)}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slEndDt)}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(slTotalDollars.toFixed(2))}</strong></td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Base Rate (pkg)</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slBaseRate.toFixed(2))}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe PI</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(paymentIntent.id)}</code></td></tr>
-                  </table>
-                  ${slPdfBuffer ? "<p>📄 Signed rental agreement is attached.</p>" : ""}
-                `,
-                text: [
-                  "✅ New Slingshot Booking Confirmed",
-                  "",
-                  `Booking ID   : ${sl_booking_id || "N/A"}`,
-                  `Renter       : ${sl_renter_name || "N/A"}`,
-                  `Phone        : ${sl_renter_phone || "N/A"}`,
-                  `Email        : ${sl_renter_email || "N/A"}`,
-                  `Vehicle      : ${sl_vehicle_name || sl_vehicle_id || "N/A"}`,
-                  `Package      : ${sl_package_label || sl_package_key || "N/A"}`,
-                  `Pickup       : ${slStartDt}`,
-                  `Return       : ${slEndDt}`,
-                  `Total        : $${slTotalDollars.toFixed(2)}`,
-                  `Stripe PI    : ${paymentIntent.id}`,
-                ].join("\n"),
-              }).catch((err) => {
-                console.error("stripe-webhook: [SLINGSHOT] owner email failed:", err.message);
-              })
-            : null;
+          let slOwnerEmailSent = false;
+          try {
+            await slTransporter.sendMail({
+              from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+              to:          OWNER_EMAIL,
+              ...(sl_renter_email ? { replyTo: sl_renter_email } : {}),
+              subject:     `✅ Slingshot Booking — ${esc(sl_renter_name || "New Renter")} — ${esc(sl_vehicle_name || "")} — ${esc(sl_pickup_date || "")}`,
+              attachments: slAttachments,
+              html: `
+                <h2>✅ New Slingshot Booking Confirmed</h2>
+                <p>A slingshot rental has been paid and confirmed.</p>
+                <table style="border-collapse:collapse;width:100%;margin:12px 0">
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_booking_id || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_name || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_phone || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_renter_email || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_vehicle_name || sl_vehicle_id || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(sl_package_label || sl_package_key || "N/A")}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slStartDt)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(slEndDt)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(slTotalDollars.toFixed(2))}</strong></td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Base Rate (pkg)</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slBaseRate.toFixed(2))}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe PI</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(paymentIntent.id)}</code></td></tr>
+                </table>
+                ${slPdfBuffer ? "<p>📄 Signed rental agreement is attached.</p>" : ""}
+              `,
+              text: [
+                "✅ New Slingshot Booking Confirmed",
+                "",
+                `Booking ID   : ${sl_booking_id || "N/A"}`,
+                `Renter       : ${sl_renter_name || "N/A"}`,
+                `Phone        : ${sl_renter_phone || "N/A"}`,
+                `Email        : ${sl_renter_email || "N/A"}`,
+                `Vehicle      : ${sl_vehicle_name || sl_vehicle_id || "N/A"}`,
+                `Package      : ${sl_package_label || sl_package_key || "N/A"}`,
+                `Pickup       : ${slStartDt}`,
+                `Return       : ${slEndDt}`,
+                `Total        : $${slTotalDollars.toFixed(2)}`,
+                `Stripe PI    : ${paymentIntent.id}`,
+              ].join("\n"),
+            });
+            slOwnerEmailSent = true;
+          } catch (err) {
+            console.error("stripe-webhook: [SLINGSHOT] owner email failed:", err.message);
+          }
 
           // Renter confirmation email.
           if (sl_renter_email) {
@@ -3097,10 +3099,14 @@ export default async function handler(req, res) {
               console.error("stripe-webhook: [SLINGSHOT] renter email failed:", err.message);
             });
 
-            // Mark email_sent in pending_booking_docs.
+          }
+          // Mark email_sent for owner-notification dedupe only after owner email
+          // send succeeds and the slingshot booking_id exists. This flag does not
+          // track renter-email delivery.
+          if (slOwnerEmailSent && sl_booking_id) {
             try {
               const slSbMark = getSupabaseAdmin();
-              if (slSbMark && sl_booking_id) {
+              if (slSbMark) {
                 await slSbMark.from("pending_booking_docs").upsert(
                   { booking_id: sl_booking_id, booking_type: "slingshot", email_sent: true },
                   { onConflict: "booking_id" }
@@ -3557,4 +3563,3 @@ export {
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
 };
-
