@@ -4769,11 +4769,14 @@ function bookingCanonicalId(booking) {
 function findBookingByAnyId(bookingId) {
   const target = bookingIdKey(bookingId);
   if (!target) return null;
-  return allBookings.find((x) => {
+  const matchFn = (x) => {
     const primary = bookingCanonicalId(x);
     const piId    = bookingIdKey(x?.paymentIntentId);
     return target === primary || target === piId;
-  }) || null;
+  };
+  // Also search allLateFeesData so the View button on the Late Fees page works
+  // even when the user hasn't visited the Bookings tab (allBookings is empty).
+  return allBookings.find(matchFn) || allLateFeesData.find(matchFn) || null;
 }
 
 function loadBookings() {
@@ -7043,7 +7046,7 @@ function computeCustomerTier(c) {
 
 function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
-  if (!c) return;
+  if (!c) { showToast('Customer not found.', 'error'); return; }
   const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
   const riskColor  = riskColors[c.risk_flag] || 'inherit';
   const tier       = computeCustomerTier(c);
@@ -7236,7 +7239,7 @@ function openAddCustomerModal() {
 
 function openEditCustomerModal(id) {
   const c = allCustomers.find((x) => x.id === id);
-  if (!c) return;
+  if (!c) { showToast('Customer not found.', 'error'); return; }
   closeModal('customer-detail-modal');
   document.getElementById('cust-modal-title').textContent = 'Edit Customer';
   document.getElementById('cust-modal-id').value = id;
@@ -7351,7 +7354,7 @@ function openAddPlanModal() {
 
 function openEditPlanModal(id) {
   const p = allProtectionPlans.find((x) => x.id === id);
-  if (!p) return;
+  if (!p) { showToast('Protection plan not found.', 'error'); return; }
   document.getElementById('plan-modal-title').textContent = 'Edit Protection Plan';
   document.getElementById('plan-id').value          = p.id;
   document.getElementById('plan-name').value        = p.name        || '';
