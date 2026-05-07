@@ -57,7 +57,7 @@ const DEFAULT_SLINGSHOT_TIERS = [
   { label: "24 Hours",  price: 350, tag: "Popular" },
 ];
 
-function getSlingshotTierTag(tier) {
+function getSlingshotTierBadge(tier) {
   const hours = Number(tier && tier.hours);
   const label = String((tier && tier.label) || "").toLowerCase();
   if (hours === 2 || label.includes("2 hour") || label.includes("2 hr")) return "Best Value";
@@ -76,7 +76,7 @@ function getSlingshotTiers(v) {
     .filter(t => t && t.label && t.price != null)
     .sort((a, b) => (a.hours || 0) - (b.hours || 0));
   if (!entries.length) return DEFAULT_SLINGSHOT_TIERS;
-  return entries.map(t => ({ label: t.label, price: t.price, tag: getSlingshotTierTag(t) }));
+  return entries.map(t => ({ label: t.label, price: t.price, tag: getSlingshotTierBadge(t) }));
 }
 
 function buildSlingshotCard(v, pricing) {
