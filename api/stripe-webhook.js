@@ -804,29 +804,54 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // These are saved by the booking page (car.js → store-booking-docs.js)
   // before the Stripe payment is confirmed so the webhook can send the owner
   // the full email regardless of what happens in the customer's browser.
+  //
+  // Race-condition guard: the webhook can fire almost immediately after Stripe
+  // confirms the payment, potentially before store-booking-docs has finished
+  // its Supabase write.  Retry up to 3 times with a short delay so that a
+  // Vercel cold-start or a slow DB write does not cause ID/insurance docs to
+  // be silently omitted from the owner email.
   let storedDocs = null;
   if (booking_id) {
-    try {
-      const sb = getSupabaseAdmin();
-      if (sb) {
+    const MAX_DOC_ATTEMPTS  = 4;
+    const DOC_RETRY_DELAY_MS = 2500;
+    for (let attempt = 1; attempt <= MAX_DOC_ATTEMPTS; attempt++) {
+      try {
+        const sb = getSupabaseAdmin();
+        if (!sb) break;
+        // Note: the query intentionally omits .eq("email_sent", false) so that a
+        // row where email_sent=true can be detected and used for the dedup early-
+        // return below.  A single round-trip is cheaper than two separate queries.
         const { data: docsRow } = await sb
           .from("pending_booking_docs")
           .select("*")
           .eq("booking_id", booking_id)
           .maybeSingle();
-      // Note: the query intentionally omits .eq("email_sent", false) so that a
-      // row where email_sent=true can be detected and used for the dedup early-
-      // return below.  A single round-trip is cheaper than two separate queries.
+
         if (docsRow?.email_sent === true) {
           // Owner email was already sent (e.g. from a previous webhook attempt on a
           // Stripe retry).  Skip to prevent duplicate owner notifications.
           console.log(`stripe-webhook: owner email already sent for booking_id ${booking_id} — skipping duplicate`);
           return;
         }
-        storedDocs = docsRow || null;
+
+        if (docsRow) {
+          storedDocs = docsRow;
+          break; // row found — proceed with attachments
+        }
+
+        // Row not yet present — store-booking-docs may still be writing.
+        if (attempt < MAX_DOC_ATTEMPTS) {
+          console.log(`stripe-webhook: pending_booking_docs not found (attempt ${attempt}/${MAX_DOC_ATTEMPTS}) for booking_id ${booking_id} — retrying in ${DOC_RETRY_DELAY_MS}ms`);
+          await new Promise(r => setTimeout(r, DOC_RETRY_DELAY_MS));
+        } else {
+          console.warn(`stripe-webhook: pending_booking_docs not found after ${MAX_DOC_ATTEMPTS} attempts for booking_id ${booking_id} — proceeding without stored docs`);
+        }
+      } catch (docsErr) {
+        console.warn(`stripe-webhook: could not retrieve pending_booking_docs (attempt ${attempt}, non-fatal):`, docsErr.message);
+        if (attempt < MAX_DOC_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, DOC_RETRY_DELAY_MS));
+        }
       }
-    } catch (docsErr) {
-      console.warn("stripe-webhook: could not retrieve pending_booking_docs (non-fatal):", docsErr.message);
     }
   }
 
@@ -3109,31 +3134,51 @@ export default async function handler(req, res) {
           }
 
           // Check if ID photos are stored in pending_booking_docs (from store-booking-docs.js).
-          try {
-            const slSbDocs = getSupabaseAdmin();
-            if (slSbDocs && sl_booking_id) {
-              const { data: slDocsRow } = await slSbDocs
-                .from("pending_booking_docs")
-                .select("id_base64,id_filename,id_mimetype,id_back_base64,id_back_filename,id_back_mimetype")
-                .eq("booking_id", sl_booking_id)
-                .maybeSingle();
-              if (slDocsRow?.id_base64 && slDocsRow?.id_filename) {
-                slAttachments.push({
-                  filename:    slDocsRow.id_filename,
-                  content:     Buffer.from(slDocsRow.id_base64, "base64"),
-                  contentType: slDocsRow.id_mimetype || "application/octet-stream",
-                });
-              }
-              if (slDocsRow?.id_back_base64 && slDocsRow?.id_back_filename) {
-                slAttachments.push({
-                  filename:    slDocsRow.id_back_filename,
-                  content:     Buffer.from(slDocsRow.id_back_base64, "base64"),
-                  contentType: slDocsRow.id_back_mimetype || "application/octet-stream",
-                });
+          // Retry loop guards against the webhook firing before store-booking-docs
+          // finishes its Supabase write (Vercel cold start / slow DB write race).
+          if (sl_booking_id) {
+            const SL_MAX_DOC_ATTEMPTS  = 4;
+            const SL_DOC_RETRY_DELAY_MS = 2500;
+            for (let slAttempt = 1; slAttempt <= SL_MAX_DOC_ATTEMPTS; slAttempt++) {
+              try {
+                const slSbDocs = getSupabaseAdmin();
+                if (!slSbDocs) break;
+                const { data: slDocsRow } = await slSbDocs
+                  .from("pending_booking_docs")
+                  .select("id_base64,id_filename,id_mimetype,id_back_base64,id_back_filename,id_back_mimetype")
+                  .eq("booking_id", sl_booking_id)
+                  .maybeSingle();
+                if (slDocsRow) {
+                  if (slDocsRow.id_base64 && slDocsRow.id_filename) {
+                    slAttachments.push({
+                      filename:    slDocsRow.id_filename,
+                      content:     Buffer.from(slDocsRow.id_base64, "base64"),
+                      contentType: slDocsRow.id_mimetype || "application/octet-stream",
+                    });
+                  }
+                  if (slDocsRow.id_back_base64 && slDocsRow.id_back_filename) {
+                    slAttachments.push({
+                      filename:    slDocsRow.id_back_filename,
+                      content:     Buffer.from(slDocsRow.id_back_base64, "base64"),
+                      contentType: slDocsRow.id_back_mimetype || "application/octet-stream",
+                    });
+                  }
+                  break; // row found — stop retrying
+                }
+                // Row not yet present — may still be writing.
+                if (slAttempt < SL_MAX_DOC_ATTEMPTS) {
+                  console.log(`stripe-webhook: [SLINGSHOT] pending_booking_docs not found (attempt ${slAttempt}/${SL_MAX_DOC_ATTEMPTS}) for sl_booking_id ${sl_booking_id} — retrying in ${SL_DOC_RETRY_DELAY_MS}ms`);
+                  await new Promise(r => setTimeout(r, SL_DOC_RETRY_DELAY_MS));
+                } else {
+                  console.warn(`stripe-webhook: [SLINGSHOT] pending_booking_docs not found after ${SL_MAX_DOC_ATTEMPTS} attempts for sl_booking_id ${sl_booking_id} — proceeding without ID docs`);
+                }
+              } catch (slDocsErr) {
+                console.warn(`stripe-webhook: [SLINGSHOT] ID attachment lookup failed (attempt ${slAttempt}, non-fatal):`, slDocsErr.message);
+                if (slAttempt < SL_MAX_DOC_ATTEMPTS) {
+                  await new Promise(r => setTimeout(r, SL_DOC_RETRY_DELAY_MS));
+                }
               }
             }
-          } catch (slDocsErr) {
-            console.warn("stripe-webhook: [SLINGSHOT] ID attachment lookup failed (non-fatal):", slDocsErr.message);
           }
 
           // Owner confirmation email.
