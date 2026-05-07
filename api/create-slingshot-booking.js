@@ -277,6 +277,8 @@ export default async function handler(req, res) {
         renter_email:       email,
         vehicle_id:         normalizedVehicleId || vehicleId,
         vehicle_name:       vehicleData.name,
+        vehicle_vin:        vehicleData.vin || "",
+        vehicle_plate:      vehicleData.licensePlate || vehicleData.license_plate || "",
         package_key:        slingshotPackage,
         package_label:      pkg.label,
         package_hours:      String(pkg.hours),
