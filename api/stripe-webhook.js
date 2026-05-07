@@ -134,6 +134,13 @@ function isLikelyAttachmentDeliveryError(err) {
   return /attachment|message too large|size limit|content too large|exceed|mime/.test(message);
 }
 
+function hasSucceededPaymentForNotifications(paymentIntent) {
+  if (!paymentIntent || typeof paymentIntent !== "object") return false;
+  const status = String(paymentIntent.status || "").toLowerCase();
+  const receivedCents = Number(paymentIntent.amount_received ?? paymentIntent.amount ?? 0);
+  return status === "succeeded" && Number.isFinite(receivedCents) && receivedCents > 0;
+}
+
 /**
  * Determines the booking status for a Stripe payment based on payment_type.
  * Deposit-only payment types leave the booking in "reserved_unpaid" since
@@ -759,6 +766,14 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
 async function sendWebhookNotificationEmails(paymentIntent) {
+  if (!hasSucceededPaymentForNotifications(paymentIntent)) {
+    console.warn(
+      `stripe-webhook: skipping notification emails for PI ${paymentIntent?.id || "<missing>"} ` +
+      `because payment is not in succeeded state`
+    );
+    return;
+  }
+
   const meta = paymentIntent.metadata || {};
   const diagBookingId = meta.booking_id || paymentIntent.id || "unknown";
   console.log(`stripe-webhook: OWNER EMAIL TRIGGERED for booking_id: ${diagBookingId} pi_id: ${paymentIntent.id}`);
@@ -3032,7 +3047,12 @@ export default async function handler(req, res) {
       // ── Step 1: Notifications first (DB failure must not silence them) ────
       // Build & send emails (owner + renter) with slingshot agreement PDF.
       try {
-        if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        if (!hasSucceededPaymentForNotifications(paymentIntent)) {
+          console.warn(
+            `stripe-webhook: [SLINGSHOT] skipping notification emails for PI ${paymentIntent.id} ` +
+            "because payment is not in succeeded state"
+          );
+        } else if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
           console.warn("stripe-webhook: [SLINGSHOT] SMTP not configured — skipping notification emails");
         } else {
           const slTransporter = nodemailer.createTransport({
