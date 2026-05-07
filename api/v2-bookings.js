@@ -99,6 +99,11 @@ const BOOKED_DATES_PATH = "booked-dates.json";
 // Used by the cancellation guard to require explicit confirmation before overriding.
 const ACTIVE_RENTAL_STATUSES = new Set(["active_rental", "overdue", "extended"]);
 
+function normalizeStoredDocBase64(base64Value) {
+  if (!base64Value || typeof base64Value !== "string") return "";
+  return base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+}
+
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
   const headers = {
@@ -1507,15 +1512,24 @@ export default async function handler(req, res) {
 
       // Retrieve stored docs for attachments (if available).
       let storedDocs = null;
+      const sbDocs = getSupabaseAdmin();
       try {
-        const sb = getSupabaseAdmin();
-        if (sb) {
-          const { data: docsRow } = await sb
-            .from("pending_booking_docs")
-            .select("*")
-            .eq("booking_id", bookingId)
-            .maybeSingle();
-          storedDocs = docsRow || null;
+        if (sbDocs) {
+          const docsLookupKeys = [...new Set([bookingId, paymentIntentId].map((v) => String(v || "").trim()).filter(Boolean))];
+          for (const docsKey of docsLookupKeys) {
+            const { data: docsRow } = await sbDocs
+              .from("pending_booking_docs")
+              .select("*")
+              .eq("booking_id", docsKey)
+              .maybeSingle();
+            if (docsRow) {
+              storedDocs = docsRow;
+              if (docsKey !== bookingId) {
+                console.log(`v2-bookings resend_confirmation: loaded pending_booking_docs via fallback key ${docsKey}`);
+              }
+              break;
+            }
+          }
         }
       } catch (docsErr) {
         console.warn("v2-bookings resend_confirmation: pending_booking_docs read failed (non-fatal):", docsErr.message);
@@ -1614,22 +1628,37 @@ export default async function handler(req, res) {
       } catch (pdfErr) {
         console.warn("v2-bookings resend_confirmation: PDF generation failed (non-fatal):", pdfErr.message);
       }
-      if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
+      const idFrontBase64 = normalizeStoredDocBase64(storedDocs?.id_base64);
+      const idBackBase64 = normalizeStoredDocBase64(storedDocs?.id_back_base64);
+      const insuranceDocBase64 = normalizeStoredDocBase64(storedDocs?.insurance_base64);
+
+      if (idFrontBase64 && storedDocs?.id_filename) {
         try {
           attachments.push({
             filename: storedDocs.id_filename,
-            content: Buffer.from(storedDocs.id_base64, "base64"),
+            content: Buffer.from(idFrontBase64, "base64"),
             contentType: storedDocs.id_mimetype || "application/octet-stream",
           });
         } catch (idErr) {
           console.warn("v2-bookings resend_confirmation: ID attachment failed (non-fatal):", idErr.message);
         }
       }
-      if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
+      if (idBackBase64 && storedDocs?.id_back_filename) {
+        try {
+          attachments.push({
+            filename: storedDocs.id_back_filename,
+            content: Buffer.from(idBackBase64, "base64"),
+            contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+          });
+        } catch (idBackErr) {
+          console.warn("v2-bookings resend_confirmation: ID back attachment failed (non-fatal):", idBackErr.message);
+        }
+      }
+      if (insuranceDocBase64 && storedDocs?.insurance_filename) {
         try {
           attachments.push({
             filename: storedDocs.insurance_filename,
-            content: Buffer.from(storedDocs.insurance_base64, "base64"),
+            content: Buffer.from(insuranceDocBase64, "base64"),
             contentType: storedDocs.insurance_mimetype || "application/octet-stream",
           });
         } catch (insErr) {
@@ -1671,9 +1700,9 @@ export default async function handler(req, res) {
                 : "Not selected / No protection plan"));
 
       const missingItemNotes = buildDocumentNotes({
-        idUploaded:        !!storedDocs?.id_base64,
+        idUploaded:        !!(idFrontBase64 && idBackBase64),
         signatureUploaded: !!storedDocs?.signature,
-        insuranceUploaded: !!storedDocs?.insurance_base64,
+        insuranceUploaded: !!insuranceDocBase64,
         insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
       });
       const additionalNotes = [

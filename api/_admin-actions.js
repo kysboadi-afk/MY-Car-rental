@@ -3654,19 +3654,31 @@ async function toolResendBookingConfirmation({ bookingId }) {
   // Determine whether this was a website (Stripe) payment or cash/manual.
   const isWebsitePayment = isWebsitePaymentMethod(paymentIntentId);
   const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
+  const normalizeStoredDocBase64 = (base64Value) => {
+    if (!base64Value || typeof base64Value !== "string") return "";
+    return base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+  };
 
   // ── Retrieve stored docs (signature, ID, insurance) from Supabase ────────
   // For resends we fetch regardless of email_sent status.
   let storedDocs = null;
   try {
-    const sb = getSupabaseAdmin();
     if (sb) {
-      const { data: docsRow } = await sb
-        .from("pending_booking_docs")
-        .select("*")
-        .eq("booking_id", bookingId)
-        .maybeSingle();
-      storedDocs = docsRow || null;
+      const docsLookupKeys = [...new Set([bookingId, paymentIntentId].map((v) => String(v || "").trim()).filter(Boolean))];
+      for (const docsKey of docsLookupKeys) {
+        const { data: docsRow } = await sb
+          .from("pending_booking_docs")
+          .select("*")
+          .eq("booking_id", docsKey)
+          .maybeSingle();
+        if (docsRow) {
+          storedDocs = docsRow;
+          if (docsKey !== bookingId) {
+            console.log(`toolResendBookingConfirmation: loaded pending_booking_docs via fallback key ${docsKey}`);
+          }
+          break;
+        }
+      }
     }
   } catch (docsErr) {
     console.warn("toolResendBookingConfirmation: could not retrieve pending_booking_docs (non-fatal):", docsErr.message);
@@ -3780,12 +3792,16 @@ async function toolResendBookingConfirmation({ bookingId }) {
     agreementPdfFilename = null;
   }
 
+  const idFrontBase64 = normalizeStoredDocBase64(storedDocs?.id_base64);
+  const idBackBase64 = normalizeStoredDocBase64(storedDocs?.id_back_base64);
+  const insuranceDocBase64 = normalizeStoredDocBase64(storedDocs?.insurance_base64);
+
   // Attach renter's ID photo if available.
-  if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
+  if (idFrontBase64 && storedDocs?.id_filename) {
     try {
       attachments.push({
         filename:    storedDocs.id_filename,
-        content:     Buffer.from(storedDocs.id_base64, "base64"),
+        content:     Buffer.from(idFrontBase64, "base64"),
         contentType: storedDocs.id_mimetype || "application/octet-stream",
       });
     } catch (idErr) {
@@ -3793,12 +3809,25 @@ async function toolResendBookingConfirmation({ bookingId }) {
     }
   }
 
+  // Attach renter's ID back photo if available.
+  if (idBackBase64 && storedDocs?.id_back_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.id_back_filename,
+        content:     Buffer.from(idBackBase64, "base64"),
+        contentType: storedDocs.id_back_mimetype || "application/octet-stream",
+      });
+    } catch (idBackErr) {
+      console.error("toolResendBookingConfirmation: ID back attachment failed (non-fatal):", idBackErr.message);
+    }
+  }
+
   // Attach insurance document if available.
-  if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
+  if (insuranceDocBase64 && storedDocs?.insurance_filename) {
     try {
       attachments.push({
         filename:    storedDocs.insurance_filename,
-        content:     Buffer.from(storedDocs.insurance_base64, "base64"),
+        content:     Buffer.from(insuranceDocBase64, "base64"),
         contentType: storedDocs.insurance_mimetype || "application/octet-stream",
       });
     } catch (insErr) {
@@ -3843,9 +3872,9 @@ async function toolResendBookingConfirmation({ bookingId }) {
             : "Not selected / No protection plan"));
 
   const missingItemNotes = buildDocumentNotes({
-    idUploaded:        !!storedDocs?.id_base64,
+    idUploaded:        !!(idFrontBase64 && idBackBase64),
     signatureUploaded: !!storedDocs?.signature,
-    insuranceUploaded: !!storedDocs?.insurance_base64,
+    insuranceUploaded: !!insuranceDocBase64,
     insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
   });
   const additionalNotes = [
