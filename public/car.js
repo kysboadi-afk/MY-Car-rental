@@ -704,25 +704,25 @@ insuranceUpload.addEventListener("change", function(e) {
     return;
   }
 
-  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', 'image/webp'];
-  const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-  if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
-    alert(window.slyI18n.t("booking.alertInsuranceType"));
-    e.target.value = '';
+  const rejectInsuranceUpload = function(message) {
+    alert(message);
+    e.target.value = "";
     uploadedInsurance = null;
     resetInsuranceFileInfo();
     updatePayBtn();
+  };
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', 'image/webp'];
+  const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
+  if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+    rejectInsuranceUpload(window.slyI18n.t("booking.alertInsuranceType"));
     return;
   }
 
   const insuranceOtherBytes = (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0);
   const insuranceSizeErr = validateDocUploadSelection(file, insuranceOtherBytes);
   if (insuranceSizeErr) {
-    alert(insuranceSizeErr);
-    e.target.value = "";
-    uploadedInsurance = null;
-    resetInsuranceFileInfo();
-    updatePayBtn();
+    rejectInsuranceUpload(insuranceSizeErr);
     return;
   }
 
