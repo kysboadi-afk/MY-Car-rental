@@ -76,7 +76,7 @@ async function markVehicleUnavailable(vehicleId) {
   }
 }
 
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
 
 /**
  * Escape HTML special characters to prevent XSS in email templates.
