@@ -44,12 +44,24 @@ function fmtMoney(n) {
 }
 
 // ─── Card builder ─────────────────────────────────────────────────────────────
+const STANDARD_SLINGSHOT_TIERS = [
+  { label: "2 hrs",  price: 150, tag: "Best Value" },
+  { label: "3 hrs",  price: 200, tag: "" },
+  { label: "6 hrs",  price: 250, tag: "" },
+  { label: "24 hrs", price: 350, tag: "Popular" },
+];
+
 function buildSlingshotCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
   const name     = esc(v.vehicle_name || v.vehicle_id);
   const img      = esc(v.cover_image || "/images/slingshot.jpg");
   const subtitle = esc(v.subtitle || "3-Wheeler \u2022 Open-Air");
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
+  const tierHtml = STANDARD_SLINGSHOT_TIERS.map(({ price, label, tag }) => {
+    const className = tag ? "price-item price-item--popular" : "price-item";
+    const badge = tag ? ` <span class="popular-tag">${esc(tag)}</span>` : "";
+    return `<div class="${className}">${fmtMoney(price)} / ${esc(label)}${badge}</div>`;
+  }).join("");
 
   return `<div class="car-card" data-category="slingshot" data-vehicle="${vid}">
     <img src="${img}" alt="${name}" loading="lazy">
@@ -63,10 +75,7 @@ function buildSlingshotCard(v, pricing) {
       </div>
       <p class="price-list-label">Rental Packages</p>
       <div class="price-list">
-        <div class="price-item price-item--popular">$150 / 2 hrs <span class="popular-tag">Best Value</span></div>
-        <div class="price-item">$200 / 3 hrs</div>
-        <div class="price-item">$250 / 6 hrs</div>
-        <div class="price-item price-item--popular">$350 / 24 hrs <span class="popular-tag">Popular</span></div>
+        ${tierHtml}
       </div>
       <p style="font-size:12px;color:#aaa;margin:4px 0 8px">+$500 refundable deposit required</p>
       ${scarcity}
