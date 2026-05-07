@@ -47,11 +47,12 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMeth
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
-import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById, loadVehicles } from "./_vehicles.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -893,7 +894,10 @@ export default async function handler(req, res) {
                 customer_name: (updatedBooking.name || "Customer").split(" ")[0],
                 pickup_date:   updatedBooking.pickupDate  || "",
                 pickup_time:   updatedBooking.pickupTime  || "",
-                location:      DEFAULT_LOCATION,
+                location:      resolvePickupLocation({
+                  vehicleId: updatedBooking.vehicleId || "",
+                  vehicleName: updatedBooking.vehicleName || "",
+                }),
               })
             );
           } catch (smsErr) {

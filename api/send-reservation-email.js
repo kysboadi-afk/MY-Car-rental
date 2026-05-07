@@ -16,12 +16,13 @@ import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { getVehicleById } from "./_vehicles.js";
 import { sendSms } from "./_textmagic.js";
-import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
 import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
 import crypto from "crypto";
@@ -526,7 +527,7 @@ function buildBookingRecord(fields, paymentLink = "") {
     pickupTime:      pickupTime || "",
     returnDate:      returnDate || "",
     returnTime:      returnTime || "",
-    location:        DEFAULT_LOCATION,
+    location:        resolvePickupLocation({ vehicleId, vehicleName: car }),
     status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
     amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
     totalPrice:      fullRentalCost
@@ -1137,7 +1138,10 @@ export default async function handler(req, res) {
             customer_name: (name || "").split(" ")[0] || name || "Customer",
             pickup_date:   pickup ? new Date(pickup + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
             pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
-            location:      DEFAULT_LOCATION,
+            location:      resolvePickupLocation({
+              vehicleId,
+              vehicleName: car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
+            }),
           })
         );
       } catch (smsErr) {

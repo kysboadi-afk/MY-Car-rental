@@ -127,7 +127,7 @@ export default async function handler(req, res) {
         `If you need immediate assistance, call us at ${BUSINESS_PHONE}.`,
         "",
         "– Sly Transportation Services LLC",
-        "475 The Promenade N, Long Beach, CA 90802",
+        "1200 S Figueroa St, Los Angeles, CA 90015",
       ].join("\n"),
       html: `
         <div style="font-family:sans-serif;max-width:520px">
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
           <p>If you need immediate assistance, please call us directly:</p>
           <p style="font-size:20px;font-weight:700"><a href="tel:+18445114059" style="color:#ffb400;text-decoration:none">${BUSINESS_PHONE}</a></p>
           <hr style="border:none;border-top:1px solid #ddd;margin:24px 0">
-          <p style="font-size:12px;color:#888">– Sly Transportation Services LLC · 475 The Promenade N, Long Beach, CA 90802</p>
+          <p style="font-size:12px;color:#888">– Sly Transportation Services LLC · 1200 S Figueroa St, Los Angeles, CA 90015</p>
         </div>
       `,
     });

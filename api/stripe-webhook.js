@@ -21,7 +21,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, autoReleaseBlockedDateOnReturn, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -36,6 +36,7 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-co
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById } from "./_vehicles.js";
 import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -579,7 +580,11 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     pickupTime:            pickup_time  || "",
     returnDate:            return_date,
     returnTime:            return_time  || DEFAULT_RETURN_TIME,
-    location:              DEFAULT_LOCATION,
+    location:              resolvePickupLocation({
+      bookingType: meta.booking_type,
+      vehicleId,
+      vehicleName: vehicle_name || vehicleId,
+    }),
     status,
     amountPaid,
     totalPrice,
@@ -2779,7 +2784,11 @@ export default async function handler(req, res) {
                 pickup_time:      preContact.pickupTime || "",
                 return_date:      preContact.returnDate || "",
                 return_time_line: preContact.returnTime ? ` at ${formatTime12h(preContact.returnTime) || preContact.returnTime}\n` : "\n",
-                location:         DEFAULT_LOCATION,
+                location:         resolvePickupLocation({
+                  bookingType: meta.booking_type,
+                  vehicleId: preContact.vehicleId,
+                  vehicleName: preContact.vehicleName,
+                }),
               })
             );
           } catch (smsErr) {
@@ -3206,7 +3215,11 @@ export default async function handler(req, res) {
               pickup_time:      sl_pickup_time || "",
               return_date:      sl_return_date || "",
               return_time_line: sl_return_time ? ` at ${sl_return_time}\n` : "\n",
-              location:         DEFAULT_LOCATION,
+              location:         resolvePickupLocation({
+                bookingType: "slingshot",
+                vehicleId: sl_vehicle_id,
+                vehicleName: sl_vehicle_name,
+              }),
             })
           );
         } catch (slRenterSmsErr) {
@@ -3309,7 +3322,11 @@ export default async function handler(req, res) {
               pickup_time:      _notifyMeta.pickup_time || "",
               return_date:      _notifyMeta.return_date || "",
               return_time_line: _notifyMeta.return_time ? ` at ${formatTime12h(_notifyMeta.return_time) || _notifyMeta.return_time}\n` : "\n",
-              location:         DEFAULT_LOCATION,
+              location:         resolvePickupLocation({
+                bookingType: _notifyMeta.booking_type,
+                vehicleId: _notifyMeta.vehicle_id,
+                vehicleName: _notifyMeta.vehicle_name,
+              }),
             })
           );
         } catch (renterSmsErr) {
