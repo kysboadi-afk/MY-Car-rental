@@ -5308,12 +5308,18 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
  * the backend guard allows the override.
  */
 function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
-  const confirmed = confirm(
-    '⚠️ WARNING: This rental is currently ACTIVE — the vehicle has already been picked up.\n\n' +
-    'Cancelling an active rental does NOT automatically return the vehicle or charge any fee.\n\n' +
-    'Are you absolutely sure you want to cancel this active rental?'
-  );
-  if (!confirmed) return;
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const derived = b ? bookingDerivedStatus(b, new Date()) : null;
+  const isAlreadyActive = b && (b.status === 'active_rental' || derived === 'overdue' || derived === 'extended');
+
+  if (isAlreadyActive) {
+    const confirmed = confirm(
+      '⚠️ WARNING: This rental is currently ACTIVE — the vehicle has already been picked up.\n\n' +
+      'Cancelling an active rental does NOT automatically return the vehicle or charge any fee.\n\n' +
+      'Are you absolutely sure you want to cancel this active rental?'
+    );
+    if (!confirmed) return;
+  }
 
   if (btn) btn.disabled = true;
   apiPost('/api/v2-bookings', {
