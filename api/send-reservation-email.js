@@ -43,9 +43,12 @@ const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
 
-function resolveSmsPickupLocation({ vehicleId, vehicleName } = {}) {
-  const haystack = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
-  return haystack.includes("slingshot") ? SLINGSHOT_PICKUP_LOCATION : DEFAULT_LOCATION;
+function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
+  const normalizedBookingType = String(bookingType || "").toLowerCase();
+  const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
+  return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
+    ? SLINGSHOT_PICKUP_LOCATION
+    : DEFAULT_LOCATION;
 }
 
 /**
@@ -497,7 +500,7 @@ function buildBookingRecord(fields, paymentLink = "") {
     pickupTime:      pickupTime || "",
     returnDate:      returnDate || "",
     returnTime:      returnTime || "",
-    location:        resolveSmsPickupLocation({ vehicleId, vehicleName: car }),
+    location:        resolvePickupLocation({ vehicleId, vehicleName: car }),
     status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
     amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
     totalPrice:      fullRentalCost
@@ -1078,7 +1081,7 @@ export default async function handler(req, res) {
             customer_name: (name || "").split(" ")[0] || name || "Customer",
             pickup_date:   pickup ? new Date(pickup + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
             pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
-            location:      resolveSmsPickupLocation({
+            location:      resolvePickupLocation({
               vehicleId,
               vehicleName: car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             }),

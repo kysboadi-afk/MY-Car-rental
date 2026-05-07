@@ -61,9 +61,12 @@ const VEHICLE_NAMES    = {
 };
 const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
 
-function resolveSmsPickupLocation({ vehicleId, vehicleName } = {}) {
-  const haystack = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
-  return haystack.includes("slingshot") ? SLINGSHOT_PICKUP_LOCATION : DEFAULT_LOCATION;
+function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
+  const normalizedBookingType = String(bookingType || "").toLowerCase();
+  const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
+  return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
+    ? SLINGSHOT_PICKUP_LOCATION
+    : DEFAULT_LOCATION;
 }
 
 // Mapping from app-level status values (used in bookings.json and the admin UI)
@@ -899,7 +902,7 @@ export default async function handler(req, res) {
                 customer_name: (updatedBooking.name || "Customer").split(" ")[0],
                 pickup_date:   updatedBooking.pickupDate  || "",
                 pickup_time:   updatedBooking.pickupTime  || "",
-                location:      resolveSmsPickupLocation({
+                location:      resolvePickupLocation({
                   vehicleId: updatedBooking.vehicleId || "",
                   vehicleName: updatedBooking.vehicleName || "",
                 }),
