@@ -2926,6 +2926,8 @@ export default async function handler(req, res) {
         renter_email:    sl_renter_email,
         vehicle_id:      sl_vehicle_id,
         vehicle_name:    sl_vehicle_name,
+        vehicle_vin:     sl_vehicle_vin,
+        vehicle_plate:   sl_vehicle_plate,
         package_key:     sl_package_key,
         package_label:   sl_package_label,
         package_price:   sl_package_price,
@@ -2972,6 +2974,8 @@ export default async function handler(req, res) {
           let slPdfFilename = "slingshot-rental-agreement.pdf";
           const slIpAddress = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim() || null;
           try {
+            const resolvedSlVin = slVehicleData?.vin || sl_vehicle_vin || "";
+            const resolvedSlPlate = slVehicleData?.licensePlate || slVehicleData?.license_plate || sl_vehicle_plate || "";
             slPdfBuffer = await generateSlingshotRentalAgreementPdf(
               {
                 bookingId:        sl_booking_id    || "",
@@ -2980,9 +2984,9 @@ export default async function handler(req, res) {
                 renterName:       sl_renter_name   || "",
                 renterPhone:      sl_renter_phone  || "",
                 renterEmail:      sl_renter_email  || "",
-                vehicleVin:       slVehicleData?.vin        || "",
+                vehicleVin:       resolvedSlVin,
                 vehicleName:      sl_vehicle_name   || slVehicleData?.name || "Polaris Slingshot",
-                licensePlate:     slVehicleData?.licensePlate || slVehicleData?.license_plate || "",
+                licensePlate:     resolvedSlPlate,
                 vehicleId:        sl_vehicle_id    || "",
                 startDatetime:    slStartDt,
                 endDatetime:      slEndDt,

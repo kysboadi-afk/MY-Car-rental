@@ -8,6 +8,7 @@
     "purchase_date": "",
     "purchase_price": 0,
     "status": "active",
+    "vin": "4T1BF1K5CU063142",
     "cover_image": "images/IMG_0046.png",
     "gallery_images": ["images/camry-beach-hero.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg"],
     "scarcity_text": "🔥 High demand — reserve today"
@@ -21,6 +22,7 @@
     "purchase_date": "",
     "purchase_price": 0,
     "status": "active",
+    "vin": "4T1BF1FK9DU678911",
     "cover_image": "images/IMG_5144.png",
     "gallery_images": ["images/IMG_5145.png", "images/IMG_4486.jpeg"],
     "scarcity_text": "⚡ Limited vehicles available"
@@ -34,6 +36,7 @@
     "purchase_date": "",
     "purchase_price": 0,
     "status": "active",
+    "vin": "3FA6P0H74HR113488",
     "cover_image": "images/car1.jpg",
     "scarcity_text": "🔥 High demand — reserve today"
   }

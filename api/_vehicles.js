@@ -155,9 +155,13 @@ export async function getVehicleById(vehicleId) {
   if (!vehicleId) return null;
 
   // ── 1. Known static vehicles (CARS) ─────────────────────────────────────
+  // Pricing always comes from the hardcoded CARS list (reliable, no I/O).
+  // Admin-managed metadata (VIN, make, model, color, year) is enriched from
+  // Supabase so that anything set via the admin vehicle tab is picked up
+  // automatically — without requiring any code changes here.
   if (CARS[vehicleId]) {
     const car = CARS[vehicleId];
-    return {
+    const base = {
       vehicleId,
       name:        car.name,
       type:        "car",
@@ -173,6 +177,29 @@ export async function getVehicleById(vehicleId) {
       vin:         car.vin   || null,
       color:       car.color || null,
     };
+    // Attempt Supabase enrichment for admin-managed metadata fields.
+    // A failure here is non-fatal — base CARS data is always returned.
+    const sbEnrich = getSupabaseAdmin();
+    if (sbEnrich) {
+      try {
+        const { data: enrichRow, error: enrichErr } = await sbEnrich
+          .from("vehicles")
+          .select("data")
+          .eq("vehicle_id", vehicleId)
+          .maybeSingle();
+        if (!enrichErr && enrichRow?.data) {
+          const vd = enrichRow.data;
+          if (vd.vin)          base.vin   = vd.vin;
+          if (vd.make)         base.make  = vd.make;
+          if (vd.model)        base.model = vd.model;
+          if (vd.color)        base.color = vd.color;
+          if (vd.vehicle_year) base.year  = parseInt(vd.vehicle_year, 10);
+        }
+      } catch {
+        // Supabase unavailable — fall through with static CARS data.
+      }
+    }
+    return base;
   }
 
   // ── 2. Supabase vehicles table ───────────────────────────────────────────
