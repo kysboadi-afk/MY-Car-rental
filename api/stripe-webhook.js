@@ -21,7 +21,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, autoReleaseBlockedDateOnReturn, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -36,6 +36,7 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-co
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById } from "./_vehicles.js";
 import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -48,15 +49,6 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
-const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
-
-function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
-  const normalizedBookingType = String(bookingType || "").toLowerCase();
-  const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
-  return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
-    ? SLINGSHOT_PICKUP_LOCATION
-    : DEFAULT_LOCATION;
-}
 // Pre-parsed default return time used when a booking has no return_time set.
 const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 

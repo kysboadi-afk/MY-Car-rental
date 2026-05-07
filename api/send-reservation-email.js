@@ -16,12 +16,13 @@ import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { getVehicleById } from "./_vehicles.js";
 import { sendSms } from "./_textmagic.js";
-import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
 import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
 import crypto from "crypto";
@@ -41,15 +42,6 @@ const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
-const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
-
-function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
-  const normalizedBookingType = String(bookingType || "").toLowerCase();
-  const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
-  return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
-    ? SLINGSHOT_PICKUP_LOCATION
-    : DEFAULT_LOCATION;
-}
 
 /**
  * Update booked-dates.json in the GitHub repo to block the reserved dates.

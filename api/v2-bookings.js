@@ -47,11 +47,12 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMeth
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
-import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById, loadVehicles } from "./_vehicles.js";
+import { resolvePickupLocation } from "./_pickup-location.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -59,15 +60,6 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
   fusion2017: "Ford Fusion 2017",
 };
-const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
-
-function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = {}) {
-  const normalizedBookingType = String(bookingType || "").toLowerCase();
-  const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
-  return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
-    ? SLINGSHOT_PICKUP_LOCATION
-    : DEFAULT_LOCATION;
-}
 
 // Mapping from app-level status values (used in bookings.json and the admin UI)
 // to database-level status values (used in the Supabase bookings table).
