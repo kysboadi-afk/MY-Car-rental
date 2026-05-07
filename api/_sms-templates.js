@@ -1,5 +1,6 @@
 // api/_sms-templates.js
 // Centralized SMS template library for the SLY RIDES rental management system.
+import { CAR_PICKUP_LOCATION } from "./_pickup-location.js";
 //
 // All customer-facing SMS messages are defined here as functions that accept
 // a variables object and return the rendered message string.  Templates use
@@ -22,7 +23,7 @@
 //   buffered_time      – return_time + 2 h buffer (e.g. "5:00 PM"), for informational display
 //   late_fee           – late fee amount in dollars (e.g. "50")
 
-export const DEFAULT_LOCATION = "1200 S Figueroa St, Los Angeles, CA 90015";
+export const DEFAULT_LOCATION = CAR_PICKUP_LOCATION;
 
 /**
  * Render a template string by substituting {variable} placeholders.

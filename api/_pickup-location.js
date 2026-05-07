@@ -1,8 +1,7 @@
 // api/_pickup-location.js
 // Shared pickup-location routing for booking notifications and reminders.
 
-import { DEFAULT_LOCATION } from "./_sms-templates.js";
-
+export const CAR_PICKUP_LOCATION = "1200 S Figueroa St, Los Angeles, CA 90015";
 export const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90802";
 
 /**
@@ -17,5 +16,5 @@ export function resolvePickupLocation({ bookingType, vehicleId, vehicleName } = 
   const vehicleSearchString = `${vehicleId || ""} ${vehicleName || ""}`.toLowerCase();
   return normalizedBookingType === "slingshot" || vehicleSearchString.includes("slingshot")
     ? SLINGSHOT_PICKUP_LOCATION
-    : DEFAULT_LOCATION;
+    : CAR_PICKUP_LOCATION;
 }
