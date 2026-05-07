@@ -4847,7 +4847,11 @@ function bookingIdKey(value) {
 }
 
 function bookingCanonicalId(booking) {
-  return bookingIdKey(booking?.bookingId || booking?.booking_ref || booking?.id);
+  return bookingIdKey(
+    booking?.bookingId
+    || booking?.booking_ref
+    || (booking?.id != null ? String(booking.id) : '')
+  );
 }
 
 function findBookingByAnyId(bookingId) {
