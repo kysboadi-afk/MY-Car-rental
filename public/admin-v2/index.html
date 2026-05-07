@@ -4873,12 +4873,14 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  return apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+  return apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
         ...b,
         bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
+        vehicleId: b?.vehicleId || b?.vehicle_id || '',
+        paymentIntentId: b?.paymentIntentId || b?.payment_intent_id || '',
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
       allBookings = normalizedBookings;
@@ -6380,7 +6382,7 @@ function loadRevenue() {
 
   Promise.all([
     apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi', scope: 'car' }),
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {

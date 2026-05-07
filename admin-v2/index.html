@@ -4791,6 +4791,8 @@ function loadBookings() {
       const normalizedBookings = rawBookings.map((b) => ({
         ...b,
         bookingId: b?.bookingId || b?.booking_ref || (b?.id != null ? String(b.id) : ''),
+        vehicleId: b?.vehicleId || b?.vehicle_id || '',
+        paymentIntentId: b?.paymentIntentId || b?.payment_intent_id || '',
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
       allBookings = normalizedBookings;
