@@ -3664,17 +3664,17 @@ async function toolResendBookingConfirmation({ bookingId }) {
   let storedDocs = null;
   try {
     if (sb) {
-      const docsLookupKeys = [...new Set([bookingId, paymentIntentId].map((v) => String(v || "").trim()).filter(Boolean))];
-      for (const docsKey of docsLookupKeys) {
+      const documentLookupKeys = [...new Set([bookingId, paymentIntentId].map((v) => String(v || "").trim()).filter(Boolean))];
+      for (const documentKey of documentLookupKeys) {
         const { data: docsRow } = await sb
           .from("pending_booking_docs")
           .select("*")
-          .eq("booking_id", docsKey)
+          .eq("booking_id", documentKey)
           .maybeSingle();
         if (docsRow) {
           storedDocs = docsRow;
-          if (docsKey !== bookingId) {
-            console.log(`toolResendBookingConfirmation: loaded pending_booking_docs via fallback key ${docsKey}`);
+          if (documentKey !== bookingId) {
+            console.log(`toolResendBookingConfirmation: loaded pending_booking_docs via fallback key ${documentKey}`);
           }
           break;
         }
