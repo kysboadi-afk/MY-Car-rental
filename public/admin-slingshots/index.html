@@ -5067,7 +5067,7 @@ function viewBooking(bookingId, vehicleId) {
           ? `<button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
           : '';
       })()}
-      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+      <button class="btn btn-danger" onclick="cancelActiveRentalWithConfirm('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">Cancel Booking</button>
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
@@ -5228,6 +5228,39 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
       showToast('Error updating booking: ' + err.message, 'error');
       if (triggerBtn) triggerBtn.disabled = false;
     }
+  });
+}
+
+/**
+ * Cancel a booking that is already in active_rental / overdue / extended status.
+ * Shows a prominent warning before proceeding, then sends forceCancel=true so
+ * the backend guard allows the override.
+ */
+function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const derived = b ? bookingDerivedStatus(b, new Date()) : null;
+  const isAlreadyActive = b && (b.status === 'active_rental' || derived === 'overdue' || derived === 'extended');
+
+  if (isAlreadyActive) {
+    const confirmed = confirm(
+      '⚠️ WARNING: This rental is currently ACTIVE — the vehicle has already been picked up.\n\n' +
+      'Cancelling an active rental does NOT automatically return the vehicle or charge any fee.\n\n' +
+      'Are you absolutely sure you want to cancel this active rental?'
+    );
+    if (!confirmed) return;
+  }
+
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    updates: { status: 'cancelled_rental', forceCancel: true },
+  }).then(() => {
+    showToast('Active rental cancelled.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error cancelling rental: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
   });
 }
 
