@@ -784,13 +784,14 @@ export default async function handler(req, res) {
                   name:            freshRow.customer_name || "",
                   phone:           freshRow.customer_phone || "",
                   email:           freshRow.customer_email || "",
-                  status:          DB_TO_APP_STATUS[freshRow.status] || freshRow.status || "",
                   ...safeUpdates,
+                  status:          DB_TO_APP_STATUS[freshRow.status] || freshRow.status || "",
                 };
               }
-            } catch (_refreshErr) {
+            } catch (refreshErr) {
               // Non-fatal: if refresh fails we fall back to the pre-update
               // booking snapshot from checkData (if available) just below.
+              void refreshErr;
             }
           }
           if (!updatedBooking) {
