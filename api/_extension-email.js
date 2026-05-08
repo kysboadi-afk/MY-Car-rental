@@ -234,8 +234,8 @@ export async function sendExtensionConfirmationEmails({
       try {
         const vehicleData = await getVehicleById(vehicleId);
         vehicleVin = vehicleData?.vin || "";
-      } catch {
-        // Non-fatal: VIN remains empty.
+      } catch (vinLookupErr) {
+        console.warn("_extension-email: VIN lookup failed (non-fatal):", vinLookupErr.message);
       }
     }
   }

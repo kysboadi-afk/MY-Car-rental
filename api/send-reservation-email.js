@@ -636,8 +636,8 @@ export default async function handler(req, res) {
       try {
         const vehicleData = await getVehicleById(hydratedBody.vehicleId);
         hydratedBody.vehicleVin = vehicleData?.vin || "";
-      } catch {
-        // Non-fatal: VIN remains empty.
+      } catch (vinLookupErr) {
+        console.warn("[send-reservation-email] VIN lookup failed (non-fatal):", vinLookupErr.message);
       }
     }
   }
