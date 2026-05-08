@@ -2990,7 +2990,7 @@ let _firstVehicleId = '';
 async function loadVehiclesFromApi() {
   if (window.DEMO_MODE) return; // demo data is loaded by initDemoMode()
   try {
-    const res  = await fetch(API_BASE + '/api/v2-vehicles');
+    const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=car');
     if (!res.ok) return;
     const vehicles = await res.json();
     if (!Array.isArray(vehicles)) return;
@@ -5390,7 +5390,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'car' })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];
