@@ -5033,7 +5033,7 @@ if (bookingsTbodyEl && !bookingsTbodyEl.dataset.actionBound) {
     const bookingId = actionBtn.dataset.bookingId || '';
     const vehicleId = actionBtn.dataset.vehicleId || '';
 
-    if (!bookingId && action !== 'approve' && action !== 'decline') {
+    if (!bookingId) {
       showToast('Missing booking reference.', 'error');
       return;
     }
