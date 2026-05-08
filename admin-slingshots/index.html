@@ -5895,11 +5895,11 @@ function resetSmsTemplate() {
 // ── Modal helpers ──────────────────────────────────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-// Close modal on overlay click
-document.querySelectorAll('.modal-overlay').forEach((overlay) => {
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.classList.remove('open');
-  });
+// Close modal on overlay click (delegated so it covers modals added after script parse)
+document.addEventListener('click', (e) => {
+  if (e.target.classList && e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
 });
 
 // ── Toast ──────────────────────────────────────────────────────────────────
