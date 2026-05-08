@@ -4643,11 +4643,11 @@ function applyLateFeeFilters() {
       <td><span class="badge" style="background:${sc.bg};color:${sc.color};">${sc.label}</span></td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(b.bookingId || '')}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
-          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
-          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${safeFeeAmt})">🚫 Waive</button>` : ''}
-          ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(b.bookingId || '')}',this)">✗ Dismiss</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(bookingCanonicalId(b))}','${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(bookingCanonicalId(b))}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
+          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(bookingCanonicalId(b))}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
+          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(bookingCanonicalId(b))}',${safeFeeAmt})">🚫 Waive</button>` : ''}
+          ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(bookingCanonicalId(b))}',this)">✗ Dismiss</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -4995,11 +4995,11 @@ function applyBookingFilters() {
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(bookingCanonicalId(b))}', '${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(bookingCanonicalId(b))}')">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
-            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
-            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(bookingCanonicalId(b))}','booked_paid',this)">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(bookingCanonicalId(b))}','cancelled_rental',this)">Decline</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
@@ -5007,12 +5007,12 @@ function applyBookingFilters() {
               const canExtend   = b.status === 'active_rental' && extReturnDt && now < extReturnDt;
               console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: extReturnDt ? extReturnDt.toISOString() : null, canExtend });
               return canExtend
-                ? `<button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
+                ? `<button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(bookingCanonicalId(b))}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
                 : '';
             })()}
-            <button class="btn btn-success btn-sm" onclick="handleReturn('${esc(b.bookingId || '')}',this)" title="Mark returned">✓ Returned</button>
+            <button class="btn btn-success btn-sm" onclick="handleReturn('${esc(bookingCanonicalId(b))}',this)" title="Mark returned">✓ Returned</button>
           ` : ''}
-          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
+          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(bookingCanonicalId(b))}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
           ${b.phone ? `<a href="tel:${esc(b.phone)}" class="btn btn-secondary btn-sm" title="Call customer">📞</a>` : ''}
           ${b.email ? `<a href="mailto:${esc(b.email)}" class="btn btn-secondary btn-sm" title="Email customer">✉️</a>` : ''}
         </div>
