@@ -24,7 +24,11 @@ window.SlyLA = window.SlyLA || (function () {
       var m   = (parts.find(function(p){return p.type==="month";})||{}).value;
       var day = (parts.find(function(p){return p.type==="day";})||{}).value;
       return y+"-"+m+"-"+day;
-    } catch(_) { return new Date().toISOString().slice(0,10); }
+    } catch(_) {
+      var dt = d instanceof Date ? d : new Date(d || Date.now());
+      try { return dt.toLocaleDateString("en-CA", { timeZone: TZ }); } catch (_) {}
+      return dt.toISOString().slice(0,10);
+    }
   }
   function addDaysToISO(iso, n) {
     var p = String(iso||"").split("-").map(Number);

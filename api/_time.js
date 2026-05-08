@@ -21,6 +21,33 @@ export function laHour() {
 }
 
 /**
+ * Return an ISO date-only string ("YYYY-MM-DD") in Los Angeles timezone.
+ * Accepts an optional date input (Date, timestamp, or parseable string).
+ *
+ * @param {Date|string|number} [dateInput]
+ * @returns {string}
+ */
+export function isoDateInLA(dateInput = new Date()) {
+  const parsed = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const year = parts.find((p) => p.type === "year")?.value;
+    const month = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // Fall through to UTC fallback.
+  }
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * Convert an HH:MM (24-hour) or "HH:MM:SS" time string to a human-readable
  * 12-hour format suitable for SMS templates (e.g. "16:00" → "4:00 PM").
  * Returns the original value unchanged when it cannot be parsed, so callers

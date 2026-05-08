@@ -22,7 +22,7 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { laHour } from "./_time.js";
+import { laHour, isoDateInLA } from "./_time.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
@@ -122,7 +122,7 @@ async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata 
   try {
     const returnDateAtSend = opts.sentinelDate
       ? "1970-01-01"
-      : new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      : isoDateInLA(); // YYYY-MM-DD
     const row = {
       booking_id:          bookingRef,
       template_key:        templateKey,

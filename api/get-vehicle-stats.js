@@ -28,6 +28,7 @@ import { loadBookings }  from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isoDateInLA } from "./_time.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeVehiclePriority } from "../lib/ai/priority.js";
 
@@ -179,7 +180,7 @@ export default async function handler(req, res) {
       // ── Computed status (ON_RENTAL / MAINTENANCE / AVAILABLE) ─────────────
       // Bookings are the source of truth for availability.
       // A vehicle is ON_RENTAL when today falls within a confirmed booking's date range.
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = isoDateInLA();
       const allVehicleBookings = bookingsData[vehicleId] || [];
       const currentBooking = allVehicleBookings.find((b) => {
         if (b.status !== "booked_paid" && b.status !== "active_rental") return false;

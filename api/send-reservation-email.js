@@ -24,7 +24,7 @@ import { persistBooking } from "./_booking-pipeline.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
-import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
+import { normalizeClockTime, deriveReturnTime, formatTime12h, isoDateInLA } from "./_time.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -802,7 +802,7 @@ export default async function handler(req, res) {
     let agreementPdfFilename = null;
     if (isConfirmed && signature) {
       const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
-      const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+      const safeDate = (pickup || isoDateInLA()).replace(/[^0-9-]/g, "");
       agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
       agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       ownerAttachmentCandidates.push({

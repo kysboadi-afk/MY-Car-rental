@@ -26,7 +26,7 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
-import { laHour } from "./_time.js";
+import { laHour, isoDateInLA } from "./_time.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
@@ -230,7 +230,7 @@ async function checkHighMileageQuota(sb, bookingId) {
 async function logHighMileageAlert(sb, bookingId) {
   if (!sb || !bookingId) return;
   try {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const today = isoDateInLA(); // YYYY-MM-DD
     const { error } = await sb.from("sms_logs").insert({
       booking_id:          bookingId,
       template_key:        TEMPLATE_KEY_HIGH_MILEAGE,

@@ -21,7 +21,7 @@ import { getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
-import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA } from "./_time.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA, isoDateInLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 
@@ -354,7 +354,7 @@ export default async function handler(req, res) {
         // all bookings that could overlap with the extension window.  Fall back
         // to today if effectiveReturnDate is not set rather than newReturnDate,
         // which is the end of the extension range and would miss earlier pickups.
-        const conflictFloorDate = effectiveReturnDate || new Date().toISOString().split("T")[0];
+        const conflictFloorDate = effectiveReturnDate || isoDateInLA();
         // Exclude the current renter's own booking at the query level when the
         // canonical booking_ref is known.  This is the first line of defence;
         // the in-loop skip below is a secondary guard for any edge cases.

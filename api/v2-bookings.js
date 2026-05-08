@@ -49,7 +49,7 @@ import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
-import { normalizeClockTime } from "./_time.js";
+import { normalizeClockTime, isoDateInLA } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById, loadVehicles } from "./_vehicles.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
@@ -1548,7 +1548,7 @@ export default async function handler(req, res) {
       try {
         const sbPdf = getSupabaseAdmin();
         const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
-        const safeDate = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+        const safeDate = (pickupDate || isoDateInLA()).replace(/[^0-9-]/g, "");
         const pdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
 
         let pdfBuffer = null;

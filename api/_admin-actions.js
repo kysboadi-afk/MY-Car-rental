@@ -40,7 +40,7 @@ import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
-import { normalizeClockTime } from "./_time.js";
+import { normalizeClockTime, isoDateInLA } from "./_time.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -3698,7 +3698,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
   let agreementPdfFilename = null;
   try {
     const safeName_ = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
-    const safeDate_ = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+    const safeDate_ = (pickupDate || isoDateInLA()).replace(/[^0-9-]/g, "");
     agreementPdfFilename = `rental-agreement-${safeName_}-${safeDate_}.pdf`;
 
     let pdfBuffer = null;
