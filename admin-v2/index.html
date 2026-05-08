@@ -4962,6 +4962,8 @@ function viewBooking(bookingId, vehicleId) {
     unprofitable: '<span class="badge badge-danger">📉 Unprofitable</span>',
   }[tier] || '';
   const riskClr = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' }[b.custRiskFlag || 'low'] || 'inherit';
+  const _tickets = (typeof allTickets !== 'undefined' && Array.isArray(allTickets)) ? allTickets : [];
+  try {
   document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
@@ -5024,7 +5026,7 @@ function viewBooking(bookingId, vehicleId) {
     </div>
     ` : ''}
     ${(() => {
-      const linked = allTickets.filter((t) => t.booking_ref === b.bookingId);
+      const linked = _tickets.filter((t) => t.booking_ref === b.bookingId);
       if (!linked.length) return '';
       const rows = linked.map((t) => {
         const tDate = t.violation_date
@@ -5066,7 +5068,7 @@ function viewBooking(bookingId, vehicleId) {
       </div>
     </div>
   `;
-    document.getElementById('booking-detail-actions').innerHTML = `
+  document.getElementById('booking-detail-actions').innerHTML = `
     ${b.status === 'reserved_unpaid' ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
@@ -5094,6 +5096,11 @@ function viewBooking(bookingId, vehicleId) {
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
+  } catch (renderErr) {
+    console.error('[viewBooking] render error:', renderErr);
+    showToast('Error rendering booking details: ' + (renderErr.message || renderErr), 'error');
+    return;
+  }
   openModal('booking-detail-modal');
 }
 
