@@ -305,7 +305,11 @@ async function checkActiveRentalCount(sb) {
     const dateRefs   = new Set((dateBasedRes.data   || []).map((b) => b.booking_ref));
 
     const notMarkedActive        = (dateBasedRes.data   || []).filter((b) => !statusRefs.has(b.booking_ref));
-    const markedActivePastReturn = (activeStatusRes.data || []).filter((b) => !dateRefs.has(b.booking_ref));
+    // Only flag bookings whose return date has already passed — bookings with a future
+    // pickup/return that were pre-set to "active" should not be treated as mismatches.
+    const markedActivePastReturn = (activeStatusRes.data || []).filter(
+      (b) => !dateRefs.has(b.booking_ref) && b.return_date < today,
+    );
     const drift = notMarkedActive.length + markedActivePastReturn.length;
 
     if (drift === 0) {
@@ -323,7 +327,7 @@ async function checkActiveRentalCount(sb) {
       })),
       ...markedActivePastReturn.map((b) => ({
         id: b.booking_ref,
-        info: `status=active but return_date=${b.return_date} is outside today (${today})`,
+        info: `status=active but return_date=${b.return_date} is in the past (today=${today})`,
       })),
     ];
     console.error(
