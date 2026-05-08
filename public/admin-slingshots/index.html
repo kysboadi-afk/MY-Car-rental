@@ -7422,7 +7422,7 @@ function loadVehiclePricing() {
   document.getElementById('vp-loading').style.display = '';
   document.getElementById('vp-content').style.display = 'none';
 
-  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get' })
+  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get', scope: 'slingshot' })
     .then((data) => {
       renderVehiclePricing(data.pricing || []);
       document.getElementById('vp-loading').style.display = 'none';
@@ -7505,7 +7505,7 @@ function updateVpSearchCount() {
 
 function saveVehiclePricing(vehicleId) {
   const fields = ['daily_price', 'weekly_price', 'biweekly_price', 'monthly_price'];
-  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId };
+  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId, scope: 'slingshot' };
 
   for (const field of fields) {
     const el = document.getElementById(`vp-${vehicleId}-${field}`);
