@@ -4643,7 +4643,7 @@ function applyLateFeeFilters() {
       <td><span class="badge" style="background:${sc.bg};color:${sc.color};">${sc.label}</span></td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(bookingCanonicalId(b))}','${esc(b.vehicleId || '')}')">View</button>
           <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(b.bookingId || '')}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
           ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
           ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${safeFeeAmt})">🚫 Waive</button>` : ''}
@@ -4995,8 +4995,8 @@ function applyBookingFilters() {
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(bookingCanonicalId(b))}', '${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(bookingCanonicalId(b))}')">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
