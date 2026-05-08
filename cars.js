@@ -80,8 +80,8 @@ function buildEconomyCard(v, pricing) {
       </div>
       <p class="price-list-label" data-i18n="fleet.rentalPlans">${t("fleet.rentalPlans", "Rental Plans")}</p>
       <div class="price-list">
-        <div class="price-item">${daily} / <span data-i18n="fleet.unitDay">${t("fleet.unitDay", "day")}</span></div>
-        <div class="price-item price-item--popular">${weekly} / <span data-i18n="fleet.unitWeek">${t("fleet.unitWeek", "week")}</span> <span class="popular-tag" data-i18n="fleet.mostPopular">${t("fleet.mostPopular", "Most Popular")}</span></div>
+        <div class="price-item price-item--popular">${daily} / <span data-i18n="fleet.unitDay">${t("fleet.unitDay", "day")}</span> <span class="popular-tag" data-i18n="fleet.mostPopular">${t("fleet.mostPopular", "Most Popular")}</span></div>
+        <div class="price-item">${weekly} / <span data-i18n="fleet.unitWeek">${t("fleet.unitWeek", "week")}</span></div>
         <div class="price-item">${biweekly} / <span data-i18n="fleet.unitBiweek">${t("fleet.unitBiweek", "2 weeks")}</span></div>
         <div class="price-item">${monthly} / <span data-i18n="fleet.unitMonth">${t("fleet.unitMonth", "month")}</span> <span class="best-value-tag" data-i18n="fleet.bestValue">${t("fleet.bestValue", "Best Value")}</span></div>
       </div>

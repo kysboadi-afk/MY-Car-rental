@@ -411,8 +411,9 @@ var botResponses = {
     {
       patterns: ["hello","hi","hey","howdy","sup","what's up"],
       reply: function() {
+        var d = getChatPricing().economy.daily;
         var w = getChatPricing().economy.weekly;
-        return "Hey! 👋 Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$" + w + "/week with unlimited miles</strong>. I can help you get approved quickly.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Click here to apply and get approved</a>";
+        return "Hey! 👋 Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars start at <strong>$" + d + "/day</strong> (or $" + w + "/week) with unlimited miles. I can help you get approved quickly.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Click here to apply and get approved</a>";
       }
     },
     {
@@ -426,8 +427,9 @@ var botResponses = {
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
       reply: function() {
+        var d = getChatPricing().economy.daily;
         var w = getChatPricing().economy.weekly;
-        return "💰 Earning Potential with SLY Rides\n\nOur delivery drivers typically earn:\n  • $800 – $1,500 per week\n\nworking on apps like DoorDash, Uber Eats, Instacart, and Amazon Flex.\n\nFor just $" + w + "/week with unlimited miles, that's a great return!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Apply now to get approved</a>";
+        return "💰 Earning Potential with SLY Rides\n\nOur delivery drivers typically earn:\n  • $800 – $1,500 per week\n\nworking on apps like DoorDash, Uber Eats, Instacart, and Amazon Flex.\n\nFor just $" + d + "/day (or $" + w + "/week) with unlimited miles, that's a great return!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Apply now to get approved</a>";
       }
     },
     {
@@ -647,7 +649,7 @@ function buildChatbot() {
     // Reminder popup (shown 12 s after badge appears with no interaction)
     '<div id="chat-reminder" hidden role="alertdialog" aria-label="Chat reminder">' +
       '<button id="chat-reminder-close" aria-label="Dismiss reminder">\u2715</button>' +
-      '<p>\uD83D\uDE97 <strong>$' + getChatPricing().economy.weekly + '/week \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
+      '<p>\uD83D\uDE97 <strong>$' + getChatPricing().economy.daily + '/day \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
     '</div>'
   );
 
@@ -1174,10 +1176,10 @@ function buildChatbot() {
     // Show reminder 12 s after badge if user hasn't interacted yet
     reminderTimer = setTimeout(function() {
       if (!userInteracted && chatBox.hidden && !userDismissed) {
-        // Update the weekly rate in the reminder text from live pricing (should be
+        // Update the daily rate in the reminder text from live pricing (should be
         // loaded by now — fetch completes well within the 12-second window).
         var reminderPrice = reminder.querySelector("strong");
-        if (reminderPrice) reminderPrice.textContent = "$" + getChatPricing().economy.weekly + "/week \u2014 Unlimited Miles!";
+        if (reminderPrice) reminderPrice.textContent = "$" + getChatPricing().economy.daily + "/day \u2014 Unlimited Miles!";
         reminder.hidden = false;
       }
     }, 12000);
