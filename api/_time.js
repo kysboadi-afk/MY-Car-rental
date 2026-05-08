@@ -28,8 +28,8 @@ export function laHour() {
  * @returns {string}
  */
 export function isoDateInLA(dateInput = new Date()) {
-  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (Number.isNaN(date.getTime())) return "";
+  const parsed = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   try {
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: BUSINESS_TZ,

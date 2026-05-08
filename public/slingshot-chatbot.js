@@ -26,6 +26,7 @@ window.SlyLA = window.SlyLA || (function () {
       return y+"-"+m+"-"+day;
     } catch(_) {
       var dt = d instanceof Date ? d : new Date(d || Date.now());
+      try { return dt.toLocaleDateString("en-CA", { timeZone: TZ }); } catch (_) {}
       return dt.toISOString().slice(0,10);
     }
   }
