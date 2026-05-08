@@ -46,7 +46,9 @@ async function loadScopedVehicleIds(sb, scope) {
 
   try {
     const { data, error } = await sb.from("vehicles").select("vehicle_id, data");
-    if (!error && Array.isArray(data)) {
+    if (error) {
+      console.warn("[admin-update-pricing] vehicles scope lookup failed:", error.message);
+    } else if (Array.isArray(data)) {
       for (const row of data) {
         const vehicle = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
         const category = deriveCategory(vehicle, row.vehicle_id);
@@ -55,8 +57,8 @@ async function loadScopedVehicleIds(sb, scope) {
         }
       }
     }
-  } catch {
-    // fall through to JSON fallback
+  } catch (err) {
+    console.warn("[admin-update-pricing] vehicles scope lookup threw:", err.message);
   }
 
   if (scopedIds.size > 0) return scopedIds;
@@ -130,7 +132,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "vehicle_id is required." });
     }
     if (scopedVehicleIds && !scopedVehicleIds.has(vehicle_id.trim())) {
-      return res.status(400).json({ error: `Vehicle "${vehicle_id.trim()}" is not available in this pricing workspace.` });
+      return res.status(400).json({ error: "This vehicle is not available in this pricing workspace." });
     }
 
     const patch = {};
