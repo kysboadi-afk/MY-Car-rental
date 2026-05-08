@@ -23,6 +23,7 @@ import { loadBookings, normalizePhone } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { loadExpenses } from "./_expenses.js";
+import { loadVehicles } from "./_vehicles.js";
 
 /**
  * Compute the number of rental days between two date strings.
@@ -135,6 +136,44 @@ async function findMostRecentCustomerByEmail(sb, email) {
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const CUSTOMERS_FILE  = "customers.json";
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+
+function normalizeScope(scope) {
+  const s = String(scope || "").trim().toLowerCase();
+  if (!VALID_SCOPES.has(s)) return null;
+  return s === "cars" ? "car" : s;
+}
+
+function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
+  const explicit = String(vehicle.category || "").toLowerCase().trim();
+  if (explicit === "car" || explicit === "slingshot") return explicit;
+  const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
+  const name = String(vehicle.vehicle_name || "").toLowerCase();
+  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
+  return "car";
+}
+
+async function resolveScopedVehicleIds(scope) {
+  const normalized = normalizeScope(scope);
+  if (!normalized) return null;
+  try {
+    const { data } = await loadVehicles();
+    const wantSlingshot = normalized === "slingshot";
+    return new Set(
+      Object.entries(data || {})
+        .filter(([vehicleId, vehicle]) => {
+          const category = deriveVehicleCategory(vehicle, vehicleId);
+          return wantSlingshot ? category === "slingshot" : category === "car";
+        })
+        .map(([, vehicle]) => vehicle?.vehicle_id)
+        .filter(Boolean)
+    );
+  } catch (err) {
+    console.warn("v2-customers: failed to resolve scope vehicle IDs (non-fatal):", err?.message);
+    return null;
+  }
+}
 
 /** Returns the Supabase client or null if not configured. */
 function getSupabase() {
@@ -210,9 +249,48 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
+      const scopeVehicleIds = await resolveScopedVehicleIds(body.scope);
+      let scopedCustomerIds = null;
+      let scopedIdentityKeys = null;
+
+      if (scopeVehicleIds) {
+        if (scopeVehicleIds.size === 0) return res.status(200).json({ customers: [] });
+
+        scopedCustomerIds = new Set();
+        scopedIdentityKeys = new Set();
+        if (sb) {
+          try {
+            const { data: scopedBookings, error: scopedBookingsErr } = await sb
+              .from("bookings")
+              .select("customer_id, customer_name, customer_phone, customer_email")
+              .in("vehicle_id", [...scopeVehicleIds]);
+            if (!scopedBookingsErr && scopedBookings) {
+              for (const b of scopedBookings) {
+                if (b.customer_id) scopedCustomerIds.add(b.customer_id);
+                const key = customerIdentityKey({
+                  phone: b.customer_phone || null,
+                  email: b.customer_email || null,
+                  name: b.customer_name || null,
+                });
+                if (key) scopedIdentityKeys.add(key);
+              }
+            }
+          } catch (scopeErr) {
+            console.warn("v2-customers list: scoped booking lookup failed (non-fatal):", scopeErr.message);
+          }
+        }
+      }
+
       if (sb) {
         try {
           let q = sb.from("customers").select("*").order("last_booking_date", { ascending: false, nullsFirst: false });
+          if (scopeVehicleIds) {
+            if (scopedCustomerIds && scopedCustomerIds.size > 0) {
+              q = q.in("id", [...scopedCustomerIds]);
+            } else {
+              return res.status(200).json({ customers: [] });
+            }
+          }
           if (body.banned  === true  || body.banned  === "true")  q = q.eq("banned",  true);
           if (body.flagged === true  || body.flagged === "true")   q = q.eq("flagged", true);
           if (body.search) {
@@ -237,6 +315,22 @@ export default async function handler(req, res) {
           (c.phone || "").toLowerCase().includes(s) ||
           (c.email || "").toLowerCase().includes(s)
         );
+      }
+      if (scopeVehicleIds) {
+        if (!scopedIdentityKeys || scopedIdentityKeys.size === 0) {
+          const { data: bookingsData } = await loadBookings();
+          const allBookings = Object.values(bookingsData || {}).flat();
+          scopedIdentityKeys = new Set(
+            allBookings
+              .filter((b) => b?.vehicleId && scopeVehicleIds.has(b.vehicleId))
+              .map((b) => customerIdentityKey({
+                phone: b.phone || null,
+                email: b.email || null,
+                name: b.name || null,
+              }))
+          );
+        }
+        customers = customers.filter((c) => scopedIdentityKeys.has(customerIdentityKey(c)));
       }
       return res.status(200).json({ customers });
     }

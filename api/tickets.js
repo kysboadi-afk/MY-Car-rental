@@ -21,11 +21,13 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { sendSms } from "./_textmagic.js";
 import { render, VIOLATION_NOTICE, VIOLATION_TRANSFER_SUBMITTED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
+import { loadVehicles } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const VALID_STATUSES = ["new","matched","transfer_ready","submitted","approved","rejected","charged","closed"];
 const VALID_TYPES    = ["parking","toll","camera","other"];
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 
 const STATUS_LABELS = {
   new:            "New",
@@ -37,6 +39,43 @@ const STATUS_LABELS = {
   charged:        "Charged",
   closed:         "Closed",
 };
+
+function normalizeScope(scope) {
+  const s = String(scope || "").trim().toLowerCase();
+  if (!VALID_SCOPES.has(s)) return null;
+  return s === "cars" ? "car" : s;
+}
+
+function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
+  const explicit = String(vehicle.category || "").toLowerCase().trim();
+  if (explicit === "car" || explicit === "slingshot") return explicit;
+  const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
+  const name = String(vehicle.vehicle_name || "").toLowerCase();
+  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
+  return "car";
+}
+
+async function scopedVehicleSet(scope) {
+  const normalized = normalizeScope(scope);
+  if (!normalized) return null;
+  try {
+    const { data } = await loadVehicles();
+    const wantSlingshot = normalized === "slingshot";
+    return new Set(
+      Object.entries(data || {})
+        .filter(([vehicleId, vehicle]) => {
+          const category = deriveVehicleCategory(vehicle, vehicleId);
+          return wantSlingshot ? category === "slingshot" : category === "car";
+        })
+        .map(([, vehicle]) => vehicle?.vehicle_id)
+        .filter(Boolean)
+    );
+  } catch (err) {
+    console.warn("tickets: failed to resolve scope vehicle set (non-fatal):", err?.message);
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -65,13 +104,14 @@ export default async function handler(req, res) {
   }
 
   try {
+    const scopeVehicles = await scopedVehicleSet(body.scope);
     switch (action) {
-      case "create":        return await actionCreate(sb, body, res);
-      case "list":          return await actionList(sb, body, res);
-      case "get":           return await actionGet(sb, body, res);
-      case "update_status": return await actionUpdateStatus(sb, body, res);
-      case "add_note":      return await actionAddNote(sb, body, res);
-      case "delete":        return await actionDelete(sb, body, res);
+      case "create":        return await actionCreate(sb, body, res, scopeVehicles);
+      case "list":          return await actionList(sb, body, res, scopeVehicles);
+      case "get":           return await actionGet(sb, body, res, scopeVehicles);
+      case "update_status": return await actionUpdateStatus(sb, body, res, scopeVehicles);
+      case "add_note":      return await actionAddNote(sb, body, res, scopeVehicles);
+      case "delete":        return await actionDelete(sb, body, res, scopeVehicles);
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
     }
@@ -83,7 +123,7 @@ export default async function handler(req, res) {
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
 
-async function actionCreate(sb, body, res) {
+async function actionCreate(sb, body, res, scopeVehicles) {
   const {
     ticketNumber,
     vehicleId,
@@ -109,6 +149,9 @@ async function actionCreate(sb, body, res) {
   }
   if (!VALID_TYPES.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(", ")}` });
+  }
+  if (scopeVehicles && !scopeVehicles.has(vehicleId)) {
+    return res.status(403).json({ error: "Vehicle is outside the current admin scope" });
   }
 
   const violationMs = new Date(violationDate).getTime();
@@ -244,7 +287,7 @@ async function actionCreate(sb, body, res) {
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
 
-async function actionList(sb, body, res) {
+async function actionList(sb, body, res, scopeVehicles) {
   const { status: filterStatus, vehicleId: filterVehicle } = body;
 
   let q = sb
@@ -261,6 +304,10 @@ async function actionList(sb, body, res) {
   if (filterVehicle && typeof filterVehicle === "string") {
     q = q.eq("vehicle_id", filterVehicle);
   }
+  if (scopeVehicles) {
+    if (scopeVehicles.size === 0) return res.status(200).json({ success: true, tickets: [] });
+    q = q.in("vehicle_id", [...scopeVehicles]);
+  }
 
   const { data, error } = await q;
   if (error) throw error;
@@ -275,7 +322,7 @@ async function actionList(sb, body, res) {
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 
-async function actionGet(sb, body, res) {
+async function actionGet(sb, body, res, scopeVehicles) {
   const { id } = body;
   if (!id) return res.status(400).json({ error: "id is required" });
 
@@ -290,6 +337,9 @@ async function actionGet(sb, body, res) {
 
   if (error) throw error;
   if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+  if (scopeVehicles && !scopeVehicles.has(ticket.vehicle_id)) {
+    return res.status(404).json({ error: "Ticket not found" });
+  }
 
   const { customers: cust, ...rest } = ticket;
   const enriched = enrichTicket(rest, cust);
@@ -310,7 +360,7 @@ async function actionGet(sb, body, res) {
 
 // ── UPDATE STATUS ─────────────────────────────────────────────────────────────
 
-async function actionUpdateStatus(sb, body, res) {
+async function actionUpdateStatus(sb, body, res, scopeVehicles) {
   const { id, status } = body;
   if (!id) return res.status(400).json({ error: "id is required" });
   if (!VALID_STATUSES.includes(status)) {
@@ -319,11 +369,14 @@ async function actionUpdateStatus(sb, body, res) {
 
   const { data: existing, error: fetchErr } = await sb
     .from("tickets")
-    .select("id, status, activity_log")
+    .select("id, status, activity_log, vehicle_id")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr) throw fetchErr;
   if (!existing) return res.status(404).json({ error: "Ticket not found" });
+  if (scopeVehicles && !scopeVehicles.has(existing.vehicle_id)) {
+    return res.status(404).json({ error: "Ticket not found" });
+  }
 
   const oldStatus   = existing.status;
   const activityLog = Array.isArray(existing.activity_log) ? existing.activity_log : [];
@@ -373,18 +426,21 @@ async function actionUpdateStatus(sb, body, res) {
 
 // ── ADD NOTE ──────────────────────────────────────────────────────────────────
 
-async function actionAddNote(sb, body, res) {
+async function actionAddNote(sb, body, res, scopeVehicles) {
   const { id, note } = body;
   if (!id)   return res.status(400).json({ error: "id is required" });
   if (!note || !String(note).trim()) return res.status(400).json({ error: "note is required" });
 
   const { data: existing, error: fetchErr } = await sb
     .from("tickets")
-    .select("id, activity_log")
+    .select("id, activity_log, vehicle_id")
     .eq("id", id)
     .maybeSingle();
   if (fetchErr) throw fetchErr;
   if (!existing) return res.status(404).json({ error: "Ticket not found" });
+  if (scopeVehicles && !scopeVehicles.has(existing.vehicle_id)) {
+    return res.status(404).json({ error: "Ticket not found" });
+  }
 
   const activityLog = Array.isArray(existing.activity_log) ? existing.activity_log : [];
   activityLog.push({
@@ -406,9 +462,21 @@ async function actionAddNote(sb, body, res) {
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 
-async function actionDelete(sb, body, res) {
+async function actionDelete(sb, body, res, scopeVehicles) {
   const { id } = body;
   if (!id) return res.status(400).json({ error: "id is required" });
+
+  if (scopeVehicles) {
+    const { data: existing, error: fetchErr } = await sb
+      .from("tickets")
+      .select("id, vehicle_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing || !scopeVehicles.has(existing.vehicle_id)) {
+      return res.status(404).json({ error: "Ticket not found" });
+    }
+  }
 
   const { error } = await sb.from("tickets").delete().eq("id", id);
   if (error) throw error;

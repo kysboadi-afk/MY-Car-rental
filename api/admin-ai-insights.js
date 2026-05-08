@@ -20,6 +20,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 
 const DB_TO_APP_STATUS = {
   pending:              "reserved_unpaid",
@@ -44,8 +45,24 @@ function revenueFromBooking(booking) {
   return 0;
 }
 
-async function fetchAllData() {
+function normalizeScope(scope) {
+  const s = String(scope || "").trim().toLowerCase();
+  return VALID_SCOPES.has(s) ? s : null;
+}
+
+function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
+  const explicit = String(vehicle.category || "").toLowerCase().trim();
+  if (explicit === "car" || explicit === "slingshot") return explicit;
+  const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
+  const name = String(vehicle.vehicle_name || "").toLowerCase();
+  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
+  return "car";
+}
+
+async function fetchAllData(scope = null) {
   const sb = getSupabaseAdmin();
+  const normalizedScope = normalizeScope(scope);
 
   // ── Bookings ──────────────────────────────────────────────────────────────
   let allBookings = [];
@@ -131,6 +148,18 @@ async function fetchAllData() {
     }
   }
 
+  // Apply optional fleet scope ("car" | "slingshot") to the vehicle map first,
+  // then use that scoped vehicle-id set to filter all other datasets.
+  if (normalizedScope) {
+    const onlySlingshot = normalizedScope === "slingshot";
+    vehicles = Object.fromEntries(
+      Object.entries(vehicles).filter(([vehicleId, vehicle]) => {
+        const category = deriveVehicleCategory(vehicle, vehicleId);
+        return onlySlingshot ? category === "slingshot" : category === "car";
+      })
+    );
+  }
+
   // ── Mileage data (Bouncie-tracked vehicles only) ──────────────────────────
   // Tracking activity is determined by bouncie_device_id + last_synced_at,
   // NOT by rental_status.  A rented vehicle with an active Bouncie device is
@@ -182,7 +211,22 @@ async function fetchAllData() {
     return !vid || carVehicleIds.has(vid);
   });
 
-  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips, revenueRecords: filteredRevenueRecords };
+  const filteredMileageData = mileageData.filter((m) => {
+    const vid = uiVehicleId(m.vehicle_id) || m.vehicle_id;
+    return !vid || carVehicleIds.has(vid);
+  });
+  const filteredRecentTrips = recentTrips.filter((t) => {
+    const vid = uiVehicleId(t.vehicle_id) || t.vehicle_id;
+    return !vid || carVehicleIds.has(vid);
+  });
+
+  return {
+    allBookings: filteredBookings,
+    vehicles,
+    mileageData: filteredMileageData,
+    recentTrips: filteredRecentTrips,
+    revenueRecords: filteredRevenueRecords,
+  };
 }
 
 export default async function handler(req, res) {
@@ -209,7 +253,7 @@ export default async function handler(req, res) {
   const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 10000;
 
   async function mainLogic() {
-    const { allBookings, vehicles, mileageData, recentTrips, revenueRecords } = await fetchAllData();
+    const { allBookings, vehicles, mileageData, recentTrips, revenueRecords } = await fetchAllData(body.scope);
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking, revenueRecords });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
