@@ -24,6 +24,7 @@ import { executeAction } from "./_admin-actions.js";
 import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 
 class OpenAiRoundTimeoutError extends Error {
   constructor(ms) {
@@ -678,9 +679,18 @@ The AI cannot upload image files directly. To change the logo:
 If the admin sends an image in the AI chat, acknowledge it but explain the upload must be done via the Settings page. You can then call \`update_site_content\` with the resulting URL once the admin confirms it.`;
 
 
-function buildSystemPrompt() {
+function normalizeScope(scope) {
+  const value = String(scope || "").trim().toLowerCase();
+  return VALID_SCOPES.has(value) ? value : null;
+}
+
+function buildSystemPrompt(scope = null) {
   const now = new Date().toISOString();
-  return `Current date/time: ${now}\n\n${SYSTEM_PROMPT_BASE}`;
+  const normalizedScope = normalizeScope(scope);
+  const scopePrompt = normalizedScope === "slingshot"
+    ? "\n\nYou are currently embedded in the SLYTRANS Slingshot Control admin dashboard. Unless the admin explicitly asks for a cross-fleet comparison, discuss only the slingshot fleet. Treat general requests about vehicles, bookings, revenue, customers, maintenance, GPS, analytics, and availability as slingshot-only. Use the word \"slingshot\" instead of \"car\" whenever the answer is specific to this workspace."
+    : "";
+  return `Current date/time: ${now}\n\n${SYSTEM_PROMPT_BASE}${scopePrompt}`;
 }
 
 // ── Confirmation-replay helpers ───────────────────────────────────────────────
@@ -958,7 +968,7 @@ export default async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { secret, messages: clientMessagesRaw, auto_mode: autoMode = false } = body;
+  const { secret, messages: clientMessagesRaw, auto_mode: autoMode = false, scope = null } = body;
 
   if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -1027,7 +1037,7 @@ export default async function handler(req, res) {
   // Build message list (system + trimmed history)
   // System prompt is built dynamically to include the real-time current date/time.
   const messages = [
-    { role: "system", content: buildSystemPrompt() },
+    { role: "system", content: buildSystemPrompt(scope) },
     ...trimmedMessages,
   ];
 
@@ -1048,7 +1058,7 @@ export default async function handler(req, res) {
         executeAction(
           pending.toolName,
           { ...pending.args, confirmed: true },
-          { requireConfirmation: !autoMode },
+          { requireConfirmation: !autoMode, scope },
         ),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error(`Action "${pending.toolName}" timed out`)), BUDGET_MS - MIN_RESPONSE_BUFFER_MS)
@@ -1071,7 +1081,7 @@ export default async function handler(req, res) {
   // The first OpenAI round takes ~10-20 s, so the prefetch finishes well
   // before the AI returns its tool-call decision, eliminating a full extra
   // OpenAI round-trip from the critical path for insight-based queries.
-  const insightsPrefetch = executeAction("get_insights", {}, { requireConfirmation: false })
+  const insightsPrefetch = executeAction("get_insights", {}, { requireConfirmation: false, scope })
     .catch((err) => { console.warn("admin-chat: insights prefetch failed:", err.message); return null; });
 
   // ── Agentic loop ─────────────────────────────────────────────────────────
@@ -1202,7 +1212,7 @@ export default async function handler(req, res) {
 
         if (!toolResult) {
           toolResult = await Promise.race([
-            executeAction(toolName, args, { requireConfirmation: !autoMode }),
+            executeAction(toolName, args, { requireConfirmation: !autoMode, scope }),
             new Promise((_, reject) =>
               setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
             ),
