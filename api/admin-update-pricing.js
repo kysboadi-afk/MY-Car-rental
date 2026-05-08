@@ -11,15 +11,72 @@
 
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { loadVehicles } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const PRICE_FIELDS = ["daily_price", "weekly_price", "biweekly_price", "monthly_price"];
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 
 // Pricing tiers that are not required — if omitted or left empty they are stored
 // as null, meaning getVehiclePricing falls through to daily × days for those
 // rental lengths.  daily_price is always required.
 const OPTIONAL_PRICE_FIELDS = new Set(["biweekly_price", "monthly_price"]);
+
+function normalizeScope(scope) {
+  const value = String(scope || "").trim().toLowerCase();
+  return VALID_SCOPES.has(value) ? value : null;
+}
+
+function deriveCategory(vehicle = {}, fallbackVehicleId = "") {
+  const explicit = String(vehicle.category || "").trim().toLowerCase();
+  if (explicit === "car" || explicit === "slingshot") return explicit;
+  const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
+  const name = String(vehicle.vehicle_name || vehicle.name || "").toLowerCase();
+  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
+  return "car";
+}
+
+async function loadScopedVehicleIds(sb, scope) {
+  const normalizedScope = normalizeScope(scope);
+  if (!normalizedScope) return null;
+  const wantSlingshots = normalizedScope === "slingshot";
+  const scopedIds = new Set();
+
+  try {
+    const { data, error } = await sb.from("vehicles").select("vehicle_id, data");
+    if (error) {
+      console.warn("[admin-update-pricing] vehicles scope lookup failed:", error.message);
+    } else if (Array.isArray(data)) {
+      for (const row of data) {
+        const vehicle = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
+        const category = deriveCategory(vehicle, row.vehicle_id);
+        if ((wantSlingshots && category === "slingshot") || (!wantSlingshots && category === "car")) {
+          scopedIds.add(row.vehicle_id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[admin-update-pricing] vehicles scope lookup threw:", err.message);
+  }
+
+  if (scopedIds.size > 0) return scopedIds;
+
+  try {
+    const { data: vehicles } = await loadVehicles();
+    for (const [vehicleId, vehicle] of Object.entries(vehicles || {})) {
+      const category = deriveCategory(vehicle, vehicleId);
+      if ((wantSlingshots && category === "slingshot") || (!wantSlingshots && category === "car")) {
+        scopedIds.add(vehicleId);
+      }
+    }
+  } catch {
+    // ignore fallback failure
+  }
+
+  return scopedIds;
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -46,10 +103,11 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: "Database unavailable." });
   }
 
-  const { action } = body;
+  const { action, scope = null } = body;
 
   // ── action: get ────────────────────────────────────────────────────────────
   if (action === "get") {
+    const scopedVehicleIds = await loadScopedVehicleIds(sb, scope);
     const { data, error } = await sb
       .from("vehicle_pricing")
       .select("vehicle_id, daily_price, weekly_price, biweekly_price, monthly_price, updated_at")
@@ -59,15 +117,22 @@ export default async function handler(req, res) {
       console.error("[admin-update-pricing] get error:", error);
       return res.status(500).json({ error: "Failed to load pricing." });
     }
-    return res.status(200).json({ pricing: data || [] });
+    const pricing = scopedVehicleIds
+      ? (data || []).filter((row) => scopedVehicleIds.has(row.vehicle_id))
+      : (data || []);
+    return res.status(200).json({ pricing });
   }
 
   // ── action: update ─────────────────────────────────────────────────────────
   if (action === "update") {
     const { vehicle_id } = body;
+    const scopedVehicleIds = await loadScopedVehicleIds(sb, scope);
 
     if (!vehicle_id || typeof vehicle_id !== "string" || !vehicle_id.trim()) {
       return res.status(400).json({ error: "vehicle_id is required." });
+    }
+    if (scopedVehicleIds && !scopedVehicleIds.has(vehicle_id.trim())) {
+      return res.status(400).json({ error: "This vehicle is not available in this pricing workspace." });
     }
 
     const patch = {};

@@ -3097,7 +3097,7 @@ let cachedVehicleStats = {};
 let lastVehicleStats = {};
 
 // AI assistant state
-const AI_HISTORY_KEY = 'sly_ai_history';
+const AI_HISTORY_KEY = 'sly_ai_history_slingshot';
 const AI_MAX_SAVED_MESSAGES = 40;
 const AI_MAX_REQUEST_MESSAGES = 16;
 let aiHistory      = [];   // { role, content }[] — conversation sent to backend
@@ -7393,7 +7393,7 @@ function loadVehiclePricing() {
   document.getElementById('vp-loading').style.display = '';
   document.getElementById('vp-content').style.display = 'none';
 
-  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get' })
+  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get', scope: 'slingshot' })
     .then((data) => {
       renderVehiclePricing(data.pricing || []);
       document.getElementById('vp-loading').style.display = 'none';
@@ -7476,7 +7476,7 @@ function updateVpSearchCount() {
 
 function saveVehiclePricing(vehicleId) {
   const fields = ['daily_price', 'weekly_price', 'biweekly_price', 'monthly_price'];
-  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId };
+  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId, scope: 'slingshot' };
 
   for (const field of fields) {
     const el = document.getElementById(`vp-${vehicleId}-${field}`);
@@ -8859,6 +8859,7 @@ async function sendAiMessage() {
       secret:    adminSecret,
       messages:  messagesToSend,
       auto_mode: aiAutoMode,
+      scope:     'slingshot',
     }, controller.signal);
 
     clearTimeout(abortTimer);
@@ -9432,7 +9433,7 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/v2-pricing'))         return Promise.resolve({ pricing: {} });
   if (p.endsWith('/api/v2-block-dates'))     return Promise.resolve({ blocked: [] });
   if (p.endsWith('/api/v2-fleet-status'))    return Promise.resolve({ fleet: [] });
-  if (p.endsWith('/api/admin-chat'))         return Promise.resolve({ reply: '👋 This is **demo mode**. In the live system, I can query real bookings, revenue, customer data, and execute actions. Ask me anything — I\'ll show you what I can do!', messages: [], tool_calls: [] });
+  if (p.endsWith('/api/admin-chat'))         return Promise.resolve({ reply: '👋 This is **demo mode**. In the live system, I can query real slingshot bookings, revenue, customer data, and execute actions for the slingshot fleet. Ask me anything — I\'ll show you what I can do!', messages: [], tool_calls: [] });
   if (p.endsWith('/api/tts'))                return Promise.reject(new Error('TTS disabled in demo'));
   if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: '', phone: '', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });

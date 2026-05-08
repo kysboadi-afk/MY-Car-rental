@@ -674,10 +674,17 @@ export default async function handler(req, res) {
     // Otherwise slice from the full allBookings list.
     let recentBookings;
     if (viewOk && recentBkResult?.data) {
+      // Filter by scope so the slingshot dashboard only shows slingshot bookings
+      // (and the car dashboard only shows car bookings).  filteredVehicleIds already
+      // reflects the scope-based vehicle set computed above.
+      const scopedRecentData = filteredVehicleIds.size > 0
+        ? recentBkResult.data.filter((r) => filteredVehicleIds.has(uiVehicleId(r.vehicle_id)))
+        : recentBkResult.data;
+
       // Build a per-booking revenue map from revenue_records so that active rentals
       // paid via Stripe (where deposit_paid on the bookings row is 0/null) show the
       // correct amount instead of $0.
-      const recentRefs = recentBkResult.data.map((r) => r.booking_ref).filter(Boolean);
+      const recentRefs = scopedRecentData.map((r) => r.booking_ref).filter(Boolean);
       const rrRecentMap = {};
       if (sb && recentRefs.length > 0) {
         try {
@@ -694,7 +701,7 @@ export default async function handler(req, res) {
         } catch (_) { /* non-fatal — fall back to deposit_paid */ }
       }
 
-      recentBookings = recentBkResult.data.slice(0, 10).map((r) => ({
+      recentBookings = scopedRecentData.slice(0, 10).map((r) => ({
         bookingId:   r.booking_ref || "",
         name:        r.customers?.name || "",
         vehicleId:   uiVehicleId(r.vehicle_id),

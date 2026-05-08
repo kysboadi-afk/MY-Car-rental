@@ -39,7 +39,7 @@ import { executeBackfillStripeCards } from "./backfill-stripe-card.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { persistBooking } from "./_booking-pipeline.js";
-import { normalizeVehicleId } from "./_vehicle-id.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { normalizeClockTime, isoDateInLA } from "./_time.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
@@ -60,6 +60,44 @@ function revenueFromBooking(booking) {
     return computeAmount(booking.vehicleId, booking.pickupDate, booking.returnDate) || 0;
   }
   return 0;
+}
+
+const VALID_FLEET_SCOPES = new Set(["car", "cars", "slingshot"]);
+
+function normalizeFleetScope(scope) {
+  const value = String(scope || "").trim().toLowerCase();
+  return VALID_FLEET_SCOPES.has(value) ? value : null;
+}
+
+function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
+  const explicit = String(vehicle.category || "").toLowerCase().trim();
+  if (explicit === "car" || explicit === "slingshot") return explicit;
+  const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
+  const name = String(vehicle.vehicle_name || vehicle.name || "").toLowerCase();
+  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
+  return "car";
+}
+
+function filterVehicleMapByScope(vehicles = {}, scope = null) {
+  const normalizedScope = normalizeFleetScope(scope);
+  if (!normalizedScope) return vehicles;
+  const onlySlingshot = normalizedScope === "slingshot";
+  return Object.fromEntries(
+    Object.entries(vehicles).filter(([vehicleId, vehicle]) => {
+      const category = deriveVehicleCategory(vehicle, vehicleId);
+      return onlySlingshot ? category === "slingshot" : category === "car";
+    })
+  );
+}
+
+function filterRowsByVehicleIds(rows = [], vehicleIds = null, key = "vehicle_id") {
+  if (!vehicleIds) return rows;
+  return rows.filter((row) => {
+    const rawId = row?.[key];
+    const resolvedId = uiVehicleId(rawId) || rawId;
+    return !!resolvedId && vehicleIds.has(resolvedId);
+  });
 }
 
 // ── AI audit logging (ai_logs table) ────────────────────────────────────────
@@ -124,8 +162,9 @@ const BOOKING_COLUMNS =
  * Load all bookings as a flat array.
  * Tries Supabase bookings table first; falls back to bookings.json.
  */
-async function loadAllBookings() {
+async function loadAllBookings(scope = null) {
   const sb = getSupabaseAdmin();
+  let bookings = [];
   if (sb) {
     try {
       const { data, error } = await sb
@@ -134,7 +173,7 @@ async function loadAllBookings() {
         .order("created_at", { ascending: false })
         .limit(50);
       if (!error && data) {
-        return data.map((row) => ({
+        bookings = data.map((row) => ({
           bookingId:  row.booking_ref || String(row.id),
           name:       row.customers?.name  || "",
           phone:      row.customers?.phone || "",
@@ -154,17 +193,28 @@ async function loadAllBookings() {
       // fall through
     }
   }
-  // Fallback: GitHub JSON
-  const { data: bookingsData } = await loadBookings();
-  return Object.values(bookingsData).flat();
+  if (bookings.length === 0) {
+    const { data: bookingsData } = await loadBookings();
+    bookings = Object.values(bookingsData).flat();
+  }
+  const normalizedScope = normalizeFleetScope(scope);
+  if (!normalizedScope) return bookings;
+  const scopedVehicles = await loadAllVehicles(normalizedScope);
+  const scopedVehicleIds = new Set(Object.keys(scopedVehicles));
+  if (scopedVehicleIds.size === 0) return [];
+  return bookings.filter((booking) => {
+    const resolvedId = uiVehicleId(booking.vehicleId) || booking.vehicleId;
+    return !!resolvedId && scopedVehicleIds.has(resolvedId);
+  });
 }
 
 /**
  * Load vehicles as a { [vehicleId]: vehicleObj } map.
  * Tries Supabase vehicles table first; falls back to vehicles.json.
  */
-async function loadAllVehicles() {
+async function loadAllVehicles(scope = null) {
   const sb = getSupabaseAdmin();
+  let vehicles = null;
   if (sb) {
     try {
       const { data, error } = await sb
@@ -189,14 +239,17 @@ async function loadAllVehicles() {
             last_tire_change_mileage:  row.last_tire_change_mileage   ?? null,
           };
         }
-        return map;
+        vehicles = map;
       }
     } catch {
       // fall through
     }
   }
-  const { data: vehicles } = await loadVehicles();
-  return vehicles;
+  if (!vehicles) {
+    const { data } = await loadVehicles();
+    vehicles = data;
+  }
+  return filterVehicleMapByScope(vehicles, scope);
 }
 
 /**
@@ -232,8 +285,12 @@ async function upsertVehicleToSupabase(vehicleId, vehicleData) {
 
 // ── Tool implementations ──────────────────────────────────────────────────────
 
-async function toolGetRevenue({ month } = {}) {
+async function toolGetRevenue({ month, scope } = {}) {
   const sb = getSupabaseAdmin();
+  const normalizedScope = normalizeFleetScope(scope);
+  const scopedVehicleIds = normalizedScope
+    ? new Set(Object.keys(await loadAllVehicles(normalizedScope)))
+    : null;
 
   // Primary source: revenue_records_effective (same as v2-dashboard.js and v2-analytics.js).
   // Falls back to bookings.amountPaid only when Supabase is unavailable or the view is empty.
@@ -256,11 +313,12 @@ async function toolGetRevenue({ month } = {}) {
 
         for (const r of rrRows) {
           if (r.is_cancelled || r.is_no_show) continue;
+          const vid   = uiVehicleId(r.vehicle_id) || r.vehicle_id || "unknown";
+          if (scopedVehicleIds && !scopedVehicleIds.has(vid)) continue;
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
           // Net = Gross − Stripe Fees (strict formula, no stripe_net).
           const net   = gross - fee;
-          const vid   = r.vehicle_id || "unknown";
 
           total     += gross;
           totalFees += fee;
@@ -292,7 +350,7 @@ async function toolGetRevenue({ month } = {}) {
 
   // Fallback: compute from bookings.json when Supabase is unavailable or view is empty.
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
-  const allBookings  = await loadAllBookings();
+  const allBookings  = await loadAllBookings(scope);
   let filtered = allBookings.filter((b) => paidStatuses.has(b.status));
   if (month) filtered = filtered.filter((b) => (b.pickupDate || b.createdAt || "").startsWith(month));
 
@@ -327,22 +385,31 @@ async function toolGetRevenue({ month } = {}) {
   };
 }
 
-async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
+async function toolGetBookings({ vehicleId, status, search, limit = 20, scope } = {}) {
   const safeLimit = Math.min(Number(limit) || 20, 100);
   const sb = getSupabaseAdmin();
+  const normalizedScope = normalizeFleetScope(scope);
+  const scopedVehicleIds = normalizedScope
+    ? new Set(Object.keys(await loadAllVehicles(normalizedScope)))
+    : null;
 
   let results = [];
   let total   = 0;
 
+  if (scopedVehicleIds && scopedVehicleIds.size === 0) {
+    return { total: 0, returned: 0, bookings: [] };
+  }
+
   if (sb) {
     try {
-      let query = sb
-        .from("bookings")
-        .select(BOOKING_COLUMNS, { count: "exact" })
-        .order("created_at", { ascending: false })
-        .limit(safeLimit);
+        let query = sb
+          .from("bookings")
+          .select(BOOKING_COLUMNS, { count: "exact" })
+          .order("created_at", { ascending: false })
+          .limit(safeLimit);
 
-      if (vehicleId) query = query.eq("vehicle_id", vehicleId);
+        if (scopedVehicleIds) query = query.in("vehicle_id", Array.from(scopedVehicleIds));
+        if (vehicleId) query = query.eq("vehicle_id", vehicleId);
 
       // Map app status to DB status for filtering
       if (status) {
@@ -396,7 +463,7 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
   }
 
   // Fallback: JSON files
-  let all = await loadAllBookings();
+  let all = await loadAllBookings(scope);
   if (vehicleId) all = all.filter((b) => b.vehicleId === vehicleId);
   if (status)    all = all.filter((b) => b.status === status);
   if (search) {
@@ -426,11 +493,12 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
   return { total, returned: results.length, bookings: results };
 }
 
-async function toolGetVehicles() {
+async function toolGetVehicles({ scope } = {}) {
   const sb = getSupabaseAdmin();
-  const vehicles = await loadAllVehicles();
-  const allBookings = await loadAllBookings();
+  const vehicles = await loadAllVehicles(scope);
+  const allBookings = await loadAllBookings(scope);
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+  const scopedVehicleIds = new Set(Object.keys(vehicles));
 
   // Try to get booking counts from Supabase RPC
   let sbCounts = null;
@@ -458,16 +526,14 @@ async function toolGetVehicles() {
           .select("vehicle_id, trip_distance, trip_at")
           .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
       ]);
-      const mileageInput = (vehicleRows || [])
-        .filter((r) => true)
-        .map((r) => ({
-          vehicle_id:               r.vehicle_id,
-          total_mileage:            Number(r.mileage) || 0,
-          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+      const mileageInput = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds).map((r) => ({
+        vehicle_id:               r.vehicle_id,
+        total_mileage:            Number(r.mileage) || 0,
+        last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
           last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
           last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
         }));
-      const { stats } = analyzeMileage(mileageInput, (tripRows || []).map((r) => ({
+      const { stats } = analyzeMileage(mileageInput, filterRowsByVehicleIds(tripRows || [], scopedVehicleIds).map((r) => ({
         vehicle_id: r.vehicle_id, trip_distance: r.trip_distance, trip_at: r.trip_at,
       })));
       for (const s of stats) mileageStatMap[s.vehicle_id] = s;
@@ -823,10 +889,12 @@ async function toolSendSms({ phone, message }) {
   return { sent: true, to: phone, id: result?.id };
 }
 
-async function toolGetInsights() {
+async function toolGetInsights({ scope } = {}) {
   console.time("toolGetInsights execution");
   try {
   const sb = getSupabaseAdmin();
+  const vehicles = await loadAllVehicles(scope);
+  const scopedVehicleIds = new Set(Object.keys(vehicles));
 
   // Run all 4 Supabase queries in parallel instead of two sequential batches.
   // Previously: batch-1 (bookings + vehicles) then batch-2 (mileage + trips).
@@ -845,19 +913,13 @@ async function toolGetInsights() {
         .catch(() => ({ data: [] }))
     : Promise.resolve({ data: [] });
 
-  const [allBookings, vehicles, mileageResult, tripResult] = await Promise.all([
-    loadAllBookings(),
-    loadAllVehicles(),
+  const [allBookings, mileageResult, tripResult] = await Promise.all([
+    loadAllBookings(scope),
     mileageQuery,
     tripQuery,
   ]);
 
-  const mileageData = (mileageResult.data || [])
-    .filter((r) => {
-      const type = r.data?.type || r.data?.vehicle_type || "";
-      return true;
-    })
-    .map((r) => ({
+  const mileageData = filterRowsByVehicleIds(mileageResult.data || [], scopedVehicleIds).map((r) => ({
       vehicle_id:               r.vehicle_id,
       vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
       total_mileage:            Number(r.mileage) || 0,
@@ -868,7 +930,7 @@ async function toolGetInsights() {
       last_synced_at:           r.last_synced_at,
     }));
 
-  const recentTrips = (tripResult.data || []).map((r) => ({
+  const recentTrips = filterRowsByVehicleIds(tripResult.data || [], scopedVehicleIds).map((r) => ({
     vehicle_id:    r.vehicle_id,
     trip_distance: r.trip_distance,
     trip_at:       r.trip_at,
@@ -885,7 +947,7 @@ async function toolGetInsights() {
   }
 }
 
-async function toolGetMileage() {
+async function toolGetMileage({ scope } = {}) {
   const sb = getSupabaseAdmin();
   if (!sb) {
     return {
@@ -912,9 +974,10 @@ async function toolGetMileage() {
   // Non-fatal — falls back to the JSONB data field if unavailable.
   let vehicleNameMap = {};
   let vehicleTypeMap = {};
+  const scopedVehicles = await loadAllVehicles(scope);
+  const scopedVehicleIds = new Set(Object.keys(scopedVehicles));
   try {
-    const { data: vehicles } = await loadVehicles();
-    for (const [vid, v] of Object.entries(vehicles)) {
+    for (const [vid, v] of Object.entries(scopedVehicles)) {
       if (v.vehicle_name) vehicleNameMap[vid] = v.vehicle_name;
       if (v.type)         vehicleTypeMap[vid] = v.type;
     }
@@ -960,14 +1023,8 @@ async function toolGetMileage() {
     };
   }
 
-  const rawBouncieRows = vehicleRows || [];
-  const mileageData = rawBouncieRows
-    .filter((r) => {
-      // Use canonical type from vehicles.json first, then fall back to JSONB field.
-      const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
-      return true;
-    })
-    .map((r) => ({
+  const scopedBouncieRows = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds);
+  const mileageData = scopedBouncieRows.map((r) => ({
       vehicle_id:               r.vehicle_id,
       // Use canonical vehicle name from vehicles.json (same source as dashboard).
       vehicle_name:             vehicleNameMap[r.vehicle_id] || r.data?.vehicle_name || r.vehicle_id,
@@ -980,7 +1037,7 @@ async function toolGetMileage() {
       last_synced_at:           r.last_synced_at,
     }));
 
-  const { alerts, stats } = analyzeMileage(mileageData, tripRows.map((r) => ({
+  const { alerts, stats } = analyzeMileage(mileageData, filterRowsByVehicleIds(tripRows || [], scopedVehicleIds).map((r) => ({
     vehicle_id:    r.vehicle_id,
     trip_distance: r.trip_distance,
     trip_at:       r.trip_at,
@@ -1000,7 +1057,7 @@ async function toolGetMileage() {
 
   return {
     tracked_vehicles:   mileageData.length,
-    raw_bouncie_rows:   rawBouncieRows.length,
+    raw_bouncie_rows:   scopedBouncieRows.length,
     stats:              statsWithStatus,
     alerts,
     bouncie_configured,
@@ -1012,7 +1069,7 @@ async function toolGetMileage() {
  * Calls the Bouncie API directly — returns live location, speed, movement
  * status, odometer, and last-sync timestamp for every tracked vehicle.
  */
-async function toolGetGpsTracking() {
+async function toolGetGpsTracking({ scope } = {}) {
   const sb = getSupabaseAdmin();
   if (!sb) {
     return {
@@ -1040,6 +1097,10 @@ async function toolGetGpsTracking() {
   } catch (err) {
     console.error("toolGetGpsTracking: loadTrackedVehicles error:", err.message);
     // Non-fatal — continue with Bouncie data only; names will fall back to IMEI.
+  }
+  const scopedVehicleIds = new Set(Object.keys(await loadAllVehicles(scope)));
+  if (normalizeFleetScope(scope)) {
+    trackedVehicles = trackedVehicles.filter((vehicle) => scopedVehicleIds.has(vehicle.vehicle_id));
   }
 
   // Build lookup maps: IMEI → DB vehicle record.
@@ -1107,15 +1168,23 @@ async function toolGetGpsTracking() {
 }
 
 
-async function toolGetExpenses({ vehicleId, category, group } = {}) {
+async function toolGetExpenses({ vehicleId, category, group, scope } = {}) {
   const sb = getSupabaseAdmin();
   let expenses = null;
+  const normalizedScope = normalizeFleetScope(scope);
+  const scopedVehicleIds = normalizedScope
+    ? new Set(Object.keys(await loadAllVehicles(normalizedScope)))
+    : null;
+  if (scopedVehicleIds && scopedVehicleIds.size === 0) {
+    return { total: 0, count: 0, byGroup: {}, byCategory: {}, byVehicle: {}, expenses: [] };
+  }
 
   if (sb) {
     try {
       let q = sb.from("expenses")
         .select("*, expense_categories!category_id(name, group_name)")
         .order("date", { ascending: false }).limit(200);
+      if (scopedVehicleIds) q = q.in("vehicle_id", Array.from(scopedVehicleIds));
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
       const { data, error } = await q;
       if (!error) {
@@ -1133,6 +1202,7 @@ async function toolGetExpenses({ vehicleId, category, group } = {}) {
   if (!expenses) {
     const { data } = await loadExpenses();
     expenses = data;
+    if (scopedVehicleIds) expenses = expenses.filter((e) => scopedVehicleIds.has(uiVehicleId(e.vehicle_id) || e.vehicle_id));
     if (vehicleId) expenses = expenses.filter((e) => e.vehicle_id === vehicleId);
     expenses = expenses.map((e) => {
       const { category_name, category_group } = enrichExpenseCategory(e);
@@ -1176,10 +1246,12 @@ async function toolGetExpenses({ vehicleId, category, group } = {}) {
   };
 }
 
-async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}) {
-  const allBookings = await loadAllBookings();
-  const { data: vehicles } = await loadVehicles();
+async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6, scope } = {}) {
+  const allBookings = await loadAllBookings(scope);
+  const vehicles = await loadAllVehicles(scope);
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+  const normalizedScope = normalizeFleetScope(scope);
+  const scopedVehicleIds = new Set(Object.keys(vehicles));
 
   // Load expenses for investment ROI / profit calculations
   let expensesData = [];
@@ -1193,6 +1265,9 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
   if (!expensesData.length) {
     const { data } = await loadExpenses();
     expensesData = data || [];
+  }
+  if (normalizedScope) {
+    expensesData = expensesData.filter((e) => scopedVehicleIds.has(uiVehicleId(e.vehicle_id) || e.vehicle_id));
   }
 
   // Load revenue from revenue_records_effective (primary) — same source as v2-dashboard.js
@@ -1211,7 +1286,8 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
         financialsFromRevRecords = true;
         for (const r of rrRows) {
           if (r.is_cancelled || r.is_no_show) continue;
-          const vid   = r.vehicle_id || "unknown";
+          const vid   = uiVehicleId(r.vehicle_id) || r.vehicle_id || "unknown";
+          if (normalizedScope && !scopedVehicleIds.has(vid)) continue;
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
           // Net = Gross − Stripe Fees (strict formula, no stripe_net).
@@ -1389,12 +1465,16 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
   };
 }
 
-async function toolGetCustomers({ search, flagged, banned, limit = 50 } = {}) {
+async function toolGetCustomers({ search, flagged, banned, limit = 50, scope } = {}) {
   const sb = getSupabaseAdmin();
   const safeLimit = Math.min(Number(limit) || 50, 200);
+  const normalizedScope = normalizeFleetScope(scope);
   let customers = null;
 
-  if (sb) {
+  // The customers table is global, not fleet-scoped. When a valid scope is
+  // requested we derive the customer list from scoped bookings instead so the
+  // slingshot assistant does not leak car-fleet customers (and vice versa).
+  if (sb && !normalizedScope) {
     try {
       let q = sb.from("customers").select("*").order("total_bookings", { ascending: false }).limit(safeLimit);
       if (flagged !== undefined) q = q.eq("flagged", !!flagged);
@@ -1409,7 +1489,7 @@ async function toolGetCustomers({ search, flagged, banned, limit = 50 } = {}) {
 
   if (!customers) {
     // Derive customers from bookings as fallback
-    const allBookings = await loadAllBookings();
+    const allBookings = await loadAllBookings(scope);
     const byPhone = {};
     for (const b of allBookings) {
       const phone = b.phone || "unknown";
@@ -1818,7 +1898,7 @@ async function toolUpdateMaintenanceStatus() {
  * and the mileage columns on vehicles (migration 0022).
  * Works for ALL vehicles regardless of GPS tracking.
  */
-async function toolGetMaintenanceStatus({ vehicleName } = {}) {
+async function toolGetMaintenanceStatus({ vehicleName, scope } = {}) {
   if (!vehicleName) {
     return { error: "vehicleName is required" };
   }
@@ -1839,6 +1919,11 @@ async function toolGetMaintenanceStatus({ vehicleName } = {}) {
   } catch (err) {
     console.error("toolGetMaintenanceStatus: vehicles query error:", err.message);
     return { error: err.message };
+  }
+
+  const scopedVehicleIds = new Set(Object.keys(await loadAllVehicles(scope)));
+  if (normalizeFleetScope(scope)) {
+    vehicleRows = vehicleRows.filter((row) => scopedVehicleIds.has(uiVehicleId(row.vehicle_id) || row.vehicle_id));
   }
 
   // Case-insensitive name match — check vehicle_name in data JSONB, then vehicle_id
@@ -4180,32 +4265,34 @@ const DESTRUCTIVE_TOOLS = new Set([
  * @param {string}  [options.adminId]             - identifier for the admin session
  * @returns {Promise<object>} Tool result
  */
-export async function executeAction(toolName, args = {}, { requireConfirmation = true, adminId = "admin" } = {}) {
+export async function executeAction(toolName, args = {}, { requireConfirmation = true, adminId = "admin", scope = null } = {}) {
+  const normalizedScope = normalizeFleetScope(scope);
+  const scopedArgs = normalizedScope ? { ...args, scope: normalizedScope } : args;
   // Guard: destructive ops need confirmation flag when requireConfirmation is enabled
-  if (requireConfirmation && DESTRUCTIVE_TOOLS.has(toolName) && !args.confirmed) {
+  if (requireConfirmation && DESTRUCTIVE_TOOLS.has(toolName) && !scopedArgs.confirmed) {
     const result = {
       requires_confirmation: true,
       message: `Action "${toolName}" requires confirmation. Ask the admin to confirm, then retry with confirmed:true.`,
     };
-    await logAiAction(toolName, args, result, adminId);
+    await logAiAction(toolName, scopedArgs, result, adminId);
     return result;
   }
 
   let result;
   try {
     switch (toolName) {
-      case "get_revenue":              result = await toolGetRevenue(args);              break;
-      case "get_bookings":             result = await toolGetBookings(args);             break;
-      case "get_vehicles":             result = await toolGetVehicles();                 break;
+      case "get_revenue":               result = await toolGetRevenue(scopedArgs);         break;
+      case "get_bookings":              result = await toolGetBookings(scopedArgs);        break;
+      case "get_vehicles":              result = await toolGetVehicles(scopedArgs);        break;
       case "create_vehicle":           result = await toolCreateVehicle(args);           break;
       case "add_vehicle":              result = await toolAddVehicle(args);              break;
       case "update_vehicle":           result = await toolUpdateVehicle(args);           break;
       case "send_sms":                 result = await toolSendSms(args);                 break;
-      case "get_insights":             result = await toolGetInsights();                 break;
+      case "get_insights":              result = await toolGetInsights(scopedArgs);        break;
       case "get_fraud_report":         result = await toolGetFraudReport(args);          break;
-      case "get_mileage":              result = await toolGetMileage();                  break;
-      case "get_gps_tracking":         result = await toolGetGpsTracking();              break;
-      case "get_maintenance_status":   result = await toolGetMaintenanceStatus(args);    break;
+      case "get_mileage":               result = await toolGetMileage(scopedArgs);         break;
+      case "get_gps_tracking":          result = await toolGetGpsTracking(scopedArgs);     break;
+      case "get_maintenance_status":    result = await toolGetMaintenanceStatus(scopedArgs); break;
       case "update_maintenance_status": result = await toolUpdateMaintenanceStatus();    break;
       case "mark_maintenance":         result = await toolMarkMaintenance(args);         break;
       case "flag_booking":             result = await toolFlagBooking(args);             break;
@@ -4214,9 +4301,9 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "confirm_vehicle_action":   result = await toolConfirmVehicleAction(args);    break;
       case "update_action_status":     result = await toolUpdateActionStatus(args);      break;
       case "send_message_to_driver":   result = await toolSendMessageToDriver(args);     break;
-      case "get_expenses":             result = await toolGetExpenses(args);             break;
-      case "get_analytics":            result = await toolGetAnalytics(args);            break;
-      case "get_customers":            result = await toolGetCustomers(args);            break;
+      case "get_expenses":             result = await toolGetExpenses(scopedArgs);       break;
+      case "get_analytics":            result = await toolGetAnalytics(scopedArgs);      break;
+      case "get_customers":            result = await toolGetCustomers(scopedArgs);      break;
       case "get_protection_plans":     result = await toolGetProtectionPlans();          break;
       case "get_system_settings":      result = await toolGetSystemSettings(args);       break;
       case "get_price_quote":          result = await toolGetPriceQuote(args);           break;
@@ -4251,11 +4338,11 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
   } catch (err) {
     console.error("TOOL ERROR:", err);
     const errorResult = { error: adminErrorMessage(err), details: err.message };
-    try { await logAiAction(toolName, args, errorResult, adminId); } catch (logErr) { console.error("TOOL ERROR: failed to log action:", logErr); }
+    try { await logAiAction(toolName, scopedArgs, errorResult, adminId); } catch (logErr) { console.error("TOOL ERROR: failed to log action:", logErr); }
     return errorResult;
   }
 
-  await logAiAction(toolName, args, result, adminId);
+  await logAiAction(toolName, scopedArgs, result, adminId);
   return result;
 }
 

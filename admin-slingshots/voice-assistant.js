@@ -50,7 +50,7 @@
   // Shared voice persona injected into every AI prompt to ensure a consistent tone
   // across click-explain, ask-assistant, and any future AI paths.
   const VOICE_PERSONA =
-    'You are a concise, professional voice assistant for a car rental business admin dashboard. ' +
+    'You are a concise, professional voice assistant for a slingshot rental business admin dashboard. ' +
     'Always respond in plain spoken English (no markdown, no lists, no bullet points). ' +
     'Keep replies to 1-2 short sentences unless otherwise instructed.';
 
@@ -139,7 +139,7 @@
       },
       {
         sel: '.charts-grid',
-        en:  'The Revenue Over Time chart shows your monthly income trend, and the Bookings by Vehicle chart breaks down paid bookings per car.',
+        en:  'The Revenue Over Time chart shows your monthly income trend, and the Bookings by Vehicle chart breaks down paid bookings per slingshot.',
         es:  'El gráfico de Ingresos en el Tiempo muestra su tendencia mensual, y el de Reservas por Vehículo desglosa las reservas pagadas por auto.',
       },
       {
@@ -156,7 +156,7 @@
     vehicles: [
       {
         sel: '#page-vehicles',
-        en:  'The Vehicles page lists every car in your fleet.',
+        en:  'The Vehicles page lists every slingshot in your fleet.',
         es:  'La página de Vehículos lista todos los autos de su flota.',
       },
       {
@@ -171,7 +171,7 @@
       },
       {
         sel: '.vehicle-card',
-        en:  'Each card shows the car image, name, status badge, and key financial stats.',
+        en:  'Each card shows the slingshot image, name, status badge, and key financial stats.',
         es:  'Cada tarjeta muestra la imagen del auto, nombre, distintivo de estado y estadísticas financieras clave.',
       },
       {
@@ -208,7 +208,7 @@
       },
       {
         sel: '#ev-status',
-        en:  'Status — Active means the car is bookable. Maintenance hides it from new reservations.',
+        en:  'Status — Active means the slingshot is bookable. Maintenance hides it from new reservations.',
         es:  'Estado — Activo significa que el auto está disponible. Mantenimiento lo oculta de nuevas reservas.',
       },
       {
@@ -271,7 +271,7 @@
       },
       {
         sel: '.fin-grid .fin-card:nth-child(1)',
-        en:  'Purchase Price — what you originally paid for this car.',
+        en:  'Purchase Price — what you originally paid for this slingshot.',
         es:  'Precio de Compra — lo que pagó originalmente por este auto.',
       },
       {
@@ -439,7 +439,7 @@
       },
       {
         sel: '#mb-vehicle',
-        en:  'Vehicle — select which car this booking is for.',
+        en:  'Vehicle — select which slingshot this booking is for.',
         es:  'Vehículo — seleccione para qué auto es esta reserva.',
       },
       {
@@ -449,7 +449,7 @@
       },
       {
         sel: '#mb-pickup-date',
-        en:  'Pickup Date — the day the customer takes the car.',
+        en:  'Pickup Date — the day the customer takes the slingshot.',
         es:  'Fecha de Recogida — el día en que el cliente recoge el auto.',
       },
       {
@@ -486,7 +486,7 @@
     'fleet-status': [
       {
         sel: '#page-fleet-status',
-        en:  'Fleet Status shows the availability toggle for each vehicle. Toggle it ON to show the car on the public website; toggle it OFF to hide it during maintenance or when a car is out of service.',
+        en:  'Fleet Status shows the availability toggle for each vehicle. Toggle it ON to show the slingshot on the public website; toggle it OFF to hide it during maintenance or when a slingshot is out of service.',
         es:  'Estado de Flota muestra el interruptor de disponibilidad de cada vehículo. Actívelo para mostrarlo en el sitio público; desactívelo para ocultarlo durante mantenimiento o cuando el auto está fuera de servicio.',
       },
       {
@@ -761,7 +761,7 @@
       },
       {
         sel: '#lf-filter-vehicle',
-        en:  'Filter by vehicle to see late fees for a specific car.',
+        en:  'Filter by vehicle to see late fees for a specific slingshot.',
         es:  'Filtre por vehículo para ver los cargos por mora de un auto específico.',
       },
       {
