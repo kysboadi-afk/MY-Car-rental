@@ -1031,13 +1031,7 @@ async function toolGetMileage({ scope } = {}) {
   }
 
   const rawBouncieRows = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds);
-  const mileageData = rawBouncieRows
-    .filter((r) => {
-      // Use canonical type from vehicles.json first, then fall back to JSONB field.
-      const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
-      return true;
-    })
-    .map((r) => ({
+  const mileageData = rawBouncieRows.map((r) => ({
       vehicle_id:               r.vehicle_id,
       // Use canonical vehicle name from vehicles.json (same source as dashboard).
       vehicle_name:             vehicleNameMap[r.vehicle_id] || r.data?.vehicle_name || r.vehicle_id,
@@ -1481,9 +1475,13 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6, scope
 async function toolGetCustomers({ search, flagged, banned, limit = 50, scope } = {}) {
   const sb = getSupabaseAdmin();
   const safeLimit = Math.min(Number(limit) || 50, 200);
+  const normalizedScope = normalizeFleetScope(scope);
   let customers = null;
 
-  if (sb && !normalizeFleetScope(scope)) {
+  // The customers table is global, not fleet-scoped. When a valid scope is
+  // requested we derive the customer list from scoped bookings instead so the
+  // slingshot assistant does not leak car-fleet customers (and vice versa).
+  if (sb && !normalizedScope) {
     try {
       let q = sb.from("customers").select("*").order("total_bookings", { ascending: false }).limit(safeLimit);
       if (flagged !== undefined) q = q.eq("flagged", !!flagged);
