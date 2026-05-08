@@ -4937,7 +4937,8 @@ const bookingsTbodyEl = document.getElementById('bookings-tbody');
 if (bookingsTbodyEl && !bookingsTbodyEl.dataset.actionBound) {
   bookingsTbodyEl.dataset.actionBound = '1';
   bookingsTbodyEl.addEventListener('click', (e) => {
-    const actionBtn = e.target.closest('button[data-booking-action]');
+    const clickTarget = e.target instanceof Element ? e.target : e.target?.parentElement;
+    const actionBtn = clickTarget?.closest('button[data-booking-action]');
     if (!actionBtn) return;
     e.preventDefault();
 
