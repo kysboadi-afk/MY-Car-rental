@@ -4907,11 +4907,11 @@ function applyBookingFilters() {
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-booking-action="view" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}">View</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-booking-action="edit" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
-            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
-            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
+            <button type="button" class="btn btn-success btn-sm" data-booking-action="approve" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}">Approve</button>
+            <button type="button" class="btn btn-danger btn-sm" data-booking-action="decline" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}">Decline</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
@@ -4919,18 +4919,45 @@ function applyBookingFilters() {
               const canExtend   = b.status === 'active_rental' && extReturnDt && now < extReturnDt;
               console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: extReturnDt ? extReturnDt.toISOString() : null, canExtend });
               return canExtend
-                ? `<button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
+                ? `<button type="button" class="btn btn-secondary btn-sm" data-booking-action="extend" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}" title="Extend rental">🔄 Extend</button>`
                 : '';
             })()}
-            <button class="btn btn-success btn-sm" onclick="handleReturn('${esc(b.bookingId || '')}',this)" title="Mark returned">✓ Returned</button>
+            <button type="button" class="btn btn-success btn-sm" data-booking-action="returned" data-booking-id="${esc(b.bookingId || '')}" data-vehicle-id="${esc(b.vehicleId || '')}" title="Mark returned">✓ Returned</button>
           ` : ''}
-          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
+          <button type="button" class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" data-booking-action="toggle-flag" data-booking-id="${esc(b.bookingId || '')}" data-flag-target="${!b.flagged}" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
           ${b.phone ? `<a href="tel:${esc(b.phone)}" class="btn btn-secondary btn-sm" title="Call customer">📞</a>` : ''}
           ${b.email ? `<a href="mailto:${esc(b.email)}" class="btn btn-secondary btn-sm" title="Email customer">✉️</a>` : ''}
         </div>
       </td>
     </tr>`;
   }).join('');
+}
+
+const bookingsTbodyEl = document.getElementById('bookings-tbody');
+if (bookingsTbodyEl && !bookingsTbodyEl.dataset.actionBound) {
+  bookingsTbodyEl.dataset.actionBound = '1';
+  bookingsTbodyEl.addEventListener('click', (e) => {
+    const actionBtn = e.target.closest('button[data-booking-action]');
+    if (!actionBtn) return;
+    e.preventDefault();
+
+    const action = actionBtn.dataset.bookingAction || '';
+    const bookingId = actionBtn.dataset.bookingId || '';
+    const vehicleId = actionBtn.dataset.vehicleId || '';
+
+    if (!bookingId && action !== 'approve' && action !== 'decline') {
+      showToast('Missing booking reference.', 'error');
+      return;
+    }
+
+    if (action === 'view') return viewBooking(bookingId, vehicleId);
+    if (action === 'edit') return openEditBookingModal(bookingId);
+    if (action === 'approve') return updateBookingStatus(vehicleId, bookingId, 'booked_paid', actionBtn);
+    if (action === 'decline') return updateBookingStatus(vehicleId, bookingId, 'cancelled_rental', actionBtn);
+    if (action === 'extend') return openResendExtensionModal(bookingId, vehicleId, actionBtn);
+    if (action === 'returned') return handleReturn(bookingId, actionBtn);
+    if (action === 'toggle-flag') return toggleBookingFlag(bookingId, actionBtn.dataset.flagTarget === 'true', actionBtn);
+  });
 }
 
 async function viewBooking(bookingId, vehicleId) {
