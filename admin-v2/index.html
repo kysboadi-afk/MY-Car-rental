@@ -4933,13 +4933,10 @@ function applyBookingFilters() {
   }).join('');
 }
 
-async function viewBooking(bookingId, vehicleId) {
-  let b = findBookingByAnyId(bookingId);
-  if (!b) {
-    // Cache miss — silently reload booking data once before giving up.
-    try { await loadBookings(); } catch (err) { console.error('[viewBooking] Failed to reload bookings:', err); }
-    b = findBookingByAnyId(bookingId);
-  }
+function viewBooking(bookingId, vehicleId) {
+  // Primary lookup: direct match by bookingId (fast path, mirrors slingshot admin).
+  // Fallback: findBookingByAnyId handles paymentIntentId / numeric ID edge cases.
+  let b = allBookings.find((x) => x.bookingId === bookingId) || findBookingByAnyId(bookingId);
   if (!b) { showToast('Booking not found.', 'error'); return; }
 
   const now = new Date();
@@ -4965,8 +4962,7 @@ async function viewBooking(bookingId, vehicleId) {
     unprofitable: '<span class="badge badge-danger">📉 Unprofitable</span>',
   }[tier] || '';
   const riskClr = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' }[b.custRiskFlag || 'low'] || 'inherit';
-  try {
-    document.getElementById('booking-detail-content').innerHTML = `
+  document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(getVehicleLabel(b.vehicleId) || '–')}</div></div>
@@ -5097,45 +5093,32 @@ async function viewBooking(bookingId, vehicleId) {
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
-  } catch (renderErr) {
-    console.error('[viewBooking] render error:', renderErr);
-    showToast('Error displaying booking details.', 'error');
-    return;
-  }
   openModal('booking-detail-modal');
 }
 
-async function openEditBookingModal(bookingId) {
-  let b = findBookingByAnyId(bookingId);
-  if (!b) {
-    // Cache miss — silently reload booking data once before giving up.
-    try { await loadBookings(); } catch (err) { console.error('[openEditBookingModal] Failed to reload bookings:', err); }
-    b = findBookingByAnyId(bookingId);
-  }
+function openEditBookingModal(bookingId) {
+  // Primary lookup: direct match by bookingId (fast path, mirrors slingshot admin).
+  // Fallback: findBookingByAnyId handles paymentIntentId / numeric ID edge cases.
+  const b = allBookings.find((x) => x.bookingId === bookingId) || findBookingByAnyId(bookingId);
   if (!b) { showToast('Booking not found.', 'error'); return; }
-  try {
-    // Store the bookingId being edited
-    document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
-    document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
-    // Pre-fill fields
-    document.getElementById('be-name').value           = b.name          || '';
-    document.getElementById('be-phone').value          = b.phone         || '';
-    document.getElementById('be-email').value          = b.email         || '';
-    document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
-    document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
-    document.getElementById('be-return-date').value    = b.returnDate    || '';
-    document.getElementById('be-return-time').value    = b.returnTime    || '';
-    document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
-    document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
-    document.getElementById('be-booking-status').value   = b.status         || '';
-    document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
-    document.getElementById('be-notes').value            = b.notes          || '';
-    closeModal('booking-detail-modal');
-    openModal('booking-edit-modal');
-  } catch (err) {
-    console.error('[openEditBookingModal] error:', err);
-    showToast('Error opening edit form.', 'error');
-  }
+  // Store the bookingId being edited
+  document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
+  document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
+  // Pre-fill fields
+  document.getElementById('be-name').value           = b.name          || '';
+  document.getElementById('be-phone').value          = b.phone         || '';
+  document.getElementById('be-email').value          = b.email         || '';
+  document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
+  document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
+  document.getElementById('be-return-date').value    = b.returnDate    || '';
+  document.getElementById('be-return-time').value    = b.returnTime    || '';
+  document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
+  document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
+  document.getElementById('be-booking-status').value   = b.status         || '';
+  document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
+  document.getElementById('be-notes').value            = b.notes          || '';
+  closeModal('booking-detail-modal');
+  openModal('booking-edit-modal');
 }
 
 async function saveEditBooking(btn) {
