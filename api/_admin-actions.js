@@ -526,12 +526,10 @@ async function toolGetVehicles({ scope } = {}) {
           .select("vehicle_id, trip_distance, trip_at")
           .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
       ]);
-      const mileageInput = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds)
-        .filter((r) => true)
-        .map((r) => ({
-          vehicle_id:               r.vehicle_id,
-          total_mileage:            Number(r.mileage) || 0,
-          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+      const mileageInput = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds).map((r) => ({
+        vehicle_id:               r.vehicle_id,
+        total_mileage:            Number(r.mileage) || 0,
+        last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
           last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
           last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
         }));
