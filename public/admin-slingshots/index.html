@@ -4292,7 +4292,7 @@ function openAddVehicle() {
   document.getElementById('av-id').value = '';
   document.getElementById('av-name').value = '';
   document.getElementById('av-make').value = '';
-  document.getElementById('av-type').value = 'economy';
+  document.getElementById('av-type').value = 'slingshot';
   document.getElementById('av-status').value = 'active';
   document.getElementById('av-year').value = '';
   document.getElementById('av-purchase-price').value = '';
@@ -4363,7 +4363,7 @@ async function saveNewVehicle() {
   try {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
-      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      vehicleId, vehicleName, type, category: 'slingshot', status, vehicleYear, purchasePrice, purchaseDate, coverImage,
       ...(make         ? { make }         : {}),
       ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),

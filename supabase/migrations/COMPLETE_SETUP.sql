@@ -10179,3 +10179,18 @@ VALUES (
   'fees'
 )
 ON CONFLICT (key) DO NOTHING;
+
+
+-- ===========================================================================
+-- 0141_fix_slingshot_vehicle_category.sql
+-- ===========================================================================
+-- Backfill correct category for slingshot vehicles that were saved with
+-- data.category = 'car' or no category at all.
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{category}', '"slingshot"')
+WHERE (
+    vehicle_id ILIKE 'slingshot%'
+    OR data->>'type' = 'slingshot'
+    OR lower(data->>'vehicle_name') LIKE '%slingshot%'
+)
+  AND (data->>'category' IS NULL OR data->>'category' != 'slingshot');
