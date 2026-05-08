@@ -6,6 +6,7 @@
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import { CARS } from "./_pricing.js";
+import { getVehicleById } from "./_vehicles.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
@@ -37,6 +38,7 @@ export function esc(str) {
  */
 export function generateExtensionAgreementPdf({
   vehicleId,
+  vehicleVin,
   renterName,
   renterEmail,
   renterPhone,
@@ -131,6 +133,7 @@ export function generateExtensionAgreementPdf({
     // ── Vehicle Information ──────────────────────────────────────────────────────
     sectionHeader("Vehicle Information");
     tableRow("Vehicle", vehicleName);
+    if (vehicleVin) tableRow("VIN / Plate", vehicleVin);
 
     // ── Original Rental Period ───────────────────────────────────────────────────
     sectionHeader("Original Rental Period");
@@ -222,7 +225,20 @@ export async function sendExtensionConfirmationEmails({
   }
 
   const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
-  const vehicleName   = (paymentIntent.metadata || {}).vehicle_name || vehicleId;
+  const paymentMeta = paymentIntent.metadata || {};
+  const vehicleName   = paymentMeta.vehicle_name || vehicleId;
+  let resolvedVehicleVin = paymentMeta.vehicle_vin || paymentMeta.vehicleVin || (booking && (booking.vehicleVin || booking.vehicle_vin)) || "";
+  if (!resolvedVehicleVin && vehicleId) {
+    resolvedVehicleVin = (CARS[vehicleId] && CARS[vehicleId].vin) || "";
+    if (!resolvedVehicleVin) {
+      try {
+        const vehicleData = await getVehicleById(vehicleId);
+        resolvedVehicleVin = vehicleData?.vin || "";
+      } catch {
+        // Non-fatal: VIN remains empty.
+      }
+    }
+  }
 
   const transporter = nodemailer.createTransport({
     host:   process.env.SMTP_HOST,
@@ -242,6 +258,7 @@ export async function sendExtensionConfirmationEmails({
   try {
     pdfBuffer = await generateExtensionAgreementPdf({
       vehicleId,
+      vehicleVin:        resolvedVehicleVin,
       renterName,
       renterEmail,
       renterPhone:        (booking && booking.phone) || "",
@@ -280,6 +297,7 @@ export async function sendExtensionConfirmationEmails({
           ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
           ${booking && booking.phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(booking.phone)}</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+          ${resolvedVehicleVin ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(resolvedVehicleVin)}</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
@@ -295,6 +313,7 @@ export async function sendExtensionConfirmationEmails({
         renterEmail ? `Email          : ${renterEmail}` : "",
         booking && booking.phone ? `Phone          : ${booking.phone}` : "",
         `Vehicle        : ${vehicleName}`,
+        resolvedVehicleVin ? `VIN / Plate    : ${resolvedVehicleVin}` : "",
         `Extension      : ${extensionLabel}`,
         `New Return Date: ${newReturnDisplay}`,
         `Amount Charged : $${amountDollars}`,
@@ -319,6 +338,7 @@ export async function sendExtensionConfirmationEmails({
               ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
               ${booking && booking.phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(booking.phone)}</td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+              ${resolvedVehicleVin ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(resolvedVehicleVin)}</td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
@@ -334,6 +354,7 @@ export async function sendExtensionConfirmationEmails({
             renterEmail ? `Email          : ${renterEmail}` : "",
             booking && booking.phone ? `Phone          : ${booking.phone}` : "",
             `Vehicle        : ${vehicleName}`,
+            resolvedVehicleVin ? `VIN / Plate    : ${resolvedVehicleVin}` : "",
             `Extension      : ${extensionLabel}`,
             `New Return Date: ${newReturnDisplay}`,
             `Amount Charged : $${amountDollars}`,
@@ -360,6 +381,7 @@ export async function sendExtensionConfirmationEmails({
         ${pdfBuffer ? "<p>📄 <strong>Your updated Rental Agreement is attached — please save it for your records.</strong></p>" : ""}
         <table style="border-collapse:collapse;width:100%;margin-top:12px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+          ${resolvedVehicleVin ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(resolvedVehicleVin)}</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
@@ -375,6 +397,7 @@ export async function sendExtensionConfirmationEmails({
         pdfBuffer ? "Your updated Rental Agreement is attached — please save it for your records." : "",
         "",
         `Vehicle        : ${vehicleName}`,
+        resolvedVehicleVin ? `VIN / Plate    : ${resolvedVehicleVin}` : "",
         `Extension      : ${extensionLabel}`,
         `New Return Date: ${newReturnDisplay}`,
         `Amount Charged : $${amountDollars}`,
