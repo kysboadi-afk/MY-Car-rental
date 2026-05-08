@@ -56,6 +56,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
     const isHourly = !!(carInfo && carInfo.hourlyTiers);
+    const resolvedVehicleVin = vehicleVin || (carInfo && carInfo.vin) || "";
     const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day  •  $${PROTECTION_PLAN_WEEKLY}/week  •  $${PROTECTION_PLAN_BIWEEKLY}/2 wks  •  $${PROTECTION_PLAN_MONTHLY}/month`;
     const pdfTierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
       : protectionPlanTier === "premium" ? "Premium ($50/day)"
@@ -148,7 +149,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     if (vehicleMake)  tableRow("Make",       vehicleMake);
     if (vehicleModel) tableRow("Model",      vehicleModel);
     if (vehicleYear)  tableRow("Year",       String(vehicleYear));
-    if (vehicleVin)   tableRow("VIN / Plate", vehicleVin);
+    if (resolvedVehicleVin) tableRow("VIN / Plate", resolvedVehicleVin);
     if (vehicleColor) tableRow("Color",      vehicleColor);
     doc.moveDown(0.3);
     bodyText("Fuel Level at Pickup:  Full   Half   Quarter       Condition Photos Attached: Yes");

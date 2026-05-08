@@ -579,6 +579,7 @@ export default async function handler(req, res) {
           "",
         vehicle_id:   vehicleId,
         vehicle_name:          vehicleData.name  || "",
+        vehicle_vin:           vehicleData.vin   || "",
         renter_name:           activeBooking.name  || (typeof name === "string" ? name.trim() : "") || "",
         renter_email:          activeBooking.email || "",
         renter_phone:          activeBooking.phone || "",

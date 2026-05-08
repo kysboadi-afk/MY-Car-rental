@@ -630,6 +630,18 @@ export default async function handler(req, res) {
     }
   }
 
+  if (!hydratedBody.vehicleVin && hydratedBody.vehicleId) {
+    hydratedBody.vehicleVin = (CARS[hydratedBody.vehicleId] && CARS[hydratedBody.vehicleId].vin) || "";
+    if (!hydratedBody.vehicleVin) {
+      try {
+        const vehicleData = await getVehicleById(hydratedBody.vehicleId);
+        hydratedBody.vehicleVin = vehicleData?.vin || "";
+      } catch (vinLookupErr) {
+        console.warn("[send-reservation-email] VIN lookup failed (non-fatal):", vinLookupErr.message);
+      }
+    }
+  }
+
   const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice } = hydratedBody;
   const normalizedPaymentStatus = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
 
