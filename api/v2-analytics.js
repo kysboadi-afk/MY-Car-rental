@@ -171,7 +171,7 @@ export default async function handler(req, res) {
     // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
     // Fetched once and reused across all actions that need the fleet revenue total.
     let kpiTotalRevenue = null;
-    if (sb) {
+    if (sb && !scope) {
       try {
         const { data: kpiRow, error: kpiErr } = await sb
           .from("total_revenue_kpi")
@@ -203,6 +203,23 @@ export default async function handler(req, res) {
       } catch (activeEx) {
         console.warn("v2-analytics: active bookings query error (non-fatal):", activeEx.message);
       }
+    }
+
+    if (scope) {
+      let scopedTotal = 0;
+      if (financialsFromRevRecords) {
+        for (const [vid, vr] of Object.entries(rrByVehicle)) {
+          if (!inScope(vid)) continue;
+          scopedTotal += Number(vr.gross || 0);
+        }
+      } else {
+        for (const b of allBookings) {
+          if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
+          scopedTotal += bookingRevenue(b);
+        }
+      }
+      kpiTotalRevenue = Math.round(scopedTotal * 100) / 100;
     }
 
     if (sb) {
@@ -531,4 +548,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
-

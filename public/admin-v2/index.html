@@ -3880,7 +3880,7 @@ async function openEditVehicle(vehicleId) {
   // We use the list action (rather than a per-vehicle GET) because no
   // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
   try {
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
       const fresh    = latest.vehicles[vehicleId];
       const existing = allVehicles[vehicleId] || {};
@@ -3954,7 +3954,7 @@ async function saveVehicle() {
     // copy is used as the base for the merge inside the update handler.
     // We use the list action (rather than a per-vehicle GET) because no
     // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[editingVehicleId]) {
       const fresh    = latest.vehicles[editingVehicleId];
       const existing = allVehicles[editingVehicleId] || {};
@@ -4245,7 +4245,7 @@ async function triggerBouncieSync(vehicleId) {
       showToast(result.skipped ? 'Bouncie not connected' : 'Sync complete (no new data)', 'info');
     }
     // Reload vehicle to reflect updated mileage
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
       allVehicles[vehicleId] = latest.vehicles[vehicleId];
       if (currentPage === 'vehicle-profile') {
@@ -5730,7 +5730,7 @@ function loadExpenses() {
     : loadExpenseCategories();
 
   catPromise
-    .then(() => apiPost('/api/get-expenses', { secret: adminSecret }))
+    .then(() => apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -6406,7 +6406,7 @@ function loadRevenue() {
   // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
-    : apiPost('/api/get-expenses', { secret: adminSecret });
+    : apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' });
 
   Promise.all([
     apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
@@ -7089,7 +7089,7 @@ function loadCustomers() {
   const kpiGrid = document.getElementById('cust-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-customers', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-customers', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       allCustomers = data.customers || [];
       document.getElementById('customers-loading').style.display = 'none';
@@ -9079,7 +9079,7 @@ async function loadAiInsights() {
   aiInitialized = true;
 
   try {
-    const data = await apiPost('/api/admin-ai-insights', { secret: adminSecret });
+    const data = await apiPost('/api/admin-ai-insights', { secret: adminSecret, scope: 'car' });
 
     // Revenue snapshot
     const ins = data.insights || {};
@@ -9948,7 +9948,7 @@ function loadTickets() {
     });
   }
 
-  apiPost('/api/tickets', { secret: adminSecret, action: 'list' })
+  apiPost('/api/tickets', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
       allTickets = data.tickets || [];
       if (loading) loading.style.display = 'none';
@@ -10111,6 +10111,7 @@ async function saveTicket() {
   try {
     const data = await apiPost('/api/tickets', {
       secret: adminSecret,
+      scope: 'car',
       action: 'create',
       ticketNumber,
       vehicleId,
@@ -10173,7 +10174,7 @@ async function openTicketDetail(ticketId) {
   openModal('ticket-detail-modal');
 
   try {
-    const data = await apiPost('/api/tickets', { secret: adminSecret, action: 'get', id: ticketId });
+    const data = await apiPost('/api/tickets', { secret: adminSecret, action: 'get', id: ticketId, scope: 'car' });
     viewingTicketData = data.ticket;
     const idx = allTickets.findIndex((t) => t.id === ticketId);
     if (idx >= 0) allTickets[idx] = data.ticket;
@@ -10327,6 +10328,7 @@ async function ticketAction(newStatus) {
   try {
     const data = await apiPost('/api/tickets', {
       secret: adminSecret,
+      scope: 'car',
       action: 'update_status',
       id:     viewingTicketId,
       status: newStatus,
@@ -10400,6 +10402,7 @@ async function addTicketNote() {
   try {
     const data = await apiPost('/api/tickets', {
       secret: adminSecret,
+      scope: 'car',
       action: 'add_note',
       id:     viewingTicketId,
       note,
@@ -10451,7 +10454,7 @@ async function deleteCurrentTicket() {
   if (!viewingTicketId) return;
   if (!confirm('Delete this ticket? This cannot be undone.')) return;
   try {
-    await apiPost('/api/tickets', { secret: adminSecret, action: 'delete', id: viewingTicketId });
+    await apiPost('/api/tickets', { secret: adminSecret, action: 'delete', id: viewingTicketId, scope: 'car' });
     allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
     updateTicketsBadge();
     closeModal('ticket-detail-modal');

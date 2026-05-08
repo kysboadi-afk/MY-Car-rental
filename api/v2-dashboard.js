@@ -192,8 +192,13 @@ export default async function handler(req, res) {
           .then((r) => r, () => ({ data: null }))
       : Promise.resolve({ data: null });
 
-    // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
-    const kpiPromise = sb
+    const normalizedScope = (scope === "car" || scope === "cars" || scope === "slingshot")
+      ? scope
+      : null;
+
+    // Canonical ledger-based KPI — only for unscoped dashboard totals.
+    // Scoped dashboards must keep their scoped totalRevenue to avoid cross-fleet mixing.
+    const kpiPromise = sb && !normalizedScope
       ? sb.from("total_revenue_kpi").select("total_revenue").single()
           .then((r) => r, (e) => {
             console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
