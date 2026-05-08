@@ -105,7 +105,7 @@
       // cars.html
       fleet: {
         heading:    "Uber & Lyft Rental Cars in Los Angeles",
-        subheading: "Reliable weekly rideshare rentals for Uber, Lyft, and delivery drivers. All vehicles are fully rideshare\u2011ready with unlimited miles.",
+        subheading: "Reliable daily and weekly rideshare rentals for Uber, Lyft, and delivery drivers. All vehicles are fully rideshare\u2011ready with unlimited miles.",
         sidebarTitle: "Browse by Type",
         filterAll:      "All Cars",
         filterEconomy:  "Economy / Ridesharing",
@@ -155,7 +155,7 @@
         whyHeading: "Why Drivers Choose SLY Transportation",
         why1: "\u2705 Rideshare\u2011approved vehicles",
         why2: "\u267E\uFE0F Unlimited miles for Uber, Lyft, and delivery",
-        why3: "\uD83D\uDCB0 Affordable weekly rentals",
+        why3: "\uD83D\uDCB0 Affordable daily or weekly rentals",
         why4: "\uD83D\uDD27 Reliable vehicles ready to drive",
         why5: "\uD83D\uDD11 Keep the same vehicle as long as payments stay current",
         ctaHeading: "Start Driving Today",
@@ -538,7 +538,7 @@
       },
       fleet: {
         heading:    "Autos de Alquiler para Uber y Lyft en Los \u00C1ngeles",
-        subheading: "Alquileres semanales confiables para conductores de Uber, Lyft y entrega. Todos los veh\u00EDculos est\u00E1n listos para viaje compartido con millaje ilimitado.",
+        subheading: "Alquileres diarios y semanales confiables para conductores de Uber, Lyft y entrega. Todos los veh\u00EDculos est\u00E1n listos para viaje compartido con millaje ilimitado.",
         sidebarTitle: "Buscar por Tipo",
         filterAll:      "Todos los Autos",
         filterEconomy:  "Econ\u00F3mico / Viaje Compartido",
@@ -588,7 +588,7 @@
         whyHeading: "Por Qu\u00E9 los Conductores Eligen SLY Transportation",
         why1: "\u2705 Veh\u00EDculos aprobados para viaje compartido",
         why2: "\u267E\uFE0F Millaje ilimitado para Uber, Lyft y entrega",
-        why3: "\uD83D\uDCB0 Alquileres semanales asequibles",
+        why3: "\uD83D\uDCB0 Alquileres diarios o semanales asequibles",
         why4: "\uD83D\uDD27 Veh\u00EDculos confiables listos para manejar",
         why5: "\uD83D\uDD11 Mant\u00E9n el mismo veh\u00EDculo mientras los pagos est\u00E9n al d\u00EDa",
         ctaHeading: "Comienza a Manejar Hoy",
