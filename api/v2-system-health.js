@@ -60,7 +60,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { autoCreateRevenueRecord, buildBufferedEnd } from "./_booking-automation.js";
 import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
-import { buildDateTimeLA, DEFAULT_RETURN_TIME, BUSINESS_TZ } from "./_time.js";
+import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -276,7 +276,7 @@ async function checkMissingAgreements(sb) {
 // Check 3 — Active rental count vs. date-based count
 async function checkActiveRentalCount(sb) {
   try {
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ });
+    const today = isoDateInLA();
 
     const [activeStatusRes, dateBasedRes] = await Promise.all([
       sb
@@ -731,7 +731,7 @@ async function checkSmsDeliveryHealth(sb) {
   try {
     const now       = new Date(); // UTC; compared against returnDt which is also a UTC Date (LA offset baked in by buildDateTimeLA)
     // Look back 48 h for recently-past-return bookings that may have missed critical SMS.
-    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const cutoff48h = isoDateInLA(new Date(Date.now() - 48 * 60 * 60 * 1000));
     const ACTIVE_STATUSES = ["active_rental", "active", "overdue"];
 
     // The three critical keys checked for post-return coverage.

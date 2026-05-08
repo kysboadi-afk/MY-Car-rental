@@ -23,7 +23,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { buildDateTimeLA } from "./_time.js";
+import { buildDateTimeLA, isoDateInLA } from "./_time.js";
 import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 
 // Hours the car is unavailable after a return before a new pickup can start.
@@ -981,7 +981,7 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
       return;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoDateInLA();
 
     for (const row of rows) {
       // Delete the blocked_dates row so fleet-status immediately shows the

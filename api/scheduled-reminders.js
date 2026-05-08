@@ -63,7 +63,7 @@ import { autoUpsertBooking, autoUpsertCustomer, autoCreateRevenueRecord } from "
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { DEFAULT_RETURN_TIME, formatTime12h, laHour } from "./_time.js";
+import { DEFAULT_RETURN_TIME, formatTime12h, laHour, isoDateInLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
@@ -895,7 +895,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
   const { repairMode = false } = options;
   // Per-run dedup: max 1 SMS per phone number per cron invocation.
   const phonesContactedThisRun = new Set();
-  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const todayStr = isoDateInLA(now); // YYYY-MM-DD (LA)
   const activeRentals = Object.values(allBookings)
     .flat()
     .filter((b) => {

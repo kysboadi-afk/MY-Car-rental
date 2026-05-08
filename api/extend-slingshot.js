@@ -15,7 +15,7 @@ import {
   isReturnWithinBusinessHours,
   splitDatetimeLA,
 } from "./_slingshot-packages.js";
-import { buildDateTimeLA, normalizeClockTime, formatTime12h, DEFAULT_RETURN_TIME } from "./_time.js";
+import { buildDateTimeLA, normalizeClockTime, formatTime12h, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap } from "./_availability.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -231,7 +231,7 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const activeBookingRef = activeBooking.bookingId || activeBooking.paymentIntentId || "";
-        const conflictFloorDate = effectiveReturnDate || new Date().toISOString().split("T")[0];
+        const conflictFloorDate = effectiveReturnDate || isoDateInLA();
         let futureQuery = sb
           .from("bookings")
           .select("booking_ref, pickup_date, return_date, pickup_time, return_time")

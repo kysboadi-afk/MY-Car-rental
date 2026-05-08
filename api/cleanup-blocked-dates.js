@@ -12,6 +12,7 @@
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — Supabase admin client
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isoDateInLA } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -44,8 +45,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ skipped: true, reason: "supabase_not_configured" });
   }
 
-  // today in YYYY-MM-DD (UTC)
-  const today = new Date().toISOString().slice(0, 10);
+  // today in YYYY-MM-DD (Los Angeles business timezone)
+  const today = isoDateInLA();
 
   try {
     const { data, error } = await sb
