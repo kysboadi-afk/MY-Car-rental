@@ -397,9 +397,33 @@ export default async function handler(req, res) {
     // Falls back to the same flat-file data as "list" when Supabase is not
     // configured, so the admin never sees an empty table due to misconfiguration.
     if (action === "list_raw") {
+      const { scope } = body;
+
+      // When scope='car' or scope='slingshot' is provided, restrict results to
+      // vehicles in the matching fleet so each admin panel only sees its own data.
+      let rawScopedIds = null;
+      if (scope) {
+        try {
+          const RAW_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
+          const sc = scope.toLowerCase();
+          const { data: vData } = await loadVehicles();
+          rawScopedIds = Object.values(vData || {})
+            .filter((v) => {
+              const t = (v.type || "").toLowerCase();
+              if (sc === "car" || sc === "cars") return RAW_CAR_TYPES.has(t) || t === "";
+              if (sc === "slingshot") return t === "slingshot";
+              return true;
+            })
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-bookings list_raw: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
       const sb = getSupabaseAdmin();
       if (sb) {
-        const { data: rows, error } = await sb
+        let q = sb
           .from("bookings")
           .select(`
             id,
@@ -421,8 +445,13 @@ export default async function handler(req, res) {
             activated_at,
             completed_at,
             customers ( id, name, phone, email )
-          `)
-          .order("created_at", { ascending: false });
+          `);
+
+        if (rawScopedIds && rawScopedIds.length > 0) {
+          q = q.in("vehicle_id", rawScopedIds);
+        }
+
+        const { data: rows, error } = await q.order("created_at", { ascending: false });
 
         if (error) {
           console.error("v2-bookings list_raw Supabase error:", error.message);
