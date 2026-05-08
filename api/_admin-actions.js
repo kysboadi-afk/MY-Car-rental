@@ -919,12 +919,7 @@ async function toolGetInsights({ scope } = {}) {
     tripQuery,
   ]);
 
-  const mileageData = filterRowsByVehicleIds(mileageResult.data || [], scopedVehicleIds)
-    .filter((r) => {
-      const type = r.data?.type || r.data?.vehicle_type || "";
-      return true;
-    })
-    .map((r) => ({
+  const mileageData = filterRowsByVehicleIds(mileageResult.data || [], scopedVehicleIds).map((r) => ({
       vehicle_id:               r.vehicle_id,
       vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
       total_mileage:            Number(r.mileage) || 0,
@@ -1028,8 +1023,8 @@ async function toolGetMileage({ scope } = {}) {
     };
   }
 
-  const rawBouncieRows = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds);
-  const mileageData = rawBouncieRows.map((r) => ({
+  const scopedBouncieRows = filterRowsByVehicleIds(vehicleRows || [], scopedVehicleIds);
+  const mileageData = scopedBouncieRows.map((r) => ({
       vehicle_id:               r.vehicle_id,
       // Use canonical vehicle name from vehicles.json (same source as dashboard).
       vehicle_name:             vehicleNameMap[r.vehicle_id] || r.data?.vehicle_name || r.vehicle_id,
@@ -1062,7 +1057,7 @@ async function toolGetMileage({ scope } = {}) {
 
   return {
     tracked_vehicles:   mileageData.length,
-    raw_bouncie_rows:   rawBouncieRows.length,
+    raw_bouncie_rows:   scopedBouncieRows.length,
     stats:              statsWithStatus,
     alerts,
     bouncie_configured,
