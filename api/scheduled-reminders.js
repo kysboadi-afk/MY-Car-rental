@@ -490,52 +490,6 @@ function parseBookingDateTimeLA(date, time) {
 }
 
 /**
- * Parse a booking's pickup/return into a JS Date.
- * Date: YYYY-MM-DD  |  Time: "3:00 PM" or "15:00"
- *
- * NOTE: This function interprets times as server-local (UTC on Vercel).
- * Use parseBookingDateTimeLA for SMS trigger comparisons where LA wall-clock
- * time is required.
- *
- * @param {string} date  - YYYY-MM-DD
- * @param {string} [time] - optional time string
- * @returns {Date}
- */
-function parseBookingDateTime(date, time) {
-  if (!date) return new Date(NaN);
-  const normalizedDate = date instanceof Date ? date.toISOString() : String(date).trim();
-  const datePart = normalizedDate.split("T")[0];
-  const base = new Date(datePart + "T00:00:00"); // midnight local
-  if (time) {
-    const t = time.trim();
-    // "3:00 PM", "3:00:00 PM", or "3:00PM" format
-    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-    if (ampmMatch) {
-      let hours = parseInt(ampmMatch[1], 10);
-      const mins = parseInt(ampmMatch[2], 10);
-      const secs = parseInt(ampmMatch[3] || "0", 10);
-      const period = ampmMatch[4].toUpperCase();
-      if (period === "PM" && hours !== 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
-      base.setHours(hours, mins, secs, 0);
-      return base;
-    }
-    // "15:00" or "15:00:00" format
-    const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if (h24Match) {
-      base.setHours(
-        parseInt(h24Match[1], 10),
-        parseInt(h24Match[2], 10),
-        parseInt(h24Match[3] || "0", 10),
-        0
-      );
-      return base;
-    }
-  }
-  return base; // fall back to midnight if time can't be parsed
-}
-
-/**
  * Format a date object into a human-readable date string ("March 28").
  * Always formats in LA timezone so displayed dates are consistent regardless
  * of the server's system timezone.
@@ -631,8 +585,8 @@ function alreadySentAny(booking, keys) {
  * Build template variables for a booking.
  */
 function vars(booking) {
-  const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
-  const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+  const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
+  const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
   const bufferedReturnDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   return {
     customer_name: booking.name || "Customer",
