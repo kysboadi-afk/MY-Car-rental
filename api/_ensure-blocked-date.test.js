@@ -105,6 +105,7 @@ mock.module("./_time.js", {
     DEFAULT_RETURN_TIME:    "10:00",
     DEFAULT_RETURN_TIME_PG: "10:00:00",
     normalizeClockTime:     (t) => t || null,
+    isoDateInLA:            () => "2026-01-01",
   },
 });
 
