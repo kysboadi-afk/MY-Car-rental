@@ -5004,10 +5004,10 @@ function applyBookingFilters() {
 }
 
 function bookingActionId(b) {
-  return String(b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id != null ? b.id : '') || '');
+  return String(b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id ?? '') || '');
 }
 
-function ticketBookingRef(ticket) {
+function ticketBookingIdentifier(ticket) {
   return String(ticket?.booking_ref || ticket?.bookingId || ticket?.booking_id || '');
 }
 
@@ -5345,7 +5345,9 @@ function deleteBooking(bookingId, btn) {
 function markReturned(bookingId, btn) {
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('markReturned', ctx);
-  const resolvedId = bookingActionId(ctx.resolvedBooking) || bookingId;
+  if (!ctx.resolvedBooking) { showToast('Booking not found.', 'error'); return; }
+  const resolvedId = bookingActionId(ctx.resolvedBooking);
+  if (!resolvedId) { showToast('Booking not found.', 'error'); return; }
   return handleReturn(resolvedId, btn);
 }
 
@@ -5485,7 +5487,9 @@ async function downloadRentalAgreement(bookingId, btn) {
 function extendBooking(bookingId, vehicleId, btn) {
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('extendBooking', ctx, { vehicleId: vehicleId || null });
-  const resolvedId = bookingActionId(ctx.resolvedBooking) || bookingId;
+  if (!ctx.resolvedBooking) { showToast('Booking not found.', 'error'); return; }
+  const resolvedId = bookingActionId(ctx.resolvedBooking);
+  if (!resolvedId) { showToast('Booking not found.', 'error'); return; }
   return openResendExtensionModal(resolvedId, vehicleId, btn);
 }
 
@@ -10204,7 +10208,7 @@ function renderProgressBar(status) {
 async function openTicketDetail(ticketId) {
   viewingTicketId = ticketId;
   const cachedTicket = allTickets.find((t) => t.id === ticketId) || null;
-  const ticketRef = ticketBookingRef(cachedTicket);
+  const ticketRef = ticketBookingIdentifier(cachedTicket);
   const ctx = resolveBookingForActions(null, ticketRef || null);
   logBookingActionAudit('openTicketDetail', ctx, { ticketId: ticketId || null });
 
@@ -10231,7 +10235,7 @@ function renderTicketDetailModal(ticket, bookingDocs) {
 
   // Match banner — use canonical ticket booking ref for display
   const bannerEl = document.getElementById('td-match-banner');
-  const ticketRef = ticketBookingRef(ticket);
+  const ticketRef = ticketBookingIdentifier(ticket);
   if (ticketRef) {
     bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticketRef)})</div>`;
   } else {
@@ -10302,7 +10306,7 @@ function renderTicketDocuments(ticket, bookingDocs) {
   const docsEl = document.getElementById('td-docs');
   if (!docsEl) return;
   const parts = [];
-  const ticketRef = ticketBookingRef(ticket);
+  const ticketRef = ticketBookingIdentifier(ticket);
 
   // Driver license front + back
   if (ticket.matchedRenterLicenseUrl || ticket.matchedRenterLicenseBackUrl) {
@@ -10369,7 +10373,7 @@ function buildTicketActionButtons(ticket) {
 
 async function ticketAction(newStatus) {
   if (!viewingTicketId) return;
-  const currentRef = ticketBookingRef(viewingTicketData);
+  const currentRef = ticketBookingIdentifier(viewingTicketData);
   const ctx = resolveBookingForActions(null, currentRef || null);
   logBookingActionAudit('ticketAction', ctx, { ticketId: viewingTicketId || null, newStatus: newStatus || null });
   try {
@@ -10395,7 +10399,7 @@ async function ticketAction(newStatus) {
 
 async function chargeTicketRenter(isRetry = false) {
   if (!viewingTicketId) return;
-  const currentRef = ticketBookingRef(viewingTicketData);
+  const currentRef = ticketBookingIdentifier(viewingTicketData);
   const ctx = resolveBookingForActions(null, currentRef || null);
   logBookingActionAudit('chargeTicketRenter', ctx, { ticketId: viewingTicketId || null, isRetry: !!isRetry });
   const label = isRetry ? 'Retry charge' : 'Charge renter';
