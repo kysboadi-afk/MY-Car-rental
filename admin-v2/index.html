@@ -4989,12 +4989,14 @@ function applyBookingFilters() {
             data-booking-action="view"
             data-booking-id="${esc(actionBookingId)}"
             data-vehicle-id="${esc(b.vehicleId || '')}"
+            onclick="viewBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}')"
           >View</button>
           <button
             type="button"
             class="btn btn-secondary btn-sm"
             data-booking-action="edit"
             data-booking-id="${esc(actionBookingId)}"
+            onclick="openEditBookingModal('${esc(actionBookingId)}')"
           >✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this)">Approve</button>
