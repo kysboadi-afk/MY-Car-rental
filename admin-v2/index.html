@@ -5268,8 +5268,9 @@ function openEditBookingModal(bookingId) {
 const bookingsTbodyEl = document.getElementById('bookings-tbody');
 if (bookingsTbodyEl) {
   bookingsTbodyEl.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
+    const rawTarget = event.target;
+    const target = rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement;
+    if (!target) return;
     const actionBtn = target.closest('[data-booking-action]');
     if (!actionBtn || !bookingsTbodyEl.contains(actionBtn)) return;
 
