@@ -4492,10 +4492,13 @@ function loadLateFees() {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
       //  (b) lateFeeAmount is set (fee was assessed but status not yet written)
-      const raw = (data.bookings || []).map((b) => normalizeBookingForActions({
-        ...b,
-        status: b && b.status === 'active' ? 'active_rental' : b.status,
-      }));
+      const raw = (data.bookings || []).map((b) => {
+        const normalized = normalizeBookingForActions(b);
+        return {
+          ...normalized,
+          status: b && b.status === 'active' ? 'active_rental' : b.status,
+        };
+      });
       allLateFeesData = raw.filter((b) => b.lateFeeStatus || b.lateFeeAmount != null);
       document.getElementById('lf-loading').style.display = 'none';
       updateLateFeeBadge();
@@ -4788,10 +4791,13 @@ function loadBookings() {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       const rawBookings = data.bookings || [];
-      const normalizedBookings = rawBookings.map((b) => normalizeBookingForActions({
-        ...b,
-        status: b && b.status === 'active' ? 'active_rental' : b.status,
-      }));
+      const normalizedBookings = rawBookings.map((b) => {
+        const normalized = normalizeBookingForActions(b);
+        return {
+          ...normalized,
+          status: b && b.status === 'active' ? 'active_rental' : b.status,
+        };
+      });
       allBookings = normalizedBookings;
       // Update the Late Fees badge count using the already-loaded bookings data
       const lfBadge = document.getElementById('late-fees-badge');
