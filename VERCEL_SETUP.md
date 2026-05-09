@@ -13,6 +13,7 @@ Follow these steps **in order**. Each links to the full instructions below.
 | [Step 0](#step-0--connect-your-github-repository-to-vercel) | Import the `SLY-RIDES` repo into Vercel and click Deploy | ✅ Yes |
 | [Step 1](#step-1--confirm-your-vercel-project-is-deployed) | Confirm the deployment is green ("Ready") in the Vercel dashboard | ✅ Yes |
 | [Step 2](#step-2--add-your-stripe-api-keys-in-vercel) | Add `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — card form won't load without these |
+| [Step 2b](#step-2b--set-the-canonical-stripe-webhook-endpoint-and-signing-secret) | Point Stripe webhooks to the Vercel endpoint, set `STRIPE_WEBHOOK_SECRET`, and validate a test delivery | ✅ Yes — booking/revenue automation depends on this |
 | [Step 3](#step-3--add-your-email-variables-for-reservation-notifications) | Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — no booking emails without these |
 | [Step 3b](#step-3b--add-your-github-token-for-automatic-calendar-blocking) | Create a GitHub fine-grained PAT and add it as `GITHUB_TOKEN` in Vercel, then Redeploy | ⚠️ Recommended — without it, booked dates won't be blocked automatically |
 | [Step 3c](#step-3c--add-textmagic-variables-for-sms-verification) | Add `TEXTMAGIC_USERNAME`, `TEXTMAGIC_API_KEY`, and `OTP_SECRET` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — renters cannot verify their phone number on the Apply Now form without these |
@@ -63,6 +64,16 @@ Card form mounts on the booking page ✅
 
 **`sly-rides.vercel.app` is correct.** That is the auto-generated Vercel URL for your project. Your frontend (on GitHub Pages) talks to that URL whenever a customer clicks Pay Now.
 
+### Canonical Stripe webhook owner
+
+For this repository, the canonical production Stripe webhook runtime is **Vercel**, not Supabase:
+
+- **Canonical endpoint:** `https://sly-rides.vercel.app/api/stripe-webhook`
+- **Code owner:** `/home/runner/work/SLY-RIDES/SLY-RIDES/api/stripe-webhook.js`
+- **Deployed runtime owner:** the Vercel project for this repository
+
+There is **no Supabase Edge Function Stripe webhook implementation in this repo**. If Stripe is still targeting a Supabase URL, treat that as legacy config drift unless you have intentionally maintained external infrastructure outside this repository.
+
 ---
 
 ## Step 1 — Confirm Your Vercel Project Is Deployed
@@ -101,6 +112,64 @@ Without these, the card form cannot load. This is the most common reason it does
 4. Click **Save**.
 5. Go to **Deployments** → click the **⋯** next to the latest deployment → **Redeploy**.  
    *(This is required for new env vars to take effect.)*
+
+---
+
+## Step 2b — Set the Canonical Stripe Webhook Endpoint and Signing Secret
+
+This step is required for production booking/revenue automation.
+
+### What the code actually handles
+
+The Vercel webhook handler in `/home/runner/work/SLY-RIDES/SLY-RIDES/api/stripe-webhook.js` explicitly handles:
+
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `payment_intent.canceled`
+- `charge.refunded`
+
+It does **not** implement `checkout.session.completed`. In this codebase, `payment_intent.succeeded` is the canonical booking/revenue automation trigger and the primary event to validate during recovery.
+
+### Stripe endpoint ownership
+
+In Stripe Dashboard → **Developers → Webhooks**:
+
+1. Identify the production endpoint used for SLY RIDES.
+2. Confirm the URL is:
+   - `https://sly-rides.vercel.app/api/stripe-webhook`
+3. If Stripe is pointing to a Supabase endpoint instead, treat that as config drift and correct it unless you have intentionally maintained an external webhook runtime outside this repo.
+
+### Required subscribed events
+
+Configure the production endpoint to send at least:
+
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `payment_intent.canceled`
+- `charge.refunded`
+
+### Add the webhook signing secret to Vercel
+
+1. In Stripe Dashboard, open the production webhook endpoint.
+2. Click **Reveal** / copy the signing secret (`whsec_...`).
+3. In Vercel → **Settings → Environment Variables**, add:
+
+| Variable Name | Value |
+|---|---|
+| `STRIPE_WEBHOOK_SECRET` | The Stripe signing secret for `https://sly-rides.vercel.app/api/stripe-webhook` |
+
+4. Save the variable.
+5. Redeploy the Vercel project.
+
+### Validate the secret with a Stripe test delivery
+
+After redeploy:
+
+1. In Stripe Dashboard, send a **test delivery** for `payment_intent.succeeded` to the production endpoint.
+2. Confirm Stripe receives **2xx** from `https://sly-rides.vercel.app/api/stripe-webhook`.
+3. In Vercel function logs, confirm there is **no** `signature verification failed` error.
+
+If Stripe reports a signature error, the `STRIPE_WEBHOOK_SECRET` in Vercel does not match the endpoint secret in Stripe.
 
 ---
 
@@ -309,6 +378,8 @@ The response will tell you:
 |---|---|---|
 | "Could not load the payment form" alert | Missing Stripe env vars | Add `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` in Vercel → Settings → Env Vars, then Redeploy |
 | "Server configuration error: STRIPE_SECRET_KEY is missing" | Env var not yet active | Re-check spelling (case-sensitive), save, and **Redeploy** |
+| Stripe shows successful delivery attempts to a Supabase URL | Legacy webhook drift | Update Stripe to use `https://sly-rides.vercel.app/api/stripe-webhook` and verify `STRIPE_WEBHOOK_SECRET` in Vercel |
+| Stripe test delivery returns 400 / signature verification failed | Wrong webhook secret | Copy the endpoint signing secret from Stripe and set `STRIPE_WEBHOOK_SECRET` in Vercel, then Redeploy |
 | Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
 | Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
@@ -335,8 +406,11 @@ The response will tell you:
 |---|---|
 | Vercel project URL | `https://sly-rides.vercel.app` ✅ (this is correct) |
 | Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
+| Canonical Stripe webhook endpoint | `https://sly-rides.vercel.app/api/stripe-webhook` ✅ |
+| Canonical Stripe webhook owner | Vercel project for this repository |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
+| `STRIPE_WEBHOOK_SECRET` | Must be set in Vercel and must match the Stripe endpoint signing secret |
 | `TEXTMAGIC_USERNAME` | Must be set — required for Apply Now phone verification and all SMS messages |
 | `TEXTMAGIC_API_KEY` | Must be set — required for Apply Now phone verification and all SMS messages |
 | `OTP_SECRET` | Must be set — used to sign verification codes; generate a long random string |
@@ -427,3 +501,109 @@ The table below lists every environment variable used by the SLY RIDES backend, 
 | `OPENAI_API_KEY` | AI Assistant | ✅ For AI chat | platform.openai.com/api-keys |
 | `CRON_SECRET` | Scheduled reminders | ⚠️ Recommended | Any random string — protects `/api/scheduled-reminders` from external calls |
 | `VERCEL_URL` | Internal API calls | 🔄 Auto-set | Set automatically by Vercel — do not set this manually |
+
+## Stripe webhook recovery and reconciliation runbook
+
+Use this when Stripe payments succeeded but booking/revenue state drifted or webhook ownership was misconfigured.
+
+### 1. Freeze retries before recovery
+
+- Pause any manual replay attempts.
+- Do not bulk re-send historical events until the canonical endpoint and `STRIPE_WEBHOOK_SECRET` are confirmed.
+
+### 2. Verify idempotency assumptions before replay
+
+The recovery tooling in this repo is designed to avoid duplicate bookings/revenue:
+
+- `/api/stripe-replay` checks `revenue_records.payment_intent_id` first and returns `already_processed` when a PI is already recorded.
+- `persistBooking()` / webhook booking persistence is idempotent around `payment_intent_id`.
+- `/api/stripe-reconcile` includes duplicate cleanup/dedup support for prior drift.
+
+### 3. Dry-run replay first
+
+Replay endpoint:
+
+- `POST https://sly-rides.vercel.app/api/stripe-replay`
+
+Body:
+
+```json
+{
+  "secret": "ADMIN_SECRET",
+  "pi_id": "pi_...",
+  "dry_run": true
+}
+```
+
+Expected dry-run statuses:
+
+- `would_process`
+- `already_processed`
+- `error`
+
+Do **not** execute a real replay until the dry-run response looks correct.
+
+### 4. Replay in small batches
+
+Recommended batch size:
+
+- **10–20 PaymentIntents at a time**
+
+For each batch:
+
+1. Dry-run every PI first.
+2. Execute only the PIs that should be recovered.
+3. Review logs/results before moving to the next batch.
+
+Do not bulk replay `rental_extension` or `balance_payment` through `/api/stripe-replay`; that endpoint intentionally rejects them as new-booking replays.
+
+### 5. Reconcile against Stripe totals after replay
+
+Use:
+
+- `POST https://sly-rides.vercel.app/api/stripe-reconcile`
+
+Recommended order:
+
+1. `action: "preview"`
+2. `action: "reconcile"`
+3. `action: "sync_recent"`
+4. `action: "analytics"`
+
+Key verification fields to review:
+
+- `verification.stripe_total_gross`
+- `verification.stripe_total_fees`
+- `verification.stripe_total_net`
+- `verification.db_reconciled_net`
+- `verification.unmatched_pi_count`
+- `deduped`
+
+### 6. Recovery acceptance checklist
+
+After recovery, confirm all of the following:
+
+- `payment_intent.succeeded` test delivery succeeds against Vercel.
+- New bookings create/update correctly.
+- Revenue rows are created/updated correctly.
+- Extension and post-rental fee paths still sync correctly.
+- No duplicate bookings were created.
+- No duplicate `payment_intent_id` revenue rows remain.
+- No historical succeeded payments are missing from DB after reconciliation.
+
+### 7. Prevention / ownership checklist
+
+Keep this ownership model explicit:
+
+- Stripe production webhook owner: **Vercel**
+- Canonical endpoint: `https://sly-rides.vercel.app/api/stripe-webhook`
+- Canonical automation event: `payment_intent.succeeded`
+- Secret owner: Vercel project env var `STRIPE_WEBHOOK_SECRET`
+
+After any webhook, Stripe, or deployment maintenance:
+
+1. Verify the Stripe endpoint URL.
+2. Verify subscribed events.
+3. Verify the `whsec_...` value in Vercel.
+4. Send a Stripe test delivery.
+5. Confirm Vercel logs show a clean 2xx processing path.

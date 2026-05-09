@@ -131,6 +131,8 @@ You can also reach the admin from any page on the site — click the small **Adm
 
 See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
 
+For Stripe webhook ownership, signing-secret setup, replay, and reconciliation, start at **[VERCEL_SETUP.md → Step 2b](VERCEL_SETUP.md#step-2b--set-the-canonical-stripe-webhook-endpoint-and-signing-secret)**.
+
 ## ✅ All Updates Deployed
 
 All pull requests have been merged to `main`. The site deploys automatically from `main` via GitHub Actions on every push.
