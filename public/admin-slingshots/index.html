@@ -4468,6 +4468,16 @@ function bookingStatusBadge(b, derived) {
   return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
+function normalizeBookingForActions(b) {
+  const bookingId = b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id ?? '');
+  return {
+    ...b,
+    bookingId: String(bookingId || ''),
+    vehicleId: b?.vehicleId || b?.vehicle_id || '',
+    paymentIntentId: b?.paymentIntentId || b?.payment_intent_id || '',
+  };
+}
+
 // ── Late Fees Page ──────────────────────────────────────────────────────────
 
 let allLateFeesData = [];
@@ -4482,7 +4492,7 @@ function loadLateFees() {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
       //  (b) lateFeeAmount is set (fee was assessed but status not yet written)
-      const raw = (data.bookings || []).map((b) => ({
+      const raw = (data.bookings || []).map((b) => normalizeBookingForActions({
         ...b,
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
@@ -4778,7 +4788,7 @@ function loadBookings() {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       const rawBookings = data.bookings || [];
-      const normalizedBookings = rawBookings.map((b) => ({
+      const normalizedBookings = rawBookings.map((b) => normalizeBookingForActions({
         ...b,
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
