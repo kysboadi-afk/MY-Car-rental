@@ -5239,7 +5239,7 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
  * the backend guard allows the override.
  */
 function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
-  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const b = allBookings.find((x) => x.bookingId === bookingId || x.booking_ref === bookingId || x.booking_id === bookingId);
   const derived = b ? bookingDerivedStatus(b, new Date()) : null;
   const isAlreadyActive = b && (b.status === 'active_rental' || derived === 'overdue' || derived === 'extended');
 
