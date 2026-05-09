@@ -5297,6 +5297,7 @@ function handleBookingActionClick(actionBtn) {
   }
   if (actionBtn.dataset.bookingAction === 'edit') {
     openEditBookingModal(bookingId);
+    return false;
   }
   return false;
 }
