@@ -1,10 +1,13 @@
 // api/stripe-webhook.js
 // Vercel serverless function — Stripe webhook handler.
 //
-// Handles the payment_intent.succeeded event fired when a PaymentIntent
-// (created by create-payment-intent.js or pay-balance.js) is confirmed.
-// This is the server-side authoritative fallback for availability updates —
-// it runs even if the user closes the browser before success.html completes.
+// Handles Stripe webhook deliveries for the Vercel-owned production endpoint.
+// The primary booking/revenue recovery trigger is payment_intent.succeeded;
+// additional branches handle payment_intent.payment_failed,
+// payment_intent.canceled, and charge.refunded.
+// This is the server-side authoritative fallback for booking/revenue
+// automation — it runs even if the user closes the browser before
+// success.html completes.
 //
 // Required environment variables (set in Vercel dashboard):
 //   STRIPE_SECRET_KEY      — starts with sk_live_ or sk_test_
@@ -14,7 +17,15 @@
 // Register this endpoint in the Stripe dashboard:
 //   Developers → Webhooks → Add endpoint
 //   URL: https://sly-rides.vercel.app/api/stripe-webhook
-//   Events: payment_intent.succeeded
+//   Events:
+//     - payment_intent.succeeded
+//     - payment_intent.payment_failed
+//     - payment_intent.canceled
+//     - charge.refunded
+//
+// NOTE: checkout.session.completed is not handled in this file. Recovery and
+// production validation should treat payment_intent.succeeded as the canonical
+// booking/revenue automation event for this codebase.
 
 import Stripe from "stripe";
 import crypto from "crypto";
