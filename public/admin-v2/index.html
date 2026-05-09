@@ -5065,10 +5065,12 @@ function logBookingActionAudit(actionName, ctx, extra = {}) {
 }
 
 function findBookingByIdForActions(bookingId) {
+  console.warn('[ACTION_ENTRY] findBookingByIdForActions', { bookingId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
   return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
 function viewBooking(bookingId, vehicleId) {
+  console.warn('[ACTION_ENTRY] viewBooking', { bookingId, vehicleId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
   let b = ctx.resolvedBooking;
@@ -5099,6 +5101,15 @@ function viewBooking(bookingId, vehicleId) {
   }[tier] || '';
   const riskClr = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' }[b.custRiskFlag || 'low'] || 'inherit';
   const _tickets = (typeof allTickets !== 'undefined' && Array.isArray(allTickets)) ? allTickets : [];
+  const _detailContentEl = document.getElementById('booking-detail-content');
+  const _detailActionsEl = document.getElementById('booking-detail-actions');
+  const _detailModalEl   = document.getElementById('booking-detail-modal');
+  console.log('[MODAL_RENDER] viewBooking pre-render check', {
+    bookingId: actionBookingId,
+    'booking-detail-content': _detailContentEl ? 'found' : 'NOT FOUND',
+    'booking-detail-actions': _detailActionsEl ? 'found' : 'NOT FOUND',
+    'booking-detail-modal':   _detailModalEl   ? 'found' : 'NOT FOUND',
+  });
   try {
   document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
@@ -5241,10 +5252,26 @@ function viewBooking(bookingId, vehicleId) {
 }
 
 function openEditBookingModal(bookingId) {
+  console.warn('[ACTION_ENTRY] openEditBookingModal', { bookingId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
+  const _editModalEl = document.getElementById('booking-edit-modal');
+  console.log('[MODAL_RENDER] openEditBookingModal pre-populate check', {
+    bookingId,
+    'booking-edit-modal': _editModalEl ? 'found' : 'NOT FOUND',
+    'be-name':            !!document.getElementById('be-name'),
+    'be-vehicle':         !!document.getElementById('be-vehicle'),
+    'be-pickup-date':     !!document.getElementById('be-pickup-date'),
+    'be-return-date':     !!document.getElementById('be-return-date'),
+  });
+  if (!_editModalEl) {
+    console.error('[MODAL_RENDER] openEditBookingModal ABORTED — booking-edit-modal not in DOM');
+    showToast('Edit modal unavailable.', 'error');
+    return;
+  }
+  try {
   // Store the bookingId being edited
   document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
   document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
@@ -5261,11 +5288,18 @@ function openEditBookingModal(bookingId) {
   document.getElementById('be-booking-status').value   = b.status         || '';
   document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
   document.getElementById('be-notes').value            = b.notes          || '';
+  } catch (populateErr) {
+    console.error('[MODAL_RENDER] openEditBookingModal populate error:', populateErr);
+    showToast('Error populating edit form: ' + (populateErr.message || populateErr), 'error');
+    return;
+  }
+  console.log('[MODAL_RENDER] openEditBookingModal populate OK — opening modal');
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
 }
 
 const bookingsTbodyEl = document.getElementById('bookings-tbody');
+console.log('[BOOKING_HANDLER_SETUP] bookings-tbody el:', bookingsTbodyEl ? 'found — delegated click handler registered' : 'NOT FOUND — delegated click handler NOT registered');
 if (bookingsTbodyEl) {
   bookingsTbodyEl.addEventListener('click', (event) => {
     const rawTarget = event.target;
@@ -6148,8 +6182,17 @@ function resetSmsTemplate() {
 }
 
 // ── Modal helpers ──────────────────────────────────────────────────────────
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id) {
+  const el = document.getElementById(id);
+  console.log('[MODAL] openModal', id, el ? 'found' : 'NOT FOUND in DOM');
+  if (!el) { console.error('[MODAL] openModal FAILED — element missing from DOM:', id); return; }
+  el.classList.add('open');
+}
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (!el) { console.warn('[MODAL] closeModal skipped — element missing from DOM:', id); return; }
+  el.classList.remove('open');
+}
 // Close modal on overlay click (delegated so it covers modals added after script parse)
 document.addEventListener('click', (e) => {
   if (e.target.classList && e.target.classList.contains('modal-overlay')) {
@@ -9228,6 +9271,35 @@ async function loadAiInsights() {
     });
   }
 }
+
+// ── Action-layer runtime health check ─────────────────────────────────────
+// Logs to console so production debugging can confirm all globals exist.
+// Remove once incident is resolved.
+(function adminRuntimeHealthCheck() {
+  const checks = {
+    viewBooking:                typeof viewBooking,
+    openEditBookingModal:       typeof openEditBookingModal,
+    findBookingByIdForActions:  typeof findBookingByIdForActions,
+    resolveBookingForActions:   typeof resolveBookingForActions,
+    openLateFeeEditModal:       typeof openLateFeeEditModal,
+    openLateFeeChargeModal:     typeof openLateFeeChargeModal,
+    openLateFeeWaiveModal:      typeof openLateFeeWaiveModal,
+    dismissLateFee:             typeof dismissLateFee,
+    showToast:                  typeof showToast,
+    bookingActionId:            typeof bookingActionId,
+    allBookings:                Array.isArray(allBookings) ? 'array' : typeof allBookings,
+    allLateFeesData:            Array.isArray(allLateFeesData) ? 'array' : typeof allLateFeesData,
+    bookingsTbodyElFound:       !!document.getElementById('bookings-tbody'),
+  };
+  const failures = Object.entries(checks)
+    .filter(([, v]) => v === 'undefined' || v === false)
+    .map(([k]) => k);
+  if (failures.length) {
+    console.error('[ADMIN_RUNTIME_HEALTH] MISSING globals/elements:', failures, checks);
+  } else {
+    console.log('[ADMIN_RUNTIME_HEALTH] All action-layer globals OK', checks);
+  }
+})();
 </script>
 
 <!-- Revenue Record Modal -->
