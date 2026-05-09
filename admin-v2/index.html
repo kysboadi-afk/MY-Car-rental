@@ -4977,8 +4977,19 @@ function applyBookingFilters() {
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(actionBookingId)}', '${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(actionBookingId)}')">✏️ Edit</button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            data-booking-action="view"
+            data-booking-id="${esc(actionBookingId)}"
+            data-vehicle-id="${esc(b.vehicleId || '')}"
+          >View</button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            data-booking-action="edit"
+            data-booking-id="${esc(actionBookingId)}"
+          >✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','cancelled_rental',this)">Decline</button>
@@ -5252,6 +5263,27 @@ function openEditBookingModal(bookingId) {
   document.getElementById('be-notes').value            = b.notes          || '';
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
+}
+
+const bookingsTbodyEl = document.getElementById('bookings-tbody');
+if (bookingsTbodyEl) {
+  bookingsTbodyEl.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const actionBtn = target.closest('[data-booking-action]');
+    if (!actionBtn || !bookingsTbodyEl.contains(actionBtn)) return;
+
+    const bookingId = actionBtn.dataset.bookingId || '';
+    if (!bookingId) { showToast('Booking not found.', 'error'); return; }
+
+    if (actionBtn.dataset.bookingAction === 'view') {
+      viewBooking(bookingId, actionBtn.dataset.vehicleId || '');
+      return;
+    }
+    if (actionBtn.dataset.bookingAction === 'edit') {
+      openEditBookingModal(bookingId);
+    }
+  });
 }
 
 async function saveEditBooking(btn) {
