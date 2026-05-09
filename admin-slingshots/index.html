@@ -4469,7 +4469,7 @@ function bookingStatusBadge(b, derived) {
 }
 
 function normalizeBookingForActions(b) {
-  const bookingId = b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id ?? '');
+  const bookingId = b?.bookingId || b?.booking_ref || b?.booking_id || b?.id || '';
   return {
     ...b,
     bookingId: String(bookingId || ''),
