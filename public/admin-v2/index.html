@@ -5065,10 +5065,12 @@ function logBookingActionAudit(actionName, ctx, extra = {}) {
 }
 
 function findBookingByIdForActions(bookingId) {
+  console.warn('[ACTION_ENTRY] findBookingByIdForActions', { bookingId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
   return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
 function viewBooking(bookingId, vehicleId) {
+  console.warn('[ACTION_ENTRY] viewBooking', { bookingId, vehicleId, allBookingsLen: allBookings.length, allLateFeesLen: allLateFeesData.length });
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
   let b = ctx.resolvedBooking;
@@ -5241,6 +5243,7 @@ function viewBooking(bookingId, vehicleId) {
 }
 
 function openEditBookingModal(bookingId) {
+  console.warn('[ACTION_ENTRY] openEditBookingModal', { bookingId, allBookingsLen: allBookings.length, allLateFeesLen: allLateFeesData.length });
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
@@ -5266,6 +5269,7 @@ function openEditBookingModal(bookingId) {
 }
 
 const bookingsTbodyEl = document.getElementById('bookings-tbody');
+console.log('[BOOKING_HANDLER_SETUP] bookings-tbody el:', bookingsTbodyEl ? 'found — delegated click handler registered' : 'NOT FOUND — delegated click handler NOT registered');
 if (bookingsTbodyEl) {
   bookingsTbodyEl.addEventListener('click', (event) => {
     const rawTarget = event.target;
@@ -9228,6 +9232,35 @@ async function loadAiInsights() {
     });
   }
 }
+
+// ── Action-layer runtime health check ─────────────────────────────────────
+// Logs to console so production debugging can confirm all globals exist.
+// Remove once incident is resolved.
+(function adminRuntimeHealthCheck() {
+  const checks = {
+    viewBooking:                typeof viewBooking,
+    openEditBookingModal:       typeof openEditBookingModal,
+    findBookingByIdForActions:  typeof findBookingByIdForActions,
+    resolveBookingForActions:   typeof resolveBookingForActions,
+    openLateFeeEditModal:       typeof openLateFeeEditModal,
+    openLateFeeChargeModal:     typeof openLateFeeChargeModal,
+    openLateFeeWaiveModal:      typeof openLateFeeWaiveModal,
+    dismissLateFee:             typeof dismissLateFee,
+    showToast:                  typeof showToast,
+    bookingActionId:            typeof bookingActionId,
+    allBookings:                Array.isArray(allBookings) ? 'array' : typeof allBookings,
+    allLateFeesData:            Array.isArray(allLateFeesData) ? 'array' : typeof allLateFeesData,
+    bookingsTbodyElFound:       !!document.getElementById('bookings-tbody'),
+  };
+  const failures = Object.entries(checks)
+    .filter(([, v]) => v === 'undefined' || v === false)
+    .map(([k]) => k);
+  if (failures.length) {
+    console.error('[ADMIN_RUNTIME_HEALTH] MISSING globals/elements:', failures, checks);
+  } else {
+    console.log('[ADMIN_RUNTIME_HEALTH] All action-layer globals OK', checks);
+  }
+})();
 </script>
 
 <!-- Revenue Record Modal -->
