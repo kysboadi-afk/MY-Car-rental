@@ -5057,7 +5057,8 @@ function resolveBookingForActions(incomingBookingId, incomingBookingRef) {
 }
 
 function logBookingActionAudit(_actionName, _ctx, _extra = {}) {
-  // No-op: diagnostic logging removed. Reserved for future server-side audit trail.
+  // TODO: replace with server-side audit trail when implemented.
+  // Diagnostic console logging removed — call sites preserved for future use.
 }
 
 function findBookingByIdForActions(bookingId) {
