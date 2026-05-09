@@ -4851,12 +4851,17 @@ function toggleBookingFlag(bookingId, flagValue, btn) {
     });
 }
 
+let _bookingsLoading = false;
+
 function loadBookings() {
+  if (_bookingsLoading) return Promise.resolve();
+  _bookingsLoading = true;
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
   return apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
     .then((data) => {
+      _bookingsLoading = false;
       const rawBookings = data.bookings || [];
       const normalizedBookings = rawBookings.map((b) => ({
         ...b,
@@ -4876,6 +4881,7 @@ function loadBookings() {
       renderBookings();
     })
     .catch((err) => {
+      _bookingsLoading = false;
       document.getElementById('bookings-loading').innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
     });
 }
@@ -4998,7 +5004,6 @@ function applyBookingFilters() {
             ${(() => {
               const extReturnDt = bookingReturnDateTime(b);
               const canExtend   = b.status === 'active_rental' && extReturnDt && now < extReturnDt;
-              console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: extReturnDt ? extReturnDt.toISOString() : null, canExtend });
               return canExtend
                 ? `<button class="btn btn-secondary btn-sm" onclick="extendBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
                 : '';
@@ -5051,26 +5056,20 @@ function resolveBookingForActions(incomingBookingId, incomingBookingRef) {
   };
 }
 
-function logBookingActionAudit(actionName, ctx, extra = {}) {
-  console.log('[BOOKING_ACTION_AUDIT]', {
-    action: actionName,
-    incomingBookingId: ctx?.incomingBookingId ?? null,
-    booking_ref: ctx?.booking_ref ?? null,
-    requestedIds: ctx?.requestedIds || [],
-    resolvedBooking: ctx?.resolvedBooking || null,
-    sourceCollection: ctx?.sourceCollection || null,
-    failureReason: ctx?.failureReason || null,
-    ...extra,
-  });
+function logBookingActionAudit(_actionName, _ctx, _extra = {}) {
+  // No-op: diagnostic logging removed. Reserved for future server-side audit trail.
 }
 
 function findBookingByIdForActions(bookingId) {
-  console.warn('[ACTION_ENTRY] findBookingByIdForActions', { bookingId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
   return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
+let _viewBookingLock = false;
+
 function viewBooking(bookingId, vehicleId) {
-  console.warn('[ACTION_ENTRY] viewBooking', { bookingId, vehicleId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
+  if (_viewBookingLock) return;
+  _viewBookingLock = true;
+  setTimeout(() => { _viewBookingLock = false; }, 300);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
   let b = ctx.resolvedBooking;
@@ -5101,15 +5100,6 @@ function viewBooking(bookingId, vehicleId) {
   }[tier] || '';
   const riskClr = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' }[b.custRiskFlag || 'low'] || 'inherit';
   const _tickets = (typeof allTickets !== 'undefined' && Array.isArray(allTickets)) ? allTickets : [];
-  const _detailContentEl = document.getElementById('booking-detail-content');
-  const _detailActionsEl = document.getElementById('booking-detail-actions');
-  const _detailModalEl   = document.getElementById('booking-detail-modal');
-  console.log('[MODAL_RENDER] viewBooking pre-render check', {
-    bookingId: actionBookingId,
-    'booking-detail-content': _detailContentEl ? 'found' : 'NOT FOUND',
-    'booking-detail-actions': _detailActionsEl ? 'found' : 'NOT FOUND',
-    'booking-detail-modal':   _detailModalEl   ? 'found' : 'NOT FOUND',
-  });
   try {
   document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
@@ -5229,7 +5219,6 @@ function viewBooking(bookingId, vehicleId) {
       ${(() => {
         const modalReturnDt = bookingReturnDateTime(b);
         const canExtend = b.status === 'active_rental' && modalReturnDt && now < modalReturnDt;
-        console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: modalReturnDt ? modalReturnDt.toISOString() : null, canExtend, context: 'modal' });
         return canExtend
           ? `<button class="btn btn-secondary" onclick="extendBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
           : '';
@@ -5251,21 +5240,17 @@ function viewBooking(bookingId, vehicleId) {
   openModal('booking-detail-modal');
 }
 
+let _editBookingLock = false;
+
 function openEditBookingModal(bookingId) {
-  console.warn('[ACTION_ENTRY] openEditBookingModal', { bookingId, allBookingsLen: allBookings?.length ?? 0, allLateFeesLen: allLateFeesData?.length ?? 0 });
+  if (_editBookingLock) return;
+  _editBookingLock = true;
+  setTimeout(() => { _editBookingLock = false; }, 300);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
   const _editModalEl = document.getElementById('booking-edit-modal');
-  console.log('[MODAL_RENDER] openEditBookingModal pre-populate check', {
-    bookingId,
-    'booking-edit-modal': _editModalEl ? 'found' : 'NOT FOUND',
-    'be-name':            !!document.getElementById('be-name'),
-    'be-vehicle':         !!document.getElementById('be-vehicle'),
-    'be-pickup-date':     !!document.getElementById('be-pickup-date'),
-    'be-return-date':     !!document.getElementById('be-return-date'),
-  });
   if (!_editModalEl) {
     console.error('[MODAL_RENDER] openEditBookingModal ABORTED — booking-edit-modal not in DOM');
     showToast('Edit modal unavailable.', 'error');
@@ -5293,13 +5278,11 @@ function openEditBookingModal(bookingId) {
     showToast('Error populating edit form: ' + (populateErr.message || populateErr), 'error');
     return;
   }
-  console.log('[MODAL_RENDER] openEditBookingModal populate OK — opening modal');
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
 }
 
 const bookingsTbodyEl = document.getElementById('bookings-tbody');
-console.log('[BOOKING_HANDLER_SETUP] bookings-tbody el:', bookingsTbodyEl ? 'found — delegated click handler registered' : 'NOT FOUND — delegated click handler NOT registered');
 if (bookingsTbodyEl) {
   bookingsTbodyEl.addEventListener('click', (event) => {
     const rawTarget = event.target;
@@ -6184,7 +6167,6 @@ function resetSmsTemplate() {
 // ── Modal helpers ──────────────────────────────────────────────────────────
 function openModal(id) {
   const el = document.getElementById(id);
-  console.log('[MODAL] openModal', id, el ? 'found' : 'NOT FOUND in DOM');
   if (!el) { console.error('[MODAL] openModal FAILED — element missing from DOM:', id); return; }
   el.classList.add('open');
 }
@@ -6227,13 +6209,6 @@ function calcFinancials(records, label, opts = {}) {
   const expenses     = opts.totalExpenses !== undefined
     ? Math.round(Number(opts.totalExpenses) * 100) / 100
     : records.reduce((s, r) => s + Number(r.expenses || 0), 0);
-  // Temporary diagnostic logging — remove once cross-page totals are confirmed.
-  console.log(`[calcFinancials] ${label || 'unknown'}:`, {
-    records:      records.length,
-    amount_gross: Math.round(amount_gross * 100) / 100,
-    amount_net:   Math.round(amount_net   * 100) / 100,
-    expenses:     Math.round(expenses     * 100) / 100,
-  });
   return { amount_gross, stripe_fee, amount_net, expenses, profit: amount_net - expenses };
 }
 
@@ -6635,7 +6610,6 @@ function fmtRevDate(dateStr) {
 }
 
 function renderRevenue(groups) {
-  console.log('[renderRevenue] called with', groups?.length, 'groups', groups);
   const tbody = document.getElementById('revenue-table-body');
   const wrap  = document.getElementById('revenue-table-wrap');
   const empty = document.getElementById('revenue-empty');
@@ -9296,8 +9270,6 @@ async function loadAiInsights() {
     .map(([k]) => k);
   if (failures.length) {
     console.error('[ADMIN_RUNTIME_HEALTH] MISSING globals/elements:', failures, checks);
-  } else {
-    console.log('[ADMIN_RUNTIME_HEALTH] All action-layer globals OK', checks);
   }
 })();
 </script>
