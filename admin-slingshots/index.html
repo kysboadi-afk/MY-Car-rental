@@ -4472,7 +4472,7 @@ function normalizeBookingForActions(b) {
   const bookingId = b?.bookingId || b?.booking_ref || b?.booking_id || b?.id || '';
   return {
     ...b,
-    bookingId: String(bookingId || ''),
+    bookingId: String(bookingId),
     vehicleId: b?.vehicleId || b?.vehicle_id || '',
     paymentIntentId: b?.paymentIntentId || b?.payment_intent_id || '',
   };
