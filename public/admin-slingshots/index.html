@@ -4920,7 +4920,7 @@ function applyBookingFilters() {
 }
 
 function viewBooking(bookingId, vehicleId) {
-  const b = allBookings.find((x) => x.bookingId === bookingId);
+  const b = allBookings.find((x) => x.bookingId === bookingId || x.booking_ref === bookingId || x.booking_id === bookingId);
   if (!b) return;
 
   const now = new Date();
@@ -10086,7 +10086,7 @@ function renderTicketDetailModal(ticket, bookingDocs) {
       ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
       ['Vehicle',     vName],
     ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('') +
-    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(ticket.booking_ref)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
+    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(linked.bookingId)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
   } else {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }

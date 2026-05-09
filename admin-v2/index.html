@@ -2562,7 +2562,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
+        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev');syncCategoryFromType('ev')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2571,6 +2571,14 @@
           <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="ev-category">Category *</label>
+        <select class="form-select" id="ev-category">
+          <option value="car">Car</option>
+          <option value="slingshot">Slingshot</option>
+        </select>
+        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -2672,14 +2680,14 @@
         <label class="form-label">Vehicle Name *</label>
         <input type="text" class="form-input" id="av-name" placeholder="e.g. Camry 2022 SE" maxlength="200">
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Make</label>
         <input type="text" class="form-input" id="av-make" placeholder="e.g. Toyota, Ford, Honda" maxlength="100">
         <div class="form-hint">Vehicle manufacturer (required for the rental agreement).</div>
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av')">
+        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av');toggleVehicleTypeFields('av');syncCategoryFromType('av')">
           <option value="economy">Economy</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
@@ -2690,6 +2698,14 @@
         </select>
       </div>
       <div class="form-group">
+        <label class="form-label" for="av-category">Category *</label>
+        <select class="form-select" id="av-category">
+          <option value="car">Car</option>
+          <option value="slingshot">Slingshot</option>
+        </select>
+        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">Status</label>
         <select class="form-select" id="av-status">
           <option value="active">Active</option>
@@ -2697,15 +2713,15 @@
           <option value="inactive">Inactive</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group av-car-only">
         <label class="form-label">Vehicle Year</label>
         <input type="number" class="form-input" id="av-year" min="1990" max="2030" placeholder="e.g. 2022">
       </div>
-      <div class="form-group">
+      <div class="form-group av-car-only">
         <label class="form-label">Purchase Price ($)</label>
         <input type="number" class="form-input" id="av-purchase-price" min="0" step="100" placeholder="0">
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Purchase Date</label>
         <input type="date" class="form-input" id="av-purchase-date">
       </div>
@@ -2721,29 +2737,29 @@
         <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
         <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
         <div id="av-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('av')">+ Add Photo</button>
         <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('av')">
         <div id="av-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Enables automatic mileage tracking.</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">VIN</label>
         <input type="text" class="form-input" id="av-vin" placeholder="e.g. 1HGCM82633A123456" maxlength="50">
         <div class="form-hint">17-character Vehicle Identification Number (optional).</div>
       </div>
-      <div class="form-group full">
+      <div class="form-group full av-car-only">
         <label class="form-label">Scarcity Notice</label>
         <input type="text" class="form-input" id="av-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
         <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
       </div>
-      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+      <div class="form-group full av-car-only" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Earnings Block (Booking Page)</div>
         <div class="form-hint" style="margin-bottom:12px;">These lines appear in the gold earnings box on the booking page. Leave blank to use the default text. The "Weekly rental" and "Estimated take-home" rows are always auto-calculated from the vehicle's weekly rate.</div>
         <div class="form-group full">
@@ -2763,7 +2779,7 @@
           <input type="text" class="form-input" id="av-earnings-cta" placeholder="e.g. Limited vehicles available — reserve today" maxlength="500">
         </div>
       </div>
-      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+      <div id="av-car-pricing" class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing</div>
         <div class="form-grid" style="margin:0;">
           <div class="form-group">
@@ -2785,7 +2801,28 @@
         </div>
         <div class="form-hint">Rates are saved to the booking database so renters are charged correctly. Leave blank to set up later.</div>
       </div>
-    </div>
+      <div id="av-slingshot-pricing" class="form-group full" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing (Hourly Packages)</div>
+        <div class="form-grid" style="margin:0;">
+          <div class="form-group">
+            <label class="form-label">2-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-2hr" min="0" step="1" placeholder="e.g. 150">
+          </div>
+          <div class="form-group">
+            <label class="form-label">3-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-3hr" min="0" step="1" placeholder="e.g. 200">
+          </div>
+          <div class="form-group">
+            <label class="form-label">6-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-6hr" min="0" step="1" placeholder="e.g. 250">
+          </div>
+          <div class="form-group">
+            <label class="form-label">24-Hour Package ($)</label>
+            <input type="number" class="form-input" id="av-price-24hr" min="0" step="1" placeholder="e.g. 350">
+          </div>
+        </div>
+        <div class="form-hint">Set the price for each rental package. A $500 refundable security deposit is always collected automatically.</div>
+      </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-vehicle-modal')">Cancel</button>
@@ -3864,6 +3901,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-name').value = v.vehicle_name || '';
   document.getElementById('ev-make').value = v.make || '';
   document.getElementById('ev-type').value = v.type || 'economy';
+  document.getElementById('ev-category').value = v.category || (v.type === 'slingshot' ? 'slingshot' : 'car');
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
@@ -3889,6 +3927,7 @@ async function saveVehicle() {
     vehicle_name:      document.getElementById('ev-name').value.trim(),
     make:              document.getElementById('ev-make').value.trim() || null,
     type:              document.getElementById('ev-type').value,
+    category:          document.getElementById('ev-category').value,
     status:            document.getElementById('ev-status').value,
     vehicle_year:      Number(document.getElementById('ev-year').value) || null,
     purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
@@ -4271,11 +4310,35 @@ async function markVehicleServiced(vehicleId, serviceType) {
 }
 
 // ── Add Vehicle ────────────────────────────────────────────────────────────
+// Auto-sync category from type when type changes: selecting "Slingshot" sets
+// category to "slingshot"; any other type sets it to "car".
+function syncCategoryFromType(prefix) {
+  const typeEl     = document.getElementById(prefix + '-type');
+  const categoryEl = document.getElementById(prefix + '-category');
+  if (!typeEl || !categoryEl) return;
+  categoryEl.value = typeEl.value === 'slingshot' ? 'slingshot' : 'car';
+}
+
+function toggleVehicleTypeFields(prefix) {
+  const type = (document.getElementById(prefix + '-type') || {}).value || '';
+  const isSlingshot = type === 'slingshot';
+  // Show/hide car-only fields
+  document.querySelectorAll('.' + prefix + '-car-only').forEach(el => {
+    el.style.display = isSlingshot ? 'none' : '';
+  });
+  // Show car pricing or slingshot pricing
+  const carPricing = document.getElementById(prefix + '-car-pricing');
+  if (carPricing) carPricing.style.display = isSlingshot ? 'none' : '';
+  const slingshotPricing = document.getElementById(prefix + '-slingshot-pricing');
+  if (slingshotPricing) slingshotPricing.style.display = isSlingshot ? '' : 'none';
+}
+
 function openAddVehicle() {
   document.getElementById('av-id').value = '';
   document.getElementById('av-name').value = '';
   document.getElementById('av-make').value = '';
   document.getElementById('av-type').value = 'economy';
+  document.getElementById('av-category').value = 'car';
   document.getElementById('av-status').value = 'active';
   document.getElementById('av-year').value = '';
   document.getElementById('av-purchase-price').value = '';
@@ -4292,12 +4355,17 @@ function openAddVehicle() {
   document.getElementById('av-weekly-rate').value = '';
   document.getElementById('av-biweekly-rate').value = '';
   document.getElementById('av-monthly-rate').value = '';
+  document.getElementById('av-price-2hr').value  = '';
+  document.getElementById('av-price-3hr').value  = '';
+  document.getElementById('av-price-6hr').value  = '';
+  document.getElementById('av-price-24hr').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   renderGallery('av', []);
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
   updateBouncieWarning('av');
+  toggleVehicleTypeFields('av');
   openModal('add-vehicle-modal');
 }
 
@@ -4305,6 +4373,7 @@ async function saveNewVehicle() {
   const vehicleId       = (document.getElementById('av-id').value || '').trim().toLowerCase();
   const vehicleName     = document.getElementById('av-name').value.trim();
   const type            = document.getElementById('av-type').value;
+  const category        = document.getElementById('av-category').value;
   const status          = document.getElementById('av-status').value;
   const vehicleYear     = parseInt(document.getElementById('av-year').value, 10) || null;
   const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
@@ -4324,6 +4393,19 @@ async function saveNewVehicle() {
   const biweeklyRate    = parseFloat(document.getElementById('av-biweekly-rate').value) || null;
   const monthlyRate     = parseFloat(document.getElementById('av-monthly-rate').value)  || null;
 
+  // Slingshot hourly package prices
+  const isSlingshot = type === 'slingshot';
+  const price2hr    = parseFloat(document.getElementById('av-price-2hr').value)  || null;
+  const price3hr    = parseFloat(document.getElementById('av-price-3hr').value)  || null;
+  const price6hr    = parseFloat(document.getElementById('av-price-6hr').value)  || null;
+  const price24hr   = parseFloat(document.getElementById('av-price-24hr').value) || null;
+  const hourlyTiers = isSlingshot ? {
+    '2hr':  { hours: 2,  price: price2hr  ?? 150, label: '2 Hours' },
+    '3hr':  { hours: 3,  price: price3hr  ?? 200, label: '3 Hours' },
+    '6hr':  { hours: 6,  price: price6hr  ?? 250, label: '6 Hours' },
+    '24hr': { hours: 24, price: price24hr ?? 350, label: '24 Hours' },
+  } : null;
+
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
 
@@ -4337,6 +4419,11 @@ async function saveNewVehicle() {
     msgEl.textContent = 'Vehicle Name is required.';
     return;
   }
+  if (!category || (category !== 'car' && category !== 'slingshot')) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Category is required — select Car or Slingshot.';
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Adding…';
@@ -4346,7 +4433,7 @@ async function saveNewVehicle() {
   try {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
-      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      vehicleId, vehicleName, type, category, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
       ...(make         ? { make }         : {}),
       ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
@@ -4360,6 +4447,7 @@ async function saveNewVehicle() {
       ...(weeklyRate   ? { weeklyRate }   : {}),
       ...(biweeklyRate ? { biweeklyRate } : {}),
       ...(monthlyRate  ? { monthlyRate }  : {}),
+      ...(hourlyTiers  ? { hourlyTiers }  : {}),
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
@@ -4908,8 +4996,8 @@ function applyBookingFilters() {
 }
 
 function findBookingByIdForActions(bookingId) {
-  return allBookings.find((x) => x.bookingId === bookingId)
-      || allLateFeesData.find((x) => x.bookingId === bookingId);
+  const match = (x) => x.bookingId === bookingId || x.booking_ref === bookingId || x.booking_id === bookingId;
+  return allBookings.find(match) || allLateFeesData.find(match);
 }
 
 function viewBooking(bookingId, vehicleId) {
@@ -4930,7 +5018,7 @@ function viewBooking(bookingId, vehicleId) {
       .catch(() => { /* non-fatal — ignore silently */ });
   }
 
-  const derived = bookingDerivedStatus(b, new Date());
+  const derived = bookingDerivedStatus(b, now);
   const tier    = computeBookingCustomerTier(b);
   const tierBadge = {
     vip:          '<span class="badge badge-blue">⭐ VIP</span>',
@@ -5064,7 +5152,7 @@ function viewBooking(bookingId, vehicleId) {
           ? `<button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
           : '';
       })()}
-      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+      <button class="btn btn-danger" onclick="cancelActiveRentalWithConfirm('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">Cancel Booking</button>
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
@@ -5231,6 +5319,39 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
       showToast('Error updating booking: ' + err.message, 'error');
       if (triggerBtn) triggerBtn.disabled = false;
     }
+  });
+}
+
+/**
+ * Cancel a booking that is already in active_rental / overdue / extended status.
+ * Shows a prominent warning before proceeding, then sends forceCancel=true so
+ * the backend guard allows the override.
+ */
+function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
+  const b = findBookingByIdForActions(bookingId);
+  const derived = b ? bookingDerivedStatus(b, new Date()) : null;
+  const isAlreadyActive = b && (b.status === 'active_rental' || derived === 'overdue' || derived === 'extended');
+
+  if (isAlreadyActive) {
+    const confirmed = confirm(
+      '⚠️ WARNING: This rental is currently ACTIVE — the vehicle has already been picked up.\n\n' +
+      'Cancelling an active rental does NOT automatically return the vehicle or charge any fee.\n\n' +
+      'Are you absolutely sure you want to cancel this active rental?'
+    );
+    if (!confirmed) return;
+  }
+
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    updates: { status: 'cancelled_rental', forceCancel: true },
+  }).then(() => {
+    showToast('Active rental cancelled.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error cancelling rental: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
   });
 }
 
@@ -10073,7 +10194,7 @@ function renderTicketDetailModal(ticket, bookingDocs) {
       ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
       ['Vehicle',     vName],
     ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('') +
-    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(ticket.booking_ref)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
+    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(linked.bookingId)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
   } else {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }
