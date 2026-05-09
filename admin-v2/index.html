@@ -4620,6 +4620,7 @@ function applyLateFeeFilters() {
   };
 
   document.getElementById('lf-tbody').innerHTML = filtered.map((b) => {
+    const actionBookingId = bookingActionId(b);
     const derived   = bookingDerivedStatus(b, new Date());
     const status    = b.lateFeeStatus || 'pending_approval';
     const sc        = statusColors[status] || statusColors['pending_approval'];
@@ -4643,11 +4644,11 @@ function applyLateFeeFilters() {
       <td><span class="badge" style="background:${sc.bg};color:${sc.color};">${sc.label}</span></td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(b.bookingId || '')}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
-          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
-          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${safeFeeAmt})">🚫 Waive</button>` : ''}
-          ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(b.bookingId || '')}',this)">✗ Dismiss</button>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(actionBookingId)}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
+          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
+          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(actionBookingId)}',${safeFeeAmt})">🚫 Waive</button>` : ''}
+          ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(actionBookingId)}',this)">✗ Dismiss</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -4655,6 +4656,8 @@ function applyLateFeeFilters() {
 }
 
 function dismissLateFee(bookingId, btn) {
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('dismissLateFee', ctx);
   if (!confirm('Dismiss this late fee? The customer will NOT be charged and the fee will be cleared.')) return;
   if (btn) btn.disabled = true;
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'dismiss_late_fee', bookingId })
@@ -4720,6 +4723,8 @@ let _lfChargeBookingId = null;
 let _lfChargeVehicleId = null;
 
 function openLateFeeChargeModal(bookingId, vehicleId, suggestedAmount) {
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('openLateFeeChargeModal', ctx, { vehicleId: vehicleId || null, suggestedAmount: suggestedAmount ?? null });
   _lfChargeBookingId = bookingId;
   _lfChargeVehicleId = vehicleId;
   document.getElementById('lf-charge-amount').value = suggestedAmount > 0 ? suggestedAmount : '';
@@ -4764,6 +4769,8 @@ function confirmLateFeeCharge() {
 let _lfWaiveBookingId = null;
 
 function openLateFeeWaiveModal(bookingId, suggestedAmount) {
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('openLateFeeWaiveModal', ctx, { suggestedAmount: suggestedAmount ?? null });
   _lfWaiveBookingId = bookingId;
   document.getElementById('lf-waive-type').value   = 'full';
   document.getElementById('lf-waive-amount').value = suggestedAmount > 0 ? suggestedAmount : '';
@@ -4919,6 +4926,7 @@ function applyBookingFilters() {
   document.getElementById('bookings-empty').style.display = 'none';
 
   document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => {
+    const actionBookingId = bookingActionId(b);
     const derived = bookingDerivedStatus(b, now);
     const rowColor = bookingRowColor(b, derived);
     const tier = computeBookingCustomerTier(b);
@@ -4969,11 +4977,11 @@ function applyBookingFilters() {
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
-          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
-          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(actionBookingId)}', '${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(actionBookingId)}')">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
-            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
-            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this)">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','cancelled_rental',this)">Decline</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
@@ -4981,12 +4989,12 @@ function applyBookingFilters() {
               const canExtend   = b.status === 'active_rental' && extReturnDt && now < extReturnDt;
               console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: extReturnDt ? extReturnDt.toISOString() : null, canExtend });
               return canExtend
-                ? `<button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
+                ? `<button class="btn btn-secondary btn-sm" onclick="extendBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
                 : '';
             })()}
-            <button class="btn btn-success btn-sm" onclick="handleReturn('${esc(b.bookingId || '')}',this)" title="Mark returned">✓ Returned</button>
+            <button class="btn btn-success btn-sm" onclick="markReturned('${esc(actionBookingId)}',this)" title="Mark returned">✓ Returned</button>
           ` : ''}
-          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
+          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(actionBookingId)}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
           ${b.phone ? `<a href="tel:${esc(b.phone)}" class="btn btn-secondary btn-sm" title="Call customer">📞</a>` : ''}
           ${b.email ? `<a href="mailto:${esc(b.email)}" class="btn btn-secondary btn-sm" title="Email customer">✉️</a>` : ''}
         </div>
@@ -4995,23 +5003,75 @@ function applyBookingFilters() {
   }).join('');
 }
 
+function bookingActionId(b) {
+  return String(b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id != null ? b.id : '') || '');
+}
+
+function ticketBookingRef(ticket) {
+  return String(ticket?.booking_ref || ticket?.bookingId || ticket?.booking_id || '');
+}
+
+function resolveBookingForActions(incomingBookingId, incomingBookingRef) {
+  const ids = Array.from(new Set([
+    incomingBookingId,
+    incomingBookingRef,
+  ].filter((x) => x != null && String(x).trim() !== '').map((x) => String(x))));
+
+  const match = (x) => ids.some((id) =>
+    x?.bookingId === id ||
+    x?.booking_ref === id ||
+    x?.booking_id === id ||
+    (x?.id != null && String(x.id) === id)
+  );
+
+  const fromBookings = allBookings.find(match);
+  const fromLateFees = fromBookings ? null : allLateFeesData.find(match);
+  const resolvedBooking = fromBookings || fromLateFees || null;
+  const sourceCollection = fromBookings ? 'allBookings' : fromLateFees ? 'allLateFeesData' : null;
+  const failureReason = resolvedBooking ? null : (ids.length ? 'not_found_in_allBookings_or_allLateFeesData' : 'missing_booking_identifier');
+
+  return {
+    incomingBookingId: incomingBookingId ?? null,
+    booking_ref: incomingBookingRef ?? null,
+    requestedIds: ids,
+    resolvedBooking,
+    sourceCollection,
+    failureReason,
+  };
+}
+
+function logBookingActionAudit(actionName, ctx, extra = {}) {
+  console.log('[BOOKING_ACTION_AUDIT]', {
+    action: actionName,
+    incomingBookingId: ctx?.incomingBookingId ?? null,
+    booking_ref: ctx?.booking_ref ?? null,
+    requestedIds: ctx?.requestedIds || [],
+    resolvedBooking: ctx?.resolvedBooking || null,
+    sourceCollection: ctx?.sourceCollection || null,
+    failureReason: ctx?.failureReason || null,
+    ...extra,
+  });
+}
+
 function findBookingByIdForActions(bookingId) {
-  const match = (x) => x.bookingId === bookingId || x.booking_ref === bookingId || x.booking_id === bookingId;
-  return allBookings.find(match) || allLateFeesData.find(match);
+  return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
 function viewBooking(bookingId, vehicleId) {
-  let b = findBookingByIdForActions(bookingId);
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
+  let b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
 
   const now = new Date();
+  const actionBookingId = bookingActionId(b);
 
   // Silently attempt to recover missing Stripe card data in the background.
   if ((b.paymentMethod || '').toLowerCase() === 'stripe' && !b.hasSavedCard && b.paymentIntentId) {
-    apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: b.bookingId })
+    apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: actionBookingId })
       .then((data) => {
         if ((data.recovered || 0) > 0) {
-          const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+          const idx = allBookings.findIndex((x) => bookingActionId(x) === actionBookingId);
           if (idx !== -1) allBookings[idx].hasSavedCard = true;
         }
       })
@@ -5044,7 +5104,7 @@ function viewBooking(bookingId, vehicleId) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Net Amount</div><div style="font-weight:700;color:${b.amountNet != null ? (b.amountNet >= 0 ? 'var(--success)' : 'var(--danger)') : 'inherit'};">${b.amountNet != null ? '$' + formatMoney(b.amountNet) : '<span style="color:var(--text-sub);">—</span>'}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Deposit Paid</div><div>$${formatMoney(b.amountPaid || 0)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Remaining Balance</div><div style="${b.remaining > 0 ? 'color:var(--warning);font-weight:600;' : ''}">$${formatMoney(b.remaining || 0)}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(actionBookingId || '–')}</div></div>
     </div>
     ${b.lateFeeAmount != null || b.lateFeeStatus ? `
     <div style="margin-top:14px;padding:12px;background:#fff8f0;border-radius:8px;border:1px solid #f97316;">
@@ -5056,9 +5116,9 @@ function viewBooking(bookingId, vehicleId) {
       </div>
       ${(b.lateFeeStatus !== 'paid' && b.lateFeeStatus !== 'dismissed') ? `
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${parseFloat(b.lateFeeAmount) || 0})">💳 Charge Fee</button>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeWaiveModal('${esc(b.bookingId || '')}',${parseFloat(b.lateFeeAmount) || 0})">🚫 Waive Fee</button>
-        <button class="btn btn-danger btn-sm" onclick="closeModal('booking-detail-modal');dismissLateFee('${esc(b.bookingId || '')}',null)">✗ Dismiss</button>
+        <button class="btn btn-primary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeChargeModal('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',${parseFloat(b.lateFeeAmount) || 0})">💳 Charge Fee</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeWaiveModal('${esc(actionBookingId)}',${parseFloat(b.lateFeeAmount) || 0})">🚫 Waive Fee</button>
+        <button class="btn btn-danger btn-sm" onclick="closeModal('booking-detail-modal');dismissLateFee('${esc(actionBookingId)}',null)">✗ Dismiss</button>
       </div>` : ''}
     </div>
     ` : ''}
@@ -5126,7 +5186,7 @@ function viewBooking(bookingId, vehicleId) {
         </div>
         <div style="grid-column:1/-1;">
           <button class="btn btn-secondary" style="font-size:13px;width:100%;"
-            onclick="updateBookingReturnDate('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">
+            onclick="updateBookingReturnDate('${esc(b.vehicleId || '')}','${esc(actionBookingId)}',this)">
             ✏️ Save Return Date
           </button>
         </div>
@@ -5135,30 +5195,30 @@ function viewBooking(bookingId, vehicleId) {
   `;
   document.getElementById('booking-detail-actions').innerHTML = `
     ${b.status === 'reserved_unpaid' ? `
-      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
-      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
     ` : ''}
     ${b.status === 'booked_paid' ? `
-      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
-      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
     ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
-      <button class="btn btn-success" onclick="handleReturn('${esc(b.bookingId || '')}',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
+      <button class="btn btn-success" onclick="markReturned('${esc(actionBookingId)}',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
       ${(() => {
         const modalReturnDt = bookingReturnDateTime(b);
         const canExtend = b.status === 'active_rental' && modalReturnDt && now < modalReturnDt;
         console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: modalReturnDt ? modalReturnDt.toISOString() : null, canExtend, context: 'modal' });
         return canExtend
-          ? `<button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
+          ? `<button class="btn btn-secondary" onclick="extendBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
           : '';
       })()}
-      <button class="btn btn-danger" onclick="cancelActiveRentalWithConfirm('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">Cancel Booking</button>
+      <button class="btn btn-danger" onclick="cancelActiveRentalWithConfirm('${esc(b.vehicleId || '')}','${esc(actionBookingId)}',this)">Cancel Booking</button>
     ` : ''}
-    <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
-    <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
-    <button class="btn btn-secondary" onclick="downloadRentalAgreement('${esc(b.bookingId || '')}', this)" title="Download the rental agreement PDF for this booking">📄 Download Agreement</button>
-    <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit Booking</button>
-    <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
+    <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(actionBookingId)}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
+    <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(actionBookingId)}', this)">📧 Resend Email</button>
+    <button class="btn btn-secondary" onclick="downloadRentalAgreement('${esc(actionBookingId)}', this)" title="Download the rental agreement PDF for this booking">📄 Download Agreement</button>
+    <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(actionBookingId)}')">✏️ Edit Booking</button>
+    <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(actionBookingId)}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   } catch (renderErr) {
@@ -5170,7 +5230,9 @@ function viewBooking(bookingId, vehicleId) {
 }
 
 function openEditBookingModal(bookingId) {
-  const b = findBookingByIdForActions(bookingId);
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('openEditBookingModal', ctx);
+  const b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
   // Store the bookingId being edited
   document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
@@ -5239,7 +5301,7 @@ async function saveEditBooking(btn) {
   try {
     await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
     // Patch local cache
-    const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+    const idx = allBookings.findIndex((x) => bookingActionId(x) === bookingId);
     if (idx !== -1) {
       if (updates.customerName  !== undefined) allBookings[idx].name          = updates.customerName;
       if (updates.customerPhone !== undefined) allBookings[idx].phone         = updates.customerPhone;
@@ -5278,6 +5340,13 @@ function deleteBooking(bookingId, btn) {
       showToast('Error deleting booking: ' + err.message, 'error');
       if (btn) btn.disabled = false;
     });
+}
+
+function markReturned(bookingId, btn) {
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('markReturned', ctx);
+  const resolvedId = bookingActionId(ctx.resolvedBooking) || bookingId;
+  return handleReturn(resolvedId, btn);
 }
 
 function handleReturn(bookingRef, btn) {
@@ -5328,7 +5397,9 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
  * the backend guard allows the override.
  */
 function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
-  const b = findBookingByIdForActions(bookingId);
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('cancelActiveRentalWithConfirm', ctx, { vehicleId: vehicleId || null });
+  const b = ctx.resolvedBooking;
   const derived = b ? bookingDerivedStatus(b, new Date()) : null;
   const isAlreadyActive = b && (b.status === 'active_rental' || derived === 'overdue' || derived === 'extended');
 
@@ -5409,6 +5480,13 @@ async function downloadRentalAgreement(bookingId, btn) {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
+}
+
+function extendBooking(bookingId, vehicleId, btn) {
+  const ctx = resolveBookingForActions(bookingId, null);
+  logBookingActionAudit('extendBooking', ctx, { vehicleId: vehicleId || null });
+  const resolvedId = bookingActionId(ctx.resolvedBooking) || bookingId;
+  return openResendExtensionModal(resolvedId, vehicleId, btn);
 }
 
 function openResendExtensionModal(bookingId, vehicleId, _btn) {
@@ -10125,6 +10203,10 @@ function renderProgressBar(status) {
 
 async function openTicketDetail(ticketId) {
   viewingTicketId = ticketId;
+  const cachedTicket = allTickets.find((t) => t.id === ticketId) || null;
+  const ticketRef = ticketBookingRef(cachedTicket);
+  const ctx = resolveBookingForActions(null, ticketRef || null);
+  logBookingActionAudit('openTicketDetail', ctx, { ticketId: ticketId || null });
 
   // Immediate render from cache while full fetch runs
   const cached = allTickets.find((t) => t.id === ticketId);
@@ -10147,10 +10229,11 @@ function renderTicketDetailModal(ticket, bookingDocs) {
   document.getElementById('td-badge-wrap').innerHTML = ticketBadge(ticket.status);
   document.getElementById('td-progress').innerHTML  = renderProgressBar(ticket.status);
 
-  // Match banner — use booking_ref (human-readable) not booking_id (UUID)
+  // Match banner — use canonical ticket booking ref for display
   const bannerEl = document.getElementById('td-match-banner');
-  if (ticket.booking_ref) {
-    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticket.booking_ref)})</div>`;
+  const ticketRef = ticketBookingRef(ticket);
+  if (ticketRef) {
+    bannerEl.innerHTML = `<div class="ticket-match-banner matched">\u2705 Matched to: <strong>${esc(ticket.matchedRenterName || 'Renter')}</strong> &nbsp;(Booking: ${esc(ticketRef)})</div>`;
   } else {
     bannerEl.innerHTML = `<div class="ticket-match-banner unmatched">\u26a0 No booking found for this vehicle on the violation date.</div>`;
   }
@@ -10183,18 +10266,20 @@ function renderTicketDetailModal(ticket, bookingDocs) {
     renterEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No renter matched for this ticket.</div>';
   }
 
-  // C. Booking Info — display booking_ref (text ID), find in allBookings by booking_ref
+  // C. Booking Info — display booking reference and resolve via shared booking resolver
   const bookingEl = document.getElementById('td-booking');
-  if (ticket.booking_ref) {
-    const linked  = allBookings.find((b) => (b.booking_ref || b.bookingId) === ticket.booking_ref);
+  if (ticketRef) {
+    const linkedCtx = resolveBookingForActions(null, ticketRef);
+    logBookingActionAudit('ticketBookingLinkLookup', linkedCtx, { ticketId: ticket.id || null });
+    const linked = linkedCtx.resolvedBooking;
     const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '\u2014';
     bookingEl.innerHTML = [
-      ['Booking ID',  ticket.booking_ref],
+      ['Booking ID',  ticketRef],
       ['Pickup Date', fmtDate(linked?.pickup_date || linked?.pickupDate)],
       ['Return Date', fmtDate(linked?.return_date || linked?.returnDate)],
       ['Vehicle',     vName],
     ].map(([l, v]) => `<div class="ticket-detail-row"><span class="ticket-detail-label">${l}</span><span class="ticket-detail-value">${esc(String(v))}</span></div>`).join('') +
-    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(linked.bookingId)}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
+    (linked ? `<div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="closeModal('ticket-detail-modal');viewBooking('${esc(bookingActionId(linked))}','${esc(linked.vehicleId||ticket.vehicle_id||'')}')">🔗 Open Booking</button></div>` : '');
   } else {
     bookingEl.innerHTML = '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No booking linked.</div>';
   }
@@ -10217,6 +10302,7 @@ function renderTicketDocuments(ticket, bookingDocs) {
   const docsEl = document.getElementById('td-docs');
   if (!docsEl) return;
   const parts = [];
+  const ticketRef = ticketBookingRef(ticket);
 
   // Driver license front + back
   if (ticket.matchedRenterLicenseUrl || ticket.matchedRenterLicenseBackUrl) {
@@ -10238,7 +10324,7 @@ function renderTicketDocuments(ticket, bookingDocs) {
       const label = typeLabel[doc.type] || typeLabel.other;
       parts.push(`<a href="${esc(doc.file_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="text-decoration:none;margin-right:6px;margin-bottom:6px;">${label}${doc.file_name ? ' \u2014 ' + esc(doc.file_name) : ''}</a>`);
     });
-  } else if (ticket.booking_ref) {
+  } else if (ticketRef) {
     parts.push('<div style="font-size:12px;color:var(--text-sub);font-style:italic;">No booking documents uploaded yet.</div>');
   }
 
@@ -10283,6 +10369,9 @@ function buildTicketActionButtons(ticket) {
 
 async function ticketAction(newStatus) {
   if (!viewingTicketId) return;
+  const currentRef = ticketBookingRef(viewingTicketData);
+  const ctx = resolveBookingForActions(null, currentRef || null);
+  logBookingActionAudit('ticketAction', ctx, { ticketId: viewingTicketId || null, newStatus: newStatus || null });
   try {
     const data = await apiPost('/api/tickets', {
       secret: adminSecret,
@@ -10306,6 +10395,9 @@ async function ticketAction(newStatus) {
 
 async function chargeTicketRenter(isRetry = false) {
   if (!viewingTicketId) return;
+  const currentRef = ticketBookingRef(viewingTicketData);
+  const ctx = resolveBookingForActions(null, currentRef || null);
+  logBookingActionAudit('chargeTicketRenter', ctx, { ticketId: viewingTicketId || null, isRetry: !!isRetry });
   const label = isRetry ? 'Retry charge' : 'Charge renter';
   if (!confirm(`${label} for ticket #${viewingTicketData?.ticket_number}?\n\nThis will charge: ticket amount + admin fee.`)) return;
 
