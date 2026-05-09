@@ -4996,7 +4996,11 @@ function applyBookingFilters() {
 }
 
 function viewBooking(bookingId, vehicleId) {
-  let b = allBookings.find((x) => x.bookingId === bookingId);
+  // Primary lookup in allBookings (fast path, mirrors slingshot admin).
+  // Fallback to allLateFeesData so the View button on the Late Fees page works
+  // even when the user hasn't visited the Bookings tab (allBookings may be empty).
+  let b = allBookings.find((x) => x.bookingId === bookingId)
+          || allLateFeesData.find((x) => x.bookingId === bookingId);
   if (!b) { showToast('Booking not found.', 'error'); return; }
 
   const now = new Date();
