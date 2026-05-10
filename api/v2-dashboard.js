@@ -199,9 +199,9 @@ export default async function handler(req, res) {
     // Canonical ledger-based KPI — only for unscoped dashboard totals.
     // Scoped dashboards must keep their scoped totalRevenue to avoid cross-fleet mixing.
     const kpiPromise = sb && !normalizedScope
-      ? sb.from("total_revenue_kpi").select("total_revenue").single()
+      ? sb.from("total_revenue_kpi_canonical").select("total_revenue").single()
           .then((r) => r, (e) => {
-            console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
+            console.warn("v2-dashboard: total_revenue_kpi_canonical query failed (non-fatal):", e?.message);
             return { data: null, error: e };
           })
       : Promise.resolve({ data: null });
@@ -370,40 +370,12 @@ export default async function handler(req, res) {
     const rrByBookingId = {}; // { [bookingId]: gross_amount }
     let financialsFromRevRecords = false;
 
-    if (viewOk) {
-      // Fast path: all financial totals come from the pre-aggregated view.
-      const viewRevenue    = Number(metricsView[`${vp}_revenue`]          || 0);
-      const viewReconciled = Number(metricsView[`${vp}_reconciled_count`] || 0);
+    // Financial totals prefer the canonical reporting layer below
+    // (revenue_reporting_canonical) so Dashboard/Revenue/Fleet use identical
+    // inclusion rules. When canonical data is unavailable, we fall back to
+    // bookings-derived totals as a best-effort continuity path.
 
-      // Only trust the view's financial data when it contains real Stripe-backed
-      // revenue OR when the view at least has reconciled records (even at $0).
-      // When both are zero the revenue_records table is empty for this scope and
-      // we fall through to the bookings-based fallback so the dashboard shows
-      // deposit amounts as a best-effort estimate instead of a misleading $0.
-      if (viewRevenue > 0 || viewReconciled > 0) {
-        financialsFromRevRecords = true;
-        totalRevenue    = viewRevenue;
-        totalStripeFees = Number(metricsView[`${vp}_stripe_fees`]      || 0);
-        netRevenue      = Number(metricsView[`${vp}_net_revenue`]      || 0);
-        reconciledCount = viewReconciled;
-
-        // Populate per-vehicle revenue map (used by vehicleStats computation below).
-        // view includes both revenue_records and supplemental charges.
-        // Accumulate (+=) rather than assign so that any vehicle_id aliases that
-        // uiVehicleId() maps to the same canonical key are merged correctly.
-        const vRevJson = metricsView.vehicle_revenue_json || {};
-        for (const [vid, vr] of Object.entries(vRevJson)) {
-          const normVid = uiVehicleId(vid);
-          if (!rrByVehicle[normVid]) rrByVehicle[normVid] = { gross: 0, net: 0, count: 0 };
-          rrByVehicle[normVid].gross += Number(vr.gross || 0);
-          rrByVehicle[normVid].net   += Number(vr.net   || 0);
-          rrByVehicle[normVid].count += Number(vr.count || 0);
-          bookingsPerVehicle[normVid] = (bookingsPerVehicle[normVid] || 0) + Number(vr.count || 0);
-        }
-      }
-    }
-
-    // Run the direct revenue_records_effective loop when:
+    // Run the direct canonical revenue loop when:
     //   a) the admin_metrics_v2 view is unavailable (!viewOk), OR
     //   b) the view is available but returned no financial data — this happens when
     //      revenue_reporting_base is empty (e.g. all paid records have is_orphan=true),
@@ -411,16 +383,14 @@ export default async function handler(req, res) {
     if (sb && (!viewOk || !financialsFromRevRecords)) {
       try {
         const { data: rrRows, error: rrErr } = await sb
-          .from("revenue_records_effective")
-          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
-          .eq("payment_status", "paid");
+          .from("revenue_reporting_canonical")
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, refund_amount");
 
         if (rrErr) {
-          console.error("v2-dashboard: revenue records unavailable, falling back to bookings.json:", rrErr.message);
+          console.error("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrErr.message);
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
-            if (r.is_cancelled || r.is_no_show) continue;
             const vid = uiVehicleId(r.vehicle_id) || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
 
@@ -451,7 +421,7 @@ export default async function handler(req, res) {
         }
         // If rrRows is empty (no paid records yet) we fall through to bookings.json.
       } catch (rrEx) {
-        console.warn("v2-dashboard: revenue_records unavailable, falling back to bookings.json:", rrEx.message);
+        console.warn("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrEx.message);
       }
     }
 
@@ -512,68 +482,7 @@ export default async function handler(req, res) {
       };
     }
 
-    // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
-    // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
-    // fee handling) are excluded here to prevent double-counting revenue totals.
-    // Skipped when the admin_metrics_v2 view already provided financial data
-    // (viewOk && financialsFromRevRecords) because the view's charges_net CTE
-    // already incorporates these supplemental charges.
-    if (sb && (!viewOk || !financialsFromRevRecords)) {
-      const bookingVehicleMap = {};
-      for (const b of allBookings) {
-        if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
-      }
-      try {
-        const { data: chargesData } = await sb
-          .from("charges")
-          .select("booking_id, amount, created_at, stripe_payment_intent_id")
-          .eq("status", "succeeded");
-
-        // Find which charge PIs are already in revenue_records to avoid double-counting.
-        const chargePiIds = (chargesData || [])
-          .map((c) => c.stripe_payment_intent_id)
-          .filter(Boolean);
-        let revenueTrackedPis = new Set();
-        if (chargePiIds.length > 0) {
-          try {
-            const { data: rrRows } = await sb
-              .from("revenue_records")
-              .select("payment_intent_id")
-              .in("payment_intent_id", chargePiIds);
-            revenueTrackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
-          } catch (piLookupErr) {
-            console.warn("v2-dashboard: charge PI dedup lookup failed (non-fatal):", piLookupErr.message);
-          }
-        }
-
-        for (const charge of (chargesData || [])) {
-          // Skip charges already recorded in revenue_records to avoid double-counting.
-          if (charge.stripe_payment_intent_id && revenueTrackedPis.has(charge.stripe_payment_intent_id)) continue;
-          const vid = bookingVehicleMap[charge.booking_id];
-          if (!vid) continue;
-          if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
-          const amount = Number(charge.amount || 0);
-          totalRevenue += amount;
-          netRevenue   += amount;
-          const monthKey = (charge.created_at || "").slice(0, 7);
-          if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
-          if (vehicleStats[vid]) {
-            vehicleStats[vid].revenue   = Math.round((vehicleStats[vid].revenue   + amount) * 100) / 100;
-            vehicleStats[vid].netProfit = Math.round((vehicleStats[vid].netProfit + amount) * 100) / 100;
-            const pp  = vehicleStats[vid].purchasePrice || 0;
-            const exp = vehicleStats[vid].expenses      || 0;
-            vehicleStats[vid].roi = pp > 0
-              ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
-              : null;
-            vehicleStats[vid].operationalROI = exp > 0
-              ? Math.round((vehicleStats[vid].netProfit / exp) * 10000) / 100
-              : null;
-          }
-        }
-      } catch (chargesErr) {
-        console.error("v2-dashboard: charges load error (non-fatal):", chargesErr.message);
-      }
-    }
+    // Supplemental charges are intentionally excluded from canonical revenue KPIs.
 
     // Vehicles available: JS fallback — counts active vehicles from vehicles.json
     // that have no active/overdue booking in the current loop.
@@ -689,10 +598,9 @@ export default async function handler(req, res) {
       if (sb && recentRefs.length > 0) {
         try {
           const { data: rrRecent } = await sb
-            .from("revenue_records_effective")
-            .select("booking_id, gross_amount")
-            .eq("payment_status", "paid")
-            .in("booking_id", recentRefs);
+              .from("revenue_reporting_canonical")
+              .select("booking_id, gross_amount")
+              .in("booking_id", recentRefs);
           for (const rr of (rrRecent || [])) {
             if (rr.booking_id && rr.gross_amount != null) {
               rrRecentMap[rr.booking_id] = (rrRecentMap[rr.booking_id] || 0) + Number(rr.gross_amount);
