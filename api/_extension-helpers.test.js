@@ -111,6 +111,8 @@ test("isExtendIntent: rejects non-extend messages", () => {
   assert.equal(isExtendIntent("week"), false);
   assert.equal(isExtendIntent("3 days"), false);
   assert.equal(isExtendIntent(""), false);
+  assert.equal(isExtendIntent(null), false);
+  assert.equal(isExtendIntent(undefined), false);
 });
 
 // ── computeEconomyExtensionPriceDays ─────────────────────────────────────────

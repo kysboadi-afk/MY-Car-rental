@@ -75,6 +75,9 @@ function findActiveRental(allBookings, phone) {
   const norm = normalizePhone(phone);
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
+      // Treat all "currently in-rental" states as extend-eligible. "active" is
+      // legacy equivalent of active_rental, and "overdue" renters are still in
+      // possession of the vehicle and can settle by extending.
       if (!["active_rental", "active", "overdue"].includes(booking.status)) continue;
       if (normalizePhone(booking.phone) === norm) {
         return { vehicleId, booking };
