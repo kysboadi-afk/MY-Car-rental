@@ -240,6 +240,40 @@ export default async function handler(req, res) {
       }
     }
 
+    // Orphan fallback: when revenue_reporting_canonical returns 0 rows because all paid
+    // records have is_orphan=true, query revenue_records_effective directly (same filters
+    // minus is_orphan) so totals reflect actual collected revenue, not booking deposits.
+    if (sb && !financialsFromRevRecords) {
+      try {
+        const { data: rreRows, error: rreErr } = await sb
+          .from("revenue_records_effective")
+          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, refund_amount, is_cancelled, is_no_show")
+          .eq("payment_status", "paid");
+        if (!rreErr && (rreRows || []).length > 0) {
+          financialsFromRevRecords = true;
+          for (const r of rreRows) {
+            if (r.is_cancelled || r.is_no_show) continue;
+            const vid    = uiVehicleId(r.vehicle_id) || "unknown";
+            const gross  = Number(r.gross_amount  || 0);
+            const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const refund = Number(r.refund_amount || 0);
+            const net    = gross - fee - refund;
+            if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
+            rrByVehicle[vid].gross += gross;
+            rrByVehicle[vid].fees  += fee;
+            rrByVehicle[vid].net   += net;
+            rrByVehicle[vid].count += 1;
+            const monthKey = (r.pickup_date || "").slice(0, 7);
+            if (monthKey) {
+              rrByVehicle[vid].monthly[monthKey] = (rrByVehicle[vid].monthly[monthKey] || 0) + gross;
+            }
+          }
+        }
+      } catch (rreEx) {
+        console.warn("v2-analytics: revenue_records_effective orphan fallback failed:", rreEx.message);
+      }
+    }
+
     if (scope) {
       let scopedTotal = 0;
       if (financialsFromRevRecords) {

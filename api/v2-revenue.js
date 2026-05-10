@@ -506,17 +506,45 @@ export default async function handler(req, res) {
               .in("vehicle_id", kpiScopedVehicleIds);
             if (!error) {
               const total = (data || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0);
-              return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
+              if (total > 0) return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
+              // total === 0: all paid records may be orphans — fall through to orphan fallback
             }
-            if (!isSchemaError(error)) console.error("v2-revenue kpi (scoped) error:", error.message);
+            if (error && !isSchemaError(error)) console.error("v2-revenue kpi (scoped) error:", error.message);
+            // Orphan fallback: revenue_records_effective includes is_orphan=true records
+            const { data: rreData, error: rreErr } = await sb
+              .from("revenue_records_effective")
+              .select("gross_amount, is_cancelled, is_no_show")
+              .eq("payment_status", "paid")
+              .in("vehicle_id", kpiScopedVehicleIds);
+            if (!rreErr) {
+              const total2 = (rreData || [])
+                .filter((r) => !r.is_cancelled && !r.is_no_show)
+                .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
+              return res.status(200).json({ total_revenue: Math.round(total2 * 100) / 100 });
+            }
           } else {
             // No scope — use the pre-aggregated view for efficiency.
             const { data, error } = await sb
               .from("total_revenue_kpi_canonical")
               .select("total_revenue")
               .single();
-            if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
-            if (!isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+            if (!error) {
+              const kpiVal = Number(data?.total_revenue ?? 0);
+              if (kpiVal > 0) return res.status(200).json({ total_revenue: kpiVal });
+              // kpiVal === 0: all paid records may be orphans — fall through to orphan fallback
+            }
+            if (error && !isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+            // Orphan fallback
+            const { data: rreData, error: rreErr } = await sb
+              .from("revenue_records_effective")
+              .select("gross_amount, is_cancelled, is_no_show")
+              .eq("payment_status", "paid");
+            if (!rreErr) {
+              const total2 = (rreData || [])
+                .filter((r) => !r.is_cancelled && !r.is_no_show)
+                .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
+              return res.status(200).json({ total_revenue: Math.round(total2 * 100) / 100 });
+            }
           }
         } catch (kpiErr) {
           console.error("v2-revenue kpi error:", kpiErr);
