@@ -73,10 +73,10 @@ export default async function handler(req, res) {
   const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
   const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
   if (!trimmedIdFileName || !hasBase64Payload(idBase64)) {
-    return res.status(400).json({ error: "ID front file and payload are required." });
+    return res.status(400).json({ error: "Front of driver's license / ID is required." });
   }
   if (!trimmedIdBackFileName || !hasBase64Payload(idBackBase64)) {
-    return res.status(400).json({ error: "ID back file and payload are required." });
+    return res.status(400).json({ error: "Back of driver's license / ID is required." });
   }
   if (insuranceCoverageChoice === "yes") {
     const trimmedInsuranceFileName = typeof insuranceFileName === "string" ? insuranceFileName.trim() : "";

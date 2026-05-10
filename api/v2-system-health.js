@@ -1774,7 +1774,7 @@ async function fixStripePaymentNoBooking(sb) {
 }
 
 // Fix 5: re-send current missing-ID issue details to owner contacts on demand.
-async function fixRenterIdDocuments(sb) {
+async function notifyMissingRenterIdDocuments(sb) {
   const idCheck = await checkRenterIdDocuments(sb);
   if (idCheck.status === "error") {
     throw new Error(idCheck.summary);
@@ -1968,7 +1968,7 @@ export default async function handler(req, res) {
         else if (checkKey === "orphanRevenue")          result = await fixOrphanRevenue(sb);
         else if (checkKey === "staleReservations")      result = await fixStaleReservations(sb);
         else if (checkKey === "stripePaymentNoBooking") result = await fixStripePaymentNoBooking(sb);
-        else if (checkKey === "renterIdDocuments")      result = await fixRenterIdDocuments(sb);
+        else if (checkKey === "renterIdDocuments")      result = await notifyMissingRenterIdDocuments(sb);
         else return res.status(400).json({ error: `Unknown fix action: ${action}` });
         return res.status(200).json({ ok: true, action, ...result });
       } catch (err) {
