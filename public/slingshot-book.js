@@ -58,6 +58,29 @@ function clearPayError() {
   if (el) { el.textContent = ""; el.style.display = "none"; }
 }
 
+async function storeBookingDocsOrThrow(payload) {
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+  try {
+    var res = await fetch(API_BASE + "/api/store-booking-docs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    var data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      throw new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
+    }
+    if (!data || data.ok !== true || data.stored !== true) {
+      throw new Error((data && data.error) || "Could not securely store your ID documents.");
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Cancel the current pending booking (if any) via the public API.
  * Safe to call multiple times — idempotent on the server.
@@ -554,25 +577,20 @@ async function launchSlingshotPayment() {
     // Upload docs server-side (best-effort)
     if (pendingBookingId) {
       try {
-        await Promise.race([
-          fetch(API_BASE + "/api/store-booking-docs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              bookingId:          pendingBookingId,
-              idBase64:           idBase64      || null,
-              idFileName:         idFileName    || null,
-              idMimeType:         idMimeType    || null,
-              idBackBase64:       idBackBase64  || null,
-              idBackFileName:     idBackFileName || null,
-              idBackMimeType:     idBackMimeType || null,
-              insuranceCoverageChoice: null,
-            }),
-          }),
-          new Promise(function(resolve) { setTimeout(resolve, 5000); }),
-        ]);
+        await storeBookingDocsOrThrow({
+          bookingId:          pendingBookingId,
+          idBase64:           idBase64       || null,
+          idFileName:         idFileName     || null,
+          idMimeType:         idMimeType     || null,
+          idBackBase64:       idBackBase64   || null,
+          idBackFileName:     idBackFileName || null,
+          idBackMimeType:     idBackMimeType || null,
+          insuranceCoverageChoice: null,
+        });
       } catch (docsErr) {
         console.warn("slingshot-book: could not upload docs:", docsErr);
+        showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+        return;
       }
     }
 

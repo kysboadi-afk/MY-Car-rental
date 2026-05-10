@@ -13,7 +13,8 @@
 //    POST /api/v2-system-health
 //    Body: { "secret": "<ADMIN_SECRET>", "action": "fix_<checkKey>" }
 //    Supported: fix_paymentBookingRevenue, fix_orphanRevenue,
-//               fix_staleReservations, fix_stripePaymentNoBooking
+//               fix_staleReservations, fix_stripePaymentNoBooking,
+//               fix_renterIdDocuments
 //    Note: fix_smsDeliveryHealth is handled by POST /api/system-health-fix-sms
 //    Note: fix_availabilitySyncHealth is handled by POST /api/system-health-fix-availability
 //
@@ -1260,7 +1261,7 @@ async function checkRenterIdDocuments(sb) {
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
       allItems,
       "Collect the renter's driver's licence (front and back) before or at vehicle pickup. Use Bookings → View Booking to manually upload the documents.",
-      false,
+      true,
     );
   } catch (err) {
     console.error("[v2-system-health] renterIdDocuments exception:", err);
@@ -1772,6 +1773,28 @@ async function fixStripePaymentNoBooking(sb) {
   };
 }
 
+// Fix 5: re-send current missing-ID issue details to owner contacts on demand.
+async function notifyMissingRenterIdDocuments(sb) {
+  const idCheck = await checkRenterIdDocuments(sb);
+  if (idCheck.status === "error") {
+    throw new Error(idCheck.summary);
+  }
+  if (idCheck.status === "ok" || (idCheck.items || []).length === 0) {
+    return {
+      notified: 0,
+      message: "No missing renter ID documents found.",
+    };
+  }
+
+  const checkedAt = new Date().toISOString();
+  await sendOwnerAlerts({ renterIdDocuments: idCheck }, "warning", checkedAt);
+
+  return {
+    notified: idCheck.items.length,
+    message: `Sent admin alert for ${idCheck.items.length} booking${idCheck.items.length !== 1 ? "s" : ""} missing renter ID documents.`,
+  };
+}
+
 // ── Alerting ───────────────────────────────────────────────────────────────
 
 async function shouldSendAlert(sb) {
@@ -1945,6 +1968,7 @@ export default async function handler(req, res) {
         else if (checkKey === "orphanRevenue")          result = await fixOrphanRevenue(sb);
         else if (checkKey === "staleReservations")      result = await fixStaleReservations(sb);
         else if (checkKey === "stripePaymentNoBooking") result = await fixStripePaymentNoBooking(sb);
+        else if (checkKey === "renterIdDocuments")      result = await notifyMissingRenterIdDocuments(sb);
         else return res.status(400).json({ error: `Unknown fix action: ${action}` });
         return res.status(200).json({ ok: true, action, ...result });
       } catch (err) {

@@ -66,6 +66,29 @@ function clearPayError() {
   if (el) { el.textContent = ""; el.style.display = "none"; }
 }
 
+async function storeBookingDocsOrThrow(payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(API_BASE + "/api/store-booking-docs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      throw new Error((data && data.error) || `Document upload failed (HTTP ${res.status}).`);
+    }
+    if (!data || data.ok !== true || data.stored !== true) {
+      throw new Error((data && data.error) || "Could not securely store your ID documents.");
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function _formatDocSizeMB(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1);
 }
@@ -2254,29 +2277,26 @@ stripeBtn.addEventListener("click", async () => {
         // even if the customer's browser does not reach success.html.
         if (pendingBookingId) {
           try {
-            await Promise.race([
-              fetch(API_BASE + "/api/store-booking-docs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  bookingId: pendingBookingId,
-                  signature: agreementSignature || null,
-                  idBase64: idBase64 || null,
-                  idFileName: idFileName || null,
-                  idMimeType: idMimeType || null,
-                  idBackBase64: idBackBase64 || null,
-                  idBackFileName: idBackFileName || null,
-                  idBackMimeType: idBackMimeType || null,
-                  insuranceBase64: insuranceBase64 || null,
-                  insuranceFileName: insuranceFileName || null,
-                  insuranceMimeType: insuranceMimeType || null,
-                  insuranceCoverageChoice,
-                }),
-              }),
-              new Promise(resolve => setTimeout(resolve, 5000)),
-            ]);
+            await storeBookingDocsOrThrow({
+              bookingId: pendingBookingId,
+              signature: agreementSignature || null,
+              idBase64: idBase64 || null,
+              idFileName: idFileName || null,
+              idMimeType: idMimeType || null,
+              idBackBase64: idBackBase64 || null,
+              idBackFileName: idBackFileName || null,
+              idBackMimeType: idBackMimeType || null,
+              insuranceBase64: insuranceBase64 || null,
+              insuranceFileName: insuranceFileName || null,
+              insuranceMimeType: insuranceMimeType || null,
+              insuranceCoverageChoice,
+            });
           } catch (e) {
             console.warn("Could not upload booking docs:", e);
+            const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
+            showPayError(msg);
+            ev.complete("fail");
+            return;
           }
         }
 
@@ -2415,29 +2435,28 @@ stripeBtn.addEventListener("click", async () => {
       // even if the customer's browser does not reach success.html.
       if (pendingBookingId) {
         try {
-          await Promise.race([
-            fetch(API_BASE + "/api/store-booking-docs", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                bookingId: pendingBookingId,
-                signature: agreementSignature || null,
-                idBase64: idBase64 || null,
-                idFileName: idFileName || null,
-                idMimeType: idMimeType || null,
-                idBackBase64: idBackBase64 || null,
-                idBackFileName: idBackFileName || null,
-                idBackMimeType: idBackMimeType || null,
-                insuranceBase64: insuranceBase64 || null,
-                insuranceFileName: insuranceFileName || null,
-                insuranceMimeType: insuranceMimeType || null,
-                insuranceCoverageChoice,
-              }),
-            }),
-            new Promise(resolve => setTimeout(resolve, 5000)),
-          ]);
+          await storeBookingDocsOrThrow({
+            bookingId: pendingBookingId,
+            signature: agreementSignature || null,
+            idBase64: idBase64 || null,
+            idFileName: idFileName || null,
+            idMimeType: idMimeType || null,
+            idBackBase64: idBackBase64 || null,
+            idBackFileName: idBackFileName || null,
+            idBackMimeType: idBackMimeType || null,
+            insuranceBase64: insuranceBase64 || null,
+            insuranceFileName: insuranceFileName || null,
+            insuranceMimeType: insuranceMimeType || null,
+            insuranceCoverageChoice,
+          });
         } catch (docsErr) {
-          console.warn("store-booking-docs: non-critical upload failed:", docsErr);
+          console.warn("store-booking-docs upload failed:", docsErr);
+          showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+          if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
+          submitBtn.disabled = false;
+          submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+          paymentSubmitting = false;
+          return;
         }
       }
 
