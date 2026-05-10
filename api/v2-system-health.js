@@ -1224,13 +1224,13 @@ async function checkRenterIdDocuments(sb) {
     for (const d of docsRows || []) {
       docsByBooking[d.booking_id] = d;
     }
-    const idCopyCountByBookingId = new Map();
+    const idCopiesByBooking = new Map();
     for (const row of bookingDocRows || []) {
       const bookingId = row?.booking_id;
       if (!bookingId) continue;
-      idCopyCountByBookingId.set(
+      idCopiesByBooking.set(
         bookingId,
-        (idCopyCountByBookingId.get(bookingId) || 0) + 1
+        (idCopiesByBooking.get(bookingId) || 0) + 1
       );
     }
 
@@ -1242,19 +1242,20 @@ async function checkRenterIdDocuments(sb) {
       if (!ref) continue;
 
       const doc = docsByBooking[ref];
-      const hasBookingDocIdCopy = (idCopyCountByBookingId.get(b.id) || 0) > 0;
+      const hasBookingDocIdCopy = (idCopiesByBooking.get(b.id) || 0) > 0;
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
-      if (!doc && !hasBookingDocIdCopy) {
+      if (hasBookingDocIdCopy) {
+        // booking_documents already has renter ID copy files for this booking.
+        // Treat this booking as documented and skip front/back base64 checks.
+      } else if (!doc) {
         // No pending_booking_docs row and no booking_documents ID copy.
         missing.push("ID front", "ID back");
       } else {
-        // If booking_documents has at least one id_copy file, treat renter ID
-        // docs as present for this health check.
-        if (!hasBookingDocIdCopy && !doc?.id_base64)      missing.push("ID front");
-        if (!hasBookingDocIdCopy && !doc?.id_back_base64) missing.push("ID back");
+        if (!doc.id_base64)      missing.push("ID front");
+        if (!doc.id_back_base64) missing.push("ID back");
       }
 
       if (missing.length > 0) {
