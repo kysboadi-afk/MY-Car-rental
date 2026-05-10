@@ -201,7 +201,7 @@ export default async function handler(req, res) {
     const kpiPromise = sb && !normalizedScope
       ? sb.from("total_revenue_kpi_canonical").select("total_revenue").single()
           .then((r) => r, (e) => {
-            console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
+            console.warn("v2-dashboard: total_revenue_kpi_canonical query failed (non-fatal):", e?.message);
             return { data: null, error: e };
           })
       : Promise.resolve({ data: null });
@@ -370,8 +370,10 @@ export default async function handler(req, res) {
     const rrByBookingId = {}; // { [bookingId]: gross_amount }
     let financialsFromRevRecords = false;
 
-    // Financial totals intentionally come from the canonical reporting layer below
-    // so Dashboard/Revenue/Fleet all use identical inclusion rules.
+    // Financial totals prefer the canonical reporting layer below
+    // (revenue_reporting_canonical) so Dashboard/Revenue/Fleet use identical
+    // inclusion rules. When canonical data is unavailable, we fall back to
+    // bookings-derived totals as a best-effort continuity path.
 
     // Run the direct canonical revenue loop when:
     //   a) the admin_metrics_v2 view is unavailable (!viewOk), OR
