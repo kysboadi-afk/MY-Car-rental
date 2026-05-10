@@ -75,13 +75,26 @@ function findActiveRental(allBookings, phone) {
   const norm = normalizePhone(phone);
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      if (booking.status !== "active_rental") continue;
+      if (!["active_rental", "active", "overdue"].includes(booking.status)) continue;
       if (normalizePhone(booking.phone) === norm) {
         return { vehicleId, booking };
       }
     }
   }
   return null;
+}
+
+/**
+ * Returns true when a message contains an EXTEND intent.
+ * Accepts:
+ *   "extend"
+ *   "extend."
+ *   "extend rental"
+ *   "please extend"
+ */
+export function isExtendIntent(text) {
+  if (!text || typeof text !== "string") return false;
+  return /\bextend\b/i.test(text.trim());
 }
 
 /**
@@ -725,7 +738,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true }); // acknowledge to avoid TextMagic retries
   }
 
-  const keyword = messageText.trim().toUpperCase();
+  const trimmedText = messageText.trim();
+  const keyword = trimmedText.toUpperCase();
 
   // STOP is handled natively by TextMagic — acknowledge and exit
   if (keyword === "STOP") {
@@ -746,7 +760,7 @@ export default async function handler(req, res) {
   try {
     const normalizedFrom = normalizePhone(fromPhone);
 
-    if (keyword === "EXTEND") {
+    if (isExtendIntent(trimmedText)) {
       await handleExtend(normalizedFrom, allBookings, data, sha);
     } else {
       // Check if this customer has a pending extend selection
