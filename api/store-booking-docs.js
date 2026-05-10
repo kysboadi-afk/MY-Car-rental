@@ -41,6 +41,12 @@ function estimateBase64Bytes(base64Value) {
   return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
 }
 
+function hasBase64Payload(base64Value) {
+  if (!base64Value || typeof base64Value !== "string") return false;
+  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
+  return normalized.length > 0;
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -62,6 +68,21 @@ export default async function handler(req, res) {
 
   if (!bookingId || typeof bookingId !== "string" || !bookingId.trim()) {
     return res.status(400).json({ error: "bookingId is required." });
+  }
+
+  const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
+  const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
+  if (!trimmedIdFileName || !hasBase64Payload(idBase64)) {
+    return res.status(400).json({ error: "ID front file and payload are required." });
+  }
+  if (!trimmedIdBackFileName || !hasBase64Payload(idBackBase64)) {
+    return res.status(400).json({ error: "ID back file and payload are required." });
+  }
+  if (insuranceCoverageChoice === "yes") {
+    const trimmedInsuranceFileName = typeof insuranceFileName === "string" ? insuranceFileName.trim() : "";
+    if (!trimmedInsuranceFileName || !hasBase64Payload(insuranceBase64)) {
+      return res.status(400).json({ error: "Insurance file and payload are required when personal insurance is selected." });
+    }
   }
 
   const docs = [
@@ -90,9 +111,8 @@ export default async function handler(req, res) {
 
   const sb = getSupabaseAdmin();
   if (!sb) {
-    // Supabase not configured — return ok so the caller is not blocked.
     console.warn("store-booking-docs: Supabase not configured — docs not stored");
-    return res.status(200).json({ ok: true, stored: false });
+    return res.status(503).json({ ok: false, stored: false, error: "Document storage is currently unavailable. Please try again." });
   }
 
   try {
@@ -117,14 +137,13 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error("store-booking-docs: Supabase upsert error:", error.message);
-      // Return ok so the caller is not blocked from proceeding with payment.
-      return res.status(200).json({ ok: true, stored: false });
+      return res.status(503).json({ ok: false, stored: false, error: "Could not store booking documents. Please try again." });
     }
 
     console.log(`store-booking-docs: stored docs for booking ${bookingId.trim()}`);
     return res.status(200).json({ ok: true, stored: true });
   } catch (err) {
     console.error("store-booking-docs: unexpected error:", err.message);
-    return res.status(200).json({ ok: true, stored: false });
+    return res.status(500).json({ ok: false, stored: false, error: "Unexpected document storage error. Please try again." });
   }
 }
