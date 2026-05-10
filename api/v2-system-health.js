@@ -1210,7 +1210,7 @@ async function checkRenterIdDocuments(sb) {
     const bookingDocKeys = [
       ...new Set(
         bookings
-          .flatMap((b) => [b.booking_ref, b.id])
+          .map((b) => b.id)
           .map(normalizeBookingKey)
           .filter(Boolean),
       ),
@@ -1251,11 +1251,10 @@ async function checkRenterIdDocuments(sb) {
       const ref = b.booking_ref;
       if (!ref) continue;
 
-      const bookingKeys = [...new Set([b.booking_ref, b.id]
-        .map(normalizeBookingKey)
-        .filter(Boolean))];
-      const doc = bookingKeys.map((key) => docsByBooking.get(key)).find(Boolean) || null;
-      const idCopyCount = bookingKeys.reduce((count, key) => count + (idCopyCountByBooking.get(key) || 0), 0);
+      const bookingRefKey = normalizeBookingKey(b.booking_ref);
+      const bookingIdKey = normalizeBookingKey(b.id);
+      const doc = docsByBooking.get(bookingRefKey) || null;
+      const idCopyCount = idCopyCountByBooking.get(bookingIdKey) || 0;
       const hasPendingFront = !!doc?.id_base64;
       const hasPendingBack = !!doc?.id_back_base64;
       const hasPendingPair = hasPendingFront && hasPendingBack;
