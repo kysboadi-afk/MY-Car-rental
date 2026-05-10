@@ -57,6 +57,8 @@ charges_only AS (
     false                                             AS included_in_revenue_page,
     false                                             AS included_in_fleet_analytics
   FROM charges c
+  -- charges.booking_id stores the booking reference value (equivalent to bookings.booking_ref).
+  -- The naming difference is an existing schema convention; the join is intentionally cross-column.
   LEFT JOIN bookings b ON b.booking_ref = c.booking_id
   WHERE c.status = 'succeeded'
     AND (
