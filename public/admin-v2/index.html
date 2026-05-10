@@ -6654,8 +6654,8 @@ function renderRevenue(groups) {
     const summaryStatus = worstRec?.payment_status || 'paid';
     const payBadge = {
       paid:     '<span class="badge badge-success">Paid</span>',
-      unpaid:   '<span class="badge badge-warning">Unpaid</span>',
       pending:  '<span class="badge badge-warning">Pending</span>',
+      unpaid:   '<span class="badge" style="background:#fee2e2;color:#b91c1c;">Unpaid</span>',
       partial:  '<span class="badge" style="background:#ede9fe;color:#7c3aed;">Partial</span>',
       refunded: '<span class="badge badge-danger">Refunded</span>',
     }[summaryStatus] || `<span class="badge">${esc(summaryStatus)}</span>`;
