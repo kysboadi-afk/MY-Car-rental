@@ -6183,6 +6183,13 @@ function closeModal(id) {
   const el = resolveModalElement(id);
   if (!el) { console.warn('[MODAL] closeModal skipped — element missing from DOM:', id); return; }
   el.classList.remove('open');
+  el.style.display = '';
+  el.style.visibility = '';
+  el.style.opacity = '';
+  el.style.pointerEvents = '';
+  if (!document.querySelector('.modal-overlay.open')) {
+    document.body.classList.remove('modal-open');
+  }
 }
 // Close modal on overlay click (delegated so it covers modals added after script parse)
 document.addEventListener('click', (e) => {
