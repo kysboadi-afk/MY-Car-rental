@@ -166,7 +166,10 @@ function estimateAttachmentBytes(att) {
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
   const ordered = (Array.isArray(candidates) ? candidates : [])
-    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : DEFAULT_ATTACHMENT_PRIORITY }))
+    .map((c, idx) => {
+      const p = Number.isFinite(Number(c?.priority)) ? Number(c.priority) : DEFAULT_ATTACHMENT_PRIORITY;
+      return { ...c, _idx: idx, _priority: p };
+    })
     .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];

@@ -1172,13 +1172,13 @@ async function checkRenterIdDocuments(sb) {
     ];
 
     // Limit to bookings created in the last 90 days so the list stays actionable.
-    const cutoff90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff90Days = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: paidBookings, error: bErr } = await sb
       .from("bookings")
       .select("booking_ref, status, vehicle_id, pickup_date, customer_name, renter_name")
       .in("status", PAID_ACTIVE_STATUSES)
-      .gte("created_at", cutoff90d)
+      .gte("created_at", cutoff90Days)
       .limit(300);
 
     if (bErr) {
