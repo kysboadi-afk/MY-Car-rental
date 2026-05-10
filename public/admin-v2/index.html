@@ -2824,6 +2824,7 @@
         </div>
         <div class="form-hint">Set the price for each rental package. A $500 refundable security deposit is always collected automatically.</div>
       </div>
+    </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-vehicle-modal')">Cancel</button>
@@ -6165,17 +6166,43 @@ function resolveModalElement(id) {
   return null;
 }
 function openModal(id) {
+  console.log('[OPEN_MODAL_ENTRY]', id);
+
   const modal = resolveModalElement(id);
+
+  console.log('[OPEN_MODAL_RESOLVED]', id, modal);
+
   if (!modal) {
-    console.warn('[MODAL] openModal skipped — element missing from DOM:', id);
+    console.warn('[OPEN_MODAL_MISSING]', id);
     return;
   }
+
+  modal.style.display = 'flex';
+  modal.style.visibility = 'visible';
+  modal.style.opacity = '1';
+  modal.style.pointerEvents = 'auto';
+  modal.style.zIndex = '999999';
+
   modal.classList.add('open');
+
+  console.log('[OPEN_MODAL_CLASSES]', modal.className);
+  console.log('[OPEN_MODAL_STYLE]', modal.style.cssText);
+
+  document.body.classList.add('modal-open');
+
+  console.log('[OPEN_MODAL_SUCCESS]', id);
 }
 function closeModal(id) {
   const el = resolveModalElement(id);
   if (!el) { console.warn('[MODAL] closeModal skipped — element missing from DOM:', id); return; }
   el.classList.remove('open');
+  el.style.display = '';
+  el.style.visibility = '';
+  el.style.opacity = '';
+  el.style.pointerEvents = '';
+  if (!document.querySelector('.modal-overlay.open')) {
+    document.body.classList.remove('modal-open');
+  }
 }
 // Close modal on overlay click (delegated so it covers modals added after script parse)
 document.addEventListener('click', (e) => {
