@@ -34,7 +34,7 @@ mock.module("./_sms-templates.js", { namedExports: {
   EXTEND_PAYMENT_PENDING:   "",
 }});
 
-const { parseDaysFromMessage, computeEconomyExtensionPriceDays } =
+const { parseDaysFromMessage, computeEconomyExtensionPriceDays, isExtendIntent } =
   await import("./receive-textmagic-sms.js");
 
 // ── parseDaysFromMessage ──────────────────────────────────────────────────────
@@ -92,6 +92,27 @@ test("parseDaysFromMessage: invalid input → null", () => {
 test("parseDaysFromMessage: leading/trailing whitespace is trimmed", () => {
   assert.equal(parseDaysFromMessage("  7  "),        7);
   assert.equal(parseDaysFromMessage("  2 weeks  "),  14);
+});
+
+// ── isExtendIntent ─────────────────────────────────────────────────────────────
+
+test("isExtendIntent: matches exact EXTEND keyword", () => {
+  assert.equal(isExtendIntent("extend"), true);
+  assert.equal(isExtendIntent("EXTEND"), true);
+});
+
+test("isExtendIntent: matches freeform EXTEND replies", () => {
+  assert.equal(isExtendIntent("extend."), true);
+  assert.equal(isExtendIntent("please extend"), true);
+  assert.equal(isExtendIntent("extend rental"), true);
+});
+
+test("isExtendIntent: rejects non-extend messages", () => {
+  assert.equal(isExtendIntent("week"), false);
+  assert.equal(isExtendIntent("3 days"), false);
+  assert.equal(isExtendIntent(""), false);
+  assert.equal(isExtendIntent(null), false);
+  assert.equal(isExtendIntent(undefined), false);
 });
 
 // ── computeEconomyExtensionPriceDays ─────────────────────────────────────────
