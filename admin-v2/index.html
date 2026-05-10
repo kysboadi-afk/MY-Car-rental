@@ -8553,9 +8553,12 @@ function renderSystemHealth(data) {
       ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
           ${(c.items || []).map((item) => {
             const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
+            const canOpenBooking = /^bk-/i.test(String(item.id || '').trim());
             return `
             <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
-              <code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>
+              ${canOpenBooking
+                ? `<button type="button" class="health-booking-btn" data-booking-id="${esc(item.id)}" style="appearance:none;background:none;border:none;padding:1px 0 0;color:var(--primary);font-size:11px;font-family:monospace;flex-shrink:0;cursor:pointer;text-align:left;">${esc(item.id)}</button>`
+                : `<code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>`}
               <span style="color:var(--text-sub);">${esc(displayInfo)}</span>
             </div>`;
           }).join('')}
@@ -8595,6 +8598,19 @@ function renderSystemHealth(data) {
   grid.querySelectorAll('.health-fix-btn').forEach((btn) => {
     btn.addEventListener('click', function() { fixHealthCheck(this.dataset.checkKey, this); });
   });
+  grid.querySelectorAll('.health-booking-btn').forEach((btn) => {
+    btn.addEventListener('click', function() { openSystemHealthBooking(this.dataset.bookingId); });
+  });
+}
+
+async function openSystemHealthBooking(bookingId) {
+  const normalizedBookingId = String(bookingId || '').trim();
+  if (!normalizedBookingId) return;
+  navigate('bookings');
+  if (!findBookingByIdForActions(normalizedBookingId)) {
+    await loadBookings();
+  }
+  viewBooking(normalizedBookingId, '');
 }
 
 async function fixHealthCheck(checkKey, btn) {
