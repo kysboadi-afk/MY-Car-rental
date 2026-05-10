@@ -5239,16 +5239,7 @@ function viewBooking(bookingId, vehicleId) {
     showToast('Error rendering booking details: ' + (renderErr.message || renderErr), 'error');
     return;
   }
-  const modalId = 'booking-detail-modal';
-  const modal = document.getElementById(modalId);
-  console.error('[MODAL_LOOKUP]', {
-    modalId,
-    found: !!modal
-  });
-  if (!modal) {
-    throw new Error(`Modal not found: ${modalId}`);
-  }
-  openModal(modalId);
+  openModal('booking-detail-modal');
 }
 
 function openEditBookingModal(bookingId) {
@@ -5257,15 +5248,8 @@ function openEditBookingModal(bookingId) {
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
-  const modalId = 'booking-edit-modal';
-  const modal = document.getElementById(modalId);
-  console.error('[MODAL_LOOKUP]', {
-    modalId,
-    found: !!modal
-  });
-  if (!modal) {
-    throw new Error(`Modal not found: ${modalId}`);
-  }
+  const modal = resolveModalElement('booking-edit-modal');
+  if (!modal) { showToast('Edit booking modal is missing from this page build.', 'error'); return; }
   try {
   // Store the bookingId being edited
   modal.dataset.bookingId = bookingId;
@@ -5289,7 +5273,7 @@ function openEditBookingModal(bookingId) {
     return;
   }
   closeModal('booking-detail-modal');
-  openModal(modalId);
+  openModal('booking-edit-modal');
 }
 
 async function saveEditBooking(btn) {
@@ -6168,20 +6152,28 @@ function resetSmsTemplate() {
 }
 
 // ── Modal helpers ──────────────────────────────────────────────────────────
+const MODAL_ID_ALIASES = {
+  'booking-edit-modal': ['edit-booking-modal'],
+  'edit-booking-modal': ['booking-edit-modal'],
+};
+function resolveModalElement(id) {
+  const candidates = [id, ...(MODAL_ID_ALIASES[id] || [])];
+  for (const candidateId of candidates) {
+    const el = document.getElementById(candidateId);
+    if (el) return el;
+  }
+  return null;
+}
 function openModal(id) {
-  const modalId = id;
-  const modal = document.getElementById(modalId);
-  console.error('[MODAL_LOOKUP]', {
-    modalId,
-    found: !!modal
-  });
+  const modal = resolveModalElement(id);
   if (!modal) {
-    throw new Error(`Modal not found: ${modalId}`);
+    console.warn('[MODAL] openModal skipped — element missing from DOM:', id);
+    return;
   }
   modal.classList.add('open');
 }
 function closeModal(id) {
-  const el = document.getElementById(id);
+  const el = resolveModalElement(id);
   if (!el) { console.warn('[MODAL] closeModal skipped — element missing from DOM:', id); return; }
   el.classList.remove('open');
 }
