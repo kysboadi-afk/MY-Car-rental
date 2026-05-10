@@ -1176,7 +1176,7 @@ async function checkRenterIdDocuments(sb) {
 
     const { data: paidBookings, error: bErr } = await sb
       .from("bookings")
-      .select("booking_ref, status, vehicle_id, pickup_date, customer_name, renter_name")
+      .select("booking_ref, status, vehicle_id, pickup_date, customer_name")
       .in("status", PAID_ACTIVE_STATUSES)
       .gte("created_at", cutoff90Days)
       .limit(300);
@@ -1218,7 +1218,7 @@ async function checkRenterIdDocuments(sb) {
       if (!ref) continue;
 
       const doc = docsByBooking[ref];
-      const renterDisplay = b.renter_name || b.customer_name || "?";
+      const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
