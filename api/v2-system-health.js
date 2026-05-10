@@ -1177,7 +1177,7 @@ async function checkRenterIdDocuments(sb) {
 
     const { data: paidBookings, error: bErr } = await sb
       .from("bookings")
-      .select("booking_ref, status, vehicle_id, pickup_date, customer_name")
+      .select("id, booking_ref, status, vehicle_id, pickup_date, customer_name")
       .in("status", PAID_ACTIVE_STATUSES)
       .gte("created_at", cutoff90Days)
       .limit(300);
@@ -1193,6 +1193,7 @@ async function checkRenterIdDocuments(sb) {
     }
 
     const refs = bookings.map((b) => b.booking_ref).filter(Boolean);
+    const bookingIds = bookings.map((b) => b.id).filter(Boolean);
 
     // Fetch pending_booking_docs for these bookings.
     const { data: docsRows, error: dErr } = await sb
@@ -1205,10 +1206,32 @@ async function checkRenterIdDocuments(sb) {
       return check("Renter ID Documents", "error", "Could not query pending_booking_docs: " + dErr.message);
     }
 
+    // Also consider booking_documents (type=id_copy) so renter uploads that are
+    // already persisted there are recognized by this health check.
+    const { data: bookingDocRows, error: bdErr } = await sb
+      .from("booking_documents")
+      .select("booking_id, type")
+      .in("booking_id", bookingIds)
+      .eq("type", "id_copy");
+
+    if (bdErr) {
+      console.error("[v2-system-health] renterIdDocuments booking_documents query error:", bdErr.message);
+      return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
+    }
+
     // Index docs by booking_id.
     const docsByBooking = {};
     for (const d of docsRows || []) {
       docsByBooking[d.booking_id] = d;
+    }
+    const idCopyCountByBookingId = new Map();
+    for (const row of bookingDocRows || []) {
+      const bookingId = row?.booking_id;
+      if (!bookingId) continue;
+      idCopyCountByBookingId.set(
+        bookingId,
+        (idCopyCountByBookingId.get(bookingId) || 0) + 1
+      );
     }
 
     // Aggregate per booking: which IDs are missing?
@@ -1219,16 +1242,19 @@ async function checkRenterIdDocuments(sb) {
       if (!ref) continue;
 
       const doc = docsByBooking[ref];
+      const hasBookingDocIdCopy = (idCopyCountByBookingId.get(b.id) || 0) > 0;
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
-      if (!doc) {
-        // No pending_booking_docs row at all.
+      if (!doc && !hasBookingDocIdCopy) {
+        // No pending_booking_docs row and no booking_documents ID copy.
         missing.push("ID front", "ID back");
       } else {
-        if (!doc.id_base64)      missing.push("ID front");
-        if (!doc.id_back_base64) missing.push("ID back");
+        // If booking_documents has at least one id_copy file, treat renter ID
+        // docs as present for this health check.
+        if (!hasBookingDocIdCopy && !doc?.id_base64)      missing.push("ID front");
+        if (!hasBookingDocIdCopy && !doc?.id_back_base64) missing.push("ID back");
       }
 
       if (missing.length > 0) {
@@ -1260,7 +1286,7 @@ async function checkRenterIdDocuments(sb) {
       "warning",
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
       allItems,
-      "Collect the renter's driver's licence (front and back) before or at vehicle pickup. Use Bookings → View Booking to manually upload the documents.",
+      "Renter ID documents should be captured automatically during checkout. For flagged bookings, ask the renter to re-submit their ID upload flow before pickup.",
       true,
     );
   } catch (err) {
