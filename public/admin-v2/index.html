@@ -5016,25 +5016,29 @@ function applyBookingFilters() {
   }).join('');
 }
 
+function normalizeActionId(value) {
+  return value == null ? '' : String(value).trim();
+}
+
 function bookingActionId(b) {
-  return String(b?.bookingId || b?.booking_ref || b?.booking_id || (b?.id ?? '') || '');
+  return normalizeActionId(b?.bookingId ?? b?.booking_ref ?? b?.booking_id ?? b?.id ?? '');
 }
 
 function ticketBookingIdentifier(ticket) {
-  return String(ticket?.booking_ref || ticket?.bookingId || ticket?.booking_id || '');
+  return normalizeActionId(ticket?.booking_ref ?? ticket?.bookingId ?? ticket?.booking_id ?? '');
 }
 
 function resolveBookingForActions(incomingBookingId, incomingBookingRef) {
   const ids = Array.from(new Set([
     incomingBookingId,
     incomingBookingRef,
-  ].filter((x) => x != null && String(x).trim() !== '').map((x) => String(x))));
+  ].map(normalizeActionId).filter((x) => x !== '')));
 
   const match = (x) => ids.some((id) =>
-    x?.bookingId === id ||
-    x?.booking_ref === id ||
-    x?.booking_id === id ||
-    (x?.id != null && String(x.id) === id)
+    normalizeActionId(x?.bookingId) === id ||
+    normalizeActionId(x?.booking_ref) === id ||
+    normalizeActionId(x?.booking_id) === id ||
+    normalizeActionId(x?.id) === id
   );
 
   const fromBookings = allBookings.find(match);
