@@ -39,6 +39,7 @@ export const config = {
 const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
+const DEFAULT_ATTACHMENT_PRIORITY = 100;
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -164,10 +165,16 @@ function estimateAttachmentBytes(att) {
 }
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
+  const ordered = (Array.isArray(candidates) ? candidates : [])
+    .map((c, idx) => {
+      const p = Number.isFinite(Number(c?.priority)) ? Number(c.priority) : DEFAULT_ATTACHMENT_PRIORITY;
+      return { ...c, _idx: idx, _priority: p };
+    })
+    .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];
   let totalBytes = 0;
-  for (const c of candidates) {
+  for (const c of ordered) {
     const sizeBytes = estimateAttachmentBytes(c.attachment);
     if (totalBytes + sizeBytes > maxBytes) {
       omitted.push(c.label || c.attachment?.filename || "attachment");
@@ -778,6 +785,7 @@ export default async function handler(req, res) {
     if (idBase64 && idFileName) {
       ownerAttachmentCandidates.push({
         label: `ID front (${idFileName})`,
+        priority: 10,
         attachment: {
         filename: idFileName,
         content: idBase64,
@@ -789,6 +797,7 @@ export default async function handler(req, res) {
     if (idBackBase64 && idBackFileName) {
       ownerAttachmentCandidates.push({
         label: `ID back (${idBackFileName})`,
+        priority: 20,
         attachment: {
         filename: idBackFileName,
         content: idBackBase64,
@@ -800,6 +809,7 @@ export default async function handler(req, res) {
     if (insuranceBase64 && insuranceFileName) {
       ownerAttachmentCandidates.push({
         label: `Insurance (${insuranceFileName})`,
+        priority: 40,
         attachment: {
         filename: insuranceFileName,
         content: insuranceBase64,
@@ -819,6 +829,7 @@ export default async function handler(req, res) {
       agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       ownerAttachmentCandidates.push({
         label: `Rental agreement (${agreementPdfFilename})`,
+        priority: 30,
         attachment: {
           filename: agreementPdfFilename,
           content: agreementPdfBuffer,

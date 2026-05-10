@@ -37,6 +37,7 @@
 //     smsDeliveryHealth:       HealthCheck,
 //     availabilitySyncHealth:  HealthCheck,
 //     ticketChargeHealth:      HealthCheck,
+//     renterIdDocuments:       HealthCheck,
 //   },
 //   overallStatus: "ok" | "warning" | "error",
 //   checkedAt: ISO-8601 string,
@@ -1146,6 +1147,127 @@ async function checkTicketChargeHealth(sb) {
   }
 }
 
+// Check 11 — Renter ID documents missing
+// Surfaces paid/active bookings whose pending_booking_docs row is absent or
+// has no ID front/back stored.  This catches two scenarios:
+//   A) The renter did not upload their driver's licence during checkout.
+//   B) store-booking-docs failed silently and the docs were never persisted.
+//
+// Only bookings with statuses where manual action is still possible are checked.
+// Completed/cancelled bookings are excluded.  Bookings older than 90 days are
+// also excluded to keep the list actionable.
+//
+// Status: warning — missing IDs are a compliance risk but not a financial error.
+// Fixable: false  — IDs must be collected from the renter manually.
+//
+// Linked with the previous task that ensures:
+//   • Owner attachment priority = ID front → ID back → agreement → insurance
+//   • email_sent is only marked when required docs were actually attached
+async function checkRenterIdDocuments(sb) {
+  try {
+    // Paid/active statuses where manual ID collection is still possible.
+    const PAID_ACTIVE_STATUSES = [
+      "booked_paid", "active_rental", "active", "approved",
+      "reserved", "reserved_unpaid", "pending_verification",
+    ];
+
+    // Limit to bookings created in the last 90 days so the list stays actionable.
+    const cutoff90Days = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: paidBookings, error: bErr } = await sb
+      .from("bookings")
+      .select("booking_ref, status, vehicle_id, pickup_date, customer_name, renter_name")
+      .in("status", PAID_ACTIVE_STATUSES)
+      .gte("created_at", cutoff90Days)
+      .limit(300);
+
+    if (bErr) {
+      console.error("[v2-system-health] renterIdDocuments query error:", bErr.message);
+      return check("Renter ID Documents", "error", "Could not query bookings: " + bErr.message);
+    }
+
+    const bookings = paidBookings || [];
+    if (bookings.length === 0) {
+      return check("Renter ID Documents", "ok", "No active/upcoming bookings to check.");
+    }
+
+    const refs = bookings.map((b) => b.booking_ref).filter(Boolean);
+
+    // Fetch pending_booking_docs for these bookings.
+    const { data: docsRows, error: dErr } = await sb
+      .from("pending_booking_docs")
+      .select("booking_id, id_base64, id_back_base64, id_filename, id_back_filename")
+      .in("booking_id", refs);
+
+    if (dErr) {
+      console.error("[v2-system-health] renterIdDocuments docs query error:", dErr.message);
+      return check("Renter ID Documents", "error", "Could not query pending_booking_docs: " + dErr.message);
+    }
+
+    // Index docs by booking_id.
+    const docsByBooking = {};
+    for (const d of docsRows || []) {
+      docsByBooking[d.booking_id] = d;
+    }
+
+    // Aggregate per booking: which IDs are missing?
+    const affectedMap = new Map(); // booking_ref → { info, missing[] }
+
+    for (const b of bookings) {
+      const ref = b.booking_ref;
+      if (!ref) continue;
+
+      const doc = docsByBooking[ref];
+      const renterDisplay = b.renter_name || b.customer_name || "?";
+      const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
+
+      const missing = [];
+      if (!doc) {
+        // No pending_booking_docs row at all.
+        missing.push("ID front", "ID back");
+      } else {
+        if (!doc.id_base64)      missing.push("ID front");
+        if (!doc.id_back_base64) missing.push("ID back");
+      }
+
+      if (missing.length > 0) {
+        affectedMap.set(ref, { info: baseInfo, missing });
+      }
+    }
+
+    if (affectedMap.size === 0) {
+      return check(
+        "Renter ID Documents",
+        "ok",
+        `All ${bookings.length} active/upcoming booking${bookings.length !== 1 ? "s" : ""} have ID documents on file.`,
+      );
+    }
+
+    const allItems = [...affectedMap.entries()].map(([ref, { info, missing }]) => ({
+      id:   ref,
+      info: `[MISSING: ${missing.join(", ")}] ${info}`,
+    }));
+
+    const totalAffected = affectedMap.size;
+    console.error(
+      `[v2-system-health] renterIdDocuments: ${totalAffected} booking(s) missing renter ID docs:`,
+      [...affectedMap.keys()],
+    );
+
+    return check(
+      "Renter ID Documents",
+      "warning",
+      `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
+      allItems,
+      "Collect the renter's driver's licence (front and back) before or at vehicle pickup. Use Bookings → View Booking to manually upload the documents.",
+      false,
+    );
+  } catch (err) {
+    console.error("[v2-system-health] renterIdDocuments exception:", err);
+    return check("Renter ID Documents", "error", "Unexpected error: " + err.message);
+  }
+}
+
 async function runAllChecks(sb) {
   const checks    = {};
   const checkedAt = new Date().toISOString();
@@ -1161,6 +1283,7 @@ async function runAllChecks(sb) {
     checkSmsDeliveryHealth(sb)        .then((r) => { checks.smsDeliveryHealth        = r; }),
     checkAvailabilitySync(sb)         .then((r) => { checks.availabilitySyncHealth   = r; }),
     checkTicketChargeHealth(sb)       .then((r) => { checks.ticketChargeHealth        = r; }),
+    checkRenterIdDocuments(sb)        .then((r) => { checks.renterIdDocuments         = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);
