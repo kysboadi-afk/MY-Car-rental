@@ -8026,6 +8026,8 @@ function saveSiteContent() {
 
   apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'update', settings })
     .then((data) => {
+      // Clear the public site's sessionStorage cache so updated settings appear immediately
+      try { sessionStorage.removeItem('slySiteSettingsCache'); } catch (_) {}
       showToast('✓ Site content saved — changes are now live on the public site.', 'success');
       if (status) {
         status.textContent = `✓ Saved ${(data.updated || []).length} field(s)`;
