@@ -1219,10 +1219,13 @@ async function checkRenterIdDocuments(sb) {
       return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
     }
 
-    // Index docs by booking_id.
-    const docsByBooking = {};
+    // Index docs by booking_id (some environments store booking_ref, others may
+    // store booking UUID), so we normalize to trimmed string keys.
+    const docsByBooking = new Map();
     for (const d of docsRows || []) {
-      docsByBooking[d.booking_id] = d;
+      const key = d?.booking_id != null ? String(d.booking_id).trim() : "";
+      if (!key) continue;
+      docsByBooking.set(key, d);
     }
     const idCopiesByBooking = new Map();
     for (const row of bookingDocRows || []) {
@@ -1241,7 +1244,9 @@ async function checkRenterIdDocuments(sb) {
       const ref = b.booking_ref;
       if (!ref) continue;
 
-      const doc = docsByBooking[ref];
+      const refKey = String(ref).trim();
+      const idKey = b.id != null ? String(b.id).trim() : "";
+      const doc = docsByBooking.get(refKey) || (idKey ? docsByBooking.get(idKey) : null);
       const hasBookingDocIdCopy = (idCopiesByBooking.get(b.id) || 0) > 0;
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
