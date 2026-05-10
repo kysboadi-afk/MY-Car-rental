@@ -802,6 +802,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     renter_phone,
     vehicle_id,
     vehicle_name,
+    vehicle_vin: meta_vehicle_vin,
     pickup_date,
     return_date,
     pickup_time,
@@ -889,9 +890,11 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // Signature is included when available (storedDocs); the document is still
   // valid and attachable even when the frontend did not supply a signature.
   try {
-    const vehicleInfo = (vehicle_id && CARS[vehicle_id])
-      ? CARS[vehicle_id]
-      : (await getVehicleById(vehicle_id).catch(() => null)) || {};
+    // Always call getVehicleById so Supabase-enriched metadata (VIN, make, etc.)
+    // is included even for vehicles that are also in the static CARS list.
+    const vehicleInfo = (await getVehicleById(vehicle_id).catch(() => null))
+      || (vehicle_id && CARS[vehicle_id])
+      || {};
     const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
     const hasProtectionPlan = !!protection_plan_tier;
 
@@ -901,7 +904,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       vehicleMake:  vehicleInfo.make  || null,
       vehicleModel: vehicleInfo.model || null,
       vehicleYear:  vehicleInfo.year  || null,
-      vehicleVin:   vehicleInfo.vin   || null,
+      vehicleVin:   vehicleInfo.vin   || meta_vehicle_vin || null,
       vehicleColor: vehicleInfo.color || null,
       name:         renter_name || "",
       email:        email       || "",

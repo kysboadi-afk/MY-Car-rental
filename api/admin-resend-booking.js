@@ -191,9 +191,11 @@ export default async function handler(req, res) {
 
     // Regenerate if we still don't have a buffer.
     if (!pdfBuffer) {
-      const vehicleInfo = (vehicle_id && CARS[vehicle_id])
-        ? CARS[vehicle_id]
-        : (await getVehicleById(vehicle_id).catch(() => null)) || {};
+      // Always call getVehicleById so Supabase-enriched metadata (VIN, make, etc.)
+      // is included even for vehicles that are also in the static CARS list.
+      const vehicleInfo = (await getVehicleById(vehicle_id).catch(() => null))
+        || (vehicle_id && CARS[vehicle_id])
+        || {};
       const rentalDays = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
       const hasProtectionPlan = !!protection_plan_tier;
 

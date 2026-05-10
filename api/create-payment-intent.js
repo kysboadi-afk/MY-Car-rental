@@ -358,6 +358,7 @@ export default async function handler(req, res) {
         renter_phone: trimmedPhone,
         vehicle_id:   vehicleIdForMetadata,
         vehicle_name: vehicleData.name,
+        ...(vehicleData.vin ? { vehicle_vin: vehicleData.vin } : {}),
         pickup_date:  pickup,
         return_date:  returnDate,
         pickup_time:  formatTime12h(trimmedPickupTime),
