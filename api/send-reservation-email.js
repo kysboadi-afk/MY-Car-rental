@@ -164,10 +164,13 @@ function estimateAttachmentBytes(att) {
 }
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
+  const ordered = (Array.isArray(candidates) ? candidates : [])
+    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : 100 }))
+    .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];
   let totalBytes = 0;
-  for (const c of candidates) {
+  for (const c of ordered) {
     const sizeBytes = estimateAttachmentBytes(c.attachment);
     if (totalBytes + sizeBytes > maxBytes) {
       omitted.push(c.label || c.attachment?.filename || "attachment");
@@ -778,6 +781,7 @@ export default async function handler(req, res) {
     if (idBase64 && idFileName) {
       ownerAttachmentCandidates.push({
         label: `ID front (${idFileName})`,
+        priority: 10,
         attachment: {
         filename: idFileName,
         content: idBase64,
@@ -789,6 +793,7 @@ export default async function handler(req, res) {
     if (idBackBase64 && idBackFileName) {
       ownerAttachmentCandidates.push({
         label: `ID back (${idBackFileName})`,
+        priority: 20,
         attachment: {
         filename: idBackFileName,
         content: idBackBase64,
@@ -800,6 +805,7 @@ export default async function handler(req, res) {
     if (insuranceBase64 && insuranceFileName) {
       ownerAttachmentCandidates.push({
         label: `Insurance (${insuranceFileName})`,
+        priority: 40,
         attachment: {
         filename: insuranceFileName,
         content: insuranceBase64,
@@ -819,6 +825,7 @@ export default async function handler(req, res) {
       agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       ownerAttachmentCandidates.push({
         label: `Rental agreement (${agreementPdfFilename})`,
+        priority: 30,
         attachment: {
           filename: agreementPdfFilename,
           content: agreementPdfBuffer,

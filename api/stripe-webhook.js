@@ -123,10 +123,13 @@ function estimateAttachmentBytes(att) {
 }
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
+  const ordered = (Array.isArray(candidates) ? candidates : [])
+    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : 100 }))
+    .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];
   let totalBytes = 0;
-  for (const c of candidates) {
+  for (const c of ordered) {
     const sizeBytes = estimateAttachmentBytes(c.attachment);
     if (totalBytes + sizeBytes > maxBytes) {
       omitted.push(c.label || c.attachment?.filename || "attachment");
@@ -885,6 +888,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 
   // ── Build attachments from stored docs ────────────────────────────────────
   const ownerAttachmentCandidates = [];
+  let resolvedVehicleMeta = {};
+  let agreementPdfFilename = null;
 
   // Always generate the rental agreement PDF from payment-intent metadata.
   // Signature is included when available (storedDocs); the document is still
@@ -895,6 +900,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     const vehicleInfo = (await getVehicleById(vehicle_id).catch(() => null))
       || (vehicle_id && CARS[vehicle_id])
       || {};
+    resolvedVehicleMeta = vehicleInfo;
     const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
     const hasProtectionPlan = !!protection_plan_tier;
 
@@ -929,8 +935,10 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
     const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
     const pdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
+    agreementPdfFilename = pdfFilename;
     ownerAttachmentCandidates.push({
       label: `Rental agreement (${pdfFilename})`,
+      priority: 30,
       attachment: {
         filename:    pdfFilename,
         content:     pdfBuffer,
@@ -971,6 +979,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     try {
       ownerAttachmentCandidates.push({
         label: `ID front (${storedDocs.id_filename})`,
+        priority: 10,
         attachment: {
           filename:    storedDocs.id_filename,
           content:     Buffer.from(storedDocs.id_base64, "base64"),
@@ -987,6 +996,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     try {
       ownerAttachmentCandidates.push({
         label: `ID back (${storedDocs.id_back_filename})`,
+        priority: 20,
         attachment: {
           filename:    storedDocs.id_back_filename,
           content:     Buffer.from(storedDocs.id_back_base64, "base64"),
@@ -1003,6 +1013,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     try {
       ownerAttachmentCandidates.push({
         label: `Insurance (${storedDocs.insurance_filename})`,
+        priority: 40,
         attachment: {
           filename:    storedDocs.insurance_filename,
           content:     Buffer.from(storedDocs.insurance_base64, "base64"),
@@ -1018,6 +1029,14 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     ownerAttachmentCandidates,
     MAX_OWNER_EMAIL_ATTACHMENT_BYTES
   );
+  const attachedOwnerFiles = new Set(attachments.map((a) => a.filename));
+  const idFrontExpected = !!(storedDocs?.id_base64 && storedDocs?.id_filename);
+  const idBackExpected = !!(storedDocs?.id_back_base64 && storedDocs?.id_back_filename);
+  const idFrontAttached = !!(idFrontExpected && attachedOwnerFiles.has(storedDocs.id_filename));
+  const idBackAttached = !!(idBackExpected && attachedOwnerFiles.has(storedDocs.id_back_filename));
+  const agreementExpected = !!agreementPdfFilename;
+  const agreementAttached = !!(agreementExpected && attachedOwnerFiles.has(agreementPdfFilename));
+  const docsCompleteForDedupe = (!idFrontExpected || idFrontAttached) && (!idBackExpected || idBackAttached) && (!agreementExpected || agreementAttached);
   const hasFullDocs = attachments.length > 0;
   console.log(`stripe-webhook: attachments built for booking_id ${booking_id}: count=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
   const insuranceStatusMeta = String(meta.insurance_status || "").toLowerCase();
@@ -1072,6 +1091,11 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     bookingId:          booking_id || paymentIntent.id,
     vehicleName:        vehicle_name,
     vehicleId:          vehicle_id,
+    vehicleMake:        resolvedVehicleMeta.make || null,
+    vehicleModel:       resolvedVehicleMeta.model || null,
+    vehicleYear:        resolvedVehicleMeta.year || null,
+    vehicleVin:         resolvedVehicleMeta.vin || meta_vehicle_vin || null,
+    vehicleColor:       resolvedVehicleMeta.color || null,
     renterName:         renter_name,
     renterEmail:        email,
     renterPhone:        renter_phone,
@@ -1141,7 +1165,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 
   // ── Mark docs as sent so the browser-side email skips the owner copy ──────
   // Only mark email_sent=true when the send actually succeeded.
-  if (ownerEmailSent && storedDocs && booking_id) {
+  if (ownerEmailSent && storedDocs && booking_id && docsCompleteForDedupe) {
     try {
       const sb = getSupabaseAdmin();
       if (sb) {
@@ -1153,6 +1177,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     } catch (markErr) {
       console.warn("stripe-webhook: could not mark docs email_sent (non-fatal):", markErr.message);
     }
+  } else if (ownerEmailSent && storedDocs && booking_id && !docsCompleteForDedupe) {
+    console.warn(`stripe-webhook: owner email sent for booking_id ${booking_id} but not marking email_sent because required docs were omitted (idFrontExpected=${idFrontExpected} idFrontAttached=${idFrontAttached} idBackExpected=${idBackExpected} idBackAttached=${idBackAttached} agreementExpected=${agreementExpected} agreementAttached=${agreementAttached})`);
   } else if (!ownerEmailSent && storedDocs && booking_id) {
     console.warn(`stripe-webhook: email_sent NOT marked for booking_id ${booking_id} because owner email send failed`);
   }

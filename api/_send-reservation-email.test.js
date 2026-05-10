@@ -762,6 +762,37 @@ test("owner email omits oversized attachments but still sends successfully", asy
   );
 });
 
+test("owner email prioritizes rental agreement over insurance when size-limited", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const largeInsuranceBase64 = Buffer.alloc(12 * 1024 * 1024, 3).toString("base64");
+  const req = makeReq("POST", {
+    ...VALID_BODY,
+    signature: "Jane Doe",
+    idBase64: "ZmFrZWRhdGE=",
+    idFileName: "id-front.jpg",
+    idMimeType: "image/jpeg",
+    idBackBase64: "ZmFrZWRhdGFiYWNr",
+    idBackFileName: "id-back.jpg",
+    idBackMimeType: "image/jpeg",
+    insuranceBase64: largeInsuranceBase64,
+    insuranceFileName: "insurance-large.pdf",
+    insuranceMimeType: "application/pdf",
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should be sent");
+  const filenames = ownerMail.attachments.map((a) => a.filename);
+  assert.ok(filenames.includes("id-front.jpg"), "ID front should be attached");
+  assert.ok(filenames.includes("id-back.jpg"), "ID back should be attached");
+  assert.ok(filenames.some((f) => /^rental-agreement-.*\.pdf$/.test(f)), "Rental agreement PDF should be attached");
+  assert.ok(!filenames.includes("insurance-large.pdf"), "Oversized insurance should be omitted first");
+});
+
 // ─── markVehicleUnavailable tests ─────────────────────────────────────────
 
 test("markVehicleUnavailable: fleet-status.json is updated to available:false after confirmed booking", async () => {
