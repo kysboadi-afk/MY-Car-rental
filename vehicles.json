@@ -121,5 +121,29 @@
         "label": "24 Hours"
       }
     }
+  },
+  "fordfusions2017": {
+    "vehicle_id": "fordfusions2017",
+    "vehicle_name": "FORD FUSION S",
+    "type": "economy",
+    "category": "car",
+    "vehicle_year": 2017,
+    "purchase_price": 4800,
+    "purchase_date": "2026-05-10",
+    "status": "active",
+    "cover_image": "https://kdobrxffhtsigyiwnahs.supabase.co/storage/v1/object/public/vehicle-images/fordfusions2017-1778448888883-80f75e85.jpg",
+    "gallery_images": [
+      "https://kdobrxffhtsigyiwnahs.supabase.co/storage/v1/object/public/vehicle-images/fordfusions2017-1778448898484-3a7dbbca.jpg",
+      "https://kdobrxffhtsigyiwnahs.supabase.co/storage/v1/object/public/vehicle-images/fordfusions2017-1778448905188-e1ec14cd.jpg",
+      "https://kdobrxffhtsigyiwnahs.supabase.co/storage/v1/object/public/vehicle-images/fordfusions2017-1778448923828-09ea2eab.jpg"
+    ],
+    "vin": "3FA6POG70HR180302",
+    "make": "Ford",
+    "bouncie_device_id": "865612072835446",
+    "earnings_cta": "⚠️ Our vehicles are in high demand and availability is limited. To guarantee your reservation, we strongly recommend booking immediately",
+    "daily_price": 60,
+    "weekly_price": 400,
+    "biweekly_price": 800,
+    "monthly_price": 1500
   }
 }
