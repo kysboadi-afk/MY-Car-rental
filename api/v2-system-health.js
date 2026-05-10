@@ -1177,7 +1177,7 @@ async function checkRenterIdDocuments(sb) {
 
     const { data: paidBookings, error: bErr } = await sb
       .from("bookings")
-      .select("booking_ref, status, vehicle_id, pickup_date, customer_name")
+      .select("id, booking_ref, status, vehicle_id, pickup_date, customer_name")
       .in("status", PAID_ACTIVE_STATUSES)
       .gte("created_at", cutoff90Days)
       .limit(300);
@@ -1205,10 +1205,39 @@ async function checkRenterIdDocuments(sb) {
       return check("Renter ID Documents", "error", "Could not query pending_booking_docs: " + dErr.message);
     }
 
+    const bookingDocKeys = [
+      ...new Set(
+        bookings
+          .flatMap((b) => [b.booking_ref, b.id])
+          .map((v) => (v == null ? "" : String(v).trim()))
+          .filter(Boolean),
+      ),
+    ];
+
+    const { data: bookingDocRows, error: bdErr } = bookingDocKeys.length
+      ? await sb
+          .from("booking_documents")
+          .select("booking_id")
+          .eq("type", "id_copy")
+          .in("booking_id", bookingDocKeys)
+      : { data: [], error: null };
+
+    if (bdErr) {
+      console.error("[v2-system-health] renterIdDocuments booking_documents query error:", bdErr.message);
+      return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
+    }
+
     // Index docs by booking_id.
     const docsByBooking = {};
     for (const d of docsRows || []) {
       docsByBooking[d.booking_id] = d;
+    }
+
+    const idCopyCountByBooking = new Map();
+    for (const d of bookingDocRows || []) {
+      const key = d?.booking_id == null ? "" : String(d.booking_id).trim();
+      if (!key) continue;
+      idCopyCountByBooking.set(key, (idCopyCountByBooking.get(key) || 0) + 1);
     }
 
     // Aggregate per booking: which IDs are missing?
@@ -1219,16 +1248,30 @@ async function checkRenterIdDocuments(sb) {
       if (!ref) continue;
 
       const doc = docsByBooking[ref];
+      const bookingKeys = [b.booking_ref, b.id]
+        .map((v) => (v == null ? "" : String(v).trim()))
+        .filter(Boolean);
+      const idCopyCount = bookingKeys.reduce(
+        (maxCount, key) => Math.max(maxCount, idCopyCountByBooking.get(key) || 0),
+        0,
+      );
+      const hasPendingFront = !!doc?.id_base64;
+      const hasPendingBack = !!doc?.id_back_base64;
+      const hasPendingPair = hasPendingFront && hasPendingBack;
+      const hasBookingDocPair = idCopyCount >= 2;
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
-      if (!doc) {
-        // No pending_booking_docs row at all.
-        missing.push("ID front", "ID back");
-      } else {
-        if (!doc.id_base64)      missing.push("ID front");
-        if (!doc.id_back_base64) missing.push("ID back");
+      if (!hasPendingPair && !hasBookingDocPair) {
+        if (idCopyCount > 0) {
+          missing.push(`ID copies ${idCopyCount}/2`);
+        } else if (!doc) {
+          missing.push("ID front", "ID back");
+        } else {
+          if (!hasPendingFront) missing.push("ID front");
+          if (!hasPendingBack) missing.push("ID back");
+        }
       }
 
       if (missing.length > 0) {
