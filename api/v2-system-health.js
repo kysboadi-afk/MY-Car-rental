@@ -1227,15 +1227,19 @@ async function checkRenterIdDocuments(sb) {
       return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
     }
 
-    // Index docs by booking_id.
-    const docsByBooking = {};
+    const normalizeBookingKey = (value) => (value == null ? "" : String(value).trim());
+
+    // Index docs by normalized booking_id.
+    const docsByBooking = new Map();
     for (const d of docsRows || []) {
-      docsByBooking[d.booking_id] = d;
+      const key = normalizeBookingKey(d?.booking_id);
+      if (!key) continue;
+      docsByBooking.set(key, d);
     }
 
     const idCopyCountByBooking = new Map();
     for (const d of bookingDocRows || []) {
-      const key = d?.booking_id == null ? "" : String(d.booking_id).trim();
+      const key = normalizeBookingKey(d?.booking_id);
       if (!key) continue;
       idCopyCountByBooking.set(key, (idCopyCountByBooking.get(key) || 0) + 1);
     }
@@ -1247,10 +1251,10 @@ async function checkRenterIdDocuments(sb) {
       const ref = b.booking_ref;
       if (!ref) continue;
 
-      const doc = docsByBooking[ref];
       const bookingKeys = [b.booking_ref, b.id]
-        .map((v) => (v == null ? "" : String(v).trim()))
+        .map(normalizeBookingKey)
         .filter(Boolean);
+      const doc = bookingKeys.map((key) => docsByBooking.get(key)).find(Boolean) || null;
       const idCopyCount = bookingKeys.reduce(
         (maxCount, key) => Math.max(maxCount, idCopyCountByBooking.get(key) || 0),
         0,
@@ -1265,7 +1269,7 @@ async function checkRenterIdDocuments(sb) {
       const missing = [];
       if (!hasPendingPair && !hasBookingDocPair) {
         if (idCopyCount > 0) {
-          missing.push(`ID copies ${idCopyCount}/2`);
+          missing.push(`Only ${idCopyCount} of 2 required ID copies uploaded`);
         } else if (!doc) {
           missing.push("ID front", "ID back");
         } else {
