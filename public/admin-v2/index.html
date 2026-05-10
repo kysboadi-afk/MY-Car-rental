@@ -6165,18 +6165,30 @@ function resolveModalElement(id) {
   return null;
 }
 function openModal(id) {
+  console.log('[OPEN_MODAL_ENTRY]', id);
+
   const modal = resolveModalElement(id);
-  console.log('[OPEN_MODAL]', id, modal);
+
+  console.log('[OPEN_MODAL_RESOLVED]', id, modal);
+
   if (!modal) {
     console.warn('[OPEN_MODAL_MISSING]', id);
     return;
   }
+
   modal.style.display = 'flex';
   modal.style.visibility = 'visible';
   modal.style.opacity = '1';
   modal.style.pointerEvents = 'auto';
+  modal.style.zIndex = '999999';
+
   modal.classList.add('open');
+
+  console.log('[OPEN_MODAL_CLASSES]', modal.className);
+  console.log('[OPEN_MODAL_STYLE]', modal.style.cssText);
+
   document.body.classList.add('modal-open');
+
   console.log('[OPEN_MODAL_SUCCESS]', id);
 }
 function closeModal(id) {
