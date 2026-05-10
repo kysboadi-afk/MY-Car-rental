@@ -1223,7 +1223,7 @@ async function checkRenterIdDocuments(sb) {
     // store booking UUID), so we normalize to trimmed string keys.
     const docsByBooking = new Map();
     for (const d of docsRows || []) {
-      const key = d?.booking_id != null ? String(d.booking_id).trim() : "";
+      const key = d?.booking_id ? String(d.booking_id).trim() : "";
       if (!key) continue;
       docsByBooking.set(key, d);
     }
@@ -1246,7 +1246,7 @@ async function checkRenterIdDocuments(sb) {
 
       const refKey = String(ref).trim();
       const idKey = b.id != null ? String(b.id).trim() : "";
-      const doc = docsByBooking.get(refKey) || (idKey ? docsByBooking.get(idKey) : null);
+      const doc = docsByBooking.get(refKey) || docsByBooking.get(idKey);
       const hasBookingDocIdCopy = (idCopiesByBooking.get(b.id) || 0) > 0;
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
@@ -1292,7 +1292,7 @@ async function checkRenterIdDocuments(sb) {
       "warning",
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
       allItems,
-      "Renter ID documents should be captured automatically during checkout. For flagged bookings, ask the renter to re-submit their ID upload flow before pickup.",
+      "Renter ID documents should be captured automatically during checkout. For flagged bookings, have the renter reopen the booking checkout link and re-submit front/back ID uploads before pickup.",
       true,
     );
   } catch (err) {
