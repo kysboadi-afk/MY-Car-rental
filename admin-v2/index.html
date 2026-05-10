@@ -1788,6 +1788,7 @@
           <select class="filter-select" id="rev-filter-status" onchange="applyRevenueFilters()">
             <option value="">All Statuses</option>
             <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
             <option value="pending">Pending</option>
             <option value="partial">Partial</option>
             <option value="refunded">Refunded</option>
@@ -6599,6 +6600,15 @@ function fmtRevDate(dateStr) {
   return d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
 }
 
+function normalizeRevenueActionId(id) {
+  return String(id ?? '').trim();
+}
+
+function getRevenueActionId(record) {
+  const id = normalizeRevenueActionId(record?.id);
+  return id || '';
+}
+
 function renderRevenue(groups) {
   const tbody = document.getElementById('revenue-table-body');
   const wrap  = document.getElementById('revenue-table-wrap');
@@ -6643,12 +6653,13 @@ function renderRevenue(groups) {
       : (fmtRevDate(finalReturn) || '–');
 
     // Worst status across the group.
-    const statusRank = { paid: 0, partial: 1, pending: 2, refunded: 3 };
+    const statusRank = { paid: 0, partial: 1, pending: 2, unpaid: 2, refunded: 3 };
     const worstRec   = allRecs.reduce((mx, r) =>
       (statusRank[r.payment_status] ?? 99) > (statusRank[mx.payment_status] ?? 99) ? r : mx, allRecs[0]);
     const summaryStatus = worstRec?.payment_status || 'paid';
     const payBadge = {
       paid:     '<span class="badge badge-success">Paid</span>',
+      unpaid:   '<span class="badge badge-warning">Unpaid</span>',
       pending:  '<span class="badge badge-warning">Pending</span>',
       partial:  '<span class="badge" style="background:#ede9fe;color:#7c3aed;">Partial</span>',
       refunded: '<span class="badge badge-danger">Refunded</span>',
@@ -6657,6 +6668,7 @@ function renderRevenue(groups) {
     const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || group.vehicle_id || '';
     const customer_name  = base?.customer_name  || exts[0]?.customer_name  || group.customer_name || '–';
     const payment_method = base?.payment_method || '–';
+    const baseActionId   = getRevenueActionId(base);
     const stripeFeeCell  = allRecs.some((r) => r.stripe_fee != null)
       ? '$' + formatMoney(totalStripeFee)
       : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
@@ -6678,8 +6690,8 @@ function renderRevenue(groups) {
       <td>${payBadge}</td>
       <td class="td-actions">
         ${toggleBtn}
-        ${base ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>` : ''}
-        ${base ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>` : ''}
+        ${baseActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(baseActionId)}')">Edit</button>` : ''}
+        ${baseActionId ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(baseActionId)}')">Delete</button>` : ''}
       </td>
     </tr>`;
 
@@ -6699,8 +6711,8 @@ function renderRevenue(groups) {
           <td>${esc(base.payment_method || '–')}</td>
           <td></td>
           <td class="td-actions">
-            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>
+            ${baseActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(baseActionId)}')">Edit</button>` : ''}
+            ${baseActionId ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(baseActionId)}')">Delete</button>` : ''}
           </td>
         </tr>`;
       }
@@ -6714,6 +6726,7 @@ function renderRevenue(groups) {
         const extNorm   = normalizeRevenueRecord(ext);
         const extNet    = (extNorm.amount_net - Number(ext.refund_amount || 0)).toFixed(2);
         const extFee    = ext.stripe_fee != null ? '$' + formatMoney(ext.stripe_fee) : '<span style="font-size:11px;">—</span>';
+        const extActionId = getRevenueActionId(ext);
         html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
           <td colspan="2" style="padding-left:28px;">🔄 ${esc(extLabel)}</td>
           <td>→ ${esc(fmtRevDate(ext.return_date) || '–')}</td>
@@ -6724,8 +6737,8 @@ function renderRevenue(groups) {
           <td>${esc(ext.payment_method || '–')}</td>
           <td></td>
           <td class="td-actions">
-            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(ext.id)}')">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(ext.id)}')">Delete</button>
+            ${extActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(extActionId)}')">Edit</button>` : ''}
+            ${extActionId ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(extActionId)}')">Delete</button>` : ''}
           </td>
         </tr>`;
       });
@@ -6778,11 +6791,11 @@ function openAddRevenueModal() {
 }
 
 async function openEditRevenueModal(id) {
-  const targetId = String(id ?? '').trim();
-  const rec = allRevenueRecords.find((r) => String(r?.id ?? '').trim() === targetId);
+  const targetId = normalizeRevenueActionId(id);
+  const rec = allRevenueRecords.find((r) => getRevenueActionId(r) === targetId);
   if (!rec) { showToast('Revenue record not found.', 'error'); return; }
   document.getElementById('rev-modal-title').textContent = 'Edit Revenue Record';
-  document.getElementById('rev-id').value         = rec.id;
+  document.getElementById('rev-id').value         = targetId;
   document.getElementById('rev-booking-id').value = rec.booking_id  || '';
   document.getElementById('rev-vehicle').value    = rec.vehicle_id  || '';
   document.getElementById('rev-customer').value   = rec.customer_name  || '';
@@ -6802,7 +6815,7 @@ async function openEditRevenueModal(id) {
 }
 
 async function saveRevenueRecord() {
-  const id = document.getElementById('rev-id').value;
+  const id = normalizeRevenueActionId(document.getElementById('rev-id').value);
   const payload = {
     booking_id:     document.getElementById('rev-booking-id').value,
     vehicle_id:     document.getElementById('rev-vehicle').value,
@@ -6846,8 +6859,10 @@ async function saveRevenueRecord() {
 }
 
 function deleteRevenueRecord(id) {
+  const targetId = normalizeRevenueActionId(id);
+  if (!targetId) { showToast('Revenue record not found.', 'error'); return; }
   if (!confirm('Delete this revenue record? This cannot be undone.')) return;
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id })
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id: targetId })
     .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -9328,6 +9343,7 @@ async function loadAiInsights() {
         <label class="form-label">Payment Status</label>
         <select class="form-select" id="rev-status">
           <option value="paid">Paid</option>
+          <option value="unpaid">Unpaid</option>
           <option value="pending">Pending</option>
           <option value="partial">Partial</option>
           <option value="refunded">Refunded</option>
