@@ -1304,7 +1304,7 @@ async function checkRenterIdDocuments(sb) {
       "warning",
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
       allItems,
-      "Collect the renter's driver's licence (front and back) before or at vehicle pickup. Use Bookings → View Booking to manually upload the documents.",
+      "Renter ID documents should be captured automatically during checkout. For flagged bookings, have the renter reopen the booking checkout link and re-submit front/back ID uploads before pickup.",
       true,
     );
   } catch (err) {
