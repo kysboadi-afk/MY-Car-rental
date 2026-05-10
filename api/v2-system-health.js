@@ -1205,11 +1205,13 @@ async function checkRenterIdDocuments(sb) {
       return check("Renter ID Documents", "error", "Could not query pending_booking_docs: " + dErr.message);
     }
 
+    const normalizeBookingKey = (value) => (value == null ? "" : String(value).trim());
+
     const bookingDocKeys = [
       ...new Set(
         bookings
           .flatMap((b) => [b.booking_ref, b.id])
-          .map((v) => (v == null ? "" : String(v).trim()))
+          .map(normalizeBookingKey)
           .filter(Boolean),
       ),
     ];
@@ -1226,8 +1228,6 @@ async function checkRenterIdDocuments(sb) {
       console.error("[v2-system-health] renterIdDocuments booking_documents query error:", bdErr.message);
       return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
     }
-
-    const normalizeBookingKey = (value) => (value == null ? "" : String(value).trim());
 
     // Index docs by normalized booking_id.
     const docsByBooking = new Map();
@@ -1251,14 +1251,11 @@ async function checkRenterIdDocuments(sb) {
       const ref = b.booking_ref;
       if (!ref) continue;
 
-      const bookingKeys = [b.booking_ref, b.id]
+      const bookingKeys = [...new Set([b.booking_ref, b.id]
         .map(normalizeBookingKey)
-        .filter(Boolean);
+        .filter(Boolean))];
       const doc = bookingKeys.map((key) => docsByBooking.get(key)).find(Boolean) || null;
-      const idCopyCount = bookingKeys.reduce(
-        (maxCount, key) => Math.max(maxCount, idCopyCountByBooking.get(key) || 0),
-        0,
-      );
+      const idCopyCount = bookingKeys.reduce((count, key) => count + (idCopyCountByBooking.get(key) || 0), 0);
       const hasPendingFront = !!doc?.id_base64;
       const hasPendingBack = !!doc?.id_back_base64;
       const hasPendingPair = hasPendingFront && hasPendingBack;
@@ -1269,7 +1266,7 @@ async function checkRenterIdDocuments(sb) {
       const missing = [];
       if (!hasPendingPair && !hasBookingDocPair) {
         if (idCopyCount > 0) {
-          missing.push(`Only ${idCopyCount} of 2 required ID copies uploaded`);
+          missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
         } else if (!doc) {
           missing.push("ID front", "ID back");
         } else {
