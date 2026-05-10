@@ -73,10 +73,10 @@ export default async function handler(req, res) {
   const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
   const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
   if (!trimmedIdFileName || !hasBase64Payload(idBase64)) {
-    return res.status(400).json({ error: "Front of driver's license / ID is required." });
+    return res.status(400).json({ error: "The front of your driver's license or ID is required." });
   }
   if (!trimmedIdBackFileName || !hasBase64Payload(idBackBase64)) {
-    return res.status(400).json({ error: "Back of driver's license / ID is required." });
+    return res.status(400).json({ error: "The back of your driver's license or ID is required." });
   }
   if (insuranceCoverageChoice === "yes") {
     const trimmedInsuranceFileName = typeof insuranceFileName === "string" ? insuranceFileName.trim() : "";
@@ -112,7 +112,7 @@ export default async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (!sb) {
     console.warn("store-booking-docs: Supabase not configured — docs not stored");
-    return res.status(503).json({ ok: false, stored: false, error: "Document storage is currently unavailable. Please try again." });
+    return res.status(503).json({ ok: false, stored: false, error: "Document storage service is not configured. Please contact support." });
   }
 
   try {
