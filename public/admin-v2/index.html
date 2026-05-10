@@ -5067,6 +5067,7 @@ function findBookingByIdForActions(bookingId) {
 }
 
 function viewBooking(bookingId, vehicleId) {
+  console.log('[VIEW_CLICK]', bookingId);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
   let b = ctx.resolvedBooking;
@@ -5241,6 +5242,7 @@ function viewBooking(bookingId, vehicleId) {
 }
 
 function openEditBookingModal(bookingId) {
+  console.log('[EDIT_CLICK]', bookingId);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
@@ -5275,34 +5277,6 @@ function openEditBookingModal(bookingId) {
   }
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
-}
-
-const bookingsTbodyEl = document.getElementById('bookings-tbody');
-
-function handleBookingActionClick(actionBtn) {
-  if (!actionBtn) return false;
-  const bookingId = actionBtn.dataset.bookingId || '';
-  if (!bookingId) { showToast('Booking not found.', 'error'); return false; }
-  if (actionBtn.dataset.bookingAction === 'view') {
-    viewBooking(bookingId, actionBtn.dataset.vehicleId || '');
-    return false;
-  }
-  if (actionBtn.dataset.bookingAction === 'edit') {
-    openEditBookingModal(bookingId);
-    return false;
-  }
-  return false;
-}
-
-if (bookingsTbodyEl) {
-  bookingsTbodyEl.addEventListener('click', (event) => {
-    const rawTarget = event.target;
-    const target = rawTarget instanceof Element ? rawTarget : rawTarget?.parentElement;
-    if (!target) return;
-    const actionBtn = target.closest('[data-booking-action]');
-    if (!actionBtn || !bookingsTbodyEl.contains(actionBtn)) return;
-    handleBookingActionClick(actionBtn);
-  });
 }
 
 async function saveEditBooking(btn) {
