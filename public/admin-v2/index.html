@@ -5239,7 +5239,16 @@ function viewBooking(bookingId, vehicleId) {
     showToast('Error rendering booking details: ' + (renderErr.message || renderErr), 'error');
     return;
   }
-  openModal('booking-detail-modal');
+  const modalId = 'booking-detail-modal';
+  const modal = document.getElementById(modalId);
+  console.error('[MODAL_LOOKUP]', {
+    modalId,
+    found: !!modal
+  });
+  if (!modal) {
+    throw new Error(`Modal not found: ${modalId}`);
+  }
+  openModal(modalId);
 }
 
 function openEditBookingModal(bookingId) {
@@ -5248,16 +5257,19 @@ function openEditBookingModal(bookingId) {
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
   if (!b) { showToast('Booking not found.', 'error'); return; }
-  const _editModalEl = document.getElementById('booking-edit-modal');
-  if (!_editModalEl) {
-    console.error('[MODAL_RENDER] openEditBookingModal ABORTED — booking-edit-modal not in DOM');
-    showToast('Edit modal unavailable.', 'error');
-    return;
+  const modalId = 'booking-edit-modal';
+  const modal = document.getElementById(modalId);
+  console.error('[MODAL_LOOKUP]', {
+    modalId,
+    found: !!modal
+  });
+  if (!modal) {
+    throw new Error(`Modal not found: ${modalId}`);
   }
   try {
   // Store the bookingId being edited
-  document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
-  document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
+  modal.dataset.bookingId = bookingId;
+  modal.dataset.vehicleId  = b.vehicleId || '';
   // Pre-fill fields
   document.getElementById('be-name').value           = b.name          || '';
   document.getElementById('be-phone').value          = b.phone         || '';
@@ -5277,7 +5289,7 @@ function openEditBookingModal(bookingId) {
     return;
   }
   closeModal('booking-detail-modal');
-  openModal('booking-edit-modal');
+  openModal(modalId);
 }
 
 async function saveEditBooking(btn) {
@@ -6157,9 +6169,16 @@ function resetSmsTemplate() {
 
 // ── Modal helpers ──────────────────────────────────────────────────────────
 function openModal(id) {
-  const el = document.getElementById(id);
-  if (!el) { console.error('[MODAL] openModal FAILED — element missing from DOM:', id); return; }
-  el.classList.add('open');
+  const modalId = id;
+  const modal = document.getElementById(modalId);
+  console.error('[MODAL_LOOKUP]', {
+    modalId,
+    found: !!modal
+  });
+  if (!modal) {
+    throw new Error(`Modal not found: ${modalId}`);
+  }
+  modal.classList.add('open');
 }
 function closeModal(id) {
   const el = document.getElementById(id);
