@@ -6166,11 +6166,18 @@ function resolveModalElement(id) {
 }
 function openModal(id) {
   const modal = resolveModalElement(id);
+  console.log('[OPEN_MODAL]', id, modal);
   if (!modal) {
-    console.warn('[MODAL] openModal skipped — element missing from DOM:', id);
+    console.warn('[OPEN_MODAL_MISSING]', id);
     return;
   }
+  modal.style.display = 'flex';
+  modal.style.visibility = 'visible';
+  modal.style.opacity = '1';
+  modal.style.pointerEvents = 'auto';
   modal.classList.add('open');
+  document.body.classList.add('modal-open');
+  console.log('[OPEN_MODAL_SUCCESS]', id);
 }
 function closeModal(id) {
   const el = resolveModalElement(id);
