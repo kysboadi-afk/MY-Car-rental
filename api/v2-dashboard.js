@@ -419,13 +419,54 @@ export default async function handler(req, res) {
             if (r.booking_id) rrByBookingId[r.booking_id] = (rrByBookingId[r.booking_id] || 0) + gross;
           }
         }
-        // If rrRows is empty (no paid records yet) we fall through to bookings.json.
+        // If rrRows is empty (no paid records yet) we fall through to the orphan fallback.
       } catch (rrEx) {
         console.warn("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrEx.message);
       }
     }
 
-    // Fallback: compute from bookings.json when Supabase unavailable or rev_records empty.
+    // Orphan fallback: revenue_reporting_canonical excludes records with is_orphan=true.
+    // When ALL paid records are orphans (e.g. Stripe-synced charges not yet re-linked to
+    // bookings), the canonical loop above returns 0 rows and financialsFromRevRecords stays
+    // false.  Before falling back to inaccurate booking deposits, try revenue_records_effective
+    // which applies the same paid/cancelled/no_show filters but does NOT exclude orphans.
+    if (sb && !financialsFromRevRecords) {
+      try {
+        const { data: rreRows, error: rreErr } = await sb
+          .from("revenue_records_effective")
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, refund_amount, is_cancelled, is_no_show")
+          .eq("payment_status", "paid");
+        if (!rreErr && (rreRows || []).length > 0) {
+          financialsFromRevRecords = true;
+          for (const r of rreRows) {
+            if (r.is_cancelled || r.is_no_show) continue;
+            const vid      = uiVehicleId(r.vehicle_id) || "unknown";
+            if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
+            const grossRaw = Number(r.gross_amount || 0);
+            const gross    = Number.isFinite(grossRaw) ? grossRaw : 0;
+            const fee      = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const refund   = Number(r.refund_amount || 0);
+            const net      = gross - fee - refund;
+            totalRevenue    += gross;
+            totalStripeFees += fee;
+            netRevenue      += net;
+            if (r.stripe_fee != null) reconciledCount++;
+            const monthKey = (r.pickup_date || "").slice(0, 7);
+            if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + gross;
+            bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
+            if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, net: 0, count: 0 };
+            rrByVehicle[vid].gross += gross;
+            rrByVehicle[vid].net   += net;
+            rrByVehicle[vid].count += 1;
+            if (r.booking_id) rrByBookingId[r.booking_id] = (rrByBookingId[r.booking_id] || 0) + gross;
+          }
+        }
+      } catch (rreEx) {
+        console.warn("v2-dashboard: revenue_records_effective orphan fallback failed:", rreEx.message);
+      }
+    }
+
+    // Last-resort fallback: compute from bookings.json when Supabase is unavailable.
     // Mirrors the same fallback used by api/v2-revenue.js.
     if (!financialsFromRevRecords) {
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
