@@ -1788,8 +1788,8 @@
           <select class="filter-select" id="rev-filter-status" onchange="applyRevenueFilters()">
             <option value="">All Statuses</option>
             <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
             <option value="pending">Pending</option>
+            <option value="unpaid">Unpaid</option>
             <option value="partial">Partial</option>
             <option value="refunded">Refunded</option>
           </select>
@@ -6648,7 +6648,7 @@ function renderRevenue(groups) {
       : (fmtRevDate(finalReturn) || '–');
 
     // Worst status across the group.
-    const statusRank = { paid: 0, partial: 1, pending: 2, unpaid: 2, refunded: 3 };
+    const statusRank = { paid: 0, partial: 1, pending: 2, unpaid: 3, refunded: 4 };
     const worstRec   = allRecs.reduce((mx, r) =>
       (statusRank[r.payment_status] ?? 99) > (statusRank[mx.payment_status] ?? 99) ? r : mx, allRecs[0]);
     const summaryStatus = worstRec?.payment_status || 'paid';
@@ -9338,8 +9338,8 @@ async function loadAiInsights() {
         <label class="form-label">Payment Status</label>
         <select class="form-select" id="rev-status">
           <option value="paid">Paid</option>
-          <option value="unpaid">Unpaid</option>
           <option value="pending">Pending</option>
+          <option value="unpaid">Unpaid</option>
           <option value="partial">Partial</option>
           <option value="refunded">Refunded</option>
         </select>
