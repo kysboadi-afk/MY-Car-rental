@@ -129,6 +129,23 @@
       }
     }
 
+    // --- Hero title + subtitle ---
+    var heroOverlay = document.getElementById('hero-text-overlay');
+    if (s.hero_title) {
+      var titleEl = document.getElementById('hero-title');
+      if (titleEl) {
+        titleEl.textContent = s.hero_title;
+        if (heroOverlay) heroOverlay.style.display = '';
+      }
+    }
+    if (s.hero_subtitle) {
+      var subtitleEl = document.getElementById('hero-subtitle');
+      if (subtitleEl) {
+        subtitleEl.textContent = s.hero_subtitle;
+        if (heroOverlay) heroOverlay.style.display = '';
+      }
+    }
+
     // --- Promo banner ---
     if (s.promo_banner_enabled === true || s.promo_banner_enabled === 'true') {
       var banner = document.getElementById('promo-banner');
