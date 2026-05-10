@@ -10182,6 +10182,205 @@ ON CONFLICT (key) DO NOTHING;
 
 
 -- ===========================================================================
+-- 0137_pending_booking_docs_id_back.sql
+-- ===========================================================================
+-- Migration 0137: Add ID back-side columns to pending_booking_docs
+--
+-- Purpose: store the renter's ID back photo alongside the front so both
+-- are attached to the owner notification email when a booking is confirmed.
+--
+-- Safe to re-run: all statements use IF NOT EXISTS / ADD COLUMN IF NOT EXISTS guards.
+
+ALTER TABLE pending_booking_docs
+  ADD COLUMN IF NOT EXISTS id_back_base64   text,
+  ADD COLUMN IF NOT EXISTS id_back_filename text,
+  ADD COLUMN IF NOT EXISTS id_back_mimetype text;
+
+
+-- ===========================================================================
+-- 0138_remove_phantom_vehicles_fleet_v4.sql
+-- ===========================================================================
+-- Migration 0138: Remove phantom vehicle rows (fleet v4 pass).
+--
+-- Context: migration 0130 ran but a 4th vehicle row has re-appeared in the
+-- Supabase vehicles table with status = 'active', causing the
+-- admin_metrics_v2 "Available Vehicles" KPI to display 4 instead of 3.
+--
+-- The canonical fleet remains exactly three vehicles:
+--   "camry", "camry2013", "fusion2017"
+--
+-- Fix strategy (mirrors migrations 0124, 0129, and 0130):
+--   1. Hard-delete any vehicle row whose vehicle_id is NOT in the canonical set
+--      AND that has no referencing bookings (no FK risk).
+--   2. Soft-delete (set status = 'inactive') any remaining non-canonical rows
+--      that still have booking history and therefore cannot be hard-deleted.
+--
+-- Safe to re-run: both statements are idempotent.
+
+-- Step 1: hard-delete stale rows with no booking history
+DELETE FROM vehicles
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND NOT EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+-- Step 2: soft-delete for rows that still have booking history
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{status}', '"inactive"')
+WHERE vehicle_id NOT IN ('camry', 'camry2013', 'fusion2017')
+  AND EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+
+-- ===========================================================================
+-- 0139_pending_booking_docs_booking_type.sql
+-- ===========================================================================
+-- Migration 0139: Add booking_type column to pending_booking_docs
+--
+-- Purpose: distinguish slingshot agreements from car agreements stored
+-- in the rental-agreements bucket.  The column is informational — the
+-- agreement_pdf_url path already contains the booking_id which is the
+-- canonical lookup key.  This column makes it easy to filter/audit.
+--
+-- Safe to re-run: uses ADD COLUMN IF NOT EXISTS guard.
+
+ALTER TABLE pending_booking_docs
+  ADD COLUMN IF NOT EXISTS booking_type text;
+
+COMMENT ON COLUMN pending_booking_docs.booking_type IS
+  'Type of booking that produced this agreement row: ''car'' or ''slingshot''';
+
+
+-- ===========================================================================
+-- 0140_category_revenue_separation.sql
+-- ===========================================================================
+-- Make category ("car" | "slingshot") the canonical partition key for bookings,
+-- payment rows, and revenue rows so car/slingshot financial reporting cannot mix.
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS category text;
+
+ALTER TABLE revenue_records
+  ADD COLUMN IF NOT EXISTS category text;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payments') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE payments ADD COLUMN IF NOT EXISTS category text';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payment_transactions') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS category text';
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS bookings_category_idx
+  ON bookings (category)
+  WHERE category IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS revenue_records_category_idx
+  ON revenue_records (category)
+  WHERE category IS NOT NULL;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payments') IS NOT NULL THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS payments_category_idx ON payments (category) WHERE category IS NOT NULL';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payment_transactions') IS NOT NULL THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS payment_transactions_category_idx ON payment_transactions (category) WHERE category IS NOT NULL';
+  END IF;
+END $$;
+
+ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_category_check;
+ALTER TABLE bookings
+  ADD CONSTRAINT bookings_category_check
+  CHECK (category IS NULL OR category IN ('car','slingshot'));
+
+ALTER TABLE revenue_records DROP CONSTRAINT IF EXISTS revenue_records_category_check;
+ALTER TABLE revenue_records
+  ADD CONSTRAINT revenue_records_category_check
+  CHECK (category IS NULL OR category IN ('car','slingshot'));
+
+DO $$
+BEGIN
+  IF to_regclass('public.payments') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_category_check';
+    EXECUTE 'ALTER TABLE payments ADD CONSTRAINT payments_category_check CHECK (category IS NULL OR category IN (''car'',''slingshot''))';
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payment_transactions') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE payment_transactions DROP CONSTRAINT IF EXISTS payment_transactions_category_check';
+    EXECUTE 'ALTER TABLE payment_transactions ADD CONSTRAINT payment_transactions_category_check CHECK (category IS NULL OR category IN (''car'',''slingshot''))';
+  END IF;
+END $$;
+
+-- Backfill bookings.category from vehicles.data.category.
+UPDATE bookings b
+SET category = lower(v.data->>'category')
+FROM vehicles v
+WHERE b.category IS NULL
+  AND v.vehicle_id = b.vehicle_id
+  AND lower(v.data->>'category') IN ('car', 'slingshot');
+
+-- Backfill revenue_records.category from linked bookings first.
+UPDATE revenue_records rr
+SET category = b.category
+FROM bookings b
+WHERE rr.category IS NULL
+  AND b.booking_ref IS NOT NULL
+  AND rr.booking_id = b.booking_ref
+  AND b.category IN ('car', 'slingshot');
+
+-- Secondary backfill by vehicle category for remaining revenue rows.
+UPDATE revenue_records rr
+SET category = lower(v.data->>'category')
+FROM vehicles v
+WHERE rr.category IS NULL
+  AND rr.vehicle_id = v.vehicle_id
+  AND lower(v.data->>'category') IN ('car', 'slingshot');
+
+DO $$
+BEGIN
+  IF to_regclass('public.payments') IS NOT NULL THEN
+    EXECUTE $stmt$
+      UPDATE payments p
+      SET category = b.category
+      FROM bookings b
+      WHERE p.category IS NULL
+        AND p.booking_id = b.id
+        AND b.category IN ('car', 'slingshot')
+    $stmt$;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.payment_transactions') IS NOT NULL THEN
+    EXECUTE $stmt$
+      UPDATE payment_transactions pt
+      SET category = b.category
+      FROM bookings b
+      WHERE pt.category IS NULL
+        AND pt.booking_id = b.booking_ref
+        AND b.category IN ('car', 'slingshot')
+    $stmt$;
+  END IF;
+END $$;
+
+
+-- ===========================================================================
 -- 0141_fix_slingshot_vehicle_category.sql
 -- ===========================================================================
 -- Backfill correct category for slingshot vehicles that were saved with
