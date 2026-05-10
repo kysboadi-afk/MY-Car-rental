@@ -445,35 +445,38 @@ test("kpi: returns total_revenue = 0 when GitHub file is empty", async () => {
   assert.equal(res._body.total_revenue, 0, "should return 0 when no records exist");
 });
 
-test("kpi: sums gross_amount for non-cancelled records from GitHub fallback", async () => {
+test("kpi: sums gross_amount only for canonical-included records from GitHub fallback", async () => {
   resetState();
   ghSha = "sha-existing";
   ghRecords = [
-    { id: "r1", booking_id: "bk-1", gross_amount: 300, is_cancelled: false },
-    { id: "r2", booking_id: "bk-2", gross_amount: 150, is_cancelled: false },
-    { id: "r3", booking_id: "bk-3", gross_amount: 200, is_cancelled: true },  // excluded
+    { id: "r1", booking_id: "bk-1", gross_amount: 300, payment_status: "paid", is_cancelled: false, is_no_show: false, is_orphan: false, sync_excluded: false },
+    { id: "r2", booking_id: "bk-2", gross_amount: 150, payment_status: "paid", is_cancelled: false, is_no_show: false, is_orphan: false, sync_excluded: false },
+    { id: "r3", booking_id: "bk-3", gross_amount: 200, payment_status: "paid", is_cancelled: true,  is_no_show: false, is_orphan: false, sync_excluded: false }, // excluded
+    { id: "r4", booking_id: "bk-4", gross_amount: 50,  payment_status: "pending", is_cancelled: false, is_no_show: false, is_orphan: false, sync_excluded: false }, // excluded
+    { id: "r5", booking_id: "bk-5", gross_amount: 25,  payment_status: "paid", is_cancelled: false, is_no_show: true,  is_orphan: false, sync_excluded: false }, // excluded
+    { id: "r6", booking_id: "bk-6", gross_amount: 10,  payment_status: "paid", is_cancelled: false, is_no_show: false, is_orphan: true,  sync_excluded: false }, // excluded
+    { id: "r7", booking_id: "bk-7", gross_amount: 5,   payment_status: "paid", is_cancelled: false, is_no_show: false, is_orphan: false, sync_excluded: true }, // excluded
   ];
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "kpi" }), res);
   assert.equal(res._status, 200);
-  assert.equal(res._body.total_revenue, 450, "should sum only non-cancelled records (300 + 150 = 450)");
+  assert.equal(res._body.total_revenue, 450, "should sum only canonical-included rows (300 + 150 = 450)");
 });
 
-test("kpi: includes sync_excluded records (queries raw table, not effective view)", async () => {
+test("kpi: excludes sync_excluded and orphan records under canonical rules", async () => {
   resetState();
   ghSha = "sha-existing";
   ghRecords = [
-    { id: "r1", booking_id: "bk-1", gross_amount: 200, is_cancelled: false, sync_excluded: false },
-    // sync_excluded=true records are still counted by the SQL view (revenue_records, not _effective)
-    // The GitHub fallback mirrors this: no sync_excluded filter on the kpi path.
-    { id: "r2", booking_id: "bk-2", gross_amount: 100, is_cancelled: false, sync_excluded: true },
+    { id: "r1", booking_id: "bk-1", gross_amount: 200, payment_status: "paid", is_cancelled: false, is_no_show: false, sync_excluded: false, is_orphan: false },
+    { id: "r2", booking_id: "bk-2", gross_amount: 100, payment_status: "paid", is_cancelled: false, is_no_show: false, sync_excluded: true,  is_orphan: false }, // excluded
+    { id: "r3", booking_id: "bk-3", gross_amount: 75,  payment_status: "paid", is_cancelled: false, is_no_show: false, sync_excluded: false, is_orphan: true },  // excluded
   ];
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "kpi" }), res);
   assert.equal(res._status, 200);
-  assert.equal(res._body.total_revenue, 300, "kpi should include sync_excluded records (200 + 100 = 300)");
+  assert.equal(res._body.total_revenue, 200, "kpi should exclude non-canonical rows");
 });
 
 test("auth: rejects wrong secret with 401", async () => {

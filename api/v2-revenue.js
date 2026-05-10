@@ -465,11 +465,12 @@ export default async function handler(req, res) {
       return res.status(201).json({ record: created, booking_id: original_booking_id });
     }
 
-    // ── KPI — total revenue from the ledger view ─────────────────────────────
-    // Returns { total_revenue } from the total_revenue_kpi Supabase view, which
-    // sums gross_amount from revenue_records WHERE is_cancelled = false.  This
-    // is the canonical, ledger-based KPI — independent of payment_intent_id or
-    // any Stripe-specific aggregation.
+    // ── KPI — total revenue from the canonical reporting view ─────────────────
+    // Returns { total_revenue } from the canonical SQL layer:
+    //   revenue_reporting_canonical (row-level) + total_revenue_kpi_canonical (aggregate)
+    // with shared inclusion rules:
+    //   payment_status='paid', sync_excluded=false, is_orphan=false,
+    //   is_cancelled=false, is_no_show=false.
     // When scope='slingshot' or scope='car' is provided, revenue is filtered to
     // only the matching fleet type by querying revenue_records directly.
     if (action === "kpi") {
@@ -498,11 +499,10 @@ export default async function handler(req, res) {
       if (sb) {
         try {
           if (kpiScopedVehicleIds && kpiScopedVehicleIds.length > 0) {
-            // Scoped KPI: query revenue_records directly with vehicle filter.
+            // Scoped KPI: query canonical row-level view with vehicle filter.
             const { data, error } = await sb
-              .from("revenue_records")
+              .from("revenue_reporting_canonical")
               .select("gross_amount")
-              .eq("is_cancelled", false)
               .in("vehicle_id", kpiScopedVehicleIds);
             if (!error) {
               const total = (data || []).reduce((s, r) => s + Number(r.gross_amount || 0), 0);
@@ -512,7 +512,7 @@ export default async function handler(req, res) {
           } else {
             // No scope — use the pre-aggregated view for efficiency.
             const { data, error } = await sb
-              .from("total_revenue_kpi")
+              .from("total_revenue_kpi_canonical")
               .select("total_revenue")
               .single();
             if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
@@ -526,7 +526,11 @@ export default async function handler(req, res) {
       const { data: ghRecords } = await loadRecordsFromGitHub();
       const kpiScopedSet = kpiScopedVehicleIds ? new Set(kpiScopedVehicleIds) : null;
       const total = ghRecords
+        .filter((r) => r.payment_status === "paid")
+        .filter((r) => !r.sync_excluded)
+        .filter((r) => !r.is_orphan)
         .filter((r) => !r.is_cancelled)
+        .filter((r) => !r.is_no_show)
         .filter((r) => !kpiScopedSet || kpiScopedSet.has(r.vehicle_id))
         .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
       return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });

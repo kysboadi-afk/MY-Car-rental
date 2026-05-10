@@ -10,7 +10,7 @@
 //   revenue_trend — { secret, action:"revenue_trend", months? } — monthly revenue (last N months)
 //   bookings_heatmap — { secret, action:"bookings_heatmap", vehicleId? } — day-of-week patterns
 //
-// Financial source of truth: revenue_records_effective (Supabase), identical to
+    // Financial source of truth: revenue_reporting_canonical (Supabase), identical to
 // v2-dashboard.js and the Revenue Tracker page so all surfaces report the same totals.
 // Formula matches normalizeRevenueRecord() in the admin frontend (public/admin-v2/index.html):
 //   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
@@ -150,8 +150,8 @@ export default async function handler(req, res) {
       return true;
     }
 
-    // ── Load revenue_records from Supabase (financial source of truth) ────────
-    // Uses revenue_records_effective with payment_status='paid' — identical to
+    // ── Load canonical revenue rows from Supabase (financial source of truth) ──
+    // Uses revenue_reporting_canonical — identical to
     // v2-dashboard.js and the Revenue Tracker page — so all three surfaces report
     // the same totals.  sync_excluded rows are excluded by the view definition.
     // is_cancelled and is_no_show rows are skipped in the aggregation loop below.
@@ -174,7 +174,7 @@ export default async function handler(req, res) {
     if (sb && !scope) {
       try {
         const { data: kpiRow, error: kpiErr } = await sb
-          .from("total_revenue_kpi")
+          .from("total_revenue_kpi_canonical")
           .select("total_revenue")
           .single();
         if (!kpiErr && kpiRow != null) {
@@ -205,29 +205,11 @@ export default async function handler(req, res) {
       }
     }
 
-    if (scope) {
-      let scopedTotal = 0;
-      if (financialsFromRevRecords) {
-        for (const [vid, vr] of Object.entries(rrByVehicle)) {
-          if (!inScope(vid)) continue;
-          scopedTotal += Number(vr.gross || 0);
-        }
-      } else {
-        for (const b of allBookings) {
-          if (!paidStatuses.has(b.status)) continue;
-          if (!inScope(b.vehicleId)) continue;
-          scopedTotal += bookingRevenue(b);
-        }
-      }
-      kpiTotalRevenue = Math.round(scopedTotal * 100) / 100;
-    }
-
     if (sb) {
       try {
         const rrResult = await sb
-          .from("revenue_records_effective")
-          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
-          .eq("payment_status", "paid");
+          .from("revenue_reporting_canonical")
+          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, refund_amount");
 
         const { data: rrRows, error: rrErr } = rrResult;
 
@@ -236,7 +218,6 @@ export default async function handler(req, res) {
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
-            if (r.is_cancelled || r.is_no_show) continue;
             const vid    = uiVehicleId(r.vehicle_id) || "unknown";
             const gross  = Number(r.gross_amount  || 0);
             const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
@@ -257,6 +238,23 @@ export default async function handler(req, res) {
       } catch (rrEx) {
         console.warn("v2-analytics: revenue_records unavailable, falling back to bookings.json:", rrEx.message);
       }
+    }
+
+    if (scope) {
+      let scopedTotal = 0;
+      if (financialsFromRevRecords) {
+        for (const [vid, vr] of Object.entries(rrByVehicle)) {
+          if (!inScope(vid)) continue;
+          scopedTotal += Number(vr.gross || 0);
+        }
+      } else {
+        for (const b of allBookings) {
+          if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
+          scopedTotal += bookingRevenue(b);
+        }
+      }
+      kpiTotalRevenue = Math.round(scopedTotal * 100) / 100;
     }
 
     // ── Booking counts from bookings table (source of truth for counts) ──────
