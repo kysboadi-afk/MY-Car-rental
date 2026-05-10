@@ -61,6 +61,7 @@ const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
 const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
+const DEFAULT_ATTACHMENT_PRIORITY = 100;
 // Pre-parsed default return time used when a booking has no return_time set.
 const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 
@@ -124,7 +125,7 @@ function estimateAttachmentBytes(att) {
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
   const ordered = (Array.isArray(candidates) ? candidates : [])
-    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : 100 }))
+    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : DEFAULT_ATTACHMENT_PRIORITY }))
     .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];

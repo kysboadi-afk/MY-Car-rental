@@ -39,6 +39,7 @@ export const config = {
 const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
+const DEFAULT_ATTACHMENT_PRIORITY = 100;
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -165,7 +166,7 @@ function estimateAttachmentBytes(att) {
 
 function selectOwnerEmailAttachments(candidates, maxBytes) {
   const ordered = (Array.isArray(candidates) ? candidates : [])
-    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : 100 }))
+    .map((c, idx) => ({ ...c, _idx: idx, _priority: Number.isFinite(Number(c?.priority)) ? Number(c.priority) : DEFAULT_ATTACHMENT_PRIORITY }))
     .sort((a, b) => (a._priority - b._priority) || (a._idx - b._idx));
   const attachments = [];
   const omitted = [];
