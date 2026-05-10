@@ -4986,17 +4986,12 @@ function applyBookingFilters() {
           <button
             type="button"
             class="btn btn-secondary btn-sm"
-            data-booking-action="view"
-            data-booking-id="${esc(actionBookingId)}"
-            data-vehicle-id="${esc(b.vehicleId || '')}"
-            onclick="return handleBookingActionClick(this)"
+            onclick="viewBooking('${esc(actionBookingId)}','${esc(b.vehicleId || '')}')"
           >View</button>
           <button
             type="button"
             class="btn btn-secondary btn-sm"
-            data-booking-action="edit"
-            data-booking-id="${esc(actionBookingId)}"
-            onclick="return handleBookingActionClick(this)"
+            onclick="openEditBookingModal('${esc(actionBookingId)}')"
           >✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this)">Approve</button>
@@ -5067,12 +5062,7 @@ function findBookingByIdForActions(bookingId) {
   return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
-let _viewBookingLock = false;
-
 function viewBooking(bookingId, vehicleId) {
-  if (_viewBookingLock) return;
-  _viewBookingLock = true;
-  setTimeout(() => { _viewBookingLock = false; }, 300);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('viewBooking', ctx, { vehicleId: vehicleId || null });
   let b = ctx.resolvedBooking;
@@ -5243,12 +5233,7 @@ function viewBooking(bookingId, vehicleId) {
   openModal('booking-detail-modal');
 }
 
-let _editBookingLock = false;
-
 function openEditBookingModal(bookingId) {
-  if (_editBookingLock) return;
-  _editBookingLock = true;
-  setTimeout(() => { _editBookingLock = false; }, 300);
   const ctx = resolveBookingForActions(bookingId, null);
   logBookingActionAudit('openEditBookingModal', ctx);
   const b = ctx.resolvedBooking;
@@ -5316,7 +5301,8 @@ if (bookingsTbodyEl) {
 async function saveEditBooking(btn) {
   const modal     = document.getElementById('booking-edit-modal');
   const bookingId = modal.dataset.bookingId;
-  const vehicleId = modal.dataset.vehicleId;
+  // Fall back to the currently selected vehicle if the stored vehicleId is missing
+  const vehicleId = modal.dataset.vehicleId || document.getElementById('be-vehicle')?.value;
   if (!bookingId || !vehicleId) { showToast('Unable to identify booking.', 'error'); return; }
 
   const b = findBookingByIdForActions(bookingId);
