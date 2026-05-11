@@ -5204,6 +5204,11 @@ function viewBooking(bookingId, vehicleId) {
         </div>
       </div>
     </div>
+    <!-- ID Documents panel — loaded async so it never blocks the modal opening -->
+    <div id="bd-id-docs-panel" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">🪪 ID Documents</div>
+      <div id="bd-id-docs-status" style="font-size:12px;color:var(--text-sub);">Loading…</div>
+    </div>
   `;
   document.getElementById('booking-detail-actions').innerHTML = `
     ${b.status === 'reserved_unpaid' ? `
@@ -5241,6 +5246,115 @@ function viewBooking(bookingId, vehicleId) {
     return;
   }
   openModal('booking-detail-modal');
+  // Load ID docs async so the modal opens immediately without waiting.
+  loadBookingIdDocs(b.dbId || actionBookingId);
+}
+
+// ── Booking ID Document helpers ────────────────────────────────────────────
+
+async function loadBookingIdDocs(bookingDbId) {
+  const panel = document.getElementById('bd-id-docs-status');
+  if (!panel) return;
+  if (!bookingDbId) {
+    panel.innerHTML = '<span style="color:var(--text-sub);">ID document upload unavailable (booking has no database ID).</span>';
+    return;
+  }
+  try {
+    const data = await apiPost('/api/booking-documents', { secret: adminSecret, action: 'list', bookingId: bookingDbId });
+    const idDocs = (data.docs || []).filter((d) => d.type === 'id_copy');
+    const count  = idDocs.length;
+    const needed = Math.max(0, 2 - count);
+
+    let html = '';
+    if (count >= 2) {
+      html += `<div style="color:var(--success);font-size:13px;margin-bottom:8px;">✅ ${count} ID image${count !== 1 ? 's' : ''} on file — complete.</div>`;
+    } else if (count === 1) {
+      html += `<div style="color:var(--warning);font-size:13px;margin-bottom:8px;">⚠️ 1 of 2 ID images uploaded — ${needed} more needed.</div>`;
+    } else {
+      html += `<div style="color:var(--danger);font-size:13px;margin-bottom:8px;">❌ No ID images on file — front &amp; back required.</div>`;
+    }
+
+    if (count > 0) {
+      html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">`;
+      idDocs.forEach((d, i) => {
+        html += `<a href="${esc(d.file_url)}" target="_blank" rel="noopener noreferrer"
+          style="font-size:11px;padding:3px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--primary);text-decoration:none;">
+          🖼 ID ${i + 1}${d.file_name ? ' — ' + esc(d.file_name) : ''}
+        </a>`;
+      });
+      html += `</div>`;
+    }
+
+    if (needed > 0) {
+      html += `<div style="margin-top:6px;">
+        <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">
+          Upload ID image (front or back — JPEG / PNG / WebP / PDF, max 15 MB)
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="file" id="bd-id-upload-input" accept="image/jpeg,image/png,image/webp,application/pdf"
+            style="font-size:12px;flex:1;min-width:0;">
+          <button class="btn btn-primary btn-sm" id="bd-id-upload-btn"
+            onclick="adminUploadIdDoc('${esc(bookingDbId)}', this)">
+            ⬆ Upload
+          </button>
+        </div>
+        <div id="bd-id-upload-msg" style="font-size:11px;margin-top:4px;color:var(--text-sub);"></div>
+      </div>`;
+    }
+
+    panel.innerHTML = html;
+  } catch (err) {
+    panel.innerHTML = `<span style="color:var(--danger);font-size:12px;">Could not load ID docs: ${esc(err.message)}</span>`;
+  }
+}
+
+async function adminUploadIdDoc(bookingDbId, btn) {
+  const input  = document.getElementById('bd-id-upload-input');
+  const msgEl  = document.getElementById('bd-id-upload-msg');
+  const file   = input && input.files && input.files[0];
+  if (!file) { if (msgEl) msgEl.textContent = 'Please select a file first.'; return; }
+
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    if (msgEl) msgEl.textContent = 'Only JPEG, PNG, WebP, or PDF files are accepted.';
+    return;
+  }
+  const MAX_BYTES = 15 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    if (msgEl) msgEl.textContent = 'File exceeds 15 MB limit.';
+    return;
+  }
+
+  if (btn)  { btn.disabled = true; btn.textContent = 'Uploading…'; }
+  if (msgEl) msgEl.textContent = '';
+
+  try {
+    const fileData = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('Could not read file.'));
+      reader.readAsDataURL(file);
+    });
+
+    const result = await apiPost('/api/booking-documents', {
+      secret:    adminSecret,
+      action:    'add',
+      bookingId: bookingDbId,
+      docType:   'id_copy',
+      fileData,
+      mimeType:  file.type,
+      fileName:  file.name,
+    });
+
+    if (!result.success) throw new Error(result.error || 'Upload failed.');
+    showToast('ID document uploaded.', 'success');
+    // Reload the panel to reflect the new doc and prompt for the next if needed.
+    loadBookingIdDocs(bookingDbId);
+  } catch (err) {
+    showToast('Upload failed: ' + err.message, 'error');
+    if (btn)  { btn.disabled = false; btn.textContent = '⬆ Upload'; }
+    if (msgEl) msgEl.textContent = err.message;
+  }
 }
 
 function openEditBookingModal(bookingId) {
