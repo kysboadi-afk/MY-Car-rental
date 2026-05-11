@@ -54,7 +54,8 @@
     "api/scheduled-reminders.js":            { "maxDuration": 60 },
     "api/tickets.js":                         { "maxDuration": 20 },
     "api/upload-customer-doc.js":             { "maxDuration": 20 },
-    "api/booking-documents.js":               { "maxDuration": 30 }
+    "api/booking-documents.js":               { "maxDuration": 30 },
+    "api/send-application-email.js":          { "maxDuration": 60 }
   },
   "crons": [
     {

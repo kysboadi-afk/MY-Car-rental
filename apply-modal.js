@@ -10,6 +10,9 @@
 
   const API_BASE   = "https://sly-rides.vercel.app";
   const STORAGE_KEY = "slyApplicant";
+  // Vercel's request body limit is 4.5 MB. Base64 encoding adds ~33% overhead,
+  // so we cap each raw file at 3 MB to leave room for both files + JSON envelope.
+  const MAX_FILE_BYTES = 3 * 1024 * 1024; // 3 MB
 
   const overlay    = document.getElementById("applyModal");
   const closeBtn   = document.getElementById("applyModalClose");
@@ -86,6 +89,13 @@
       return;
     }
 
+    if (file.size > MAX_FILE_BYTES) {
+      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File is too large. Please upload an image under 3 MB.");
+      licenseInfo.style.color = "#f44336";
+      this.value = "";
+      return;
+    }
+
     licenseFile = file;
     licenseInfo.textContent = "\u2713 " + file.name;
     licenseInfo.style.color = "#4caf50";
@@ -145,6 +155,11 @@
       const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
       if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
         if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted."); insFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        return;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File is too large. Please upload an image under 3 MB."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
       }
