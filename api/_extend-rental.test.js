@@ -553,6 +553,39 @@ test("extend-rental: PaymentIntent is created with type=rental_extension metadat
   assert.ok(meta.booking_id,               "metadata.booking_id must be set");
   assert.ok(meta.vehicle_id,               "metadata.vehicle_id must be set");
   assert.ok(meta.new_return_date,          "metadata.new_return_date must be set");
+  assert.equal(meta.original_pickup_date, "2026-04-15", "metadata.original_pickup_date must be set from active booking");
+  assert.equal(meta.original_pickup_time, "10:00 AM", "metadata.original_pickup_time must be set from active booking");
+  assert.equal(meta.original_return_date, "2026-04-30", "metadata.original_return_date must capture pre-extension return date");
+  assert.equal(meta.previous_return_date, "2026-04-30", "metadata.previous_return_date must capture pre-extension return date");
+});
+
+test("extend-rental: metadata original pickup fields are enriched from Supabase when bookings.json is missing them", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking({ pickupDate: "", pickupTime: "" });
+  mockBookings = { camry: [active] };
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref: "bk-camry-active-001",
+      pickup_date: "2026-04-15",
+      pickup_time: "10:00:00",
+      return_date: "2026-04-30",
+      return_time: "17:00:00",
+      status:      "active_rental",
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200, "handler must return 200");
+  const meta = capturedStripeParams?.metadata;
+  assert.ok(meta, "metadata must be present");
+  assert.equal(meta.original_pickup_date, "2026-04-15", "metadata.original_pickup_date must be enriched from Supabase");
+  assert.equal(meta.original_pickup_time, "10:00 AM", "metadata.original_pickup_time must be enriched from Supabase");
 });
 
 test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over bookingId", async () => {

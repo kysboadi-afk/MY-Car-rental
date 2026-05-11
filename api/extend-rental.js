@@ -116,7 +116,7 @@ export default async function handler(req, res) {
           if (bookingRef) {
             const { data: sbRow } = await sb
               .from("bookings")
-              .select("booking_ref, return_date, return_time, status, late_fee_waived_amount, late_fee_status, late_fee_amount")
+              .select("booking_ref, pickup_date, pickup_time, return_date, return_time, status, late_fee_waived_amount, late_fee_status, late_fee_amount")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
             if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
@@ -134,6 +134,12 @@ export default async function handler(req, res) {
               // Supabase stores time as "HH:MM:SS"; normalise to "HH:MM" for parseDateTimeMs.
               if (sbRow.return_time && !activeBooking.returnTime) {
                 sbReturnTime = String(sbRow.return_time).substring(0, 5);
+              }
+              if (sbRow.pickup_date && !activeBooking.pickupDate) {
+                activeBooking.pickupDate = String(sbRow.pickup_date).split("T")[0];
+              }
+              if (sbRow.pickup_time && !activeBooking.pickupTime) {
+                activeBooking.pickupTime = formatTime12h(String(sbRow.pickup_time).substring(0, 5));
               }
               // Apply admin-granted late-fee waiver if present.
               if (sbRow.late_fee_waived_amount) {
@@ -153,7 +159,7 @@ export default async function handler(req, res) {
           // directly, matching by vehicle_id + email or phone + active status.
           const { data: sbActive } = await sb
             .from("bookings")
-            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount, late_fee_status, late_fee_amount")
+            .select("booking_ref, pickup_date, pickup_time, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount, late_fee_status, late_fee_amount")
             .eq("vehicle_id", vehicleId)
             .in("status", ["active", "active_rental", "overdue"]);
 
@@ -185,9 +191,10 @@ export default async function handler(req, res) {
                     name:             row.customer_name  || "",
                     email:            row.customer_email || "",
                     phone:            row.customer_phone || "",
+                    pickupDate:       row.pickup_date ? String(row.pickup_date).split("T")[0] : "",
+                    pickupTime:       row.pickup_time ? formatTime12h(String(row.pickup_time).substring(0, 5)) : "",
                     returnDate:       row.return_date ? String(row.return_date).split("T")[0] : "",
                     returnTime:       row.return_time ? String(row.return_time).substring(0, 5) : "",
-                    pickupDate:       "",
                     status:           "active_rental",
                   };
                 }
@@ -586,6 +593,9 @@ export default async function handler(req, res) {
         extension_label:       extensionLabel,
         new_return_date:       newReturnDate,
         new_return_time:       formatTime12h(resolvedReturnTime) || "",
+        original_pickup_date:  activeBooking.pickupDate || "",
+        original_pickup_time:  activeBooking.pickupTime || "",
+        original_return_date:  effectiveReturnDate || "",
         // Return date in effect before this extension — used by the webhook to set
         // the correct pickup_date on the extension revenue record (extension start).
         previous_return_date:  effectiveReturnDate || "",
