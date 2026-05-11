@@ -92,6 +92,9 @@ export default async function handler(req, res) {
       renter_email,
       extension_label,
       new_return_date,
+      previous_return_date,
+      original_pickup_date,
+      original_pickup_time,
     } = meta;
 
     // Use canonical booking_id; fall back to original_booking_id for historical PIs.
@@ -146,8 +149,8 @@ export default async function handler(req, res) {
         try {
           const syntheticBooking = {
             phone:      "",
-            pickupDate: "",
-            pickupTime: "",
+            pickupDate: original_pickup_date || "",
+            pickupTime: original_pickup_time || "",
             returnDate: "",
           };
           await sendExtensionConfirmationEmails({
@@ -159,7 +162,7 @@ export default async function handler(req, res) {
             vehicleId:          vehicle_id,
             renterEmail:        renter_email,
             renterName:         renter_name || "",
-            originalReturnDate: "",
+            originalReturnDate: previous_return_date || "",
             extensionCount:     1,
           });
         } catch (emailErr) {

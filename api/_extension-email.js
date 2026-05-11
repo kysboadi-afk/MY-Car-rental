@@ -252,6 +252,9 @@ export async function sendExtensionConfirmationEmails({
 
   const newReturnDisplay = updatedReturnDate +
     (updatedReturnTime ? ` at ${updatedReturnTime}` : "");
+  const pickupDateForPdf = (booking && booking.pickupDate) || paymentMeta.original_pickup_date || paymentMeta.pickup_date || "";
+  const pickupTimeForPdf = (booking && booking.pickupTime) || paymentMeta.original_pickup_time || paymentMeta.pickup_time || "";
+  const originalReturnDateForPdf = originalReturnDate || paymentMeta.original_return_date || paymentMeta.previous_return_date || "";
 
   // ── Generate updated rental agreement PDF ──────────────────────────────────
   let pdfBuffer = null;
@@ -262,9 +265,9 @@ export async function sendExtensionConfirmationEmails({
       renterName,
       renterEmail,
       renterPhone:        (booking && booking.phone) || "",
-      pickupDate:         (booking && booking.pickupDate) || "",
-      pickupTime:         (booking && booking.pickupTime) || "",
-      originalReturnDate: originalReturnDate || "",
+      pickupDate:         pickupDateForPdf,
+      pickupTime:         pickupTimeForPdf,
+      originalReturnDate: originalReturnDateForPdf,
       newReturnDate:      updatedReturnDate,
       newReturnTime:      updatedReturnTime,
       extensionLabel,
