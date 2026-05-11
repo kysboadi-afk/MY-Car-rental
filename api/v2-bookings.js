@@ -318,6 +318,7 @@ export default async function handler(req, res) {
             const cust = r.customers || {};
             return {
               bookingId:       bookingRef,
+              dbId:            r.id,
               vehicleId:       uiVehicleId(r.vehicle_id),
               vehicleName:     VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
               name:            cust.name  || rr?.customer_name  || "",
