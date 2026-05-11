@@ -276,6 +276,16 @@ body {
   transform: scale(1.04);
 }
 
+#applyNowBtn.hero-btn {
+  background: #ff3b30;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(255, 59, 48, 0.45);
+}
+
+#applyNowBtn.hero-btn:hover {
+  background: #e12d23;
+}
+
 .hero-btn--secondary {
   background: transparent;
   color: #ffb400;
