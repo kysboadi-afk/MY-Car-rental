@@ -253,7 +253,7 @@ export default async function handler(req, res) {
         `Email             : ${email || "Not provided"}`,
         `Age               : ${age ?? "Not provided"}`,
         `Driving Experience: ${experience}`,
-        `Delivery Apps     : ${appsLabel}`,
+        `Delivery & Rideshare Platforms: ${appsLabel}`,
         `Has Insurance     : ${insuranceLabel}`,
         `Insurance Proof   : ${hasInsuranceProof ? insuranceFileName : "Not uploaded"}`,
         `Protection Plan   : ${planLabel}`,
@@ -269,7 +269,7 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Age</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(age ?? "Not provided"))}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driving Experience</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(experience)}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Delivery Apps</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(appsLabel)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Delivery &amp; Rideshare Platforms</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(appsLabel)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Has Insurance</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(insuranceLabel)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Proof</strong></td><td style="padding:8px;border:1px solid #ddd">${hasInsuranceProof ? `<em>See attached: ${esc(insuranceFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(planLabel)}</td></tr>
