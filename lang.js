@@ -63,7 +63,7 @@
         labelLicense:"Driver\u2019s License",
         labelAge:    "Age",
         labelExp:    "Driving Experience",
-        labelApps:   "Delivery App(s)",
+        labelApps:   "Delivery & Rideshare Platforms",
         placeholderName:  "First and last name",
         placeholderPhone: "(213) 555-0100",
         placeholderEmail: "you@example.com",
