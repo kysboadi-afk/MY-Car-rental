@@ -94,6 +94,7 @@ mock.module("./_supabase.js", {
 // so pricing arithmetic is exercised (same pattern as _availability.js above).
 mock.module("./_pricing.js", {
   namedExports: {
+    LATE_FEE_BASE: 25,
     getVehiclePricing: async (_sb, _id) => ({
       daily_price:    55,
       weekly_price:   300,
@@ -621,10 +622,10 @@ test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over booking
 
 // ── Waiver tests ──────────────────────────────────────────────────────────────
 
-test("extend-rental: full waiver (late_fee_waived_amount = SHORT_LATE_FEE) removes late fee from total", async () => {
-  // Simulate a booking that is past the grace period (+30 min) but within the
-  // reset window (+3 h).  Without a waiver, SHORT_LATE_FEE ($25) would be added.
-  // With a full waiver (waived_amount = SHORT_LATE_FEE) the late fee must be $0.
+test("extend-rental: full waiver (late_fee_waived_amount = $25 + daily rate) removes late fee from total", async () => {
+  // Simulate a booking that is past the 3-hour reset window.
+  // Without a waiver, EXTENDED_LATE_FEE ($25 + vehicle daily rate = $80) would be added.
+  // With a full waiver (waived_amount = $25 + daily rate) the late fee must be $0.
   capturedStripeParams = null;
   const active = makeActiveBooking({
     returnDate: "2026-04-30",
@@ -638,7 +639,7 @@ test("extend-rental: full waiver (late_fee_waived_amount = SHORT_LATE_FEE) remov
       return_date:             "2026-04-30",
       return_time:             "17:00:00",
       status:                  "active_rental",
-      late_fee_waived_amount:  25,  // full waiver for SHORT_LATE_FEE
+      late_fee_waived_amount:  80,  // full waiver for escalated late fee ($25 + $55)
     }],
   });
 
@@ -650,11 +651,10 @@ test("extend-rental: full waiver (late_fee_waived_amount = SHORT_LATE_FEE) remov
   }), res);
 
   assert.equal(res._status, 200, "handler must succeed");
-  assert.equal(res._body.lateFeeWaived, 25, "lateFeeWaived must be 25");
-  // lateFeeIncluded after waiver is applied: 0 if grace period not active,
-  // or (fee - waiver) floored at 0.  In either case lateFeeIncluded <= 0.
-  assert.ok(res._body.lateFeeIncluded <= 25,
-    "lateFeeIncluded must be reduced by the waiver (0 when waiver covers the full fee)");
+  assert.equal(res._body.lateFeeWaived, 80, "lateFeeWaived must be 80");
+  // lateFeeIncluded after full waiver is applied: 0.
+  assert.equal(res._body.lateFeeIncluded, 0,
+    "lateFeeIncluded must be 0 when the full escalated-fee waiver covers the fee");
 });
 
 test("extend-rental: partial waiver reduces late fee proportionally", async () => {

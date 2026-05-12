@@ -292,12 +292,13 @@ export const EXTEND_PAYMENT_PENDING =
  * Variables: customer_name, return_time, extend_link
  */
 export const PRE_RETURN_LATE_FEE_WARNING =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
   "Your rental is due at {return_time}.\n\n" +
   "Please return or extend your booking on time to avoid additional charges.\n\n" +
   "Late fees:\n" +
   "\u2022 After 30 minutes: +$25\n" +
-  "\u2022 After 3 hours: higher late fee applies\n\n" +
+  "\u2022 After 3 hours: +$25 plus 1 full day\u2019s rental rate\n\n" +
   "Extend here:\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
@@ -309,23 +310,25 @@ export const PRE_RETURN_LATE_FEE_WARNING =
  * Variables: customer_name, extend_link
  */
 export const LATE_GRACE_STARTED =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
   "Your rental is now past the grace period.\n\n" +
   "A $25 late fee now applies.\n\n" +
-  "Extend or return your vehicle now to avoid higher charges.\n\n" +
+  "Extend or return your vehicle now to avoid the 3-hour escalation ($25 + 1 full day rental).\n\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
   "Reply STOP to opt out.";
 
 /**
  * Sent after the 3-hour escalation window.
- * Informs the renter that the higher ($35) late fee now applies.
+ * Informs the renter that the late fee has escalated to "$25 + 1 full day's rental rate".
  * Variables: customer_name, extend_link
  */
 export const LATE_ESCALATION =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
-  "Your rental has exceeded the late window.\n\n" +
-  "A higher late fee now applies.\n\n" +
+  "Your rental has exceeded the 3-hour late window.\n\n" +
+  "A late fee equal to $25 plus 1 full day\u2019s rental now applies.\n\n" +
   "Please extend or return immediately to avoid further charges.\n\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +

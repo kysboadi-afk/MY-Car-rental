@@ -19,6 +19,14 @@ export const CARS = {
   fusion2017: { name: "Ford Fusion 2017", pricePerDay: 60,  weekly: 400, biweekly: 800,  monthly: 1500, deposit: 0 },
 };
 
+// Late-fee pricing primitives shared across extension/reminder/admin endpoints.
+// Escalated late fee formula: LATE_FEE_BASE + vehicle daily rate.
+export const LATE_FEE_BASE = 25;
+// Prefer Camry's configured daily rate as the canonical fallback, then Camry 2013,
+// then 55 as a final safety net.
+export const DEFAULT_VEHICLE_DAILY_RATE =
+  Number(CARS.camry?.pricePerDay ?? CARS.camry2013?.pricePerDay ?? 55);
+
 // Canonical vehicle IDs derived from the CARS registry above.
 // Adding a new vehicle to CARS automatically adds it here, which propagates to
 // every endpoint that validates or iterates over the fleet — no manual list updates needed.
