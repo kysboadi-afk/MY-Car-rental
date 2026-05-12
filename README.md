@@ -133,6 +133,14 @@ See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
 
 For Stripe webhook ownership, signing-secret setup, replay, and reconciliation, start at **[VERCEL_SETUP.md → Step 2b](VERCEL_SETUP.md#step-2b--set-the-canonical-stripe-webhook-endpoint-and-signing-secret)**.
 
+## ⚠️ Apply flow hardening note (current behavior)
+
+`/api/send-application-email` treats **owner notification email delivery** as request-critical:
+- if owner email send fails, the endpoint returns `500`
+- applicant email and SMS failures are non-fatal and are logged
+
+This is intentional for now and should be revisited in a future hardening phase (queue/retry/fallback alerting).
+
 ## ✅ All Updates Deployed
 
 All pull requests have been merged to `main`. The site deploys automatically from `main` via GitHub Actions on every push.

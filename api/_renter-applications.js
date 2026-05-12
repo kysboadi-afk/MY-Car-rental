@@ -22,6 +22,16 @@ function cleanApps(value) {
     .slice(0, 30);
 }
 
+const APPLICATION_STATUSES = ["submitted", "under_review", "approved", "rejected", "withdrawn", "expired"];
+const IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "verified", "failed", "canceled"];
+
+function cleanIsoDateTime(value) {
+  if (value == null || value === "") return null;
+  const d = new Date(String(value));
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export function mapApplicationRecord(payload = {}) {
   const hasInsurance = cleanText(payload.hasInsurance, 10);
   const protectionPlanPref = cleanText(payload.protectionPlanPref, 20);
@@ -47,10 +57,10 @@ export function mapApplicationRecord(payload = {}) {
     has_license_upload: !!(payload.licenseBase64 && payload.licenseFileName && payload.licenseMimeType),
     has_insurance_proof: !!(payload.insuranceBase64 && payload.insuranceFileName && payload.insuranceMimeType),
     precheck_decision: ["approved", "review", "declined"].includes(normalizedPrecheck) ? normalizedPrecheck : null,
-    application_status: ["submitted", "under_review", "approved", "rejected", "withdrawn", "expired"].includes(applicationStatus)
+    application_status: APPLICATION_STATUSES.includes(applicationStatus)
       ? applicationStatus
       : "submitted",
-    identity_status: ["not_started", "requires_input", "processing", "verified", "failed", "canceled"].includes(identityStatus)
+    identity_status: IDENTITY_STATUSES.includes(identityStatus)
       ? identityStatus
       : "not_started",
   };
@@ -148,6 +158,57 @@ export async function fetchRenterApplicationById(applicationId, sbClient = null)
   }
   if (!data) {
     return { ok: false, status: 404, error: "Application not found." };
+  }
+
+  return { ok: true, data };
+}
+
+export async function patchRenterApplicationIdentityById(applicationId, patchPayload = {}, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const id = cleanText(applicationId, 100);
+  if (!id) return { ok: false, status: 400, error: "applicationId is required." };
+
+  const requestedIdentityStatus = cleanText(patchPayload.identityStatus, 30);
+  const requestedApplicationStatus = cleanText(patchPayload.applicationStatus, 30);
+
+  const identityStatus = IDENTITY_STATUSES.includes(requestedIdentityStatus)
+    ? requestedIdentityStatus
+    : null;
+  const applicationStatus = APPLICATION_STATUSES.includes(requestedApplicationStatus)
+    ? requestedApplicationStatus
+    : null;
+
+  const identityVerifiedAt = cleanIsoDateTime(patchPayload.identityVerifiedAt);
+  const reviewedAt = cleanIsoDateTime(patchPayload.reviewedAt);
+
+  const patch = {};
+  if (identityStatus) patch.identity_status = identityStatus;
+  if (applicationStatus) patch.application_status = applicationStatus;
+  if ("identityLastError" in patchPayload) patch.identity_last_error = cleanText(patchPayload.identityLastError, 2000);
+  if ("identitySessionId" in patchPayload) patch.identity_session_id = cleanText(patchPayload.identitySessionId, 255);
+  if (identityStatus === "verified") {
+    patch.identity_verified_at = identityVerifiedAt || new Date().toISOString();
+  } else if ("identityVerifiedAt" in patchPayload || (identityStatus && identityStatus !== "verified")) {
+    patch.identity_verified_at = null;
+  }
+  if ("reviewedBy" in patchPayload) patch.reviewed_by = cleanText(patchPayload.reviewedBy, 200);
+  if (reviewedAt) patch.reviewed_at = reviewedAt;
+
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, status: 400, error: "No valid identity patch fields were provided." };
+  }
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not update application.", details: error.message };
   }
 
   return { ok: true, data };
