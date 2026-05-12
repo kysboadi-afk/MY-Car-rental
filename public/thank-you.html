@@ -174,7 +174,7 @@
   <script src="https://js.stripe.com/v3/"></script>
   <script>
     (function () {
-      var API_BASE = "https://sly-rides.vercel.app";
+      var API_BASE = window.API_BASE || window.SLY_API_BASE || "https://sly-rides.vercel.app";
       var params = new URLSearchParams(window.location.search);
       var fromParam = params.get("from");
       var fillBtn = document.getElementById("fillAgainBtn");
@@ -218,14 +218,13 @@
       }
 
       function getSnapshot() {
-        var stored = readStored();
+        var stored = readStored() || {};
         stored.applicationId = resolveApplicationId(stored) || null;
         return stored;
       }
 
       function syncLifecycle(snapshot, result) {
-        return {
-          ...snapshot,
+        return Object.assign({}, snapshot, {
           applicationId: result.applicationId || snapshot.applicationId || null,
           applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
           identityStatus: result.identityStatus || snapshot.identityStatus || "not_started",
@@ -236,7 +235,7 @@
           email: result.email || snapshot.email,
           hasInsurance: result.hasInsurance || snapshot.hasInsurance,
           protectionPlanPref: result.protectionPlanPref || snapshot.protectionPlanPref,
-        };
+        });
       }
 
       function isApproved(snapshot) {

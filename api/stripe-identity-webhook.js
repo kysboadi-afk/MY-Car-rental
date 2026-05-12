@@ -67,13 +67,11 @@ function mapIdentityUpdate(session = {}) {
   return null;
 }
 
-function computeNotificationKind(current = {}, nextPatch = {}) {
+function determineNotificationTypeOnTransition(current = {}, nextPatch = {}) {
   const currentIdentity = String(current.identity_status || "");
-  const currentApplication = String(current.application_status || "");
   const nextIdentity = String(nextPatch.identityStatus || "");
-  const nextApplication = String(nextPatch.applicationStatus || "");
 
-  if (nextIdentity === "verified" && (currentIdentity !== "verified" || currentApplication !== nextApplication)) {
+  if (nextIdentity === "verified" && currentIdentity !== "verified") {
     return "verified";
   }
   if (nextIdentity === "requires_input" && currentIdentity !== "requires_input") {
@@ -93,6 +91,9 @@ function isStaleIdentityUpdate(current = {}, nextPatch = {}) {
   const currentApplication = String(current.application_status || "");
   const nextIdentity = String(nextPatch.identityStatus || "");
 
+  // Once identity is verified we should not regress to a non-verified state, and
+  // once operations has already approved/rejected an application we should ignore
+  // later non-verified webhook states so retries do not reopen the review flow.
   if (!nextIdentity) return false;
   if (currentIdentity === "verified" && nextIdentity !== "verified") return true;
   if (["approved", "rejected"].includes(currentApplication) && nextIdentity !== "verified") return true;
@@ -199,7 +200,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, ignored: true, stale: true });
     }
 
-    const notificationKind = computeNotificationKind(current.data || {}, identityPatch);
+    const notificationKind = determineNotificationTypeOnTransition(current.data || {}, identityPatch);
 
     if (identityPatch.applicationStatus === "under_review") {
       const existingStatus = current.data?.application_status;

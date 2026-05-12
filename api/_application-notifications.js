@@ -22,7 +22,7 @@ function esc(str) {
     .replace(/'/g, "&#39;");
 }
 
-function get(application, camelKey, snakeKey, fallback = null) {
+function resolveFieldAcrossConventions(application, camelKey, snakeKey, fallback = null) {
   if (application && application[camelKey] != null) return application[camelKey];
   if (application && application[snakeKey] != null) return application[snakeKey];
   return fallback;
@@ -52,23 +52,28 @@ function getTransporter() {
 }
 
 function getContext(application = {}) {
-  const name = get(application, "name", "name", "");
-  const phone = get(application, "phone", "phone", "");
-  const email = get(application, "email", "email", "");
-  const age = get(application, "age", "age");
-  const experience = get(application, "experience", "experience", "");
-  const apps = get(application, "apps", "apps", []);
-  const hasInsurance = get(application, "hasInsurance", "has_insurance");
-  const protectionPlanPref = get(application, "protectionPlanPref", "protection_plan_pref");
-  const licenseFileName = get(application, "licenseFileName", "license_file_name");
-  const insuranceFileName = get(application, "insuranceFileName", "insurance_file_name");
-  const agreeTerms = !!get(application, "agreeTerms", "agree_terms");
-  const precheckDecision = get(application, "precheckDecision", "precheck_decision", get(application, "decision", "decision"));
-  const applicationStatus = get(application, "applicationStatus", "application_status");
-  const identityStatus = get(application, "identityStatus", "identity_status");
-  const applicationId = get(application, "applicationId", "id");
-  const hasLicenseUpload = !!get(application, "hasLicenseUpload", "has_license_upload", licenseFileName);
-  const hasInsuranceProof = !!get(application, "hasInsuranceProof", "has_insurance_proof", insuranceFileName);
+  const name = resolveFieldAcrossConventions(application, "name", "name", "");
+  const phone = resolveFieldAcrossConventions(application, "phone", "phone", "");
+  const email = resolveFieldAcrossConventions(application, "email", "email", "");
+  const age = resolveFieldAcrossConventions(application, "age", "age");
+  const experience = resolveFieldAcrossConventions(application, "experience", "experience", "");
+  const apps = resolveFieldAcrossConventions(application, "apps", "apps", []);
+  const hasInsurance = resolveFieldAcrossConventions(application, "hasInsurance", "has_insurance");
+  const protectionPlanPref = resolveFieldAcrossConventions(application, "protectionPlanPref", "protection_plan_pref");
+  const licenseFileName = resolveFieldAcrossConventions(application, "licenseFileName", "license_file_name");
+  const insuranceFileName = resolveFieldAcrossConventions(application, "insuranceFileName", "insurance_file_name");
+  const agreeTerms = !!resolveFieldAcrossConventions(application, "agreeTerms", "agree_terms");
+  const precheckDecision = resolveFieldAcrossConventions(
+    application,
+    "precheckDecision",
+    "precheck_decision",
+    resolveFieldAcrossConventions(application, "decision", "decision")
+  );
+  const applicationStatus = resolveFieldAcrossConventions(application, "applicationStatus", "application_status");
+  const identityStatus = resolveFieldAcrossConventions(application, "identityStatus", "identity_status");
+  const applicationId = resolveFieldAcrossConventions(application, "applicationId", "id");
+  const hasLicenseUpload = !!resolveFieldAcrossConventions(application, "hasLicenseUpload", "has_license_upload", licenseFileName);
+  const hasInsuranceProof = !!resolveFieldAcrossConventions(application, "hasInsuranceProof", "has_insurance_proof", insuranceFileName);
   const appsLabel = Array.isArray(apps) && apps.length ? apps.join(", ") : "Not specified";
   const insuranceLabel = hasInsurance === "yes" ? "Yes" : hasInsurance === "no" ? "No" : "Not specified";
   const planLabels = {
@@ -208,7 +213,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
   await sendApplicantSms(APPLICATION_RECEIVED, { customer_name: ctx.firstName }, ctx.phone);
 }
 
-function getIdentityIssueCopy(kind, ctx) {
+function buildIdentityIssueContent(kind, ctx) {
   if (kind === "requires_input") {
     return {
       ownerSubject: "⚠️ Identity Verification Requires Input",
@@ -356,7 +361,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
 
 export async function sendIdentityIssueNotifications(application = {}, kind = "requires_input") {
   const ctx = getContext(application);
-  const copy = getIdentityIssueCopy(kind, ctx);
+  const copy = buildIdentityIssueContent(kind, ctx);
 
   await sendMailIfPossible({
     to: OWNER_EMAIL,
