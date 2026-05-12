@@ -9,6 +9,7 @@ import {
   APPLICATION_IDENTITY_CANCELED,
 } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
+import { buildResumeUrl } from "./_identity-resume-token.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
@@ -88,6 +89,13 @@ function getContext(application = {}) {
     declined: "Declined",
   };
 
+  let verificationLink = null;
+  if (applicationId) {
+    try { verificationLink = buildResumeUrl(applicationId); } catch (urlErr) {
+      console.warn("[_application-notifications.js] buildResumeUrl failed (verification link will be omitted from notification):", urlErr.message || urlErr);
+    }
+  }
+
   return {
     applicationId,
     name,
@@ -108,6 +116,7 @@ function getContext(application = {}) {
     hasInsuranceProof,
     applicationStatus,
     identityStatus,
+    verificationLink,
   };
 }
 
@@ -189,6 +198,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
         "",
         "We’ve received your application with Sly Transportation Services LLC.",
         "Your next step is to complete secure identity verification so we can move your application into review.",
+        ...(ctx.verificationLink ? ["", "Complete your verification here:", ctx.verificationLink] : []),
         "",
         "After identity verification is completed, we’ll notify you when your application is under review.",
         "",
@@ -203,6 +213,13 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
         <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
           <strong>Next step:</strong> complete secure identity verification so we can move your application into review.
         </p>
+        ${ctx.verificationLink ? `
+        <p style="text-align:center;margin:20px 0">
+          <a href="${esc(ctx.verificationLink)}"
+             style="background:#ffb400;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">
+            &#x1F194; Complete Identity Verification &rarr;
+          </a>
+        </p>` : ""}
         <p>After identity verification is completed, we’ll notify you when your application is under review.</p>
         <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
         <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
@@ -210,7 +227,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
     });
   }
 
-  await sendApplicantSms(APPLICATION_RECEIVED, { customer_name: ctx.firstName }, ctx.phone);
+  await sendApplicantSms(APPLICATION_RECEIVED, { customer_name: ctx.firstName, verification_link: ctx.verificationLink || "" }, ctx.phone);
 }
 
 function buildIdentityIssueContent(kind, ctx) {
@@ -224,6 +241,7 @@ function buildIdentityIssueContent(kind, ctx) {
         "",
         "Your identity verification needs more information before we can continue reviewing your application.",
         "Please retry the verification step and correct any missing or unclear details.",
+        ...(ctx.verificationLink ? ["", "Resume your verification here:", ctx.verificationLink] : []),
         "",
         `If you need help, call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
         "",
@@ -236,6 +254,13 @@ function buildIdentityIssueContent(kind, ctx) {
         <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
           <strong>Next step:</strong> retry the verification step and correct any missing or unclear details.
         </p>
+        ${ctx.verificationLink ? `
+        <p style="text-align:center;margin:20px 0">
+          <a href="${esc(ctx.verificationLink)}"
+             style="background:#ffb400;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">
+            &#x1F194; Retry Identity Verification &rarr;
+          </a>
+        </p>` : ""}
         <p>If you need help, call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
         <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
       `,
@@ -253,6 +278,7 @@ function buildIdentityIssueContent(kind, ctx) {
         "",
         "We couldn’t complete your identity verification.",
         "Please retry the verification step or contact us if you need assistance.",
+        ...(ctx.verificationLink ? ["", "Retry your verification here:", ctx.verificationLink] : []),
         "",
         `Support: (844) 511-4059 • ${OWNER_EMAIL}`,
         "",
@@ -265,6 +291,13 @@ function buildIdentityIssueContent(kind, ctx) {
         <p style="background:#f8d7da;padding:10px;border-left:4px solid #dc3545;margin-bottom:16px">
           <strong>Next step:</strong> retry the verification step or contact us if you need assistance.
         </p>
+        ${ctx.verificationLink ? `
+        <p style="text-align:center;margin:20px 0">
+          <a href="${esc(ctx.verificationLink)}"
+             style="background:#ffb400;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">
+            &#x1F194; Retry Identity Verification &rarr;
+          </a>
+        </p>` : ""}
         <p>Support: <strong>(844) 511-4059</strong> • <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
         <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
       `,
@@ -281,6 +314,7 @@ function buildIdentityIssueContent(kind, ctx) {
       "",
       "Your identity verification was canceled before completion.",
       "Please restart verification when you’re ready, or contact us if you need help.",
+      ...(ctx.verificationLink ? ["", "Restart your verification here:", ctx.verificationLink] : []),
       "",
       `Support: (844) 511-4059 • ${OWNER_EMAIL}`,
       "",
@@ -293,6 +327,13 @@ function buildIdentityIssueContent(kind, ctx) {
       <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
         <strong>Next step:</strong> restart verification when you’re ready, or contact us if you need help.
       </p>
+      ${ctx.verificationLink ? `
+      <p style="text-align:center;margin:20px 0">
+        <a href="${esc(ctx.verificationLink)}"
+           style="background:#ffb400;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">
+          &#x1F194; Restart Identity Verification &rarr;
+        </a>
+      </p>` : ""}
       <p>Support: <strong>(844) 511-4059</strong> • <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
       <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
     `,
@@ -397,5 +438,5 @@ export async function sendIdentityIssueNotifications(application = {}, kind = "r
     });
   }
 
-  await sendApplicantSms(copy.smsTemplate, { customer_name: ctx.firstName }, ctx.phone);
+  await sendApplicantSms(copy.smsTemplate, { customer_name: ctx.firstName, verification_link: ctx.verificationLink || "" }, ctx.phone);
 }

@@ -13,10 +13,30 @@ process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
 process.env.OWNER_EMAIL = "owner@test.invalid";
+process.env.OTP_SECRET = "test-secret-for-identity-resume-tokens";
 
 // ─── TextMagic env vars ───────────────────────────────────────────────────────
 process.env.TEXTMAGIC_USERNAME = "testuser";
 process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
+
+// ─── Renter applications mock ─────────────────────────────────────────────────
+// Mock the DB layer so persistedApplicationId = "test-app-uuid" in all tests.
+// This also enables verification link assertions in email/SMS.
+mock.module("./_renter-applications.js", {
+  namedExports: {
+    insertRenterApplication: mock.fn(async () => ({
+      ok: true,
+      data: {
+        id: "test-app-uuid",
+        name: "Jane Driver",
+        application_status: "submitted",
+        identity_status: "not_started",
+        precheck_decision: null,
+      },
+    })),
+    patchRenterApplicationById: mock.fn(async () => ({ ok: false })),
+  },
+});
 
 // ─── Nodemailer mock ──────────────────────────────────────────────────────────
 const sentMails = [];
@@ -391,5 +411,53 @@ test("applicant submit email html does not contain booking-ready messaging", asy
     sentMails[1].html.includes("identity verification"),
     `Expected lifecycle next-step messaging in email`
   );
+  assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
+});
+
+// ─── Verification link in email and SMS ───────────────────────────────────────
+
+test("applicant submit email HTML contains verification link CTA when applicationId is available", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.ok(
+    sentMails[1].html.includes("thank-you.html"),
+    `Expected verification link in applicant email HTML, got: ${sentMails[1].html}`
+  );
+  assert.ok(
+    sentMails[1].html.includes("applicationId=test-app-uuid"),
+    `Expected applicationId in verification link`
+  );
+});
+
+test("applicant submit email plain text contains verification link when applicationId is available", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.ok(
+    sentMails[1].text.includes("thank-you.html"),
+    `Expected verification URL in applicant email text, got: ${sentMails[1].text}`
+  );
+});
+
+test("applicant submit SMS contains verification link when applicationId is available", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.ok(
+    sentMessages[0].text.includes("thank-you.html"),
+    `Expected verification URL in SMS, got: ${sentMessages[0].text}`
+  );
+  assert.ok(
+    sentMessages[0].text.includes("applicationId=test-app-uuid"),
+    `Expected applicationId query param in SMS link`
+  );
+});
+
+test("verification link in applicant email points to the thank-you page and not the cars page", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.ok(sentMails[1].html.includes("www.slytrans.com/thank-you.html"));
   assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
 });

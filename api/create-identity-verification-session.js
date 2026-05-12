@@ -7,6 +7,10 @@ import {
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
 
+// Application statuses where identity verification is no longer applicable.
+// The resolver blocks new session creation for any of these states.
+const TERMINAL_APPLICATION_STATUSES = new Set(["approved", "rejected", "expired", "withdrawn"]);
+
 function getReturnUrl(applicationId) {
   const u = new URL(DEFAULT_RETURN_URL);
   u.searchParams.set("identity", "return");
@@ -35,6 +39,21 @@ export default async function handler(req, res) {
   if (!appResult.ok) return res.status(appResult.status || 500).json({ error: appResult.error || "Application not found." });
 
   const application = appResult.data || {};
+
+  // ── Lifecycle guard: block terminal application states ─────────────────────────────────
+  // Recovery links become invalid after approval, rejection, expiry, or withdrawal.
+  // The client should surface an appropriate message rather than offering verification.
+  if (TERMINAL_APPLICATION_STATUSES.has(application.application_status)) {
+    return res.status(200).json({
+      success: false,
+      blocked: true,
+      reason: "application_status",
+      applicationStatus: application.application_status,
+      applicationId,
+    });
+  }
+
+  // ── Identity already verified ───────────────────────────────────────────────────────────────
   if (application.identity_status === "verified") {
     return res.status(200).json({
       success: true,
@@ -44,19 +63,64 @@ export default async function handler(req, res) {
     });
   }
 
-  const duplicateObserved = !!(
-    application.identity_session_id &&
-    (application.identity_status === "requires_input" || application.identity_status === "processing")
-  );
-  if (duplicateObserved) {
-    console.warn(
-      "create-identity-verification-session duplicate observation:",
-      `applicationId=${applicationId} existingSession=${application.identity_session_id}`
-    );
-  }
-
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+  // ── Session reuse: retrieve existing session before creating a new one ─────────────
+  // If an active session already exists, reuse it to avoid duplicate sessions
+  // and allow applicants to resume from email/SMS links or other devices.
+  if (application.identity_session_id) {
+    try {
+      const existing = await stripe.identity.verificationSessions.retrieve(
+        application.identity_session_id
+      );
+
+      if (existing.status === "verified") {
+        // Webhook not yet processed — identity is complete; don't create a new session.
+        return res.status(200).json({
+          success: true,
+          alreadyVerified: true,
+          identityStatus: "verified",
+          applicationId,
+        });
+      }
+
+      if (existing.status === "processing") {
+        // Stripe is processing the submission; no action needed from applicant.
+        return res.status(200).json({
+          success: true,
+          processing: true,
+          identityStatus: "processing",
+          applicationId,
+        });
+      }
+
+      if (existing.status === "requires_input") {
+        // Session is still active and can be resumed. Return the existing
+        // client_secret so the frontend mounts the same verification session.
+        return res.status(200).json({
+          success: true,
+          applicationId,
+          identityStatus: "requires_input",
+          verificationSessionId: existing.id,
+          clientSecret: existing.client_secret,
+          publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+          sessionReused: true,
+        });
+      }
+
+      // Status is "canceled" or an unrecognized terminal state — fall through
+      // to create a fresh session below.
+    } catch (retrieveErr) {
+      // Session may have been deleted or Stripe returned an unexpected error.
+      // Log and fall through to create a new session.
+      console.warn(
+        "create-identity-verification-session: session retrieve failed, creating new session:",
+        retrieveErr.message || retrieveErr
+      );
+    }
+  }
+
+  // ── Create a fresh verification session ───────────────────────────────────────────
   try {
     const session = await stripe.identity.verificationSessions.create({
       type: "document",
@@ -93,7 +157,6 @@ export default async function handler(req, res) {
       verificationSessionId: session.id,
       clientSecret: session.client_secret,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-      duplicateObserved,
     });
   } catch (err) {
     console.error("create-identity-verification-session failed:", err);

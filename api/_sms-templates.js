@@ -46,7 +46,8 @@ export function render(template, vars = {}) {
 export const APPLICATION_RECEIVED =
   "Hi {customer_name},\n\n" +
   "We\u2019ve received your application.\n\n" +
-  "Please complete identity verification to move your application into review.\n\n" +
+  "Please complete identity verification to move your application into review:\n" +
+  "{verification_link}\n\n" +
   "We\u2019ll send another update after verification is complete.\n\n" +
   "Reply STOP to opt out.";
 
@@ -54,7 +55,8 @@ export const APPLICATION_RECEIVED =
 export const APPLICATION_REQUIRES_INPUT =
   "Hi {customer_name},\n\n" +
   "Your identity verification needs more information.\n\n" +
-  "Please retry and correct any missing or unclear details.\n\n" +
+  "Please retry and correct any missing or unclear details:\n" +
+  "{verification_link}\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent when identity verification is complete and the application moves under review. */
@@ -68,14 +70,16 @@ export const APPLICATION_UNDER_REVIEW =
 export const APPLICATION_IDENTITY_FAILED =
   "Hi {customer_name},\n\n" +
   "We couldn\u2019t complete your identity verification.\n\n" +
-  "Please retry or contact support if you need help.\n\n" +
+  "Please retry or contact support if you need help:\n" +
+  "{verification_link}\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent when identity verification is canceled. */
 export const APPLICATION_IDENTITY_CANCELED =
   "Hi {customer_name},\n\n" +
   "Your identity verification was canceled before completion.\n\n" +
-  "Please restart verification when you\u2019re ready.\n\n" +
+  "Please restart verification when you\u2019re ready:\n" +
+  "{verification_link}\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent only after manual approval. */
