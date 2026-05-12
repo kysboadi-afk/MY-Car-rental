@@ -77,6 +77,7 @@ export function toClientApplication(record = {}) {
     apps: Array.isArray(record.apps) ? record.apps : [],
     hasInsurance: record.has_insurance,
     protectionPlanPref: record.protection_plan_pref,
+    precheckDecision: record.precheck_decision,
     decision: record.precheck_decision,
     applicationStatus: record.application_status,
     identityStatus: record.identity_status,

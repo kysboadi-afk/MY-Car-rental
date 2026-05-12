@@ -8,6 +8,10 @@ import {
   render,
   DEFAULT_LOCATION,
   APPLICATION_RECEIVED,
+  APPLICATION_REQUIRES_INPUT,
+  APPLICATION_UNDER_REVIEW,
+  APPLICATION_IDENTITY_FAILED,
+  APPLICATION_IDENTITY_CANCELED,
   APPLICATION_APPROVED,
   APPLICATION_DENIED,
   WAITLIST_JOINED,
@@ -78,19 +82,39 @@ test("DEFAULT_LOCATION contains Los Angeles address", () => {
 test("APPLICATION_RECEIVED contains expected phrases", () => {
   assert.ok(APPLICATION_RECEIVED.includes("received your application"));
   assert.ok(APPLICATION_RECEIVED.includes("{customer_name}"));
+  assert.ok(APPLICATION_RECEIVED.includes("complete identity verification"));
   assert.ok(APPLICATION_RECEIVED.includes("Reply STOP"));
+});
+
+test("APPLICATION_REQUIRES_INPUT contains retry phrasing", () => {
+  assert.ok(APPLICATION_REQUIRES_INPUT.includes("{customer_name}"));
+  assert.ok(APPLICATION_REQUIRES_INPUT.includes("needs more information"));
+});
+
+test("APPLICATION_UNDER_REVIEW contains under-review phrasing", () => {
+  assert.ok(APPLICATION_UNDER_REVIEW.includes("{customer_name}"));
+  assert.ok(APPLICATION_UNDER_REVIEW.includes("under review"));
+});
+
+test("APPLICATION_IDENTITY_FAILED contains retry phrasing", () => {
+  assert.ok(APPLICATION_IDENTITY_FAILED.includes("{customer_name}"));
+  assert.ok(APPLICATION_IDENTITY_FAILED.includes("retry"));
+});
+
+test("APPLICATION_IDENTITY_CANCELED contains restart phrasing", () => {
+  assert.ok(APPLICATION_IDENTITY_CANCELED.includes("{customer_name}"));
+  assert.ok(APPLICATION_IDENTITY_CANCELED.includes("restart verification"));
 });
 
 test("APPLICATION_APPROVED contains approval phrasing and variables", () => {
   assert.ok(APPLICATION_APPROVED.includes("{customer_name}"));
   assert.ok(APPLICATION_APPROVED.includes("approved"));
-  assert.ok(APPLICATION_APPROVED.includes("{vehicle}"));
   assert.ok(APPLICATION_APPROVED.includes("{waitlist_link}"));
 });
 
-test("APPLICATION_DENIED contains denial phrasing", () => {
+test("APPLICATION_DENIED contains rejection phrasing", () => {
   assert.ok(APPLICATION_DENIED.includes("{customer_name}"));
-  assert.ok(APPLICATION_DENIED.includes("does not meet our current rental requirements"));
+  assert.ok(APPLICATION_DENIED.includes("unable to approve"));
 });
 
 test("render APPLICATION_RECEIVED replaces customer_name", () => {
@@ -102,11 +126,9 @@ test("render APPLICATION_RECEIVED replaces customer_name", () => {
 test("render APPLICATION_APPROVED fills all variables", () => {
   const msg = render(APPLICATION_APPROVED, {
     customer_name: "Alice",
-    vehicle:       "Camry 2012",
     waitlist_link: "https://www.slytrans.com/cars.html",
   });
   assert.ok(msg.includes("Alice"));
-  assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("https://www.slytrans.com/cars"));
   assert.ok(!msg.includes("{"));
 });
