@@ -109,7 +109,16 @@
     <label for="phone" data-i18n="booking.phone">Phone Number</label>
     <input type="tel" id="phone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel" required>
 
-    <p class="sms-consent" data-i18n="booking.smsConsent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
+    <div class="sms-consent" id="bookingSmsConsent">
+      <label class="apply-checkbox-label apply-terms-label">
+        <input type="checkbox" id="smsConsentCheck" name="smsConsent">
+        <span data-i18n="booking.smsConsent">I agree to receive SMS messages from SLY Transportation related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.</span> <span class="required">*</span>
+      </label>
+      <p class="sms-consent-links">
+        <a href="https://www.slytrans.com/privacy-policy.html" target="_blank" rel="noopener" class="apply-terms-link">Privacy Policy</a> &nbsp;|&nbsp;
+        <a href="https://www.slytrans.com/rental-agreement.html" target="_blank" rel="noopener" class="apply-terms-link">Rental Agreement</a>
+      </p>
+    </div>
 
     <div class="id-upload-section">
       <p class="id-note" data-i18n="booking.idNote">A valid government-issued ID is required to confirm your rental.</p>

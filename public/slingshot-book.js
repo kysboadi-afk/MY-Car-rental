@@ -382,8 +382,10 @@ function updateBookBtn() {
   var idBack   = !!uploadedFileBack;
   var agreeEl  = document.getElementById("slAgree");
   var agreeOk  = !!(agreeEl && agreeEl.checked);
+  var smsEl    = document.getElementById("smsConsentCheck");
+  var smsOk    = !smsEl || smsEl.checked;
 
-  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && idFront && idBack && agreeOk;
+  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && idFront && idBack && agreeOk && smsOk;
   btn.disabled = !ready;
   if (hintEl) hintEl.style.display = ready ? "none" : "";
 }
@@ -977,6 +979,11 @@ function initBookingForm() {
 
   if (slAgreeCheck) {
     slAgreeCheck.addEventListener("change", updateBookBtn);
+  }
+
+  var slSmsConsent = document.getElementById("smsConsentCheck");
+  if (slSmsConsent) {
+    slSmsConsent.addEventListener("change", updateBookBtn);
   }
 
   // Book button

@@ -434,6 +434,7 @@ const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
 const agreeCheckbox = document.getElementById("agree");
+const smsConsentCheck = document.getElementById("smsConsentCheck");
 const idUpload = document.getElementById("idUpload");
 const idBackUpload = document.getElementById("idBackUpload");
 const insuranceUpload = document.getElementById("insuranceUpload");
@@ -819,6 +820,7 @@ pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
 agreeCheckbox.addEventListener("change", updatePayBtn);
+if (smsConsentCheck) smsConsentCheck.addEventListener("change", updatePayBtn);
 document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 document.getElementById("phone").addEventListener("input", updatePayBtn);
@@ -1816,6 +1818,7 @@ window.addEventListener("pageshow", function(e) {
   status.textContent = "";
   agreeCheckbox.disabled = true;
   agreeCheckbox.checked = false;
+  if (smsConsentCheck) { smsConsentCheck.disabled = false; smsConsentCheck.checked = false; }
   const paymentForm = document.getElementById("payment-form");
   paymentForm.style.display = "none";
   const prBtnContainer = document.getElementById("payment-request-button");
@@ -1863,7 +1866,7 @@ function updatePayBtn() {
   // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = pickup.value && hasTimeWindow;
-  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && (idBackUpload.files.length > 0 || uploadedFileBack !== null) && insuranceReady && nameValid && emailVal && phoneVal;
+  const ready = datesReady && agreeCheckbox.checked && (!smsConsentCheck || smsConsentCheck.checked) && (idUpload.files.length > 0 || uploadedFile !== null) && (idBackUpload.files.length > 0 || uploadedFileBack !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
