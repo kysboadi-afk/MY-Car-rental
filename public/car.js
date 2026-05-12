@@ -501,23 +501,7 @@ function isValidName(val) {
 // If that data exists we pre-fill the booking-form fields so the renter doesn't have to
 // re-enter information they already provided. Waitlist data takes precedence over Apply data.
 (function prefillFromApplication() {
-  try {
-    // Prefer the more-recent waitlist entry (sessionStorage) over the apply entry (localStorage).
-    let data = null;
-    const wlRaw = sessionStorage.getItem("slyWaitlistEntry");
-    if (wlRaw) {
-      const wl = JSON.parse(wlRaw);
-      // Only use waitlist data if it matches the vehicle being booked
-      if (!wl.vehicleId || wl.vehicleId === vehicleId) {
-        data = wl;
-      }
-    }
-    if (!data) {
-      const applyRaw = localStorage.getItem("slyApplicant");
-      if (applyRaw) data = JSON.parse(applyRaw);
-    }
-    if (!data) return;
-
+  function applyPrefillData(data) {
     const nameField  = document.getElementById("name");
     const emailField = document.getElementById("email");
     const phoneField = document.getElementById("phone");
@@ -550,7 +534,56 @@ function isValidName(val) {
       _syncProtectionTierRadio(selectedProtectionTier);
     }
     updatePayBtn();
-  } catch (_) { /* storage may be blocked in private mode */ }
+  }
+
+  (async function loadPrefill() {
+    try {
+      // Prefer the more-recent waitlist entry (sessionStorage) over the apply entry (localStorage).
+      let data = null;
+      const wlRaw = sessionStorage.getItem("slyWaitlistEntry");
+      if (wlRaw) {
+        const wl = JSON.parse(wlRaw);
+        // Only use waitlist data if it matches the vehicle being booked
+        if (!wl.vehicleId || wl.vehicleId === vehicleId) {
+          data = wl;
+        }
+      }
+      if (!data) {
+        const applyRaw = localStorage.getItem("slyApplicant");
+        if (applyRaw) data = JSON.parse(applyRaw);
+      }
+      if (!data) return;
+
+      const applicationId = (typeof data.applicationId === "string" && data.applicationId.trim())
+        ? data.applicationId.trim()
+        : "";
+      if (!applicationId) {
+        applyPrefillData(data);
+        return;
+      }
+
+      try {
+        const resp = await fetch(API_BASE + "/api/get-renter-application?applicationId=" + encodeURIComponent(applicationId));
+        const result = await resp.json().catch(function () { return {}; });
+        if (resp.ok && result && result.success) {
+          applyPrefillData({
+            ...data,
+            name: result.name || data.name,
+            phone: result.phone || data.phone,
+            email: result.email || data.email,
+            hasInsurance: result.hasInsurance || data.hasInsurance,
+            protectionPlanPref: result.protectionPlanPref || data.protectionPlanPref,
+            decision: result.decision || data.decision,
+          });
+          return;
+        }
+      } catch (_) {
+        // Non-fatal fallback to local cached apply payload.
+      }
+
+      applyPrefillData(data);
+    } catch (_) { /* storage may be blocked in private mode */ }
+  }());
 }());
 
 // Also sanitize the signature input so it only accepts valid name characters

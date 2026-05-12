@@ -19,6 +19,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, APPLICATION_RECEIVED, APPLICATION_APPROVED, APPLICATION_DENIED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
+import { insertRenterApplication, patchRenterApplicationById } from "./_renter-applications.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -187,6 +188,7 @@ export default async function handler(req, res) {
   }
 
   const {
+    applicationId,
     name, phone, email, age, experience, apps, agreeTerms,
     licenseFileName, licenseMimeType, licenseBase64,
     hasInsurance, insuranceBase64, insuranceFileName, insuranceMimeType,
@@ -238,6 +240,53 @@ export default async function handler(req, res) {
   const planLabel = PLAN_LABELS[protectionPlanPref] || (protectionPlanPref ? esc(String(protectionPlanPref)) : "Not specified");
   const insuranceLabel = hasInsurance === "yes" ? "Yes" : hasInsurance === "no" ? "No" : "Not specified";
   const hasInsuranceProof = !!(insuranceBase64 && insuranceFileName && insuranceMimeType);
+  let persistedApplicationId = (typeof applicationId === "string" && applicationId.trim()) ? applicationId.trim() : null;
+
+  try {
+    if (persistedApplicationId) {
+      const patchResult = await patchRenterApplicationById(persistedApplicationId, {
+        licenseBase64,
+        licenseFileName,
+        licenseMimeType,
+        insuranceBase64,
+        insuranceFileName,
+        insuranceMimeType,
+        precheckDecision: decision,
+      });
+      if (!patchResult.ok) {
+        console.warn("send-application-email: renter application patch skipped:", patchResult.error, patchResult.details || "");
+        persistedApplicationId = null;
+      }
+    }
+    if (!persistedApplicationId) {
+      const createResult = await insertRenterApplication({
+        name,
+        phone,
+        email,
+        age,
+        experience,
+        apps,
+        agreeTerms,
+        agreeSmsConsent: !!(req.body && req.body.agreeSmsConsent),
+        hasInsurance,
+        protectionPlanPref,
+        licenseBase64,
+        licenseFileName,
+        licenseMimeType,
+        insuranceBase64,
+        insuranceFileName,
+        insuranceMimeType,
+        precheckDecision: decision,
+      });
+      if (createResult.ok) {
+        persistedApplicationId = createResult.data.id;
+      } else {
+        console.warn("send-application-email: renter application create skipped:", createResult.error, createResult.details || "");
+      }
+    }
+  } catch (persistErr) {
+    console.warn("send-application-email: renter application persistence error:", persistErr.message || persistErr);
+  }
 
   try {
     // ─── Owner notification email ─────────────────────────────────────────────
@@ -248,6 +297,7 @@ export default async function handler(req, res) {
       text: [
         "New Driver Application – Sly Transportation Services LLC",
         "",
+        `Application ID    : ${persistedApplicationId || "Not available"}`,
         `Name              : ${name}`,
         `Phone             : ${phone}`,
         `Email             : ${email || "Not provided"}`,
@@ -266,6 +316,7 @@ export default async function handler(req, res) {
         <p>A new applicant has submitted their information on the Sly Transportation Services LLC website.</p>
         <table style="border-collapse:collapse;width:100%;max-width:520px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(persistedApplicationId || "Not available")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Age</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(age ?? "Not provided"))}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driving Experience</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(experience)}</td></tr>
@@ -337,7 +388,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ success: true, decision });
+    return res.status(200).json({ success: true, decision, applicationId: persistedApplicationId || null });
   } catch (err) {
     console.error("Application email failed:", err);
     return res.status(500).json({ error: "Failed to send application email." });
