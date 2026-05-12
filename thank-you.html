@@ -174,58 +174,38 @@
   <script src="chatbot.js"></script>
   <script src="https://js.stripe.com/v3/"></script>
   <script>
-    // Gate the "Browse Cars" nav link — only approved applicants may navigate there.
     (function () {
-      var link = document.getElementById("browseCarsNavLink");
-      if (!link) return;
-      link.addEventListener("click", function (e) {
-        var stored = null;
-        try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
-        if (stored && stored.decision === "approved") return; // allow
+      var API_BASE = "https://sly-rides.vercel.app";
+      var params = new URLSearchParams(window.location.search);
+      var fromParam = params.get("from");
+      var fillBtn = document.getElementById("fillAgainBtn");
+      var dlBtn = document.getElementById("tyDownloadBtn");
+      var titleEl = document.getElementById("tyTitle");
+      var subEl = document.getElementById("tySub");
+      var detailEl = document.getElementById("tyDetail");
+      var actionsEl = document.getElementById("tyActions");
+      var card = document.getElementById("tyCard");
+      var statusEl = null;
+      var verifyBtn = null;
 
-        e.preventDefault();
-
-        var msg = (stored && stored.decision === "review")
-          ? "Your application is still under review. You\u2019ll receive an SMS once you\u2019re approved."
-          : "Please complete and submit an application before browsing our vehicles.";
-
-        var existing = document.getElementById("browseGateToast");
-        if (existing) existing.remove();
-        var toast = document.createElement("div");
-        toast.id = "browseGateToast";
-        toast.className = "browse-gate-toast";
-        toast.textContent = msg;
-        document.body.appendChild(toast);
-        setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
-      });
-    }());
-  </script>
-  <script>
-    (function () {
-      var fromParam = new URLSearchParams(window.location.search).get("from");
-      var fillBtn   = document.getElementById("fillAgainBtn");
-      var dlBtn     = document.getElementById("tyDownloadBtn");
-
-      // "Fill Again" destination depends on which form brought the user here.
-      if (fillBtn) {
-        if (fromParam === "contact") fillBtn.href = "contact.html";
-        else if (fromParam === "apply") fillBtn.href = "index.html";
-      }
-
-      // For non-apply flows (contact, waitlist) keep the generic card as-is.
-      if (fromParam !== "apply") return;
-
-      // ── Personalise the card based on the pre-approval decision ──────────────
-      var stored = null;
-      try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (e) {
-        console.error("Failed to read applicant data from localStorage:", e);
-      }
-      var decision = stored && stored.decision;
       function t(key, fallback) {
         return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : fallback;
       }
 
-      // Build an anchor element safely without innerHTML string concatenation.
+      function readStored() {
+        try { return JSON.parse(localStorage.getItem("slyApplicant") || "null") || {}; } catch (_) { return {}; }
+      }
+
+      function writeStored(next) {
+        try { localStorage.setItem("slyApplicant", JSON.stringify(next)); } catch (_) {}
+      }
+
+      function resolveApplicationId(stored) {
+        var queryId = params.get("applicationId");
+        if (queryId && queryId.trim()) return queryId.trim();
+        return stored && typeof stored.applicationId === "string" ? stored.applicationId.trim() : "";
+      }
+
       function makeBtn(href, cssClass, label) {
         var a = document.createElement("a");
         a.href = href;
@@ -234,131 +214,247 @@
         return a;
       }
 
-      // Set detail paragraph using a static HTML fragment (developer-controlled,
-      // no user input). The fragment is chosen by a switch, never injected from
-      // external data, so XSS is not a concern here.
       function setDetailHtml(el, html) {
         if (el) el.innerHTML = html;
       }
 
-      var titleEl   = document.getElementById("tyTitle");
-      var subEl     = document.getElementById("tySub");
-      var detailEl  = document.getElementById("tyDetail");
-      var actionsEl = document.getElementById("tyActions");
-      var card      = document.getElementById("tyCard");
-
-      if (dlBtn) dlBtn.style.display = "none";
-
-      if (decision === "approved") {
-        // ── Approved ──────────────────────────────────────────────────────────
-        if (titleEl) titleEl.textContent = t("thankyou.approvedTitle", "\uD83C\uDF89 You\u2019re Approved!");
-        if (subEl)   subEl.textContent   = t("thankyou.approvedSub",   "Congratulations \u2014 your application has been accepted!");
-        setDetailHtml(detailEl,
-          "You are now cleared to browse and book a vehicle with <strong>SLY Transportation Services LLC</strong>. " +
-          "Check your email for your official approval confirmation and next steps."
-        );
-        if (actionsEl) {
-          actionsEl.textContent = "";
-          actionsEl.appendChild(makeBtn("cars.html",  "ty-btn-primary",   "\uD83D\uDE97 " + t("thankyou.browseCars", "Browse & Book a Car")));
-          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome",   "Back to Home")));
-        }
-        // Highlight the card with a green accent
-        if (card) card.style.borderColor = "#4caf50";
-
-      } else if (decision === "declined") {
-        // ── Declined ──────────────────────────────────────────────────────────
-        if (titleEl) { titleEl.textContent = t("thankyou.declinedTitle", "Application Update"); titleEl.style.color = "#f44336"; }
-        if (subEl)   subEl.textContent = t("thankyou.declinedSub", "We were unable to approve your application at this time.");
-        setDetailHtml(detailEl,
-          "Your application does not currently meet our rental requirements. " +
-          "A confirmation has been sent to your email. If you believe this is an error or have questions, " +
-          "please call us at <strong>(844) 511-4059</strong>."
-        );
-        if (actionsEl) {
-          actionsEl.textContent = "";
-          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome", "Back to Home")));
-        }
-
-      } else {
-        // ── Under Review (default for apply) ──────────────────────────────────
-        if (titleEl) titleEl.textContent = t("thankyou.reviewTitle", "\u23F3 Application Received!");
-        if (subEl)   subEl.textContent   = t("thankyou.reviewSub",   "We\u2019re reviewing your information now.");
-        setDetailHtml(detailEl,
-          "Our team at <strong>SLY Transportation Services LLC</strong> will review your application and " +
-          "contact you within <strong>24 hours</strong>. Check your email and phone for updates."
-        );
-        if (actionsEl) {
-          actionsEl.textContent = "";
-          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome", "Back to Home")));
-        }
+      function getSnapshot() {
+        var stored = readStored();
+        stored.applicationId = resolveApplicationId(stored) || null;
+        return stored;
       }
-    }());
-  </script>
-  <script>
-    (function () {
-      var API_BASE = "https://sly-rides.vercel.app";
-      var params = new URLSearchParams(window.location.search);
-      if (params.get("from") !== "apply") return;
 
-      var stored = null;
-      try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
-      var applicationId = stored && typeof stored.applicationId === "string" ? stored.applicationId.trim() : "";
-      var decision = stored && stored.decision;
-      if (!applicationId || decision === "declined") return;
+      function syncLifecycle(snapshot, result) {
+        return {
+          ...snapshot,
+          applicationId: result.applicationId || snapshot.applicationId || null,
+          applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
+          identityStatus: result.identityStatus || snapshot.identityStatus || "not_started",
+          precheckDecision: result.precheckDecision || snapshot.precheckDecision || snapshot.decision || null,
+          decision: result.precheckDecision || result.decision || snapshot.decision || null,
+          name: result.name || snapshot.name,
+          phone: result.phone || snapshot.phone,
+          email: result.email || snapshot.email,
+          hasInsurance: result.hasInsurance || snapshot.hasInsurance,
+          protectionPlanPref: result.protectionPlanPref || snapshot.protectionPlanPref,
+        };
+      }
 
-      var actionsEl = document.getElementById("tyActions") || document.querySelector(".ty-actions");
-      if (!actionsEl) return;
+      function isApproved(snapshot) {
+        return snapshot && snapshot.applicationStatus === "approved";
+      }
 
-      var verifyBtn = document.createElement("button");
-      verifyBtn.type = "button";
-      verifyBtn.className = "ty-btn ty-btn-primary";
-      verifyBtn.textContent = "🪪 Verify Identity";
+      function hasApplication(snapshot) {
+        return !!(snapshot && (snapshot.applicationId || snapshot.name || snapshot.phone));
+      }
 
-      var statusEl = document.createElement("div");
-      statusEl.className = "ty-identity-status";
-      statusEl.textContent = params.get("identity") === "return"
-        ? "Welcome back. Continue to complete your identity verification if prompted."
-        : "Secure identity verification helps us complete your application review.";
+      function updateVerifyControls(snapshot) {
+        if (!actionsEl) return;
+        if (verifyBtn && verifyBtn.parentNode) verifyBtn.parentNode.removeChild(verifyBtn);
+        if (statusEl && statusEl.parentNode) statusEl.parentNode.removeChild(statusEl);
+        verifyBtn = null;
+        statusEl = null;
 
-      async function startIdentityVerification() {
-        verifyBtn.disabled = true;
+        if (!snapshot.applicationId) return;
+        if (snapshot.applicationStatus === "approved" || snapshot.applicationStatus === "rejected") return;
+        if (snapshot.applicationStatus === "under_review" || snapshot.identityStatus === "verified") return;
+
+        verifyBtn = document.createElement("button");
+        verifyBtn.type = "button";
+        verifyBtn.className = "ty-btn ty-btn-primary";
+        verifyBtn.textContent = (
+          snapshot.identityStatus === "requires_input" ||
+          snapshot.identityStatus === "failed" ||
+          snapshot.identityStatus === "canceled"
+        ) ? "🪪 Retry Identity Verification" : "🪪 Verify Identity";
+
+        statusEl = document.createElement("div");
         statusEl.className = "ty-identity-status";
-        statusEl.textContent = "Preparing secure verification…";
-        try {
-          var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ applicationId: applicationId }),
-          });
-          var result = await resp.json().catch(function () { return {}; });
-          if (!resp.ok) throw new Error(result.error || "Unable to start identity verification.");
-          if (result.alreadyVerified) {
-            statusEl.className = "ty-identity-status success";
-            statusEl.textContent = "Identity verification is already complete.";
-            return;
-          }
-          if (!result.clientSecret || !result.publishableKey) {
-            throw new Error("Missing Stripe verification session data.");
-          }
-          if (!window.Stripe) throw new Error("Stripe.js failed to load.");
-
-          var stripe = window.Stripe(result.publishableKey);
-          var verifyResult = await stripe.verifyIdentity(result.clientSecret);
-          if (verifyResult && verifyResult.error) {
-            throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
-          }
-          statusEl.className = "ty-identity-status success";
-          statusEl.textContent = "Identity verification submitted. We’ll continue your application review.";
-        } catch (err) {
-          statusEl.className = "ty-identity-status error";
-          statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
-          verifyBtn.disabled = false;
+        if (snapshot.identityStatus === "requires_input") {
+          statusEl.textContent = "Identity verification needs more information. Please retry to continue.";
+        } else if (snapshot.identityStatus === "failed") {
+          statusEl.textContent = "Identity verification could not be completed. Please retry or contact support.";
+        } else if (snapshot.identityStatus === "canceled") {
+          statusEl.textContent = "Identity verification was canceled. Restart when you’re ready.";
+        } else if (params.get("identity") === "return") {
+          statusEl.textContent = "Welcome back. Continue to complete your identity verification if prompted.";
+        } else {
+          statusEl.textContent = "Secure identity verification is the next step before manual review.";
         }
+
+        verifyBtn.addEventListener("click", async function () {
+          verifyBtn.disabled = true;
+          statusEl.className = "ty-identity-status";
+          statusEl.textContent = "Preparing secure verification…";
+          try {
+            var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ applicationId: snapshot.applicationId }),
+            });
+            var result = await resp.json().catch(function () { return {}; });
+            if (!resp.ok) throw new Error(result.error || "Unable to start identity verification.");
+            if (result.alreadyVerified) {
+              var stored = syncLifecycle(getSnapshot(), {
+                applicationId: snapshot.applicationId,
+                applicationStatus: "under_review",
+                identityStatus: "verified",
+              });
+              writeStored(stored);
+              renderApplyState(stored);
+              return;
+            }
+            if (!result.clientSecret || !result.publishableKey) {
+              throw new Error("Missing Stripe verification session data.");
+            }
+            if (!window.Stripe) throw new Error("Stripe.js failed to load.");
+
+            var stripe = window.Stripe(result.publishableKey);
+            var verifyResult = await stripe.verifyIdentity(result.clientSecret);
+            if (verifyResult && verifyResult.error) {
+              throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
+            }
+
+            var next = syncLifecycle(getSnapshot(), {
+              applicationId: snapshot.applicationId,
+              applicationStatus: snapshot.applicationStatus || "submitted",
+              identityStatus: "processing",
+            });
+            writeStored(next);
+            statusEl.className = "ty-identity-status success";
+            statusEl.textContent = "Identity verification submitted. We’ll continue your application review.";
+          } catch (err) {
+            statusEl.className = "ty-identity-status error";
+            statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
+            verifyBtn.disabled = false;
+          }
+        });
+
+        actionsEl.appendChild(verifyBtn);
+        actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
       }
 
-      verifyBtn.addEventListener("click", startIdentityVerification);
-      actionsEl.appendChild(verifyBtn);
-      actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
+      function renderApplyState(snapshot) {
+        if (!titleEl || !subEl || !detailEl || !actionsEl || !card) return;
+
+        if (dlBtn) dlBtn.style.display = "none";
+        titleEl.style.color = "#4caf50";
+        card.style.borderColor = "#2a2a2a";
+        actionsEl.textContent = "";
+
+        if (snapshot.applicationStatus === "approved") {
+          titleEl.textContent = t("thankyou.approvedTitle", "🎉 You’re Approved!");
+          subEl.textContent = t("thankyou.approvedSub", "Your application is approved and booking-ready.");
+          setDetailHtml(detailEl,
+            "Your application has been manually approved. You can now browse and book a vehicle with <strong>SLY Transportation Services LLC</strong>."
+          );
+          actionsEl.appendChild(makeBtn("cars.html", "ty-btn-primary", "🚗 " + t("thankyou.browseCars", "Browse & Book a Car")));
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+          card.style.borderColor = "#4caf50";
+        } else if (snapshot.applicationStatus === "rejected") {
+          titleEl.textContent = t("thankyou.declinedTitle", "Application Update");
+          titleEl.style.color = "#f44336";
+          subEl.textContent = t("thankyou.declinedSub", "We’re unable to approve your application at this time.");
+          setDetailHtml(detailEl,
+            "We’re sorry, but your application was not approved. If you have questions, please call <strong>(844) 511-4059</strong>."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else if (snapshot.applicationStatus === "under_review" || snapshot.identityStatus === "verified") {
+          titleEl.textContent = t("thankyou.reviewTitle", "✅ Identity Verified");
+          subEl.textContent = t("thankyou.reviewSub", "Your application is now under review.");
+          setDetailHtml(detailEl,
+            "Your identity verification is complete. Our team will review your application and contact you with the next update."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else if (snapshot.identityStatus === "requires_input") {
+          titleEl.textContent = "⚠️ Action Needed";
+          titleEl.style.color = "#ffb400";
+          subEl.textContent = "Your identity verification needs more information.";
+          setDetailHtml(detailEl,
+            "Please retry identity verification and correct any missing or unclear details so we can continue your application review."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else if (snapshot.identityStatus === "failed") {
+          titleEl.textContent = "⚠️ Verification Issue";
+          titleEl.style.color = "#ffb400";
+          subEl.textContent = "We couldn’t complete your identity verification.";
+          setDetailHtml(detailEl,
+            "Please retry identity verification, or call <strong>(844) 511-4059</strong> if you need help."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else if (snapshot.identityStatus === "canceled") {
+          titleEl.textContent = "⏸️ Verification Canceled";
+          titleEl.style.color = "#ffb400";
+          subEl.textContent = "Your identity verification was canceled before completion.";
+          setDetailHtml(detailEl,
+            "Please restart identity verification when you’re ready so we can continue your application review."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else {
+          titleEl.textContent = "📝 Application Submitted";
+          subEl.textContent = "Complete identity verification to continue.";
+          setDetailHtml(detailEl,
+            "We’ve received your application. The next step is secure identity verification before your application can move into manual review."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        }
+
+        updateVerifyControls(snapshot);
+      }
+
+      if (fillBtn) {
+        if (fromParam === "contact") fillBtn.href = "contact.html";
+        else if (fromParam === "apply") fillBtn.href = "index.html";
+      }
+
+      if (fromParam !== "apply") return;
+
+      var initialSnapshot = getSnapshot();
+      writeStored(initialSnapshot);
+      renderApplyState(initialSnapshot);
+
+      (async function refreshApplicationState() {
+        if (!initialSnapshot.applicationId) return;
+        try {
+          var resp = await fetch(API_BASE + "/api/get-renter-application?applicationId=" + encodeURIComponent(initialSnapshot.applicationId));
+          var result = await resp.json().catch(function () { return {}; });
+          if (!resp.ok || !result || !result.success) return;
+          var nextSnapshot = syncLifecycle(initialSnapshot, result);
+          writeStored(nextSnapshot);
+          renderApplyState(nextSnapshot);
+        } catch (_) {}
+      }());
+
+      var link = document.getElementById("browseCarsNavLink");
+      if (link) {
+        link.addEventListener("click", function (e) {
+          var snapshot = getSnapshot();
+          if (isApproved(snapshot)) return;
+          e.preventDefault();
+
+          var msg = "Please complete and submit an application before browsing our vehicles.";
+          if (hasApplication(snapshot)) {
+            if (snapshot.applicationStatus === "rejected") {
+              msg = "Your application was not approved. Please contact us if you have questions.";
+            } else if (snapshot.applicationStatus === "under_review" || snapshot.identityStatus === "verified") {
+              msg = "Your application is under review. We’ll notify you after manual review is complete.";
+            } else if (snapshot.identityStatus === "requires_input" || snapshot.identityStatus === "failed" || snapshot.identityStatus === "canceled") {
+              msg = "Please resolve identity verification before your application can move into review.";
+            } else {
+              msg = "Please complete identity verification before your application can move into review.";
+            }
+          }
+
+          var existing = document.getElementById("browseGateToast");
+          if (existing) existing.remove();
+          var toast = document.createElement("div");
+          toast.id = "browseGateToast";
+          toast.className = "browse-gate-toast";
+          toast.textContent = msg;
+          document.body.appendChild(toast);
+          setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+        });
+      }
     }());
   </script>
 </body>

@@ -325,26 +325,28 @@
         throw new Error(errMsg);
       }
 
-      // Read the pre-approval decision returned by the API.
-      const decision = result.decision || "review";
+      const resolvedApplicationId = result.applicationId || applicationId || null;
 
-      // Persist name, phone, approval decision, and protection preferences so
+      // Persist name, phone, lifecycle state, and protection preferences so
       // subsequent pages (cars.html, booking flow) can pre-populate the selections.
       // localStorage survives browser close/reopen.
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          applicationId: result.applicationId || applicationId || null,
+          applicationId: resolvedApplicationId,
           name,
           phone,
           email,
-          decision,
+          decision: result.decision || null,
+          precheckDecision: result.precheckDecision || result.decision || null,
+          applicationStatus: result.applicationStatus || "submitted",
+          identityStatus: result.identityStatus || "not_started",
           hasInsurance,
           protectionPlanPref,
         }));
       } catch (_) { /* storage may be blocked in private mode */ }
 
       // Redirect to the thank-you page
-      window.location.href = "thank-you.html?from=apply";
+      window.location.href = "thank-you.html?from=apply" + (resolvedApplicationId ? "&applicationId=" + encodeURIComponent(resolvedApplicationId) : "");
 
     } catch (err) {
       statusEl.textContent = err.message || mt("applyModal.generalError", "Something went wrong. Please try again.");

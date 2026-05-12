@@ -4,6 +4,10 @@ import {
   patchRenterApplicationIdentityById,
   fetchRenterApplicationById,
 } from "./_renter-applications.js";
+import {
+  sendIdentityIssueNotifications,
+  sendIdentityVerifiedNotifications,
+} from "./_application-notifications.js";
 
 export const config = {
   api: { bodyParser: false },
@@ -52,8 +56,47 @@ function mapIdentityUpdate(session = {}) {
       identityLastError: String(reason).slice(0, 2000),
     };
   }
+  if (status === "failed") {
+    const reason = err.code || err.reason || err.type || "failed";
+    return {
+      identityStatus: "failed",
+      identityLastError: String(reason).slice(0, 2000),
+    };
+  }
 
   return null;
+}
+
+function computeNotificationKind(current = {}, nextPatch = {}) {
+  const currentIdentity = String(current.identity_status || "");
+  const currentApplication = String(current.application_status || "");
+  const nextIdentity = String(nextPatch.identityStatus || "");
+  const nextApplication = String(nextPatch.applicationStatus || "");
+
+  if (nextIdentity === "verified" && (currentIdentity !== "verified" || currentApplication !== nextApplication)) {
+    return "verified";
+  }
+  if (nextIdentity === "requires_input" && currentIdentity !== "requires_input") {
+    return "requires_input";
+  }
+  if (nextIdentity === "failed" && currentIdentity !== "failed") {
+    return "failed";
+  }
+  if (nextIdentity === "canceled" && currentIdentity !== "canceled") {
+    return "canceled";
+  }
+  return null;
+}
+
+function isStaleIdentityUpdate(current = {}, nextPatch = {}) {
+  const currentIdentity = String(current.identity_status || "");
+  const currentApplication = String(current.application_status || "");
+  const nextIdentity = String(nextPatch.identityStatus || "");
+
+  if (!nextIdentity) return false;
+  if (currentIdentity === "verified" && nextIdentity !== "verified") return true;
+  if (["approved", "rejected"].includes(currentApplication) && nextIdentity !== "verified") return true;
+  return false;
 }
 
 async function isDuplicateEvent(sb, stripeEventId) {
@@ -152,6 +195,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, ignored: true });
     }
 
+    if (isStaleIdentityUpdate(current.data || {}, identityPatch)) {
+      return res.status(200).json({ received: true, ignored: true, stale: true });
+    }
+
+    const notificationKind = computeNotificationKind(current.data || {}, identityPatch);
+
     if (identityPatch.applicationStatus === "under_review") {
       const existingStatus = current.data?.application_status;
       if (existingStatus && !["submitted", "under_review"].includes(existingStatus)) {
@@ -168,6 +217,20 @@ export default async function handler(req, res) {
     if (!patchResult.ok) {
       console.error("stripe-identity-webhook patch failed:", patchResult.error, patchResult.details || "");
       return res.status(500).json({ error: patchResult.error || "Could not update application." });
+    }
+
+    if (notificationKind === "verified") {
+      try {
+        await sendIdentityVerifiedNotifications(patchResult.data || current.data || {});
+      } catch (notifyErr) {
+        console.error("stripe-identity-webhook verified notification failed:", notifyErr);
+      }
+    } else if (notificationKind === "requires_input" || notificationKind === "failed" || notificationKind === "canceled") {
+      try {
+        await sendIdentityIssueNotifications(patchResult.data || current.data || {}, notificationKind);
+      } catch (notifyErr) {
+        console.error("stripe-identity-webhook issue notification failed:", notifyErr);
+      }
     }
   } catch (err) {
     console.error("stripe-identity-webhook processing failed:", err);

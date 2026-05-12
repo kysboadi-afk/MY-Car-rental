@@ -42,27 +42,55 @@ export function render(template, vars = {}) {
 // 1. APPLICATION FLOW
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Sent immediately when an application is submitted (before auto-decision). */
+/** Sent immediately when an application is submitted. */
 export const APPLICATION_RECEIVED =
   "Hi {customer_name},\n\n" +
   "We\u2019ve received your application.\n\n" +
-  "Your application is currently under review.\n" +
-  "We\u2019ll notify you shortly.\n\n" +
+  "Please complete identity verification to move your application into review.\n\n" +
+  "We\u2019ll send another update after verification is complete.\n\n" +
   "Reply STOP to opt out.";
 
-/** Sent when the application is auto-approved. */
+/** Sent when identity verification needs more information. */
+export const APPLICATION_REQUIRES_INPUT =
+  "Hi {customer_name},\n\n" +
+  "Your identity verification needs more information.\n\n" +
+  "Please retry and correct any missing or unclear details.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent when identity verification is complete and the application moves under review. */
+export const APPLICATION_UNDER_REVIEW =
+  "Hi {customer_name},\n\n" +
+  "Your identity verification is complete.\n\n" +
+  "Your application is now under review, and we\u2019ll update you soon.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent when identity verification fails. */
+export const APPLICATION_IDENTITY_FAILED =
+  "Hi {customer_name},\n\n" +
+  "We couldn\u2019t complete your identity verification.\n\n" +
+  "Please retry or contact support if you need help.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent when identity verification is canceled. */
+export const APPLICATION_IDENTITY_CANCELED =
+  "Hi {customer_name},\n\n" +
+  "Your identity verification was canceled before completion.\n\n" +
+  "Please restart verification when you\u2019re ready.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent only after manual approval. */
 export const APPLICATION_APPROVED =
   "Hi {customer_name},\n\n" +
-  "You\u2019ve been approved.\n\n" +
-  "You can now join the waitlist to reserve your {vehicle}:\n" +
+  "Your application has been approved.\n\n" +
+  "You can now complete your booking:\n" +
   "{waitlist_link}\n\n" +
   "Reply STOP to opt out.";
 
-/** Sent when the application is auto-denied. */
+/** Sent only after manual rejection. */
 export const APPLICATION_DENIED =
   "Hi {customer_name},\n\n" +
-  "Your application does not meet our current rental requirements.\n\n" +
-  "If you have any questions, feel free to contact us.\n\n" +
+  "We\u2019re sorry, but we\u2019re unable to approve your application at this time.\n\n" +
+  "If you have questions, please contact our team.\n\n" +
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,6 +548,10 @@ export const RETENTION_DAY_30 =
 
 export const TEMPLATES = {
   application_received:      APPLICATION_RECEIVED,
+  application_requires_input: APPLICATION_REQUIRES_INPUT,
+  application_under_review:   APPLICATION_UNDER_REVIEW,
+  application_identity_failed: APPLICATION_IDENTITY_FAILED,
+  application_identity_canceled: APPLICATION_IDENTITY_CANCELED,
   application_approved:      APPLICATION_APPROVED,
   application_denied:        APPLICATION_DENIED,
   waitlist_joined:           WAITLIST_JOINED,

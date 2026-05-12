@@ -125,13 +125,13 @@ test("sends email to OWNER_EMAIL", async () => {
   assert.equal(sentMails[0].to, "owner@test.invalid");
 });
 
-test("email subject contains applicant name", async () => {
+test("email subject contains lifecycle pending wording", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
   assert.ok(
-    sentMails[0].subject.includes("Jane Driver"),
-    `Expected subject to include applicant name, got: ${sentMails[0].subject}`
+    sentMails[0].subject.includes("Identity Verification Pending"),
+    `Expected subject to include lifecycle wording, got: ${sentMails[0].subject}`
   );
 });
 
@@ -231,50 +231,51 @@ test("decision is 'review' when terms are not agreed", async () => {
   assert.equal(res._body.decision, "review");
 });
 
-test("email subject contains decision label", async () => {
+test("owner email subject reflects submitted lifecycle instead of decision label", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
   assert.ok(
-    sentMails[0].subject.toLowerCase().includes("approved"),
-    `Expected subject to contain decision, got: ${sentMails[0].subject}`
+    sentMails[0].subject.toLowerCase().includes("identity verification pending"),
+    `Expected subject to reflect lifecycle stage, got: ${sentMails[0].subject}`
   );
+  assert.ok(!sentMails[0].subject.toLowerCase().includes("approved"));
 });
 
 // ─── SMS dispatch tests ───────────────────────────────────────────────────────
 
-test("sends approved SMS for qualified applicant", async () => {
+test("submit SMS asks applicant to complete identity verification", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].text.includes("approved"),
-    `Expected approved SMS body, got: ${sentMessages[0].text}`
+    sentMessages[0].text.includes("complete identity verification"),
+    `Expected lifecycle SMS body, got: ${sentMessages[0].text}`
   );
-  assert.ok(sentMessages[0].text.includes("www.slytrans.com/cars"));
 });
 
-test("sends declined SMS when age is under 21", async () => {
+test("submit SMS stays lifecycle-based even when precheck decision is declined", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].text.includes("does not meet our current rental requirements"),
-    `Expected declined SMS body, got: ${sentMessages[0].text}`
+    sentMessages[0].text.includes("complete identity verification"),
+    `Expected lifecycle SMS body, got: ${sentMessages[0].text}`
   );
+  assert.ok(!sentMessages[0].text.includes("does not meet our current rental requirements"));
 });
 
-test("sends review SMS when license is missing", async () => {
+test("submit SMS no longer claims application is already under review", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
   await handler(makeReq("POST", body), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].text.includes("under review"),
-    `Expected review SMS body, got: ${sentMessages[0].text}`
+    sentMessages[0].text.includes("complete identity verification"),
+    `Expected lifecycle SMS body, got: ${sentMessages[0].text}`
   );
 });
 
@@ -285,7 +286,7 @@ test("SMS is sent to applicant phone number", async () => {
   assert.equal(sentMessages[0].to, "+13105550199");
 });
 
-test("SMS contains first name in review/declined messages", async () => {
+test("SMS contains first name in lifecycle messaging", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
@@ -295,7 +296,7 @@ test("SMS contains first name in review/declined messages", async () => {
   );
 });
 
-// ─── Applicant decision email tests ──────────────────────────────────────────
+// ─── Applicant lifecycle email tests ─────────────────────────────────────────
 
 test("sends applicant email when email is provided", async () => {
   sentMails.length = 0;
@@ -333,30 +334,31 @@ test("owner email is still sent when applicant email is provided", async () => {
   assert.equal(sentMails[0].to, "owner@test.invalid");
 });
 
-test("applicant approval email subject contains 'Approved'", async () => {
+test("applicant submit email subject requests identity verification", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
   assert.equal(res._body.decision, "approved");
   assert.ok(
-    sentMails[1].subject.toLowerCase().includes("approved"),
-    `Expected approval subject, got: ${sentMails[1].subject}`
+    sentMails[1].subject.toLowerCase().includes("identity verification"),
+    `Expected lifecycle subject, got: ${sentMails[1].subject}`
   );
+  assert.ok(!sentMails[1].subject.toLowerCase().includes("approved"));
 });
 
-test("applicant review email subject contains 'Review'", async () => {
+test("applicant submit email subject stays lifecycle-based for review precheck", async () => {
   sentMails.length = 0;
   const res = makeRes();
   const body = { ...VALID_BODY_WITH_EMAIL, licenseBase64: undefined, licenseFileName: undefined, licenseMimeType: undefined };
   await handler(makeReq("POST", body), res);
   assert.equal(res._body.decision, "review");
   assert.ok(
-    sentMails[1].subject.toLowerCase().includes("review"),
-    `Expected review subject, got: ${sentMails[1].subject}`
+    sentMails[1].subject.toLowerCase().includes("identity verification"),
+    `Expected lifecycle subject, got: ${sentMails[1].subject}`
   );
 });
 
-test("applicant declined email is sent when age is under 21", async () => {
+test("applicant submit email stays lifecycle-based when precheck is declined", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { ...VALID_BODY_WITH_EMAIL, age: 19 }), res);
@@ -364,9 +366,10 @@ test("applicant declined email is sent when age is under 21", async () => {
   assert.equal(sentMails.length, 2, "Expected owner + applicant decline emails");
   assert.equal(sentMails[1].to, "jane@example.com");
   assert.ok(
-    sentMails[1].html.includes("unable to approve"),
-    `Expected decline message in html, got: ${sentMails[1].html}`
+    sentMails[1].html.includes("complete secure identity verification"),
+    `Expected lifecycle message in html, got: ${sentMails[1].html}`
   );
+  assert.ok(!sentMails[1].html.includes("unable to approve"));
 });
 
 test("applicant email html contains applicant first name", async () => {
@@ -379,14 +382,14 @@ test("applicant email html contains applicant first name", async () => {
   );
 });
 
-test("applicant approval email html contains booking link", async () => {
+test("applicant submit email html does not contain booking-ready messaging", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
   assert.equal(res._body.decision, "approved");
   assert.ok(
-    sentMails[1].html.includes("www.slytrans.com/cars"),
-    `Expected booking link in approval email`
+    sentMails[1].html.includes("identity verification"),
+    `Expected lifecycle next-step messaging in email`
   );
+  assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
 });
-
