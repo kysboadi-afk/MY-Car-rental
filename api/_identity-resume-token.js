@@ -97,7 +97,7 @@ export function verifyResumeToken(token) {
     if (!data.applicationId || typeof data.applicationId !== "string") return null;
     if (typeof data.exp !== "number" || Date.now() > data.exp) return null;
 
-    return data.applicationId;
+    return data.applicationId.trim();
   } catch {
     return null;
   }

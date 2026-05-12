@@ -129,12 +129,15 @@ test("buildResumeUrl includes the applicationId as a query param", () => {
 
 test("buildResumeUrl defaults to www.slytrans.com origin", () => {
   const url = buildResumeUrl(TEST_APP_ID);
-  assert.ok(url.startsWith("https://www.slytrans.com"));
+  const parsed = new URL(url);
+  assert.equal(parsed.protocol, "https:");
+  assert.equal(parsed.hostname, "www.slytrans.com");
 });
 
 test("buildResumeUrl respects a custom baseUrl", () => {
   const url = buildResumeUrl(TEST_APP_ID, "https://staging.slytrans.com");
-  assert.ok(url.startsWith("https://staging.slytrans.com"));
+  const parsed = new URL(url);
+  assert.equal(parsed.hostname, "staging.slytrans.com");
   assert.ok(url.includes(`applicationId=${encodeURIComponent(TEST_APP_ID)}`));
 });
 

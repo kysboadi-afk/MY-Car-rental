@@ -108,7 +108,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // Status is "canceled" or an unrecognised terminal state — fall through
+      // Status is "canceled" or an unrecognized terminal state — fall through
       // to create a fresh session below.
     } catch (retrieveErr) {
       // Session may have been deleted or Stripe returned an unexpected error.

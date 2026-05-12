@@ -91,7 +91,9 @@ function getContext(application = {}) {
 
   let verificationLink = null;
   if (applicationId) {
-    try { verificationLink = buildResumeUrl(applicationId); } catch (_) {}
+    try { verificationLink = buildResumeUrl(applicationId); } catch (urlErr) {
+      console.warn("[_application-notifications.js] buildResumeUrl failed (verification link will be omitted from notification):", urlErr.message || urlErr);
+    }
   }
 
   return {

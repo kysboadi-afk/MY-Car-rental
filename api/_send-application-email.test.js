@@ -13,7 +13,7 @@ process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
 process.env.OWNER_EMAIL = "owner@test.invalid";
-process.env.OTP_SECRET = "test-secret-for-send-application-email";
+process.env.OTP_SECRET = "test-secret-for-identity-resume-tokens";
 
 // ─── TextMagic env vars ───────────────────────────────────────────────────────
 process.env.TEXTMAGIC_USERNAME = "testuser";
@@ -454,10 +454,10 @@ test("applicant submit SMS contains verification link when applicationId is avai
   );
 });
 
-test("verification link in applicant email points to slytrans.com and not cars page", async () => {
+test("verification link in applicant email points to the thank-you page and not the cars page", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
-  assert.ok(sentMails[1].html.includes("slytrans.com"));
-  assert.ok(!sentMails[1].html.includes("slytrans.com/cars"));
+  assert.ok(sentMails[1].html.includes("www.slytrans.com/thank-you.html"));
+  assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
 });
