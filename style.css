@@ -1575,6 +1575,17 @@ body {
   line-height: 1.5;
 }
 
+.sms-consent-links {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.apply-field .sms-consent-links {
+  margin-left: 22px;
+}
+
 .id-accepted {
   font-size: 11px;
   color: #888;
