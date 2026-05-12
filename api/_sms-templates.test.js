@@ -83,12 +83,14 @@ test("APPLICATION_RECEIVED contains expected phrases", () => {
   assert.ok(APPLICATION_RECEIVED.includes("received your application"));
   assert.ok(APPLICATION_RECEIVED.includes("{customer_name}"));
   assert.ok(APPLICATION_RECEIVED.includes("complete identity verification"));
+  assert.ok(APPLICATION_RECEIVED.includes("{verification_link}"));
   assert.ok(APPLICATION_RECEIVED.includes("Reply STOP"));
 });
 
 test("APPLICATION_REQUIRES_INPUT contains retry phrasing", () => {
   assert.ok(APPLICATION_REQUIRES_INPUT.includes("{customer_name}"));
   assert.ok(APPLICATION_REQUIRES_INPUT.includes("needs more information"));
+  assert.ok(APPLICATION_REQUIRES_INPUT.includes("{verification_link}"));
 });
 
 test("APPLICATION_UNDER_REVIEW contains under-review phrasing", () => {
@@ -99,11 +101,13 @@ test("APPLICATION_UNDER_REVIEW contains under-review phrasing", () => {
 test("APPLICATION_IDENTITY_FAILED contains retry phrasing", () => {
   assert.ok(APPLICATION_IDENTITY_FAILED.includes("{customer_name}"));
   assert.ok(APPLICATION_IDENTITY_FAILED.includes("retry"));
+  assert.ok(APPLICATION_IDENTITY_FAILED.includes("{verification_link}"));
 });
 
 test("APPLICATION_IDENTITY_CANCELED contains restart phrasing", () => {
   assert.ok(APPLICATION_IDENTITY_CANCELED.includes("{customer_name}"));
   assert.ok(APPLICATION_IDENTITY_CANCELED.includes("restart verification"));
+  assert.ok(APPLICATION_IDENTITY_CANCELED.includes("{verification_link}"));
 });
 
 test("APPLICATION_APPROVED contains approval phrasing and variables", () => {
@@ -118,9 +122,11 @@ test("APPLICATION_DENIED contains rejection phrasing", () => {
 });
 
 test("render APPLICATION_RECEIVED replaces customer_name", () => {
-  const msg = render(APPLICATION_RECEIVED, { customer_name: "Bob" });
+  const msg = render(APPLICATION_RECEIVED, { customer_name: "Bob", verification_link: "https://www.slytrans.com/thank-you.html?from=apply&applicationId=test-id" });
   assert.ok(msg.includes("Bob"));
   assert.ok(!msg.includes("{customer_name}"));
+  assert.ok(!msg.includes("{verification_link}"));
+  assert.ok(msg.includes("https://www.slytrans.com/thank-you.html"));
 });
 
 test("render APPLICATION_APPROVED fills all variables", () => {
