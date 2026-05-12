@@ -558,7 +558,7 @@ function isValidName(val) {
     updatePayBtn();
   }
 
-  (async function loadPrefill() {
+  (async function loadPrefillAsync() {
     try {
       // Prefer the more-recent waitlist entry (sessionStorage) over the apply entry (localStorage).
       let data = null;

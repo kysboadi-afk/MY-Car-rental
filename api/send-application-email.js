@@ -37,6 +37,12 @@ function esc(str) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeApplicationId(value) {
+  if (typeof value !== "string") return null;
+  const out = value.trim();
+  return out ? out : null;
+}
+
 // ─── Pre-approval logic ───────────────────────────────────────────────────────
 
 /**
@@ -240,7 +246,7 @@ export default async function handler(req, res) {
   const planLabel = PLAN_LABELS[protectionPlanPref] || (protectionPlanPref ? esc(String(protectionPlanPref)) : "Not specified");
   const insuranceLabel = hasInsurance === "yes" ? "Yes" : hasInsurance === "no" ? "No" : "Not specified";
   const hasInsuranceProof = !!(insuranceBase64 && insuranceFileName && insuranceMimeType);
-  let persistedApplicationId = (typeof applicationId === "string" && applicationId.trim()) ? applicationId.trim() : null;
+  let persistedApplicationId = normalizeApplicationId(applicationId);
 
   try {
     if (persistedApplicationId) {
@@ -297,8 +303,8 @@ export default async function handler(req, res) {
       text: [
         "New Driver Application – Sly Transportation Services LLC",
         "",
-        `Application ID    : ${persistedApplicationId || "Not available"}`,
         `Name              : ${name}`,
+        `Application ID    : ${persistedApplicationId || "Not available"}`,
         `Phone             : ${phone}`,
         `Email             : ${email || "Not provided"}`,
         `Age               : ${age ?? "Not provided"}`,
