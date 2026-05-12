@@ -123,8 +123,9 @@ export default async function handler(req, res) {
   try {
     await recordEvent(sb, event, applicationId || null, identitySessionId);
   } catch (recordErr) {
+    const errCode = String(recordErr?.code || "");
     const msg = String(recordErr?.message || "");
-    if (/duplicate key|unique/i.test(msg)) {
+    if (errCode === "23505" || /duplicate key|unique/i.test(msg)) {
       return res.status(200).json({ received: true, duplicate: true });
     }
     console.error("stripe-identity-webhook event record failed:", recordErr);
