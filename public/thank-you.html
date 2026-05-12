@@ -405,6 +405,165 @@
         else if (fromParam === "apply") fillBtn.href = "index.html";
       }
 
+      // ── Recovery-link auto-resume (from=resume) ────────────────────────────────
+      // Applicant arrived via an SMS/email recovery link that includes an HMAC
+      // token.  Call the resolver to validate the token and get a live Stripe
+      // Identity session, then auto-launch verification immediately.
+      if (fromParam === "resume") {
+        var resumeToken = params.get("token");
+        if (dlBtn) dlBtn.style.display = "none";
+        titleEl.style.color = "#4caf50";
+        card.style.borderColor = "#2a2a2a";
+        actionsEl.textContent = "";
+        titleEl.textContent = "🔄 Resuming Verification…";
+        subEl.textContent = "Please wait while we prepare your identity verification.";
+        setDetailHtml(detailEl, "");
+
+        (async function autoResumeIdentity() {
+          if (!resumeToken) {
+            titleEl.textContent = "⚠️ Invalid Recovery Link";
+            titleEl.style.color = "#ffb400";
+            subEl.textContent = "This recovery link is missing required information.";
+            setDetailHtml(detailEl,
+              "Please use the link from your original email or SMS, or call us at <strong>(844) 511-4059</strong>."
+            );
+            return;
+          }
+
+          try {
+            var resp = await fetch(
+              API_BASE + "/api/resolve-identity-resume?token=" + encodeURIComponent(resumeToken)
+            );
+            var result = await resp.json().catch(function () { return {}; });
+
+            if (!resp.ok) {
+              var errMsg = (result && result.error) || "This recovery link could not be verified.";
+              titleEl.textContent = "⚠️ Recovery Link Invalid";
+              titleEl.style.color = "#ffb400";
+              subEl.textContent = errMsg;
+              setDetailHtml(detailEl,
+                "Please use the most recent link from your email or SMS, or call <strong>(844) 511-4059</strong>."
+              );
+              return;
+            }
+
+            // Persist the applicationId from the resolver so subsequent page
+            // refreshes (from=apply flow) can continue without the token.
+            if (result.applicationId) {
+              var snap = syncLifecycle(readStored(), {
+                applicationId:     result.applicationId,
+                applicationStatus: result.applicationStatus || "submitted",
+                identityStatus:    result.identityStatus    || "not_started",
+              });
+              writeStored(snap);
+            }
+
+            if (result.blocked) {
+              renderApplyState({
+                applicationId:     result.applicationId,
+                applicationStatus: result.applicationStatus,
+                identityStatus:    result.identityStatus || "not_started",
+              });
+              return;
+            }
+
+            if (result.alreadyVerified) {
+              renderApplyState({
+                applicationId:     result.applicationId,
+                applicationStatus: result.applicationStatus || "under_review",
+                identityStatus:    "verified",
+              });
+              return;
+            }
+
+            if (result.processing) {
+              titleEl.textContent = "⏳ Verification Processing";
+              titleEl.style.color = "#4caf50";
+              subEl.textContent = "Your identity submission is being reviewed by Stripe.";
+              setDetailHtml(detailEl,
+                "We'll notify you as soon as the review is complete. There's nothing more to do right now."
+              );
+              actionsEl.textContent = "";
+              actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+              return;
+            }
+
+            if (!result.clientSecret || !result.publishableKey) {
+              titleEl.textContent = "⚠️ Verification Unavailable";
+              titleEl.style.color = "#ffb400";
+              subEl.textContent = "We couldn't prepare your identity verification session.";
+              setDetailHtml(detailEl,
+                "Please try again or call <strong>(844) 511-4059</strong>."
+              );
+              return;
+            }
+
+            // ── Present the CTA and auto-launch ───────────────────────────────
+            titleEl.textContent = "🪪 Resume Identity Verification";
+            titleEl.style.color = "#4caf50";
+            subEl.textContent = "Tap the button below to complete your secure identity check.";
+            setDetailHtml(detailEl,
+              "Your application is ready for identity verification. This keeps your application moving forward."
+            );
+            actionsEl.textContent = "";
+
+            var launchBtn = document.createElement("button");
+            launchBtn.type = "button";
+            launchBtn.className = "ty-btn ty-btn-primary";
+            launchBtn.textContent = "🪪 Resume Identity Verification";
+
+            var launchStatus = document.createElement("div");
+            launchStatus.className = "ty-identity-status";
+            launchStatus.textContent = "Tap to launch secure identity verification.";
+
+            async function launchVerification() {
+              launchBtn.disabled = true;
+              launchStatus.className = "ty-identity-status";
+              launchStatus.textContent = "Launching verification…";
+              try {
+                if (!window.Stripe) throw new Error("Stripe.js failed to load.");
+                var stripe = window.Stripe(result.publishableKey);
+                var verifyResult = await stripe.verifyIdentity(result.clientSecret);
+                if (verifyResult && verifyResult.error) {
+                  throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
+                }
+                var next = syncLifecycle(readStored(), {
+                  applicationId:     result.applicationId,
+                  applicationStatus: "submitted",
+                  identityStatus:    "processing",
+                });
+                writeStored(next);
+                launchStatus.className = "ty-identity-status success";
+                launchStatus.textContent = "Identity verification submitted. We'll continue your application review.";
+                launchBtn.style.display = "none";
+              } catch (err) {
+                launchStatus.className = "ty-identity-status error";
+                launchStatus.textContent = (err && err.message) ? err.message : "Identity verification failed. Please try again.";
+                launchBtn.disabled = false;
+              }
+            }
+
+            launchBtn.addEventListener("click", launchVerification);
+            actionsEl.appendChild(launchBtn);
+            actionsEl.parentNode.insertBefore(launchStatus, actionsEl.nextSibling);
+
+            // Auto-launch for minimum friction; on mobile Stripe may redirect
+            // to its hosted page, and the button above serves as the fallback.
+            launchVerification();
+
+          } catch (err) {
+            titleEl.textContent = "⚠️ Verification Error";
+            titleEl.style.color = "#ffb400";
+            subEl.textContent = "Something went wrong preparing your verification.";
+            setDetailHtml(detailEl,
+              "Please try again or call <strong>(844) 511-4059</strong>."
+            );
+          }
+        }());
+
+        return;
+      }
+
       if (fromParam !== "apply") return;
 
       var initialSnapshot = getSnapshot();

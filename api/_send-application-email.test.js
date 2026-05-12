@@ -425,8 +425,12 @@ test("applicant submit email HTML contains verification link CTA when applicatio
     `Expected verification link in applicant email HTML, got: ${sentMails[1].html}`
   );
   assert.ok(
-    sentMails[1].html.includes("applicationId=test-app-uuid"),
-    `Expected applicationId in verification link`
+    sentMails[1].html.includes("from=resume"),
+    `Expected from=resume in verification link`
+  );
+  assert.ok(
+    sentMails[1].html.includes("token="),
+    `Expected HMAC token in verification link`
   );
 });
 
@@ -449,8 +453,12 @@ test("applicant submit SMS contains verification link when applicationId is avai
     `Expected verification URL in SMS, got: ${sentMessages[0].text}`
   );
   assert.ok(
-    sentMessages[0].text.includes("applicationId=test-app-uuid"),
-    `Expected applicationId query param in SMS link`
+    sentMessages[0].text.includes("from=resume"),
+    `Expected from=resume in SMS link`
+  );
+  assert.ok(
+    sentMessages[0].text.includes("token="),
+    `Expected HMAC token in SMS link`
   );
 });
 
