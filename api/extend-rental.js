@@ -467,10 +467,10 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
     const pricing = await getVehiclePricing(sb, vehicleId);
 
-    // Fixed late fee for the grace period; escalated late fee equals the
-    // vehicle's full daily rental rate after the 3-hour reset window.
-    const SHORT_LATE_FEE = 25;                     // applied after 30-minute grace period
-    const EXTENDED_LATE_FEE = pricing.daily_price; // applied after the 3-hour reset window
+    // Fixed late fee for the grace period; escalated late fee equals
+    // "$25 + one full missed rental day" after the 3-hour reset window.
+    const SHORT_LATE_FEE = 25;                                        // applied after 30-minute grace period
+    const EXTENDED_LATE_FEE = SHORT_LATE_FEE + pricing.daily_price;   // applied after the 3-hour reset window
 
     let extensionAmountPreTax;
     let extensionLabel;
@@ -490,7 +490,7 @@ export default async function handler(req, res) {
 
       // ── Time-based late fee ─────────────────────────────────────────────────
       // grace_end  = return_time + 30 min  → SHORT_LATE_FEE ($25) applies
-      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE (vehicle daily rate) applies
+      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE ($25 + vehicle daily rate) applies
       // Always ONE PaymentIntent; late fee is folded into the total.
       //
       // IMPORTANT: Use buildDateTimeLA so that a stored return_time of "10:00"

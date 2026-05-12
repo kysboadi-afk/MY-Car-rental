@@ -146,8 +146,11 @@ export default async function handler(req, res) {
   }
 
   // ── Resolve waived amounts for each fee target ─────────────────────────────
-  // The late fee (escalated tier) equals one full day's rental for the booked vehicle.
-  const maxLateFee = CARS[booking.vehicle_id]?.pricePerDay ?? 55;
+  // The late fee (escalated tier) equals "$25 + one full missed rental day"
+  // for the booked vehicle.
+  const SHORT_LATE_FEE = 25;
+  const vehicleDailyRate = CARS[booking.vehicle_id]?.pricePerDay ?? 55;
+  const maxLateFee = SHORT_LATE_FEE + vehicleDailyRate;
   let lateFeeWaivedAmount       = null; // null = not touching late fee
   let rentalBalanceWaivedAmount = null; // null = not touching rental balance
   let parsedAmount              = null;

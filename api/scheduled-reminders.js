@@ -86,9 +86,9 @@ import {
 // ─── Late-fee amounts ──────────────────────────────────────────────────────────
 // SHORT_LATE_FEE: fixed $25 after the 30-minute grace period.
 // DEFAULT_VEHICLE_DAILY_RATE: fallback daily rate used when vehicleId is not in CARS.
-// In the booking loop, CARS[vehicleId]?.pricePerDay is always preferred over the fallback.
-const SHORT_LATE_FEE            = 25;  // applied after 30-minute grace period (fixed)
-const DEFAULT_VEHICLE_DAILY_RATE = 55;  // fallback daily rate — overridden per-vehicle in the booking loop
+// Escalated fee is always "$25 + vehicle daily rate" (or fallback daily rate).
+const SHORT_LATE_FEE             = 25;  // applied after 30-minute grace period (fixed)
+const DEFAULT_VEHICLE_DAILY_RATE = 55;  // fallback daily rate
 
 // Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
 // stale bookings.json entries that remain as "active_rental" for days/weeks.
@@ -103,7 +103,7 @@ const BOOKING_BUFFER_HOURS = 2;
 // Maximum hours-overdue window in which a late fee may be triggered.
 // If hoursOverdue exceeds this threshold the booking was never auto-completed
 // (stale status, cron outage, etc.).  The system now uses fixed late fees
-// ($25 at +30 min, $35 at +3 h) rather than hourly amounts, so this guard
+// ($25 at +30 min, and $25 + daily rate at +3 h) rather than hourly amounts, so this guard
 // prevents escalation SMS alerts from firing on long-stale bookings that
 // should have already been marked completed by the AUTO_COMPLETE_HOURS path.
 const MAX_FEE_OVERDUE_HOURS = 8;
@@ -990,7 +990,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         : (minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN);
 
       // ── P1: Late escalation at return_datetime + 3 h (reset_time) ────────────
-      // Informs the renter that the higher ($35) late fee now applies.
+      // Informs the renter that the escalated late fee now applies.
       // No admin approval, no hourly calculation, no separate charge.
       // The late fee is included in the extension total when the renter extends.
       // Evaluated FIRST so that if a stale booking is overdue on both the grace
@@ -1052,16 +1052,17 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           }
 
           if (bookingStillActive) {
-            const vehicleDailyFee = CARS[vehicleId]?.pricePerDay || DEFAULT_VEHICLE_DAILY_RATE;
+            const vehicleDailyRate = CARS[vehicleId]?.pricePerDay || DEFAULT_VEHICLE_DAILY_RATE;
+            const vehicleEscalatedLateFee = SHORT_LATE_FEE + vehicleDailyRate;
             logSmsTrigger(id, returnIso, nowIso, "late_escalation");
             console.log("[LATE_ESCALATION]", {
               booking_id:    id,
               vehicle_id:    vehicleId,
               hours_overdue: hoursOverdue.toFixed(1),
-              late_fee:      vehicleDailyFee,
+              late_fee:      vehicleEscalatedLateFee,
             });
 
-            // Notify customer that the late fee (1 day's rental) now applies.
+            // Notify customer that the escalated late fee ($25 + 1 missed rental day) now applies.
             // The fee will be included in the total when they extend.
             // message_type is "late_escalation" for delivery logging; dedup key is
             // "late_fee_pending" for backward compatibility with existing sms_logs rows.
@@ -1070,7 +1071,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
             // Always mark as attempted to prevent infinite retries.
             sentThisBooking = true;
             sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
-            sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: vehicleDailyFee });
+            sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: vehicleEscalatedLateFee });
             await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
           }
         }

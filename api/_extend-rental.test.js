@@ -621,10 +621,10 @@ test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over booking
 
 // ── Waiver tests ──────────────────────────────────────────────────────────────
 
-test("extend-rental: full waiver (late_fee_waived_amount = daily rate) removes late fee from total", async () => {
+test("extend-rental: full waiver (late_fee_waived_amount = $25 + daily rate) removes late fee from total", async () => {
   // Simulate a booking that is past the 3-hour reset window.
-  // Without a waiver, EXTENDED_LATE_FEE (vehicle daily rate = $55) would be added.
-  // With a full waiver (waived_amount = daily rate) the late fee must be $0.
+  // Without a waiver, EXTENDED_LATE_FEE ($25 + vehicle daily rate = $80) would be added.
+  // With a full waiver (waived_amount = $25 + daily rate) the late fee must be $0.
   capturedStripeParams = null;
   const active = makeActiveBooking({
     returnDate: "2026-04-30",
@@ -638,7 +638,7 @@ test("extend-rental: full waiver (late_fee_waived_amount = daily rate) removes l
       return_date:             "2026-04-30",
       return_time:             "17:00:00",
       status:                  "active_rental",
-      late_fee_waived_amount:  55,  // full waiver for daily rate ($55)
+      late_fee_waived_amount:  80,  // full waiver for escalated late fee ($25 + $55)
     }],
   });
 
@@ -650,10 +650,10 @@ test("extend-rental: full waiver (late_fee_waived_amount = daily rate) removes l
   }), res);
 
   assert.equal(res._status, 200, "handler must succeed");
-  assert.equal(res._body.lateFeeWaived, 55, "lateFeeWaived must be 55");
+  assert.equal(res._body.lateFeeWaived, 80, "lateFeeWaived must be 80");
   // lateFeeIncluded after full waiver is applied: 0.
   assert.equal(res._body.lateFeeIncluded, 0,
-    "lateFeeIncluded must be 0 when the full daily-rate waiver covers the fee");
+    "lateFeeIncluded must be 0 when the full escalated-fee waiver covers the fee");
 });
 
 test("extend-rental: partial waiver reduces late fee proportionally", async () => {
