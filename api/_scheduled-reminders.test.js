@@ -66,7 +66,11 @@ mock.module("./_contacts.js", {
   namedExports: { upsertContact: async () => {} },
 });
 mock.module("./_pricing.js", {
-  namedExports: { CARS: {} },
+  namedExports: {
+    CARS: {},
+    LATE_FEE_BASE: 25,
+    DEFAULT_VEHICLE_DAILY_RATE: 55,
+  },
 });
 
 mock.module("./_settings.js", {

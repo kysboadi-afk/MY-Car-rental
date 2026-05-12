@@ -94,6 +94,7 @@ mock.module("./_supabase.js", {
 // so pricing arithmetic is exercised (same pattern as _availability.js above).
 mock.module("./_pricing.js", {
   namedExports: {
+    LATE_FEE_BASE: 25,
     getVehiclePricing: async (_sb, _id) => ({
       daily_price:    55,
       weekly_price:   300,

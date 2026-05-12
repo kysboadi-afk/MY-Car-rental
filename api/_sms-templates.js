@@ -292,6 +292,7 @@ export const EXTEND_PAYMENT_PENDING =
  * Variables: customer_name, return_time, extend_link
  */
 export const PRE_RETURN_LATE_FEE_WARNING =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
   "Your rental is due at {return_time}.\n\n" +
   "Please return or extend your booking on time to avoid additional charges.\n\n" +
@@ -309,6 +310,7 @@ export const PRE_RETURN_LATE_FEE_WARNING =
  * Variables: customer_name, extend_link
  */
 export const LATE_GRACE_STARTED =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
   "Your rental is now past the grace period.\n\n" +
   "A $25 late fee now applies.\n\n" +
@@ -323,6 +325,7 @@ export const LATE_GRACE_STARTED =
  * Variables: customer_name, extend_link
  */
 export const LATE_ESCALATION =
+  // Keep "$25" in sync with LATE_FEE_BASE in api/_pricing.js.
   "Hi {customer_name},\n\n" +
   "Your rental has exceeded the 3-hour late window.\n\n" +
   "A late fee equal to $25 plus 1 full day\u2019s rental now applies.\n\n" +

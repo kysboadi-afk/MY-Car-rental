@@ -17,7 +17,7 @@
 
 import Stripe from "stripe";
 import { getVehicleById } from "./_vehicles.js";
-import { getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
+import { getVehiclePricing, computeAmountFromPricing, LATE_FEE_BASE } from "./_pricing.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
@@ -469,7 +469,7 @@ export default async function handler(req, res) {
 
     // Fixed late fee for the grace period; escalated late fee equals
     // "$25 + one full missed rental day" after the 3-hour reset window.
-    const SHORT_LATE_FEE = 25;                                        // applied after 30-minute grace period
+    const SHORT_LATE_FEE = LATE_FEE_BASE;                             // applied after 30-minute grace period
     const EXTENDED_LATE_FEE = SHORT_LATE_FEE + pricing.daily_price;   // applied after the 3-hour reset window
 
     let extensionAmountPreTax;

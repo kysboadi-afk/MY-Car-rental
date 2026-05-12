@@ -33,7 +33,7 @@
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin }  from "./_supabase.js";
 import { writeAuditLog }     from "./_booking-automation.js";
-import { CARS }              from "./_pricing.js";
+import { CARS, LATE_FEE_BASE, DEFAULT_VEHICLE_DAILY_RATE } from "./_pricing.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -148,9 +148,8 @@ export default async function handler(req, res) {
   // ── Resolve waived amounts for each fee target ─────────────────────────────
   // The late fee (escalated tier) equals "$25 + one full missed rental day"
   // for the booked vehicle.
-  const SHORT_LATE_FEE = 25;
-  const vehicleDailyRate = CARS[booking.vehicle_id]?.pricePerDay ?? 55;
-  const maxLateFee = SHORT_LATE_FEE + vehicleDailyRate;
+  const vehicleDailyRate = CARS[booking.vehicle_id]?.pricePerDay ?? DEFAULT_VEHICLE_DAILY_RATE;
+  const maxLateFee = LATE_FEE_BASE + vehicleDailyRate;
   let lateFeeWaivedAmount       = null; // null = not touching late fee
   let rentalBalanceWaivedAmount = null; // null = not touching rental balance
   let parsedAmount              = null;

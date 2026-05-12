@@ -58,7 +58,7 @@ import {
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
-import { CARS } from "./_pricing.js";
+import { CARS, LATE_FEE_BASE, DEFAULT_VEHICLE_DAILY_RATE } from "./_pricing.js";
 import { autoUpsertBooking, autoUpsertCustomer, autoCreateRevenueRecord } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
@@ -87,8 +87,7 @@ import {
 // SHORT_LATE_FEE: fixed $25 after the 30-minute grace period.
 // DEFAULT_VEHICLE_DAILY_RATE: fallback daily rate used when vehicleId is not in CARS.
 // Escalated fee is always "$25 + vehicle daily rate" (or fallback daily rate).
-const SHORT_LATE_FEE             = 25;  // applied after 30-minute grace period (fixed)
-const DEFAULT_VEHICLE_DAILY_RATE = 55;  // fallback daily rate
+const SHORT_LATE_FEE = LATE_FEE_BASE; // applied after 30-minute grace period (fixed)
 
 // Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
 // stale bookings.json entries that remain as "active_rental" for days/weeks.
