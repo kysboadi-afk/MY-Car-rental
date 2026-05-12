@@ -96,6 +96,15 @@
       font-weight: 700;
     }
     .ty-phone-row a:hover { color: #fff; }
+    .ty-identity-status {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #bbb;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .ty-identity-status.error { color: #ff7b7b; }
+    .ty-identity-status.success { color: #7dd97d; }
 
     @media (max-width: 520px) {
       .ty-card { padding: 36px 20px; }
@@ -163,6 +172,7 @@
 <script src="site-settings.js"></script>
 <script src="lang.js"></script>
   <script src="chatbot.js"></script>
+  <script src="https://js.stripe.com/v3/"></script>
   <script>
     // Gate the "Browse Cars" nav link — only approved applicants may navigate there.
     (function () {
@@ -282,6 +292,73 @@
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome", "Back to Home")));
         }
       }
+    }());
+  </script>
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+      var params = new URLSearchParams(window.location.search);
+      if (params.get("from") !== "apply") return;
+
+      var stored = null;
+      try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
+      var applicationId = stored && typeof stored.applicationId === "string" ? stored.applicationId.trim() : "";
+      var decision = stored && stored.decision;
+      if (!applicationId || decision === "declined") return;
+
+      var actionsEl = document.getElementById("tyActions") || document.querySelector(".ty-actions");
+      if (!actionsEl) return;
+
+      var verifyBtn = document.createElement("button");
+      verifyBtn.type = "button";
+      verifyBtn.className = "ty-btn ty-btn-primary";
+      verifyBtn.textContent = "🪪 Verify Identity";
+
+      var statusEl = document.createElement("div");
+      statusEl.className = "ty-identity-status";
+      statusEl.textContent = params.get("identity") === "return"
+        ? "Welcome back. Continue to complete your identity verification if prompted."
+        : "Secure identity verification helps us complete your application review.";
+
+      async function startIdentityVerification() {
+        verifyBtn.disabled = true;
+        statusEl.className = "ty-identity-status";
+        statusEl.textContent = "Preparing secure verification…";
+        try {
+          var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ applicationId: applicationId }),
+          });
+          var result = await resp.json().catch(function () { return {}; });
+          if (!resp.ok) throw new Error(result.error || "Unable to start identity verification.");
+          if (result.alreadyVerified) {
+            statusEl.className = "ty-identity-status success";
+            statusEl.textContent = "Identity verification is already complete.";
+            return;
+          }
+          if (!result.clientSecret || !result.publishableKey) {
+            throw new Error("Missing Stripe verification session data.");
+          }
+          if (!window.Stripe) throw new Error("Stripe.js failed to load.");
+
+          var stripe = window.Stripe(result.publishableKey);
+          var verifyResult = await stripe.verifyIdentity(result.clientSecret);
+          if (verifyResult && verifyResult.error) {
+            throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
+          }
+          statusEl.className = "ty-identity-status success";
+          statusEl.textContent = "Identity verification submitted. We’ll continue your application review.";
+        } catch (err) {
+          statusEl.className = "ty-identity-status error";
+          statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
+          verifyBtn.disabled = false;
+        }
+      }
+
+      verifyBtn.addEventListener("click", startIdentityVerification);
+      actionsEl.appendChild(verifyBtn);
+      actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
     }());
   </script>
 </body>

@@ -243,6 +243,36 @@
     statusEl.className = "apply-status sending";
 
     try {
+      let applicationId = null;
+      try {
+        const createResp = await fetch(API_BASE + "/api/create-renter-application", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            phone,
+            email,
+            age,
+            experience,
+            apps,
+            agreeTerms,
+            agreeSmsConsent,
+            hasInsurance,
+            protectionPlanPref,
+            licenseFileName: licenseFile ? licenseFile.name : null,
+            licenseMimeType: licenseFile ? licenseFile.type : null,
+            insuranceFileName: applyInsuranceFile ? applyInsuranceFile.name : null,
+            insuranceMimeType: applyInsuranceFile ? applyInsuranceFile.type : null,
+          }),
+        });
+        const createResult = await createResp.json().catch(function () { return {}; });
+        if (createResp.ok && createResult.applicationId) {
+          applicationId = createResult.applicationId;
+        }
+      } catch (_) {
+        // Backward-compatible fallback: continue with legacy apply email endpoint
+      }
+
       // Encode license image as base64 for JSON transport
       const licenseBase64 = await new Promise(function (resolve, reject) {
         const reader = new FileReader();
@@ -269,6 +299,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          applicationId,
           name,
           phone,
           email,
@@ -301,7 +332,15 @@
       // subsequent pages (cars.html, booking flow) can pre-populate the selections.
       // localStorage survives browser close/reopen.
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, phone, decision, hasInsurance, protectionPlanPref }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          applicationId: result.applicationId || applicationId || null,
+          name,
+          phone,
+          email,
+          decision,
+          hasInsurance,
+          protectionPlanPref,
+        }));
       } catch (_) { /* storage may be blocked in private mode */ }
 
       // Redirect to the thank-you page
