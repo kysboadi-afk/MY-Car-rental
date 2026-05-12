@@ -1582,6 +1582,10 @@ body {
   margin-bottom: 0;
 }
 
+.apply-field .sms-consent-links {
+  margin-left: 22px;
+}
+
 .id-accepted {
   font-size: 11px;
   color: #888;
