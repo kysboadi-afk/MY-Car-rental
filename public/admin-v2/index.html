@@ -10412,7 +10412,7 @@ function renderReviewApplicationsTable(apps) {
 
   tbody.innerHTML = apps.map((a) => {
     const appId = String(a.id || '');
-    const safeAppId = /^(?=.*[a-z0-9])[a-z0-9-]{8,}$/i.test(appId) ? appId : '';
+    const safeAppId = /^[a-z0-9][a-z0-9-]{7,}$/i.test(appId) ? appId : '';
     const actionsDisabled = !safeAppId;
     return `<tr>
       <td>
