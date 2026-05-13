@@ -2,9 +2,9 @@ import { normalizePhone } from "./_bookings.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { sendSms } from "./_textmagic.js";
 
-export const SMS_LOGS_SENTINEL_DATE = "1970-01-01";
+export const SMS_LOGS_NO_RETURN_DATE = "1970-01-01";
 
-export async function isSmsLogged(bookingId, templateKey, returnDateAtSend = SMS_LOGS_SENTINEL_DATE) {
+export async function isSmsLogged(bookingId, templateKey, returnDateAtSend = SMS_LOGS_NO_RETURN_DATE) {
   const sb = getSupabaseAdmin();
   if (!sb || !bookingId || !templateKey) return false;
   try {
@@ -26,7 +26,7 @@ export async function isSmsLogged(bookingId, templateKey, returnDateAtSend = SMS
   }
 }
 
-export async function logSmsToSupabase(bookingId, templateKey, returnDateAtSend = SMS_LOGS_SENTINEL_DATE, metadata = null) {
+export async function logSmsToSupabase(bookingId, templateKey, returnDateAtSend = SMS_LOGS_NO_RETURN_DATE, metadata = null) {
   const sb = getSupabaseAdmin();
   if (!sb || !bookingId || !templateKey) return;
   try {
@@ -51,7 +51,7 @@ export async function sendDedupedSms({ bookingId, templateKey, phone, body, retu
   const normalizedPhone = normalizePhone(phone || "");
   if (!normalizedPhone || !body) return false;
   const alreadyLogged = bookingId
-    ? await isSmsLogged(bookingId, templateKey, returnDateAtSend || SMS_LOGS_SENTINEL_DATE)
+    ? await isSmsLogged(bookingId, templateKey, returnDateAtSend || SMS_LOGS_NO_RETURN_DATE)
     : false;
   if (alreadyLogged) {
     console.log(`[SMS_SKIP] ${bookingId} ${templateKey}: already logged`);
@@ -59,7 +59,7 @@ export async function sendDedupedSms({ bookingId, templateKey, phone, body, retu
   }
   await sendSms(normalizedPhone, body);
   if (bookingId) {
-    await logSmsToSupabase(bookingId, templateKey, returnDateAtSend || SMS_LOGS_SENTINEL_DATE, metadata);
+    await logSmsToSupabase(bookingId, templateKey, returnDateAtSend || SMS_LOGS_NO_RETURN_DATE, metadata);
   }
   return true;
 }

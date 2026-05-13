@@ -25,7 +25,14 @@ mock.module("./_bookings.js", {
   namedExports: {
     loadBookings:   async () => ({ data: {}, sha: "sha1" }),
     saveBookings:   async () => {},
-    normalizePhone: (p) => p,
+    normalizePhone: (phone) => {
+      if (!phone) return phone;
+      if (/^\+\d{7,15}$/.test(phone)) return phone;
+      const digits = phone.replace(/\D/g, "");
+      if (digits.length === 10) return `+1${digits}`;
+      if (digits.length === 11 && digits[0] === "1") return `+${digits}`;
+      return phone;
+    },
     updateBooking:  async (vehicleId, id, updates) => {
       updatedBookings.push({ vehicleId, id, updates });
       return true;
@@ -436,6 +443,35 @@ test("processPaidBookings: skips pickup reminder when renter already has an acti
         status: "active_rental",
         pickupDate: "2026-03-20",
         returnDate: "2026-03-23",
+      }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processPaidBookings(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), false);
+  assert.equal(smsCalls.length, 0);
+});
+
+test("processPaidBookings: skips pickup reminder when phone matches after normalization", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({
+        bookingId: "bk-booked-phone",
+        status: "booked_paid",
+        pickupDate: "2026-03-22",
+        pickupTime: "10:00 AM",
+        phone: "(310) 555-0001",
+        email: "new@example.com",
+      }),
+      makeBooking({
+        bookingId: "bk-active-phone",
+        status: "active_rental",
+        phone: "+13105550001",
+        email: "other@example.com",
       }),
     ],
   };

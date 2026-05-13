@@ -228,7 +228,7 @@ const { default: handler } = await import("./v2-bookings.js");
 function createSmsLogSupabaseMock() {
   const smsLogs = [];
   return {
-    _smsLogs: smsLogs,
+    smsLogs,
     from(table) {
       if (table !== "sms_logs") {
         throw new Error(`Unexpected table: ${table}`);
