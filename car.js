@@ -1959,6 +1959,7 @@ stripeBtn.addEventListener("click", async () => {
   if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
   if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
+  if (!pickup.value) { showPayError(window.slyI18n.t("booking.alertPickupDate")); return; }
   if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
   if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
   const isDepositMode = paymentMode === 'deposit';
@@ -1985,37 +1986,19 @@ stripeBtn.addEventListener("click", async () => {
     });
   }
 
+  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
+  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
+  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
+  }
+
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
   const _reserveBtnLoading = document.getElementById("reserveBtn");
   if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
-
-  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idFrontSizeErr) {
-    stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-    if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-    showPayError(idFrontSizeErr);
-    return;
-  }
-  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idBackSizeErr) {
-    stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-    if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-    showPayError(idBackSizeErr);
-    return;
-  }
-  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
-    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
-    if (insuranceSizeErr) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-      showPayError(insuranceSizeErr);
-      return;
-    }
-  }
 
   // Pre-encode the ID file so it's ready when the user submits payment
   let idBase64 = null;
