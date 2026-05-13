@@ -7,6 +7,9 @@ import {
   APPLICATION_UNDER_REVIEW,
   APPLICATION_IDENTITY_FAILED,
   APPLICATION_IDENTITY_CANCELED,
+  APPLICATION_APPROVED,
+  APPLICATION_DENIED,
+  APPLICATION_NEEDS_INFO,
 } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { buildResumeUrl } from "./_identity-resume-token.js";
@@ -439,4 +442,196 @@ export async function sendIdentityIssueNotifications(application = {}, kind = "r
   }
 
   await sendApplicantSms(copy.smsTemplate, { customer_name: ctx.firstName, verification_link: ctx.verificationLink || "" }, ctx.phone);
+}
+
+/**
+ * Send notifications when a manual reviewer approves, rejects, or requests
+ * more information on an application.
+ *
+ * This is the ONLY place applicant-facing approval/rejection/needs-info messages
+ * are sent.  It must only be called after a successful conditional state write.
+ *
+ * @param {object} application  — full application record (DB row or client shape)
+ * @param {"approved"|"rejected"|"needs_info"} action
+ * @param {{notes?:string}} [options]
+ */
+export async function sendReviewDecisionNotifications(application = {}, action, options = {}) {
+  const ctx = getContext(application);
+  const reviewerNotes = options.notes ? String(options.notes).trim() : "";
+
+  if (action === "approved") {
+    await sendMailIfPossible({
+      to: OWNER_EMAIL,
+      subject: "✅ Application Approved",
+      text: [
+        "Application Approved — Sly Transportation Services LLC",
+        "",
+        `Name            : ${ctx.name}`,
+        `Application ID  : ${ctx.applicationId || "Not available"}`,
+        `Phone           : ${ctx.phone}`,
+        `Email           : ${ctx.email || "Not provided"}`,
+        `Reviewer Notes  : ${reviewerNotes || "None"}`,
+        "Lifecycle Stage : approved",
+      ].join("\n"),
+      html: `
+        <h2>&#x2705; Application Approved</h2>
+        <table style="border-collapse:collapse;width:100%;max-width:520px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Reviewer Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reviewerNotes || "None")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">approved</td></tr>
+        </table>
+      `,
+    });
+
+    if (isValidEmail(ctx.email)) {
+      await sendMailIfPossible({
+        to: ctx.email,
+        subject: "You're Approved — SLY Transportation Services",
+        text: [
+          `Hi ${ctx.firstName},`,
+          "",
+          "Great news — your application has been approved!",
+          "You can now proceed with booking.",
+          "",
+          `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
+          "",
+          "— Sly Transportation Services LLC Team",
+        ].join("\n"),
+        html: `
+          <h2>&#x1F389; You're Approved!</h2>
+          <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
+          <p>Great news — your application has been <strong>approved</strong>.</p>
+          <p style="background:#d4edda;padding:10px;border-left:4px solid #28a745;margin-bottom:16px">
+            You can now proceed with booking.
+          </p>
+          <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        `,
+      });
+    }
+
+    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName, waitlist_link: "" }, ctx.phone);
+    return;
+  }
+
+  if (action === "rejected") {
+    await sendMailIfPossible({
+      to: OWNER_EMAIL,
+      subject: "❌ Application Rejected",
+      text: [
+        "Application Rejected — Sly Transportation Services LLC",
+        "",
+        `Name            : ${ctx.name}`,
+        `Application ID  : ${ctx.applicationId || "Not available"}`,
+        `Phone           : ${ctx.phone}`,
+        `Email           : ${ctx.email || "Not provided"}`,
+        `Reviewer Notes  : ${reviewerNotes || "None"}`,
+        "Lifecycle Stage : rejected",
+      ].join("\n"),
+      html: `
+        <h2>&#x274C; Application Rejected</h2>
+        <table style="border-collapse:collapse;width:100%;max-width:520px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Reviewer Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reviewerNotes || "None")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">rejected</td></tr>
+        </table>
+      `,
+    });
+
+    if (isValidEmail(ctx.email)) {
+      await sendMailIfPossible({
+        to: ctx.email,
+        subject: "Application Status Update — SLY Transportation Services",
+        text: [
+          `Hi ${ctx.firstName},`,
+          "",
+          "Thank you for applying with Sly Transportation Services LLC.",
+          "After reviewing your application, we're unable to approve it at this time.",
+          "",
+          `If you have questions, please call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
+          "",
+          "— Sly Transportation Services LLC Team",
+        ].join("\n"),
+        html: `
+          <h2>Application Status Update</h2>
+          <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
+          <p>Thank you for applying with <strong>Sly Transportation Services LLC</strong>.</p>
+          <p style="background:#f8d7da;padding:10px;border-left:4px solid #dc3545;margin-bottom:16px">
+            After reviewing your application, we&rsquo;re unable to approve it at this time.
+          </p>
+          <p>If you have questions, please call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        `,
+      });
+    }
+
+    await sendApplicantSms(APPLICATION_DENIED, { customer_name: ctx.firstName }, ctx.phone);
+    return;
+  }
+
+  if (action === "needs_info") {
+    await sendMailIfPossible({
+      to: OWNER_EMAIL,
+      subject: "⏸ Application — More Information Requested",
+      text: [
+        "Application Needs More Information — Sly Transportation Services LLC",
+        "",
+        `Name            : ${ctx.name}`,
+        `Application ID  : ${ctx.applicationId || "Not available"}`,
+        `Phone           : ${ctx.phone}`,
+        `Email           : ${ctx.email || "Not provided"}`,
+        `Reviewer Notes  : ${reviewerNotes || "None"}`,
+        "Lifecycle Stage : needs_info",
+      ].join("\n"),
+      html: `
+        <h2>&#x23F8; Application — More Information Requested</h2>
+        <table style="border-collapse:collapse;width:100%;max-width:520px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Reviewer Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reviewerNotes || "None")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">needs_info</td></tr>
+        </table>
+      `,
+    });
+
+    if (isValidEmail(ctx.email)) {
+      await sendMailIfPossible({
+        to: ctx.email,
+        subject: "Additional Information Needed — SLY Transportation Services",
+        text: [
+          `Hi ${ctx.firstName},`,
+          "",
+          "We're reviewing your application and need a bit more information before we can make a decision.",
+          "Please contact our team so we can help you complete your review.",
+          "",
+          "Call or text: (844) 511-4059",
+          `Email: ${OWNER_EMAIL}`,
+          "",
+          "— Sly Transportation Services LLC Team",
+        ].join("\n"),
+        html: `
+          <h2>Additional Information Needed</h2>
+          <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
+          <p>We&rsquo;re reviewing your application and need a bit more information before we can make a decision.</p>
+          <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
+            Please contact our team so we can help you complete your review.
+          </p>
+          <p>Call or text: <strong>(844) 511-4059</strong></p>
+          <p>Email: <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
+          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        `,
+      });
+    }
+
+    await sendApplicantSms(APPLICATION_NEEDS_INFO, { customer_name: ctx.firstName }, ctx.phone);
+    return;
+  }
 }
