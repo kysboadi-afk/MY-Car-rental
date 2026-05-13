@@ -105,8 +105,13 @@ export function verifyResumeToken(token) {
 
 /**
  * Build the full identity verification recovery URL for a given application.
- * The URL points to the thank-you page with the applicationId pre-populated,
- * allowing applicants to resume verification from any device.
+ * The URL points to the thank-you page with a short-lived HMAC-signed token.
+ * The token is validated server-side by /api/resolve-identity-resume before
+ * any Stripe session is created or reused, preventing unauthenticated access.
+ *
+ * The `from=resume` parameter distinguishes recovery-link arrivals from
+ * ordinary post-submit arrivals (`from=apply`), enabling the frontend to
+ * auto-launch identity verification immediately without a manual button click.
  *
  * @param {string} applicationId
  * @param {string} [baseUrl]  — override for testing (default: www.slytrans.com)
@@ -116,9 +121,10 @@ export function buildResumeUrl(applicationId, baseUrl) {
   if (!applicationId || typeof applicationId !== "string") {
     throw new Error("applicationId is required");
   }
-  const base = (baseUrl || FRONTEND_BASE).replace(/\/$/, "");
-  const u    = new URL(`${base}/thank-you.html`);
-  u.searchParams.set("from",          "apply");
-  u.searchParams.set("applicationId", applicationId.trim());
+  const base  = (baseUrl || FRONTEND_BASE).replace(/\/$/, "");
+  const token = createResumeToken(applicationId.trim());
+  const u     = new URL(`${base}/thank-you.html`);
+  u.searchParams.set("from",  "resume");
+  u.searchParams.set("token", token);
   return u.toString();
 }

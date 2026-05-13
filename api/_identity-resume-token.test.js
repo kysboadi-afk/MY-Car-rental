@@ -117,14 +117,30 @@ test("buildResumeUrl returns a URL pointing to thank-you.html", () => {
   assert.ok(url.includes("thank-you.html"));
 });
 
-test("buildResumeUrl includes from=apply query param", () => {
+test("buildResumeUrl includes from=resume query param", () => {
   const url = buildResumeUrl(TEST_APP_ID);
-  assert.ok(url.includes("from=apply"));
+  const parsed = new URL(url);
+  assert.equal(parsed.searchParams.get("from"), "resume");
 });
 
-test("buildResumeUrl includes the applicationId as a query param", () => {
+test("buildResumeUrl does NOT expose applicationId in the URL", () => {
   const url = buildResumeUrl(TEST_APP_ID);
-  assert.ok(url.includes(`applicationId=${encodeURIComponent(TEST_APP_ID)}`));
+  assert.ok(!url.includes(TEST_APP_ID), `applicationId should not appear in URL: ${url}`);
+});
+
+test("buildResumeUrl includes a token query param", () => {
+  const url = buildResumeUrl(TEST_APP_ID);
+  const parsed = new URL(url);
+  const token = parsed.searchParams.get("token");
+  assert.ok(typeof token === "string" && token.length > 0, "token param should be present");
+});
+
+test("buildResumeUrl token is a valid verifiable token for the same applicationId", () => {
+  const url = buildResumeUrl(TEST_APP_ID);
+  const parsed = new URL(url);
+  const token = parsed.searchParams.get("token");
+  const resolved = verifyResumeToken(token);
+  assert.equal(resolved, TEST_APP_ID);
 });
 
 test("buildResumeUrl defaults to www.slytrans.com origin", () => {
@@ -138,7 +154,8 @@ test("buildResumeUrl respects a custom baseUrl", () => {
   const url = buildResumeUrl(TEST_APP_ID, "https://staging.slytrans.com");
   const parsed = new URL(url);
   assert.equal(parsed.hostname, "staging.slytrans.com");
-  assert.ok(url.includes(`applicationId=${encodeURIComponent(TEST_APP_ID)}`));
+  const token = parsed.searchParams.get("token");
+  assert.ok(typeof token === "string" && token.length > 0);
 });
 
 test("buildResumeUrl strips a trailing slash from baseUrl", () => {
@@ -156,5 +173,7 @@ test("buildResumeUrl throws when applicationId is null", () => {
 
 test("buildResumeUrl trims surrounding whitespace in applicationId", () => {
   const url = buildResumeUrl("  " + TEST_APP_ID + "  ");
-  assert.ok(url.includes(`applicationId=${encodeURIComponent(TEST_APP_ID)}`));
+  const parsed = new URL(url);
+  const token = parsed.searchParams.get("token");
+  assert.equal(verifyResumeToken(token), TEST_APP_ID);
 });
