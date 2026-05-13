@@ -38,8 +38,10 @@ const REVIEWABLE_STATUSES = new Set(["under_review", "needs_info"]);
 function cleanUuid(value) {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim();
-  // Accept any non-empty string — Supabase will validate UUID format at insert time.
-  return trimmed || null;
+  if (!trimmed) return null;
+  // Validate basic UUID format before sending to the database.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) return null;
+  return trimmed;
 }
 const IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "verified", "failed", "canceled"];
 
@@ -333,8 +335,10 @@ export async function performReviewAction(
     last_reviewer_notes: trimmedNotes,
     updated_at:          now,
   };
-  if (normalizedAction === "needs_info" && trimmedNotes) {
-    patch.needs_info_reason = trimmedNotes;
+  if (normalizedAction === "needs_info") {
+    patch.needs_info_reason = trimmedNotes || null;
+  } else {
+    patch.needs_info_reason = null;
   }
 
   const { data: updatedRows, error: updateErr } = await sb

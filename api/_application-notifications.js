@@ -513,7 +513,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       });
     }
 
-    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName, waitlist_link: "" }, ctx.phone);
+    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName }, ctx.phone);
     return;
   }
 
