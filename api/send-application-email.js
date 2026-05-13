@@ -128,8 +128,12 @@ export default async function handler(req, res) {
         precheckDecision: decision,
       });
       if (!patchResult.ok) {
+        // Keep persistedApplicationId — the record was already created by
+        // create-renter-application, so the ID is valid even if this
+        // secondary patch (file names, precheck decision) failed.  Nulling
+        // it here would cause the verification link to be omitted from the
+        // email/SMS and would attempt a spurious duplicate insert below.
         console.warn("send-application-email: renter application patch skipped:", patchResult.error, patchResult.details || "");
-        persistedApplicationId = null;
       } else {
         applicationRecord = patchResult.data || null;
       }
