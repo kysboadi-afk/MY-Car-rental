@@ -757,7 +757,7 @@ async function processUnpaid(allBookings, now, sentMarks) {
 
 const ACTIVE_RENTER_STATUSES = new Set(["active_rental", "active", "overdue"]);
 
-function getNormalizedRenterKeys(booking) {
+function normalizeRenterContactInfo(booking) {
   return {
     phone: normalizePhone(booking?.phone || ""),
     email: String(booking?.email || "").trim().toLowerCase(),
@@ -774,7 +774,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
   for (const bookings of Object.values(allBookings)) {
     for (const booking of bookings) {
       if (!ACTIVE_RENTER_STATUSES.has(booking.status)) continue;
-      const { phone: normalizedPhone, email: normalizedEmail } = getNormalizedRenterKeys(booking);
+      const { phone: normalizedPhone, email: normalizedEmail } = normalizeRenterContactInfo(booking);
       if (normalizedPhone) activeRenterPhones.add(normalizedPhone);
       if (normalizedEmail) activeRenterEmails.add(normalizedEmail);
     }
@@ -788,7 +788,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         continue;
       }
 
-      const { phone: normalizedPhone, email: normalizedEmail } = getNormalizedRenterKeys(booking);
+      const { phone: normalizedPhone, email: normalizedEmail } = normalizeRenterContactInfo(booking);
       if ((normalizedPhone && activeRenterPhones.has(normalizedPhone)) ||
           (normalizedEmail && activeRenterEmails.has(normalizedEmail))) {
         console.log(`[SMS_SKIP] ${booking.bookingId || booking.paymentIntentId || "?"} pickup_24h: renter already active`);

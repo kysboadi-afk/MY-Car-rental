@@ -447,6 +447,64 @@ test("processPaidBookings: skips pickup reminder when renter already has an acti
   assert.equal(smsCalls.length, 0);
 });
 
+test("processPaidBookings: skips pickup reminder when email matches an active renter but phone differs", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({
+        bookingId: "bk-booked-email",
+        status: "booked_paid",
+        pickupDate: "2026-03-22",
+        pickupTime: "10:00 AM",
+        phone: "+13105550099",
+        email: "Anthony@example.com",
+      }),
+      makeBooking({
+        bookingId: "bk-active-email",
+        status: "active_rental",
+        phone: "+13105550001",
+        email: " anthony@example.com ",
+      }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processPaidBookings(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), false);
+  assert.equal(smsCalls.length, 0);
+});
+
+test("processPaidBookings: skips pickup reminder when renter already has an overdue rental on another vehicle", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      bookingId: "bk-booked-overdue",
+      status: "booked_paid",
+      pickupDate: "2026-03-22",
+      pickupTime: "10:00 AM",
+      phone: "(310) 555-0001",
+      email: "anthony@example.com",
+    })],
+    camry2013: [makeBooking({
+      bookingId: "bk-overdue",
+      vehicleId: "camry2013",
+      status: "overdue",
+      returnDate: "2026-03-20",
+      phone: "+13105550001",
+      email: "anthony@example.com",
+    })],
+  };
+  const sentMarks = [];
+
+  await processPaidBookings(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), false);
+  assert.equal(smsCalls.length, 0);
+});
+
 test("processActiveRentals: sends ended at return_datetime", async () => {
   reset();
   const now = new Date("2026-06-15T08:00:00-07:00");
