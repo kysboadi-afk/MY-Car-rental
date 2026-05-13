@@ -225,6 +225,43 @@ const { default: handler } = await import("./v2-bookings.js");
 
 // ─── Reset helpers ─────────────────────────────────────────────────────────────
 
+function createSmsLogSupabaseMock() {
+  const smsLogs = [];
+  return {
+    smsLogs,
+    from(table) {
+      if (table !== "sms_logs") {
+        throw new Error(`Unexpected table: ${table}`);
+      }
+      const filters = {};
+      return {
+        select() { return this; },
+        eq(column, value) {
+          filters[column] = value;
+          return this;
+        },
+        async maybeSingle() {
+          const row = smsLogs.find((item) =>
+            item.booking_id === filters.booking_id &&
+            item.template_key === filters.template_key &&
+            item.return_date_at_send === filters.return_date_at_send
+          );
+          return { data: row || null, error: null };
+        },
+        async upsert(row) {
+          const exists = smsLogs.some((item) =>
+            item.booking_id === row.booking_id &&
+            item.template_key === row.template_key &&
+            item.return_date_at_send === row.return_date_at_send
+          );
+          if (!exists) smsLogs.push({ ...row, id: smsLogs.length + 1 });
+          return { error: null };
+        },
+      };
+    },
+  };
+}
+
 function resetStore() {
   for (const k of Object.keys(bookingsStore)) delete bookingsStore[k];
 }
@@ -236,6 +273,7 @@ function resetCalls() {
   automationCalls.blocked.length = 0;
   automationCalls.releaseBlocked.length = 0;
   smsCalls.length = 0;
+  supabaseMockState.client = null;
 }
 
 // ─── Minimal create payload ───────────────────────────────────────────────────
@@ -528,6 +566,37 @@ test("lifecycle: approve booking (reserved_unpaid → booked_paid) triggers reve
   // Confirmation SMS sent
   assert.ok(smsCalls.length > 0, "Confirmation SMS must be sent on approval");
   assert.ok(smsCalls[0].body.includes("Camry 2012"), `SMS body should include vehicle name. Got: ${smsCalls[0].body}`);
+});
+
+test("lifecycle: repeated booked_paid updates do not resend booking confirmation SMS", async () => {
+  resetStore(); resetCalls();
+  supabaseMockState.client = createSmsLogSupabaseMock();
+
+  const createRes = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 0, totalPrice: 150 })), createRes);
+  const created = createRes._body.booking;
+
+  const approveRes = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "update",
+    vehicleId: "camry",
+    bookingId: created.bookingId,
+    updates: { status: "booked_paid", amountPaid: 150 },
+  }), approveRes);
+
+  const editRes = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "update",
+    vehicleId: "camry",
+    bookingId: created.bookingId,
+    updates: { status: "booked_paid", notes: "customer called" },
+  }), editRes);
+
+  assert.equal(approveRes._status, 200);
+  assert.equal(editRes._status, 200);
+  assert.equal(smsCalls.length, 1, "booking_confirmed SMS must only send once per booking");
 });
 
 test("lifecycle: activate booking (booked_paid → active_rental) syncs to Supabase", async () => {

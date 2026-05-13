@@ -755,15 +755,43 @@ async function processUnpaid(allBookings, now, sentMarks) {
   }
 }
 
+const ACTIVE_RENTER_STATUSES = new Set(["active_rental", "active", "overdue"]);
+
+function normalizeRenterContactInfo(booking) {
+  return {
+    phone: normalizePhone(booking?.phone || ""),
+    email: String(booking?.email || "").trim().toLowerCase(),
+  };
+}
+
 /**
  * Process all booked_paid bookings — send pre-pickup reminders.
  */
-async function processPaidBookings(allBookings, now, sentMarks) {
+export async function processPaidBookings(allBookings, now, sentMarks) {
+  const activeRenterPhones = new Set();
+  const activeRenterEmails = new Set();
+
+  for (const bookings of Object.values(allBookings)) {
+    for (const booking of bookings) {
+      if (!ACTIVE_RENTER_STATUSES.has(booking.status)) continue;
+      const { phone: normalizedPhone, email: normalizedEmail } = normalizeRenterContactInfo(booking);
+      if (normalizedPhone) activeRenterPhones.add(normalizedPhone);
+      if (normalizedEmail) activeRenterEmails.add(normalizedEmail);
+    }
+  }
+
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "booked_paid") continue;
       if (!booking.phone) {
         console.log(`[SMS SKIPPED — NO PHONE] ${booking.bookingId || booking.paymentIntentId || "?"}: status=${booking.status} vehicle=${vehicleId}`);
+        continue;
+      }
+
+      const { phone: normalizedPhone, email: normalizedEmail } = normalizeRenterContactInfo(booking);
+      if ((normalizedPhone && activeRenterPhones.has(normalizedPhone)) ||
+          (normalizedEmail && activeRenterEmails.has(normalizedEmail))) {
+        console.log(`[SMS_SKIP] ${booking.bookingId || booking.paymentIntentId || "?"} pickup_24h: renter already active`);
         continue;
       }
 

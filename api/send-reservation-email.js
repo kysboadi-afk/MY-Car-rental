@@ -15,7 +15,6 @@ import { hasOverlap } from "./_availability.js";
 import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { getVehicleById } from "./_vehicles.js";
-import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
@@ -25,6 +24,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
 import { normalizeClockTime, deriveReturnTime, formatTime12h, isoDateInLA } from "./_time.js";
+import { sendDedupedSms } from "./_sms-log.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1209,19 +1209,23 @@ export default async function handler(req, res) {
     if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
       // Send confirmation only for fully-paid bookings (not deposit-only reservations)
       try {
-        await sendSms(
-          normalizePhone(phone),
-          render(BOOKING_CONFIRMED, {
+        await sendDedupedSms({
+          bookingId: persistedBookingId || normalizedPaymentIntentId,
+          templateKey: "booking_confirmed",
+          phone,
+          body: render(BOOKING_CONFIRMED, {
             vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             customer_name: (name || "").split(" ")[0] || name || "Customer",
             pickup_date:   pickup ? new Date(pickup + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
             pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
+            return_date:   returnDate ? new Date(returnDate + "T12:00:00Z").toLocaleDateString("en-US", { timeZone: "America/Los_Angeles", month: "long", day: "numeric" }) : "",
+            return_time_line: returnTime ? ` at ${formatTime12h(returnTime) || returnTime}\n` : "\n",
             location:      resolvePickupLocation({
               vehicleId,
               vehicleName: car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             }),
-          })
-        );
+          }),
+        });
       } catch (smsErr) {
         console.error("Booking confirmation SMS failed:", smsErr);
       }

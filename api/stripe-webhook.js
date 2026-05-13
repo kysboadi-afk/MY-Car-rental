@@ -48,6 +48,7 @@ import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById } from "./_vehicles.js";
 import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
+import { sendDedupedSms } from "./_sms-log.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -2262,12 +2263,17 @@ export default async function handler(req, res) {
 
           // Send extension confirmed SMS
           if (updatedBooking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-            const template = EXTEND_CONFIRMED_ECONOMY;
             try {
-              await sendSms(normalizePhone(updatedBooking.phone), render(template, {
-                return_time: updatedBooking.returnTime || "",
-                return_date: updatedBooking.returnDate || "",
-              }));
+              await sendDedupedSms({
+                bookingId: bookingRef,
+                templateKey: "extend_confirmed_economy",
+                phone: updatedBooking.phone,
+                body: render(EXTEND_CONFIRMED_ECONOMY, {
+                  return_time: updatedBooking.returnTime || "",
+                  return_date: updatedBooking.returnDate || "",
+                }),
+                returnDateAtSend: updatedBooking.returnDate || undefined,
+              });
             } catch (smsErr) {
               console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
             }
@@ -2920,9 +2926,11 @@ export default async function handler(req, res) {
         // Renter SMS — booking confirmed
         if (preContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
-            await sendSms(
-              normalizePhone(preContact.phone),
-              render(BOOKING_CONFIRMED, {
+            await sendDedupedSms({
+              bookingId: bookingRef || originalPiId || paymentIntent.id,
+              templateKey: "booking_confirmed",
+              phone: preContact.phone,
+              body: render(BOOKING_CONFIRMED, {
                 customer_name:    sanitizeSmsValue(preContact.name || ""),
                 vehicle:          sanitizeSmsValue(preContact.vehicleName || "your vehicle"),
                 pickup_date:      preContact.pickupDate || "",
@@ -2934,8 +2942,8 @@ export default async function handler(req, res) {
                   vehicleId: preContact.vehicleId,
                   vehicleName: preContact.vehicleName,
                 }),
-              })
-            );
+              }),
+            });
           } catch (smsErr) {
             console.error("stripe-webhook: balance_paid SMS error (non-fatal):", smsErr.message);
           }
@@ -3405,9 +3413,11 @@ export default async function handler(req, res) {
       // ── Step 3: Renter SMS confirmation ───────────────────────────────────
       if (sl_renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          await sendSms(
-            normalizePhone(sl_renter_phone),
-            render(BOOKING_CONFIRMED, {
+          await sendDedupedSms({
+            bookingId: sl_booking_id || paymentIntent.id,
+            templateKey: "booking_confirmed",
+            phone: sl_renter_phone,
+            body: render(BOOKING_CONFIRMED, {
               customer_name:    sanitizeSmsValue(sl_renter_name || ""),
               vehicle:          sanitizeSmsValue(sl_vehicle_name || "your slingshot"),
               pickup_date:      sl_pickup_date || "",
@@ -3419,8 +3429,8 @@ export default async function handler(req, res) {
                 vehicleId: sl_vehicle_id,
                 vehicleName: sl_vehicle_name,
               }),
-            })
-          );
+            }),
+          });
         } catch (slRenterSmsErr) {
           console.error("stripe-webhook: [SLINGSHOT] renter SMS error (non-fatal):", slRenterSmsErr.message);
         }
@@ -3512,9 +3522,11 @@ export default async function handler(req, res) {
       // Renter SMS — booking confirmation to the customer
       if (_notifyMeta.renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          await sendSms(
-            normalizePhone(_notifyMeta.renter_phone),
-            render(BOOKING_CONFIRMED, {
+          await sendDedupedSms({
+            bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
+            templateKey: "booking_confirmed",
+            phone: _notifyMeta.renter_phone,
+            body: render(BOOKING_CONFIRMED, {
               customer_name:    sanitizeSmsValue(_notifyMeta.renter_name || ""),
               vehicle:          sanitizeSmsValue(_notifyMeta.vehicle_name || _notifyMeta.vehicle_id || "your vehicle"),
               pickup_date:      _notifyMeta.pickup_date || "",
@@ -3526,8 +3538,8 @@ export default async function handler(req, res) {
                 vehicleId: _notifyMeta.vehicle_id,
                 vehicleName: _notifyMeta.vehicle_name,
               }),
-            })
-          );
+            }),
+          });
         } catch (renterSmsErr) {
           console.error("stripe-webhook: renter booking SMS error (non-fatal):", renterSmsErr.message);
         }

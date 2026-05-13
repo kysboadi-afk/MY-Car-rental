@@ -44,8 +44,6 @@ import { CARS, computeRentalDays, getAllVehicleIds, getActiveVehicleIds } from "
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
-import { sendSms } from "./_textmagic.js";
-import { normalizePhone } from "./_bookings.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
@@ -53,6 +51,7 @@ import { normalizeClockTime, isoDateInLA } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById, loadVehicles } from "./_vehicles.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
+import { sendDedupedSms } from "./_sms-log.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -887,19 +886,23 @@ export default async function handler(req, res) {
         if (newStatus === "booked_paid" && updatedBooking.phone &&
             process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
-            await sendSms(
-              normalizePhone(updatedBooking.phone),
-              render(BOOKING_CONFIRMED, {
+            await sendDedupedSms({
+              bookingId: updatedBooking.bookingId || updatedBooking.paymentIntentId,
+              templateKey: "booking_confirmed",
+              phone: updatedBooking.phone,
+              body: render(BOOKING_CONFIRMED, {
                 vehicle:       updatedBooking.vehicleName || updatedBooking.vehicleId || "",
                 customer_name: (updatedBooking.name || "Customer").split(" ")[0],
                 pickup_date:   updatedBooking.pickupDate  || "",
                 pickup_time:   updatedBooking.pickupTime  || "",
+                return_date:   updatedBooking.returnDate || "",
+                return_time_line: updatedBooking.returnTime ? ` at ${updatedBooking.returnTime}\n` : "\n",
                 location:      resolvePickupLocation({
                   vehicleId: updatedBooking.vehicleId || "",
                   vehicleName: updatedBooking.vehicleName || "",
                 }),
-              })
-            );
+              }),
+            });
           } catch (smsErr) {
             console.error("v2-bookings: booking confirmation SMS failed (non-fatal):", smsErr.message);
           }
