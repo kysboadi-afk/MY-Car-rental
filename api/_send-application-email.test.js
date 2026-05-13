@@ -469,3 +469,36 @@ test("verification link in applicant email points to the thank-you page and not 
   assert.ok(sentMails[1].html.includes("www.slytrans.com/thank-you.html"));
   assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
 });
+
+// ─── Regression: verification link when applicationId is pre-provided ─────────
+//
+// When the frontend passes an applicationId from the create-renter-application
+// step and the DB patch subsequently fails (e.g. transient Supabase error), the
+// original applicationId must NOT be discarded.  The verification link in the
+// email/SMS must still be present so the renter can reach identity verification.
+
+test("verification link is included in applicant email even when DB patch fails and applicationId was pre-provided", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  // patchRenterApplicationById is mocked to return { ok: false } globally.
+  // Supplying an applicationId triggers the patch path; the original ID must be
+  // retained so the verification link can be built.
+  await handler(makeReq("POST", { ...VALID_BODY_WITH_EMAIL, applicationId: "pre-created-app-uuid" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMails.length, 2, "Expected owner + applicant emails");
+  const html = sentMails[1].html;
+  assert.ok(html.includes("thank-you.html"), "Applicant email must contain verification link even after patch failure");
+  assert.ok(html.includes("from=resume"),    "Verification link must include from=resume");
+  assert.ok(html.includes("token="),         "Verification link must include HMAC token");
+});
+
+test("verification link is included in SMS even when DB patch fails and applicationId was pre-provided", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, applicationId: "pre-created-app-uuid" }), res);
+  assert.equal(res._status, 200);
+  const sms = sentMessages[0].text;
+  assert.ok(sms.includes("thank-you.html"), "SMS must contain verification link even after patch failure");
+  assert.ok(sms.includes("from=resume"),    "SMS verification link must include from=resume");
+  assert.ok(sms.includes("token="),         "SMS verification link must include HMAC token");
+});
