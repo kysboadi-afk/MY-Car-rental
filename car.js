@@ -6,8 +6,10 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
-// Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
-const CAMRY_BOOKING_DEPOSIT = 50;
+// Fallback deposit amount used only if neither the vehicle record nor the
+// system settings supply a booking_deposit value (prevents a broken button
+// if both async fetches are unexpectedly slow).
+const FALLBACK_BOOKING_DEPOSIT = 50;
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
 // Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
@@ -108,8 +110,8 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
 // ----- Dynamic Pricing -----
 // Fetches live prices from the admin System Settings (Supabase) so that any
 // rate change in the admin panel is immediately reflected on the booking page.
-// Runs asynchronously after page load — falls back to the hard-coded values
-// above if the API is unreachable or returns an error.
+// Runs asynchronously after page load — falls back to the carData values
+// already loaded from the API if public-pricing is unreachable or returns an error.
 (function loadDynamicPricing() {
   fetch(API_BASE + "/api/public-pricing")
     .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
@@ -120,19 +122,28 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
       var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
-      // Apply economy-wide pricing ONLY to vehicles that do not have their own
-      // per-vehicle rates loaded from the DB (i.e. _hasOwnPricing is false).
-      // Vehicles like fusion2017 that have explicit rates in vehicle_pricing must
-      // NOT be overwritten with the camry economy rates — that is what caused
-      // fusion2017 to flip between $350 (economy) and $400 (its actual rate).
+      // Apply economy-wide pricing to all vehicles currently in `cars`.
+      // All vehicles are loaded from the API; the economy-wide rates from
+      // system_settings override any per-vehicle defaults set by buildCarDataFromAPI.
       Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
-        if (cars[vid]._hasOwnPricing) return; // already has authoritative per-vehicle pricing
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
         if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
         if (ecBiWeek  > 0) cars[vid].biweekly    = ecBiWeek;
         if (ecMonthly > 0) cars[vid].monthly     = ecMonthly;
       });
+
+      // ── Booking deposit ───────────────────────────────────────────────────
+      // Apply the system-wide booking_deposit to any vehicle that doesn't have
+      // a per-vehicle deposit configured (v.booking_deposit from v2-vehicles).
+      var ecDeposit = (pricing.economy && pricing.economy.booking_deposit) ? Number(pricing.economy.booking_deposit) : 0;
+      Object.keys(cars).forEach(function(vid) {
+        if (!cars[vid] || cars[vid].booking_deposit != null) return; // don't overwrite per-vehicle value
+        if (ecDeposit > 0) cars[vid].booking_deposit = ecDeposit;
+      });
+      // Re-render the deposit button in case the vehicle data loaded first and
+      // booking_deposit was null at initCarPage() time.
+      updateDepositButton();
 
       // ── Tax rate ─────────────────────────────────────────────────────────
       // (already set as a module-level const; we update the global so
@@ -143,18 +154,14 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
         window._dynamicTaxRate = Number(pricing.tax_rate);
       }
 
-      // Refresh the displayed price for the current vehicle only when economy
-      // rates were actually applied (i.e. the vehicle has no own pricing).
-      if (carData && !carData._hasOwnPricing) {
+      // Refresh the displayed price for the current vehicle
+      if (carData) {
         var priceEl = document.getElementById("carPrice");
         if (priceEl) {
           priceEl.textContent = carData.weekly
             ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
             : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day");
         }
-        // Also refresh the earnings block in case the weekly rate changed.
-        // Skip for slingshot vehicles — the earnings block is hidden for them.
-        if (carData.category !== "slingshot") updateEarningsBlock();
       }
     })
     .catch(function(err) {
@@ -164,72 +171,161 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
 }());
 
 const vehicleId = getVehicleFromURL();
+if (!vehicleId) {
+  alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
+  window.location.href = "index.html";
+}
 
-// carData is populated asynchronously after fetching from the API.
-// All event handlers below reference carData via closure — they are only
-// triggered by user interaction, which always happens after initialization.
+// carData is populated asynchronously after fetching from the API for all vehicles.
 let carData = null;
 
-// ----- API vehicle normalizer -----
-// Maps fields returned by /api/v2-vehicles into the shape car.js expects.
-// Handles both admin-created vehicles (daily_price, weekly_price, cover_image)
-// and legacy static entries (pricePerDay, weekly, images).
-function normalizeApiVehicle(v) {
-  function toNum(n) { var x = Number(n); return Number.isFinite(x) && x > 0 ? x : null; }
+// Builds a cars-compatible data object from a v2-vehicles API response entry.
+// All vehicles — existing and newly added — load through this path.
+function buildCarDataFromAPI(v) {
   return {
-    name:          v.vehicle_name || v.name || v.vehicle_id,
+    name:          v.vehicle_name || v.vehicle_id,
     subtitle:      v.subtitle     || "",
-    subtitleKey:   v.subtitleKey  || null,
-    pricePerDay:   toNum(v.daily_price    !== undefined ? v.daily_price    : v.pricePerDay),
-    minRentalDays: Math.max(1, parseInt(v.min_rental_days || v.minRentalDays || 1, 10)),
-    weekly:        toNum(v.weekly_price   !== undefined ? v.weekly_price   : v.weekly),
-    biweekly:      toNum(v.biweekly_price !== undefined ? v.biweekly_price : v.biweekly),
-    monthly:       toNum(v.monthly_price  !== undefined ? v.monthly_price  : v.monthly),
-    deposit:       toNum(v.deposit),
-    // True when the vehicle has its own per-vehicle rates — either from the
-    // vehicle_pricing DB table (daily_price/weekly_price) or from the legacy
-    // JSONB/CARS fields (pricePerDay/weekly).
-    // loadDynamicPricing() skips vehicles with _hasOwnPricing so the economy-wide
-    // camry rates never overwrite a vehicle's own authoritative pricing.
-    _hasOwnPricing: v.daily_price != null || v.weekly_price != null || v.pricePerDay != null || v.weekly != null,
+    // Prefer per-vehicle pricing stored in the data blob (set at creation time),
+    // then fall through to sensible economy defaults.
+    pricePerDay:   v.daily_price    || 55,
+    weekly:        v.weekly_price   || 350,
+    biweekly:      v.biweekly_price || 650,
+    monthly:       v.monthly_price  || 1300,
+    minRentalDays: 1,
+    // Per-vehicle booking deposit (e.g. $50 reserve-now option). null means the
+    // deposit button is hidden. loadDynamicPricing() fills this from the system-wide
+    // setting when no per-vehicle value is present.
+    booking_deposit: Number(v.booking_deposit) > 0 ? Number(v.booking_deposit) : null,
     images:        (function() {
-      if (Array.isArray(v.images) && v.images.length) return v.images;
       var imgs = v.cover_image ? [v.cover_image] : [];
       if (Array.isArray(v.gallery_images)) {
         v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
       }
-      return imgs.length ? imgs : [];
+      return imgs.length ? imgs : ["/images/car1.jpg"];
     })(),
-    make:          v.make  || "",
-    model:         v.model || v.vehicle_name || "",
-    year:          v.vehicle_year || v.year  || "",
-    vin:           v.vin   || "",
-    color:         v.color || "",
-    type:          v.type  || "",
-    category:      (v.category || "").toLowerCase() || (v.type === "slingshot" ? "slingshot" : "car"),
-    scarcity_text: v.scarcity_text || "",
+    make:          v.make          || "",
+    model:         v.model         || v.vehicle_name || vehicleId,
+    year:          v.vehicle_year  || null,
+    vin:           v.vin           || "",
+    color:         v.color         || "",
     earnings_tagline: v.earnings_tagline || "",
     earnings_title:   v.earnings_title   || "",
     earnings_row1:    v.earnings_row1    || "",
     earnings_cta:     v.earnings_cta     || "",
+    // category drives page-level UI switching — "car" or "slingshot"
+    category:         (v.category || "").toLowerCase() || (v.type === "slingshot" ? "slingshot" : "car"),
   };
 }
 
-// Average weekly rideshare earnings range used in the earnings example block.
-const EARNINGS_EXAMPLE_LOW  = 1200;  // $1,200 low-end weekly rideshare earnings (Los Angeles)
-const EARNINGS_EXAMPLE_HIGH = 1600;  // $1,600 high-end weekly rideshare earnings (Los Angeles)
+// Shows or hides the "Reserve with Deposit" button and the deposit notice based on
+// whether the loaded vehicle supports a booking deposit. Called from both
+// initCarPage() (after vehicle data loads) and loadDynamicPricing() (after system
+// settings load) so the button appears correctly regardless of fetch order.
+function updateDepositButton() {
+  if (!carData) return;
+  const reserveBtnEl   = document.getElementById("reserveBtn");
+  const depositNotice  = document.getElementById("camryDepositNotice");
+  const depositAmt = carData.booking_deposit != null ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
+  if (reserveBtnEl) {
+    reserveBtnEl.textContent = "\uD83D\uDD12 Reserve with $" + depositAmt + " Deposit";
+    reserveBtnEl.style.display = "";
+  }
+  if (depositNotice) depositNotice.style.display = "";
+}
 
-// ----- Earnings block updater -----
+// Initializes all DOM content that depends on carData.  Called from the .then()
+// callback once vehicle data has been loaded from the API.
+function initCarPage() {
+  document.getElementById("carName").textContent = carData.name;
+  document.getElementById("carSubtitle").textContent =
+    (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
+  document.getElementById("carPrice").textContent = carData.weekly
+    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
+    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+  // ── Category-aware navigation ───────────────────────────────────────────
+  // Completely rebuild the nav based on category so no car links appear for
+  // slingshots and no slingshot links appear for cars.
+  const isSlingshot = carData.category === "slingshot";
+  const nav = document.querySelector(".site-nav");
+  if (nav) {
+    if (isSlingshot) {
+      nav.innerHTML =
+        '<a href="slingshots.html">Home</a>' +
+        '<a href="slingshots.html">Slingshots</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    } else {
+      nav.innerHTML =
+        '<a href="index.html" data-i18n="nav.homeLink">Home</a>' +
+        '<a href="cars.html">Browse Cars</a>' +
+        '<a href="manage-booking.html">Manage Booking</a>';
+    }
+  }
+  // Logo link
+  const logoLink = document.querySelector(".logo-link");
+  if (logoLink) logoLink.href = isSlingshot ? "slingshots.html" : "index.html";
+  // Back button — default listener goes to cars.html; override for slingshots
+  const backBtnEl = document.getElementById("backBtn");
+  if (backBtnEl) {
+    if (isSlingshot) {
+      backBtnEl.onclick = function(e) { e.preventDefault(); window.location.href = "slingshots.html"; };
+    } else {
+      backBtnEl.onclick = null;
+    }
+  }
+  // Rideshare earnings block — only shown for cars
+  const earningsBlock = document.getElementById("earningsBlock");
+  if (earningsBlock) earningsBlock.style.display = isSlingshot ? "none" : "";
+
+  if (IS_TEST_MODE_OVERRIDE) {
+    const bookingSection = document.querySelector(".booking");
+    if (bookingSection) {
+      const testModeBanner = document.createElement("div");
+      testModeBanner.id = "testModeBanner";
+      testModeBanner.textContent = "TEST MODE \u2013 availability override active";
+      testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
+      bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
+    }
+  }
+
+  // Load images into the slider
+  carData.images.forEach((imgSrc, idx) => {
+    const img = document.createElement("img");
+    img.src = imgSrc;
+    img.classList.add("slide");
+    if (idx === 0) img.classList.add("active");
+    sliderContainer.appendChild(img);
+
+    const dot = document.createElement("span");
+    dot.classList.add("dot");
+    if (idx === 0) dot.classList.add("active");
+    dot.addEventListener("click", () => goToSlide(idx));
+    sliderDots.appendChild(dot);
+  });
+
+  // Show or hide the "Reserve with Deposit" option based on this vehicle's config.
+  // loadDynamicPricing() may also call updateDepositButton() once system settings load.
+  updateDepositButton();
+
+  // Update the earnings block with this vehicle's data and install the translation
+  // hook so language switches keep it correct — only for cars.
+  if (!isSlingshot) {
+    updateEarningsBlock();
+    installEarningsTranslationHook();
+  }
+}
+
+// Average weekly rideshare earnings range used in the earnings example block.
+const EARNINGS_EXAMPLE_LOW  = 1200;
+const EARNINGS_EXAMPLE_HIGH = 1600;
+
 // Updates the earnings block on the booking page with per-vehicle text and
-// computed prices.  Called from initCarDisplay() and re-called after every
-// language switch so the amounts stay correct.
-// Per-vehicle values stored on carData (earnings_tagline, earnings_title,
+// computed prices.  Per-vehicle values (earnings_tagline, earnings_title,
 // earnings_row1, earnings_cta) take priority over lang.js defaults.
 function updateEarningsBlock() {
   if (!carData) return;
   const weekly = carData.weekly;
 
-  // Update static text rows with per-vehicle override or fall back to i18n default.
   const taglineEl = document.querySelector("[data-i18n='booking.earningsTagline']");
   if (taglineEl && carData.earnings_tagline) {
     taglineEl.textContent = carData.earnings_tagline;
@@ -257,14 +353,11 @@ function updateEarningsBlock() {
   const row2 = document.getElementById("earningsRow2");
   const row3 = document.getElementById("earningsRow3");
   if (row2) {
-    // Get translated label ("Weekly rental: …" or "Alquiler semanal: …") and
-    // swap the hardcoded amount for the vehicle's actual weekly rate.
     const tmpl2 = _t("booking.earningsRow2Html",
       `Weekly rental: <span class="earnings-yellow">$${weekly}</span>`);
     row2.innerHTML = tmpl2.replace(/\$[\d,]+/, `$${weekly}`);
   }
   if (row3) {
-    // Swap the hardcoded take-home range with values computed from this vehicle's rate.
     const tmpl3 = _t("booking.earningsRow3Html",
       `<span class="earnings-green">Estimated take-home:</span> $${takeHomeLow} \u2013 $${takeHomeHigh}`);
     row3.innerHTML = tmpl3.replace(/\$[\d,]+\s*[\u2013\-]\s*\$[\d,]+/,
@@ -273,7 +366,7 @@ function updateEarningsBlock() {
 }
 
 // Wrap slyI18n.applyTranslations once so the earnings block is refreshed on every
-// language switch.  Called once after carData is first loaded.
+// language switch.
 let _earningsHookInstalled = false;
 function installEarningsTranslationHook() {
   if (_earningsHookInstalled) return;
@@ -286,144 +379,41 @@ function installEarningsTranslationHook() {
   _earningsHookInstalled = true;
 }
 
-// ----- Page display initializer -----
-// Called once carData is ready — sets page title, price, and builds the image slider.
-function initCarDisplay() {
-  document.getElementById("carName").textContent = carData.name;
+const sliderContainer = document.getElementById("sliderContainer");
+const sliderDots = document.getElementById("sliderDots");
+let currentSlide = 0;
 
-  // ── Category-aware navigation ───────────────────────────────────────────
-  // Completely rebuild the nav for each category so no car links ever appear
-  // on the slingshot booking page and vice-versa.  innerHTML replacement is
-  // used instead of attribute mutations to avoid fragile selector dependencies
-  // and to guarantee the correct set of links regardless of the HTML defaults.
-  const isSlingshot = carData.category === "slingshot";
-  const nav = document.querySelector(".site-nav");
-  if (nav) {
-    if (isSlingshot) {
-      // Slingshot mode: no car links — Home, Slingshots, Manage Booking only
-      nav.innerHTML =
-        '<a href="slingshots.html">Home</a>' +
-        '<a href="slingshots.html">Slingshots</a>' +
-        '<a href="manage-booking.html">Manage Booking</a>';
-    } else {
-      // Car mode: restore default car nav in case another vehicle was selected
-      nav.innerHTML =
-        '<a href="index.html" data-i18n="nav.homeLink">Home</a>' +
-        '<a href="cars.html">Browse Cars</a>' +
-        '<a href="manage-booking.html">Manage Booking</a>';
-    }
-  }
-  // Logo link
-  const logoLink = document.querySelector(".logo-link");
-  if (logoLink) logoLink.href = isSlingshot ? "slingshots.html" : "index.html";
-  // Back button
-  const backBtnEl = document.getElementById("backBtn");
-  if (backBtnEl) {
-    if (isSlingshot) {
-      backBtnEl.onclick = function(e) { e.preventDefault(); window.location.href = "slingshots.html"; };
-    } else {
-      backBtnEl.onclick = null; // rely on the default listener that goes to cars.html
-    }
-  }
-  // Rideshare earnings block — only relevant for cars
-  const earningsBlock = document.getElementById("earningsBlock");
-  if (earningsBlock) earningsBlock.style.display = isSlingshot ? "none" : "";
-
-  // Point the "Complete Booking" header button to the booking section of this vehicle's page.
-  const completeBookingBtn = document.getElementById("completeBookingBtn");
-  if (completeBookingBtn) {
-    completeBookingBtn.href = `car.html?vehicle=${vehicleId}#booking`;
-  }
-  document.getElementById("carSubtitle").textContent =
-    (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
-  document.getElementById("carPrice").textContent = carData.weekly
-    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
-    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
-
-  // Populate the earnings block with this vehicle's actual weekly rate and install
-  // the translation hook so language switches keep it correct.
-  if (!isSlingshot) {
-    updateEarningsBlock();
-    installEarningsTranslationHook();
-  }
-
-  if (IS_TEST_MODE_OVERRIDE) {
-    const bookingSection = document.querySelector(".booking");
-    if (bookingSection) {
-      const testModeBanner = document.createElement("div");
-      testModeBanner.id = "testModeBanner";
-      testModeBanner.textContent = "TEST MODE – availability override active";
-      testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
-      bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
-    }
-  }
-
-  const sliderContainer = document.getElementById("sliderContainer");
-  const sliderDots = document.getElementById("sliderDots");
-  let currentSlide = 0;
-
-  // Load images — fall back to the logo when no images are available.
-  const imagesToShow = (carData.images && carData.images.length) ? carData.images : ["images/logo.jpg"];
-  imagesToShow.forEach((imgSrc, idx) => {
-    const img = document.createElement("img");
-    img.src = imgSrc;
-    img.classList.add("slide");
-    if (idx === 0) img.classList.add("active");
-    sliderContainer.appendChild(img);
-
-    const dot = document.createElement("span");
-    dot.classList.add("dot");
-    if (idx === 0) dot.classList.add("active");
-    dot.addEventListener("click", () => goToSlide(idx));
-    sliderDots.appendChild(dot);
-  });
-
-  function showSlide(index) {
-    const slides = sliderContainer.querySelectorAll(".slide");
-    const dots = sliderDots.querySelectorAll(".dot");
-    slides.forEach((s,i)=>s.classList.toggle("active", i===index));
-    dots.forEach((d,i)=>d.classList.toggle("active", i===index));
-    currentSlide = index;
-  }
-
-  function nextSlide() { showSlide((currentSlide+1) % imagesToShow.length); }
-  function prevSlide() { showSlide((currentSlide-1+imagesToShow.length) % imagesToShow.length); }
-  document.getElementById("nextSlide").addEventListener("click", nextSlide);
-  document.getElementById("prevSlide").addEventListener("click", prevSlide);
-  function goToSlide(idx){ showSlide(idx); }
+function showSlide(index) {
+  const slides = sliderContainer.querySelectorAll(".slide");
+  const dots = sliderDots.querySelectorAll(".dot");
+  slides.forEach((s,i)=>s.classList.toggle("active", i===index));
+  dots.forEach((d,i)=>d.classList.toggle("active", i===index));
+  currentSlide = index;
 }
 
-// ----- Vehicle lookup -----
-// All vehicles are fetched from /api/v2-vehicles (single source of truth).
-if (!vehicleId) {
-  alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
-  window.location.href = "index.html";
-} else {
-  (async function fetchAndInitVehicle() {
-    try {
-      const resp = await fetch(API_BASE + "/api/v2-vehicles");
-      if (resp.ok) {
-        const vehicles = await resp.json();
-        const found = Array.isArray(vehicles) && vehicles.find(function(v) {
-          return v.vehicle_id === vehicleId && (!v.status || v.status === "active");
-        });
-        if (found) {
-          carData = normalizeApiVehicle(found);
-          cars[vehicleId] = carData; // cache so loadDynamicPricing can update it too
-          initCarDisplay();
-          return;
-        }
-      }
-    } catch (_) { /* fall through */ }
-    // Vehicle not found in API — redirect to fleet page
+function nextSlide() { showSlide((currentSlide+1)%carData.images.length); }
+function prevSlide() { showSlide((currentSlide-1+carData.images.length)%carData.images.length); }
+document.getElementById("nextSlide").addEventListener("click", nextSlide);
+document.getElementById("prevSlide").addEventListener("click", prevSlide);
+function goToSlide(idx){ showSlide(idx); }
+
+// Initialize page: fetch vehicle data from the API for all vehicles.
+sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
+fetch(API_BASE + "/api/v2-vehicles")
+  .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+  .then(function(vehicles) {
+    var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;
+    if (!v) throw new Error("not found");
+    carData = cars[vehicleId] = buildCarDataFromAPI(v);
+    sliderContainer.innerHTML = "";
+    initCarPage();
+  })
+  .catch(function() {
     alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
     window.location.href = "index.html";
-  }());
-}
+  });
 
 // ----- Back Button -----
-// Default destination is cars.html. For slingshot vehicles initCarDisplay()
-// overrides this with an onclick that sends the user to slingshots.html instead.
 document.getElementById("backBtn").addEventListener("click", ()=>{
   window.location.href = "cars.html";
 });
@@ -455,18 +445,6 @@ let _pendingPaymentMode = null;
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
 
-
-// Show the "Reserve with Deposit" button and deposit notice for all vehicles so renters
-// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
-{
-  const reserveBtnEl = document.getElementById("reserveBtn");
-  if (reserveBtnEl) {
-    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
-    reserveBtnEl.style.display = "";
-  }
-  const camryDepNotice = document.getElementById("camryDepositNotice");
-  if (camryDepNotice) camryDepNotice.style.display = "";
-}
 
 // ----- Name Field Validation & Auto-correction -----
 
@@ -939,10 +917,11 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
-    // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
+    var depositAmt = "$" + ((carData && carData.booking_deposit != null) ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT);
+    // Full payment online, OR per-vehicle deposit amount if renter chose "Reserve Now"
     paymentTermsBodyEl.textContent = lang === "es"
-      ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
-      : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+      ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran " + depositAmt + " ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+      : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only " + depositAmt + " is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
@@ -1140,18 +1119,6 @@ pickupTime.addEventListener("change", function() {
   const slot = this.value; // HH:MM
   returnTime.value = slot || "";
   updateTotal();
-  updatePayBtn();
-});
-
-// Tamper-prevention: returnTime must always equal pickupTime.
-// These listeners fire if anyone manually edits the hidden input via DevTools.
-returnTime.addEventListener("input", function() {
-  this.value = pickupTime.value || "";
-  updatePayBtn();
-});
-returnTime.addEventListener("change", function() {
-  if (flatpickrActive) return; // let Flatpickr's onChange handle the returnDate sibling
-  this.value = pickupTime.value || "";
   updatePayBtn();
 });
 
@@ -1355,12 +1322,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     const subtitle = extendSection.querySelector(".waitlist-subtitle");
     if (subtitle) {
       if (nextAvailableDisplay) {
-        subtitle.innerHTML =
-          `This vehicle is currently rented \u2014 next available pickup: <strong style="color:#fbbf24;">${nextAvailableDisplay}</strong>.` +
-          ` If you are the current renter, enter your contact info below to extend your rental period.` +
-          `<span class="waitlist-queue-note" style="display:block;margin-top:8px;">` +
-          `\u23F1 This time reflects a 2-hour preparation window added after the current rental\u2019s confirmed return time.` +
-          `</span>`;
+        subtitle.textContent = `This vehicle is currently rented \u2014 available again: ${nextAvailableDisplay}. If you are the current renter, enter your contact info below to extend your rental period.`;
       } else {
         subtitle.textContent = "This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.";
       }
@@ -1996,69 +1958,22 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { showPayError(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
-  if (!pickup.value) { showPayError(window.slyI18n.t("booking.alertPickupDate") || "Please select a pickup date."); return; }
   if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
+  if (!pickup.value) { showPayError(window.slyI18n.t("booking.alertPickupDate")); return; }
   if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
-
-  // Force returnTime to match pickupTime — no user-visible message needed here because
-  // returnTime is a readonly input; this branch only fires if DevTools was used to edit it.
-  // The server always derives return_time = pickup_time anyway, so this is a belt-and-suspenders sync.
-  returnTime.value = pickupTime.value;
   if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
-
-  // Re-validate all required booking fields — guards against DevTools button enablement.
-  // These checks mirror updatePayBtn() so bypassing the button state has no effect.
-  if (!agreeCheckbox.checked) {
-    showPayError("Please read and accept the Rental Agreement before proceeding.");
-    return;
-  }
-  if (!isValidName(nameVal)) {
-    showPayError(window.slyI18n.t("booking.alertName") || "Please enter your full first and last name.");
-    return;
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    showPayError(window.slyI18n.t("booking.alertEmail") || "Please enter a valid email address.");
-    return;
-  }
-  if (uploadedFile === null && idUpload.files.length === 0) {
-    showPayError("Please upload the front of your Driver's License or government-issued ID before proceeding.");
-    return;
-  }
-  if (uploadedFileBack === null && idBackUpload.files.length === 0) {
-    showPayError("Please upload the back of your Driver's License or government-issued ID before proceeding.");
-    return;
-  }
-  if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
-    showPayError("Please indicate whether you have personal auto insurance or would like a Damage Protection Plan.");
-    return;
-  }
-  if (insuranceCoverageChoice === "yes" && uploadedInsurance === null && insuranceUpload.files.length === 0) {
-    showPayError("Please upload proof of insurance before proceeding.");
-    return;
-  }
-  if (insuranceCoverageChoice === "no" &&
-      selectedProtectionTier !== "basic" && selectedProtectionTier !== "standard" && selectedProtectionTier !== "premium") {
-    showPayError("Please select a Damage Protection Plan tier (Basic, Standard, or Premium).");
-    return;
-  }
-  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
-  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
-  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
-    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
-    if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
-  }
-  const isCamryDepositMode = paymentMode === 'deposit';
-  const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
+  const isDepositMode = paymentMode === 'deposit';
+  // Use per-vehicle booking_deposit (set by loadDynamicPricing from system settings if not
+  // in the vehicle record). Fall back to the module-level constant only as a last resort.
+  const depositAmount = (carData && carData.booking_deposit != null) ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
-  const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
-  // For Camry deposit mode, compute the balance the renter still owes at pickup so
+  const displayPayNow = isDepositMode ? depositAmount.toFixed(2) : totalEl.textContent;
+  // For deposit mode, compute the balance the renter still owes at pickup so
   // the confirmation email can display the exact amount (full after-tax total minus deposit).
-  if (isCamryDepositMode) {
+  if (isDepositMode) {
     const fullAmtFloat = parseFloat(totalEl.textContent);
-    if (isFinite(fullAmtFloat) && fullAmtFloat > camryDepositAmount) {
-      carData._balanceAtPickup = (fullAmtFloat - camryDepositAmount).toFixed(2);
+    if (isFinite(fullAmtFloat) && fullAmtFloat > depositAmount) {
+      carData._balanceAtPickup = (fullAmtFloat - depositAmount).toFixed(2);
     }
   }
 
@@ -2069,6 +1984,15 @@ stripeBtn.addEventListener("click", async () => {
       value: isFinite(_pixelCheckoutValue) ? _pixelCheckoutValue : 0,
       currency: "USD",
     });
+  }
+
+  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
+  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
+  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
   }
 
   stripeBtn.disabled = true;
@@ -2222,14 +2146,14 @@ stripeBtn.addEventListener("click", async () => {
     // before mounting the button — this is what prevents the "Unable to show
     // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
     // browsers or when the domain association file has not yet been verified.
-    const totalCents = isCamryDepositMode
-        ? Math.round(camryDepositAmount * 100)
+    const totalCents = isDepositMode
+        ? Math.round(depositAmount * 100)
         : Math.round(parseFloat(totalEl.textContent) * 100);
     const paymentReq = stripe.paymentRequest({
       country: "US",
       currency: "usd",
       total: {
-        label: isCamryDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
+        label: isDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
         amount: totalCents,
       },
       requestPayerName: true,

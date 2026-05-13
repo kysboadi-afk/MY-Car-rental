@@ -138,7 +138,7 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
       // a per-vehicle deposit configured (v.booking_deposit from v2-vehicles).
       var ecDeposit = (pricing.economy && pricing.economy.booking_deposit) ? Number(pricing.economy.booking_deposit) : 0;
       Object.keys(cars).forEach(function(vid) {
-        if (!cars[vid] || cars[vid].booking_deposit) return; // don't overwrite per-vehicle value
+        if (!cars[vid] || cars[vid].booking_deposit != null) return; // don't overwrite per-vehicle value
         if (ecDeposit > 0) cars[vid].booking_deposit = ecDeposit;
       });
       // Re-render the deposit button in case the vehicle data loaded first and
@@ -225,7 +225,7 @@ function updateDepositButton() {
   if (!carData) return;
   const reserveBtnEl   = document.getElementById("reserveBtn");
   const depositNotice  = document.getElementById("camryDepositNotice");
-  const depositAmt = carData.booking_deposit > 0 ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
+  const depositAmt = carData.booking_deposit != null ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
   if (reserveBtnEl) {
     reserveBtnEl.textContent = "\uD83D\uDD12 Reserve with $" + depositAmt + " Deposit";
     reserveBtnEl.style.display = "";
@@ -917,7 +917,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
-    var depositAmt = "$" + ((carData && carData.booking_deposit) || FALLBACK_BOOKING_DEPOSIT);
+    var depositAmt = "$" + ((carData && carData.booking_deposit != null) ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT);
     // Full payment online, OR per-vehicle deposit amount if renter chose "Reserve Now"
     paymentTermsBodyEl.textContent = lang === "es"
       ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran " + depositAmt + " ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
@@ -1959,12 +1959,13 @@ stripeBtn.addEventListener("click", async () => {
   if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
   if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
+  if (!pickup.value) { showPayError(window.slyI18n.t("booking.alertPickupDate")); return; }
   if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
   if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
   const isDepositMode = paymentMode === 'deposit';
   // Use per-vehicle booking_deposit (set by loadDynamicPricing from system settings if not
   // in the vehicle record). Fall back to the module-level constant only as a last resort.
-  const depositAmount = (carData && carData.booking_deposit) || FALLBACK_BOOKING_DEPOSIT;
+  const depositAmount = (carData && carData.booking_deposit != null) ? carData.booking_deposit : FALLBACK_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isDepositMode ? depositAmount.toFixed(2) : totalEl.textContent;
   // For deposit mode, compute the balance the renter still owes at pickup so
@@ -1985,37 +1986,19 @@ stripeBtn.addEventListener("click", async () => {
     });
   }
 
+  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
+  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
+  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
+  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
+  }
+
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
   const _reserveBtnLoading = document.getElementById("reserveBtn");
   if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
-
-  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idFrontSizeErr) {
-    stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-    if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-    showPayError(idFrontSizeErr);
-    return;
-  }
-  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idBackSizeErr) {
-    stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-    if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-    showPayError(idBackSizeErr);
-    return;
-  }
-  if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
-    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
-    if (insuranceSizeErr) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      if (_reserveBtnLoading) _reserveBtnLoading.disabled = false;
-      showPayError(insuranceSizeErr);
-      return;
-    }
-  }
 
   // Pre-encode the ID file so it's ready when the user submits payment
   let idBase64 = null;

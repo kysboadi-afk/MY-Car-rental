@@ -97,6 +97,14 @@ export const APPLICATION_DENIED =
   "If you have questions, please contact our team.\n\n" +
   "Reply STOP to opt out.";
 
+/** Sent when a reviewer requests more information before a decision can be made. */
+export const APPLICATION_NEEDS_INFO =
+  "Hi {customer_name},\n\n" +
+  "We\u2019re reviewing your application and need a bit more information before we can make a decision.\n\n" +
+  "Please contact our team so we can help you complete your review:\n" +
+  "Call or text (844) 511-4059\n\n" +
+  "Reply STOP to opt out.";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. WAITLIST FLOW
 // ─────────────────────────────────────────────────────────────────────────────
