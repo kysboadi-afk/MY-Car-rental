@@ -187,6 +187,7 @@
       var card = document.getElementById("tyCard");
       var statusEl = null;
       var verifyBtn = null;
+      var AUTO_RESUME_DELAY_MS = 100;
 
       function t(key, fallback) {
         return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : fallback;
@@ -305,7 +306,7 @@
         if (!verifyBtn || verifyBtn.disabled || !isPendingIdentity(snapshot)) return;
         setTimeout(function () {
           if (verifyBtn && !verifyBtn.disabled) verifyBtn.click();
-        }, 100);
+        }, AUTO_RESUME_DELAY_MS);
       }
 
       function updateVerifyControls(snapshot) {
