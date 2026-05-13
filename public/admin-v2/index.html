@@ -1063,7 +1063,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
       </a>
-      <a class="nav-item" data-page="applications" href="#" onclick="navigate('applications');return false;">
+      <a class="nav-item" data-page="applications" aria-label="Applications Review Queue" href="#" onclick="navigate('applications');return false;">
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Applications
         <span class="nav-badge" id="applications-badge" style="display:none">0</span>
@@ -10403,6 +10403,9 @@ function renderReviewApplicationsTable(apps) {
   if (empty) empty.style.display = 'none';
 
   tbody.innerHTML = apps.map((a) => {
+    const appId = String(a.id || '');
+    const safeAppId = /^[a-z0-9-]{8,}$/i.test(appId) ? appId : '';
+    const actionsDisabled = !safeAppId;
     return `<tr>
       <td>
         <strong>${esc(a.name || 'Unknown')}</strong><br>
@@ -10413,13 +10416,29 @@ function renderReviewApplicationsTable(apps) {
       <td>${reviewAppStatusBadge(a.applicationStatus)}</td>
       <td>${esc(formatAdminDateTime(a.submittedAt))}</td>
       <td class="td-actions">
-        <button class="btn btn-secondary btn-sm" aria-label="View application for ${esc(a.name || 'applicant')}" onclick="viewReviewApplication('${esc(a.id)}')">View</button>
-        <button class="btn btn-success btn-sm" aria-label="Approve application for ${esc(a.name || 'applicant')}" onclick="submitReviewAction('${esc(a.id)}','approved',this)">Approve</button>
-        <button class="btn btn-warning btn-sm" aria-label="Request more information for ${esc(a.name || 'applicant')}" onclick="submitReviewAction('${esc(a.id)}','needs_info',this)">Needs Info</button>
-        <button class="btn btn-danger btn-sm" aria-label="Reject application for ${esc(a.name || 'applicant')}" onclick="submitReviewAction('${esc(a.id)}','rejected',this)">Reject</button>
+        <button class="btn btn-secondary btn-sm review-view-btn" aria-label="View application details" data-application-id="${esc(safeAppId)}" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>View</button>
+        <button class="btn btn-success btn-sm review-action-btn" aria-label="Approve application" data-application-id="${esc(safeAppId)}" data-action="approved" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Approve</button>
+        <button class="btn btn-warning btn-sm review-action-btn" aria-label="Request more information" data-application-id="${esc(safeAppId)}" data-action="needs_info" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Needs Info</button>
+        <button class="btn btn-danger btn-sm review-action-btn" aria-label="Reject application" data-application-id="${esc(safeAppId)}" data-action="rejected" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Reject</button>
       </td>
     </tr>`;
   }).join('');
+
+  tbody.querySelectorAll('.review-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const applicationId = btn.getAttribute('data-application-id') || '';
+      if (!applicationId) return;
+      viewReviewApplication(applicationId);
+    });
+  });
+  tbody.querySelectorAll('.review-action-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const applicationId = btn.getAttribute('data-application-id') || '';
+      const action = btn.getAttribute('data-action') || '';
+      if (!applicationId || !action) return;
+      submitReviewAction(applicationId, action, btn);
+    });
+  });
 }
 
 function closeApplicationDetail() {
