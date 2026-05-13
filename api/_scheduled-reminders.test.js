@@ -150,7 +150,13 @@ global.fetch = async (url, opts) => {
   return { ok: false, text: async () => "not found" };
 };
 
-const { processAutoCompletions, processActiveRentals, loadBookingsFromSupabase, processCompleted } = await import("./scheduled-reminders.js");
+const {
+  processAutoCompletions,
+  processActiveRentals,
+  processPaidBookings,
+  loadBookingsFromSupabase,
+  processCompleted,
+} = await import("./scheduled-reminders.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -394,6 +400,51 @@ test("processAutoCompletions: fleet-status not written independently per vehicle
   // Both completions drive availability via the bookings table, not fleet-status.json
   const restoreCalls = retryApplies.filter((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
   assert.equal(restoreCalls.length, 0, "fleet-status.json must NOT be written for any vehicle");
+});
+
+test("processPaidBookings: sends pickup reminder when renter is not already active", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      status: "booked_paid",
+      pickupDate: "2026-03-22",
+      pickupTime: "10:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processPaidBookings(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), true);
+  assert.equal(smsCalls.length, 1);
+});
+
+test("processPaidBookings: skips pickup reminder when renter already has an active rental", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({
+        bookingId: "bk-booked",
+        status: "booked_paid",
+        pickupDate: "2026-03-22",
+        pickupTime: "10:00 AM",
+      }),
+      makeBooking({
+        bookingId: "bk-active",
+        status: "active_rental",
+        pickupDate: "2026-03-20",
+        returnDate: "2026-03-23",
+      }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processPaidBookings(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), false);
+  assert.equal(smsCalls.length, 0);
 });
 
 test("processActiveRentals: sends ended at return_datetime", async () => {
