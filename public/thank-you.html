@@ -305,7 +305,7 @@
         if (!verifyBtn || verifyBtn.disabled || !isPendingIdentity(snapshot)) return;
         setTimeout(function () {
           if (verifyBtn && !verifyBtn.disabled) verifyBtn.click();
-        }, 0);
+        }, 100);
       }
 
       function updateVerifyControls(snapshot) {
@@ -347,13 +347,7 @@
           statusEl.className = "ty-identity-status";
           statusEl.textContent = "Preparing secure verification…";
           try {
-            var currentSnapshot = getSnapshot();
-            writeStored(syncLifecycle(currentSnapshot, {
-              applicationId: currentSnapshot.applicationId || snapshot.applicationId,
-              applicationStatus: currentSnapshot.applicationStatus || snapshot.applicationStatus || "submitted",
-              identityStatus: currentSnapshot.identityStatus || snapshot.identityStatus || "not_started",
-              identityResumePending: true,
-            }));
+            writeStored(syncLifecycle(getSnapshot(), { identityResumePending: true }));
             var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -421,7 +415,7 @@
           }
         });
 
-        actionsEl.insertBefore(verifyBtn, actionsEl.firstChild || null);
+        actionsEl.insertBefore(verifyBtn, actionsEl.firstChild);
         actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
       }
 
@@ -624,13 +618,7 @@
               launchStatus.className = "ty-identity-status";
               launchStatus.textContent = "Launching verification…";
               try {
-                var launchSnapshot = getSnapshot();
-                writeStored(syncLifecycle(launchSnapshot, {
-                  applicationId: result.applicationId || launchSnapshot.applicationId,
-                  applicationStatus: result.applicationStatus || launchSnapshot.applicationStatus || "submitted",
-                  identityStatus: result.identityStatus || launchSnapshot.identityStatus || "requires_input",
-                  identityResumePending: true,
-                }));
+                writeStored(syncLifecycle(getSnapshot(), { identityResumePending: true }));
                 if (!window.Stripe) throw new Error("Stripe.js failed to load.");
                 var stripe = window.Stripe(result.publishableKey);
                 var verifyResult = await stripe.verifyIdentity(result.clientSecret);
