@@ -28,6 +28,8 @@ import { autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
+import { render, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
+import { sendDedupedSms } from "./_sms-log.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -90,6 +92,7 @@ export default async function handler(req, res) {
       original_booking_id,                    // legacy fallback for historical PIs
       renter_name,
       renter_email,
+      renter_phone,
       extension_label,
       new_return_date,
       previous_return_date,
@@ -168,6 +171,22 @@ export default async function handler(req, res) {
         } catch (emailErr) {
           console.error("send-extension-confirmation: email failed for not-found booking (non-fatal):", emailErr.message);
           return res.status(200).json({ ok: true, emailWarning: true });
+        }
+        if (renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          try {
+            await sendDedupedSms({
+              bookingId: bookingRef,
+              templateKey: "extend_confirmed_economy",
+              phone: renter_phone,
+              body: render(EXTEND_CONFIRMED_ECONOMY, {
+                return_time: DEFAULT_RETURN_TIME,
+                return_date: new_return_date,
+              }),
+              returnDateAtSend: new_return_date,
+            });
+          } catch (smsErr) {
+            console.error("send-extension-confirmation: SMS failed for not-found booking (non-fatal):", smsErr.message);
+          }
         }
         return res.status(200).json({ ok: true });
       }
@@ -309,6 +328,23 @@ export default async function handler(req, res) {
       console.error("send-extension-confirmation: email failed (non-fatal):", emailErr.message);
       // Return a partial-success so the caller knows emails may not have gone
       return res.status(200).json({ ok: true, emailWarning: true });
+    }
+
+    if ((booking.phone || renter_phone) && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+      try {
+        await sendDedupedSms({
+          bookingId: bookingRef,
+          templateKey: "extend_confirmed_economy",
+          phone: booking.phone || renter_phone,
+          body: render(EXTEND_CONFIRMED_ECONOMY, {
+            return_time: updatedReturnTime || "",
+            return_date: updatedReturnDate || "",
+          }),
+          returnDateAtSend: updatedReturnDate || undefined,
+        });
+      } catch (smsErr) {
+        console.error("send-extension-confirmation: extension confirmed SMS failed:", smsErr.message);
+      }
     }
 
     return res.status(200).json({ ok: true });

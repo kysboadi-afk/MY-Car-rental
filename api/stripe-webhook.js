@@ -2263,12 +2263,17 @@ export default async function handler(req, res) {
 
           // Send extension confirmed SMS
           if (updatedBooking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-            const template = EXTEND_CONFIRMED_ECONOMY;
             try {
-              await sendSms(normalizePhone(updatedBooking.phone), render(template, {
-                return_time: updatedBooking.returnTime || "",
-                return_date: updatedBooking.returnDate || "",
-              }));
+              await sendDedupedSms({
+                bookingId: bookingRef,
+                templateKey: "extend_confirmed_economy",
+                phone: updatedBooking.phone,
+                body: render(EXTEND_CONFIRMED_ECONOMY, {
+                  return_time: updatedBooking.returnTime || "",
+                  return_date: updatedBooking.returnDate || "",
+                }),
+                returnDateAtSend: updatedBooking.returnDate || undefined,
+              });
             } catch (smsErr) {
               console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
             }
