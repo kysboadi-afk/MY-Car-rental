@@ -10979,8 +10979,11 @@ let appViewingId      = null;
 let appViewingData    = null;
 let appActionInFlight = false;
 
-const APP_PRESENCE_KEY_PREFIX = 'sly_app_presence_';
-const APP_PRESENCE_TTL_MS     = 45000;
+const APP_PRESENCE_KEY_PREFIX       = 'sly_app_presence_';
+const APP_PRESENCE_TTL_MS           = 45000;
+// Delay before auto-refreshing detail view after a 409 conflict — long enough
+// for the reviewer to read the conflict banner before the view reloads.
+const APP_CONFLICT_REFRESH_DELAY_MS = 1200;
 
 // GET helper for review endpoints that take secret as query param
 async function apiGet(path) {
@@ -11063,7 +11066,7 @@ function setAppPresence(appId) {
       APP_PRESENCE_KEY_PREFIX + appId,
       JSON.stringify({ reviewer: 'Admin', tabId: TAB_ID, ts: Date.now() }),
     );
-  } catch (_) {}
+  } catch (err) { console.warn('App presence tracking unavailable (setAppPresence):', err.message); }
 }
 
 function getAppPresence(appId) {
@@ -11077,11 +11080,11 @@ function getAppPresence(appId) {
     }
     if (parsed.tabId === TAB_ID) return null; // own tab
     return parsed;
-  } catch (_) { return null; }
+  } catch (err) { console.warn('App presence tracking unavailable (getAppPresence):', err.message); return null; }
 }
 
 function clearAppPresence(appId) {
-  try { localStorage.removeItem(APP_PRESENCE_KEY_PREFIX + appId); } catch (_) {}
+  try { localStorage.removeItem(APP_PRESENCE_KEY_PREFIX + appId); } catch (err) { console.warn('App presence tracking unavailable (clearAppPresence):', err.message); }
 }
 
 // ── Load queue from API ───────────────────────────────────────────────────────
@@ -11192,7 +11195,7 @@ function renderAppQueue() {
   tbody.innerHTML = filtered.map((a) => {
     const presence = getAppPresence(a.id);
     const presenceHtml = presence
-      ? `<br><span class="app-presence-badge" title="Another tab is reviewing this application">Active ${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
+      ? `<br><span class="app-presence-badge" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
       : '';
     const needsInfoHtml = a.needsInfoReason
       ? ` <span title="${esc(a.needsInfoReason)}" style="cursor:help;">⚠️</span>`
@@ -11298,7 +11301,7 @@ function renderAppDetail(d) {
 
   const presence = getAppPresence(d.applicationId);
   const presenceHtml = presence
-    ? `<span class="app-presence-badge" style="font-size:11px;">Reviewer active ~${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
+    ? `<span class="app-presence-badge" style="font-size:11px;" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ~${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
     : '';
 
   document.getElementById('app-detail-title').innerHTML =
@@ -11499,8 +11502,8 @@ async function submitAppAction() {
         '<strong>⚠️ Concurrency conflict:</strong> Another reviewer has already updated this application. ' +
         'The view is refreshing with the current state — please review the updated information before deciding.';
       conflictBanner.classList.add('visible');
-      // Auto-refresh detail after short delay
-      setTimeout(() => refreshAppDetail(), 1200);
+      // Auto-refresh detail after short delay so reviewer sees the conflict message first
+      setTimeout(() => refreshAppDetail(), APP_CONFLICT_REFRESH_DELAY_MS);
     } else {
       showToast('Action failed: ' + err.message, 'error');
     }
