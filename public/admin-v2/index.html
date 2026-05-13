@@ -1063,6 +1063,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
       </a>
+      <a class="nav-item" data-page="applications" href="#" onclick="navigate('applications');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Applications
+        <span class="nav-badge" id="applications-badge" style="display:none">0</span>
+      </a>
       <a class="nav-item" data-page="protection-plans" href="#" onclick="navigate('protection-plans');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
@@ -2236,6 +2241,51 @@
         </div><!-- /ai-layout -->
       </div>
 
+      <!-- APPLICATIONS REVIEW PAGE -->
+      <div class="page" id="page-applications">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Applications Review Queue</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Approve, reject, or request info for identity-verified applicants.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadReviewApplications()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.5 9a9 9 0 0114.5-3.36L23 10M1 14l5 4.36A9 9 0 0020.5 15"/></svg>
+            Refresh
+          </button>
+        </div>
+
+        <div class="card">
+          <div id="applications-loading" class="loading"><div class="loading-spinner"></div><div>Loading applications…</div></div>
+          <div id="applications-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Applicant</th>
+                  <th>Identity</th>
+                  <th>Application</th>
+                  <th>Submitted</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="applications-tbody"></tbody>
+            </table>
+          </div>
+          <div id="applications-empty" class="empty-state" style="display:none">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="9 12 12 15 15 9"/></svg>
+            <p>No applications currently need review.</p>
+          </div>
+        </div>
+
+        <div class="card" id="application-detail-card" style="display:none;margin-top:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <div style="font-size:14px;font-weight:700;">Application Detail</div>
+            <button class="btn btn-secondary btn-sm" onclick="closeApplicationDetail()">Close</button>
+          </div>
+          <div id="application-detail-content" style="font-size:13px;"></div>
+          <div id="application-detail-history" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
       <!-- TICKETS / VIOLATIONS PAGE -->
       <div class="page" id="page-tickets">
         <!-- Page header -->
@@ -3256,6 +3306,7 @@ function signIn() {
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
+      loadReviewApplications().catch(() => {});
       aiRestoreHistory();
       checkFirstTimeUser(data);
 
@@ -3294,6 +3345,8 @@ function logout() {
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
+  allReviewApplications = [];
+  selectedReviewApplicationId = null;
   fleetStatusData = {};
   aiClearHistory();
   aiTyping = false;
@@ -3327,6 +3380,24 @@ async function apiPost(path, body, signal = undefined) {
   return data;
 }
 
+async function apiGet(path, params = {}, signal = undefined) {
+  if (window.DEMO_MODE) throw new Error('Not available in demo mode');
+  const qp = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qp.set(k, String(v));
+  });
+  const url = API_BASE + path + (qp.toString() ? `?${qp.toString()}` : '');
+  const resp = await fetch(url, { method: 'GET', signal });
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error(`Server error (HTTP ${resp.status}).`);
+  }
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
 // ── Navigation ─────────────────────────────────────────────────────────────
 function navigate(page) {
   // Hide all pages
@@ -3349,6 +3420,7 @@ function navigate(page) {
     revenue:            'Revenue Tracker',
     analytics:          'Fleet Analytics',
     customers:          'Customer Management',
+    applications:       'Applications Review',
     'protection-plans': 'Protection Plans',
     'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
@@ -3380,6 +3452,7 @@ function navigate(page) {
   else if (page === 'revenue') loadRevenue();
   else if (page === 'analytics') loadAnalytics();
   else if (page === 'customers') loadCustomers();
+  else if (page === 'applications') loadReviewApplications();
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'vehicle-pricing') loadVehiclePricing();
   else if (page === 'system-settings') loadSystemSettings();
@@ -3414,6 +3487,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
   else if (currentPage === 'customers') loadCustomers();
+  else if (currentPage === 'applications') loadReviewApplications();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'vehicle-pricing') loadVehiclePricing();
   else if (currentPage === 'system-settings') loadSystemSettings();
@@ -10204,6 +10278,265 @@ function dismissChecklist() {
     return _orig(page);
   };
 })();
+
+// ── Applications Review Queue ────────────────────────────────────────────────
+let allReviewApplications = [];
+let selectedReviewApplicationId = null;
+
+function reviewAppStatusBadge(status) {
+  const map = {
+    under_review: 'badge-blue',
+    needs_info: 'badge-orange',
+    approved: 'badge-green',
+    rejected: 'badge-red',
+    submitted: 'badge-gray',
+  };
+  const labels = {
+    under_review: 'Under Review',
+    needs_info: 'Needs Info',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    submitted: 'Submitted',
+  };
+  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status || '—')}</span>`;
+}
+
+function reviewIdentityStatusBadge(status) {
+  const map = {
+    verified: 'badge-green',
+    processing: 'badge-blue',
+    requires_input: 'badge-orange',
+    failed: 'badge-red',
+    canceled: 'badge-gray',
+    not_started: 'badge-gray',
+  };
+  const labels = {
+    verified: 'Verified',
+    processing: 'Processing',
+    requires_input: 'Requires Input',
+    failed: 'Failed',
+    canceled: 'Canceled',
+    not_started: 'Not Started',
+  };
+  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status || '—')}</span>`;
+}
+
+function formatAdminDateTime(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function createActionRequestId() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  } catch (_) {}
+  return `rev_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function updateApplicationsBadge() {
+  const badge = document.getElementById('applications-badge');
+  if (!badge) return;
+  const count = allReviewApplications.length;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function loadReviewApplications() {
+  const loading = document.getElementById('applications-loading');
+  const wrap = document.getElementById('applications-table-wrap');
+  const empty = document.getElementById('applications-empty');
+  if (loading) loading.style.display = 'block';
+  if (wrap) wrap.style.display = 'none';
+  if (empty) empty.style.display = 'none';
+
+  try {
+    const data = await apiGet('/api/admin-review-queue', {
+      secret: adminSecret,
+      page: 1,
+      pageSize: 100,
+    });
+    allReviewApplications = Array.isArray(data.applications) ? data.applications : [];
+    if (loading) loading.style.display = 'none';
+    renderReviewApplicationsTable(allReviewApplications);
+    updateApplicationsBadge();
+    if (selectedReviewApplicationId) {
+      const stillPresent = allReviewApplications.some((a) => a.id === selectedReviewApplicationId);
+      if (stillPresent) viewReviewApplication(selectedReviewApplicationId);
+      else closeApplicationDetail();
+    }
+  } catch (err) {
+    if (loading) loading.style.display = 'none';
+    allReviewApplications = [];
+    renderReviewApplicationsTable([]);
+    updateApplicationsBadge();
+    showToast('Failed to load applications: ' + err.message, 'error');
+  }
+}
+
+function renderReviewApplicationsTable(apps) {
+  const wrap = document.getElementById('applications-table-wrap');
+  const empty = document.getElementById('applications-empty');
+  const tbody = document.getElementById('applications-tbody');
+  if (!tbody) return;
+
+  if (!apps.length) {
+    if (wrap) wrap.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    tbody.innerHTML = '';
+    return;
+  }
+
+  if (wrap) wrap.style.display = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = apps.map((a) => {
+    return `<tr>
+      <td>
+        <strong>${esc(a.name || 'Unknown')}</strong><br>
+        <span style="font-size:11px;color:var(--text-sub);">${esc(a.phone || '—')}</span><br>
+        <span style="font-size:11px;color:var(--text-sub);">${esc(a.email || '—')}</span>
+      </td>
+      <td>${reviewIdentityStatusBadge(a.identityStatus)}</td>
+      <td>${reviewAppStatusBadge(a.applicationStatus)}</td>
+      <td>${esc(formatAdminDateTime(a.submittedAt))}</td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="viewReviewApplication('${esc(a.id)}')">View</button>
+        <button class="btn btn-success btn-sm" onclick="submitReviewAction('${esc(a.id)}','approved',this)">Approve</button>
+        <button class="btn btn-warning btn-sm" onclick="submitReviewAction('${esc(a.id)}','needs_info',this)">Needs Info</button>
+        <button class="btn btn-danger btn-sm" onclick="submitReviewAction('${esc(a.id)}','rejected',this)">Reject</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function closeApplicationDetail() {
+  selectedReviewApplicationId = null;
+  const card = document.getElementById('application-detail-card');
+  if (card) card.style.display = 'none';
+  const body = document.getElementById('application-detail-content');
+  const history = document.getElementById('application-detail-history');
+  if (body) body.innerHTML = '';
+  if (history) history.innerHTML = '';
+}
+
+async function viewReviewApplication(applicationId) {
+  selectedReviewApplicationId = applicationId;
+  const card = document.getElementById('application-detail-card');
+  const body = document.getElementById('application-detail-content');
+  const history = document.getElementById('application-detail-history');
+  if (card) card.style.display = '';
+  if (body) body.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Loading detail…</div></div>';
+  if (history) history.innerHTML = '';
+
+  try {
+    const d = await apiGet('/api/admin-review-detail', {
+      secret: adminSecret,
+      applicationId,
+    });
+
+    if (body) {
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+          <div><strong>Name:</strong> ${esc(d.name || '—')}</div>
+          <div><strong>Phone:</strong> ${esc(d.phone || '—')}</div>
+          <div><strong>Email:</strong> ${esc(d.email || '—')}</div>
+          <div><strong>Age:</strong> ${esc(d.age ?? '—')}</div>
+          <div><strong>Experience:</strong> ${esc(d.experience || '—')}</div>
+          <div><strong>Identity:</strong> ${reviewIdentityStatusBadge(d.identityStatus)}</div>
+          <div><strong>Status:</strong> ${reviewAppStatusBadge(d.applicationStatus)}</div>
+          <div><strong>Submitted:</strong> ${esc(formatAdminDateTime(d.submittedAt))}</div>
+          <div><strong>Last Reviewed By:</strong> ${esc(d.reviewedBy || '—')}</div>
+          <div><strong>Last Reviewed At:</strong> ${esc(formatAdminDateTime(d.reviewedAt))}</div>
+        </div>
+        ${d.needsInfoReason ? `<div style="margin-top:10px;"><strong>Needs Info Reason:</strong> ${esc(d.needsInfoReason)}</div>` : ''}
+        ${d.lastReviewerNotes ? `<div style="margin-top:6px;"><strong>Last Reviewer Notes:</strong> ${esc(d.lastReviewerNotes)}</div>` : ''}
+      `;
+    }
+
+    if (history) {
+      const entries = Array.isArray(d.reviewHistory) ? d.reviewHistory : [];
+      if (!entries.length) {
+        history.innerHTML = '<div style="margin-top:10px;color:var(--text-sub);font-style:italic;">No review history yet.</div>';
+      } else {
+        history.innerHTML = `
+          <div style="margin-top:12px;font-weight:700;">Review History</div>
+          <div style="margin-top:8px;">
+            ${entries.map((h) => `
+              <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;">
+                <div><strong>${esc(h.action || 'Action')}</strong> by ${esc(h.performedBy || 'admin')}</div>
+                <div style="color:var(--text-sub);">${esc(formatAdminDateTime(h.createdAt))}</div>
+                ${h.notes ? `<div style="margin-top:2px;">${esc(h.notes)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+    }
+  } catch (err) {
+    if (body) body.innerHTML = `<div style="color:var(--danger);">Failed to load detail: ${esc(err.message)}</div>`;
+  }
+}
+
+async function submitReviewAction(applicationId, action, btn) {
+  const row = allReviewApplications.find((a) => a.id === applicationId);
+  if (!row) { showToast('Application not found. Refresh and try again.', 'error'); return; }
+
+  let notes = '';
+  if (action === 'needs_info') {
+    notes = prompt('What information is needed from the applicant?') || '';
+    if (!notes.trim()) { showToast('Needs Info reason is required.', 'error'); return; }
+  } else {
+    const confirmed = confirm(`Are you sure you want to mark this application as ${action.replace('_', ' ')}?`);
+    if (!confirmed) return;
+    notes = prompt('Optional reviewer note (leave blank to skip):') || '';
+  }
+
+  const prevLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  try {
+    await apiPost('/api/review-application', {
+      secret: adminSecret,
+      applicationId,
+      action,
+      reviewedBy: 'admin-v2',
+      notes: notes.trim(),
+      expectedStatus: row.applicationStatus,
+      expectedReviewVersion: row.reviewVersion,
+      actionRequestId: createActionRequestId(),
+    });
+    showToast(`Application ${action.replace('_', ' ')}.`, 'success');
+    await loadReviewApplications();
+    if (selectedReviewApplicationId === applicationId) {
+      const stillPresent = allReviewApplications.some((a) => a.id === applicationId);
+      if (stillPresent) await viewReviewApplication(applicationId);
+      else closeApplicationDetail();
+    }
+  } catch (err) {
+    const msg = String(err.message || '');
+    if (msg.includes('STALE_REVIEW_ACTION') || msg.includes('stale')) {
+      showToast('This application changed in another tab. Queue was refreshed.', 'warning');
+      await loadReviewApplications();
+      return;
+    }
+    showToast('Failed to submit review action: ' + msg, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prevLabel || 'Save'; }
+  }
+}
 
 // ── Tickets / Violations ────────────────────────────────────────────────────
 
