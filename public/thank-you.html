@@ -187,6 +187,7 @@
       var card = document.getElementById("tyCard");
       var statusEl = null;
       var verifyBtn = null;
+      // Give the CTA time to render before the return-flow auto-click runs.
       var AUTO_RESUME_DELAY_MS = 100;
 
       function t(key, fallback) {
