@@ -187,8 +187,6 @@
       var card = document.getElementById("tyCard");
       var statusEl = null;
       var verifyBtn = null;
-      // Give the CTA time to render before the return-flow auto-click runs.
-      var AUTO_RESUME_DELAY_MS = 100;
 
       function t(key, fallback) {
         return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : fallback;
@@ -304,10 +302,11 @@
 
       function autoResumeIfPending(snapshot) {
         if (params.get("identity") !== "return") return;
-        if (!verifyBtn || verifyBtn.disabled || !isPendingIdentity(snapshot)) return;
-        setTimeout(function () {
-          if (verifyBtn && !verifyBtn.disabled) verifyBtn.click();
-        }, AUTO_RESUME_DELAY_MS);
+        window.requestAnimationFrame(function () {
+          window.requestAnimationFrame(function () {
+            if (verifyBtn && !verifyBtn.disabled && isPendingIdentity(snapshot)) verifyBtn.click();
+          });
+        });
       }
 
       function updateVerifyControls(snapshot) {
@@ -331,7 +330,7 @@
         statusEl = document.createElement("div");
         statusEl.className = "ty-identity-status";
         if (snapshot.identityStatus === "requires_input") {
-          statusEl.textContent = "Stripe needs more information. Resume identity verification to continue.";
+          statusEl.textContent = "More information is needed. Resume identity verification to continue.";
         } else if (snapshot.identityStatus === "failed") {
           statusEl.textContent = "Identity verification did not finish. Resume verification to continue.";
         } else if (snapshot.identityStatus === "canceled") {
@@ -349,7 +348,7 @@
           statusEl.className = "ty-identity-status";
           statusEl.textContent = "Preparing secure verification…";
           try {
-            writeStored(syncLifecycle(getSnapshot(), { identityResumePending: true }));
+            writeStored(syncLifecycle(snapshot, { identityResumePending: true }));
             var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -358,7 +357,7 @@
             var result = await resp.json().catch(function () { return {}; });
             if (!resp.ok) throw new Error(result.error || "Unable to start identity verification.");
             if (result.blocked) {
-              var blocked = syncLifecycle(getSnapshot(), {
+              var blocked = syncLifecycle(snapshot, {
                 applicationId: snapshot.applicationId,
                 applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
                 identityStatus: result.identityStatus || snapshot.identityStatus || "not_started",
@@ -369,7 +368,7 @@
               return;
             }
             if (result.alreadyVerified) {
-              var stored = syncLifecycle(getSnapshot(), {
+              var stored = syncLifecycle(snapshot, {
                 applicationId: snapshot.applicationId,
                 applicationStatus: "under_review",
                 identityStatus: "verified",
@@ -380,7 +379,7 @@
               return;
             }
             if (result.processing) {
-              var processing = syncLifecycle(getSnapshot(), {
+              var processing = syncLifecycle(snapshot, {
                 applicationId: snapshot.applicationId,
                 applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
                 identityStatus: "processing",
@@ -401,7 +400,7 @@
               throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
             }
 
-            var next = syncLifecycle(getSnapshot(), {
+            var next = syncLifecycle(snapshot, {
               applicationId: snapshot.applicationId,
               applicationStatus: snapshot.applicationStatus || "submitted",
               identityStatus: "processing",
@@ -409,7 +408,7 @@
             });
             writeStored(next);
             statusEl.className = "ty-identity-status success";
-            statusEl.textContent = "Identity verification submitted. Review will continue after Stripe finishes processing.";
+            statusEl.textContent = "Identity verification submitted. Review will continue after processing is complete.";
           } catch (err) {
             statusEl.className = "ty-identity-status error";
             statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
@@ -417,7 +416,7 @@
           }
         });
 
-        actionsEl.insertBefore(verifyBtn, actionsEl.firstChild);
+        actionsEl.prepend(verifyBtn);
         actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
       }
 
@@ -455,9 +454,9 @@
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "processing") {
           titleEl.textContent = "⏳ Identity Verification Submitted";
-          subEl.textContent = "Stripe is still processing your identity verification.";
+          subEl.textContent = "Your identity verification is still processing.";
           setDetailHtml(detailEl,
-            "Thanks for completing identity verification. We’ll continue to the manual review stage after Stripe finishes processing your submission."
+            "Thanks for completing identity verification. We’ll continue to the manual review stage after processing is complete."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "requires_input") {
@@ -465,7 +464,7 @@
           titleEl.style.color = "#ffb400";
           subEl.textContent = "Complete identity verification before review can continue.";
           setDetailHtml(detailEl,
-            "Stripe needs more information. Resume identity verification and correct any missing or unclear details so your application can move into review."
+            "More information is needed. Resume identity verification and correct any missing or unclear details so your application can move into review."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "failed") {
@@ -620,7 +619,13 @@
               launchStatus.className = "ty-identity-status";
               launchStatus.textContent = "Launching verification…";
               try {
-                writeStored(syncLifecycle(getSnapshot(), { identityResumePending: true }));
+                writeStored(syncLifecycle({
+                  applicationId: result.applicationId || null,
+                  applicationStatus: result.applicationStatus || "submitted",
+                  identityStatus: result.identityStatus || "requires_input",
+                }, {
+                  identityResumePending: true,
+                }));
                 if (!window.Stripe) throw new Error("Stripe.js failed to load.");
                 var stripe = window.Stripe(result.publishableKey);
                 var verifyResult = await stripe.verifyIdentity(result.clientSecret);
@@ -635,7 +640,7 @@
                 });
                 writeStored(next);
                 launchStatus.className = "ty-identity-status success";
-                launchStatus.textContent = "Identity verification submitted. Review will continue after Stripe finishes processing.";
+                launchStatus.textContent = "Identity verification submitted. Review will continue after processing is complete.";
                 launchBtn.style.display = "none";
               } catch (err) {
                 launchStatus.className = "ty-identity-status error";
