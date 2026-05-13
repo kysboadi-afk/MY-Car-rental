@@ -322,13 +322,9 @@
         verifyBtn = document.createElement("button");
         verifyBtn.type = "button";
         verifyBtn.className = "ty-btn ty-btn-primary";
-        verifyBtn.textContent = (
-          shouldOfferResume(snapshot)
-        ) ? "🪪 Resume Identity Verification" : (
-          snapshot.identityStatus === "requires_input" ||
-          snapshot.identityStatus === "failed" ||
-          snapshot.identityStatus === "canceled"
-        ) ? "🪪 Retry Identity Verification" : "🪪 Start Identity Verification";
+        verifyBtn.textContent = shouldOfferResume(snapshot)
+          ? "🪪 Resume Identity Verification"
+          : "🪪 Start Identity Verification";
 
         statusEl = document.createElement("div");
         statusEl.className = "ty-identity-status";
@@ -351,10 +347,11 @@
           statusEl.className = "ty-identity-status";
           statusEl.textContent = "Preparing secure verification…";
           try {
-            writeStored(syncLifecycle(getSnapshot(), {
-              applicationId: snapshot.applicationId,
-              applicationStatus: snapshot.applicationStatus || "submitted",
-              identityStatus: snapshot.identityStatus || "not_started",
+            var currentSnapshot = getSnapshot();
+            writeStored(syncLifecycle(currentSnapshot, {
+              applicationId: currentSnapshot.applicationId || snapshot.applicationId,
+              applicationStatus: currentSnapshot.applicationStatus || snapshot.applicationStatus || "submitted",
+              identityStatus: currentSnapshot.identityStatus || snapshot.identityStatus || "not_started",
               identityResumePending: true,
             }));
             var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
@@ -464,7 +461,7 @@
           titleEl.textContent = "⏳ Identity Verification Submitted";
           subEl.textContent = "Stripe is still processing your identity verification.";
           setDetailHtml(detailEl,
-            "Thanks for completing identity verification. We’ll continue to manual review after Stripe finishes processing your submission."
+            "Thanks for completing identity verification. We’ll continue to the manual review stage after Stripe finishes processing your submission."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "requires_input") {
@@ -627,10 +624,11 @@
               launchStatus.className = "ty-identity-status";
               launchStatus.textContent = "Launching verification…";
               try {
-                writeStored(syncLifecycle(readStored(), {
-                  applicationId: result.applicationId,
-                  applicationStatus: result.applicationStatus || "submitted",
-                  identityStatus: result.identityStatus || "requires_input",
+                var launchSnapshot = getSnapshot();
+                writeStored(syncLifecycle(launchSnapshot, {
+                  applicationId: result.applicationId || launchSnapshot.applicationId,
+                  applicationStatus: result.applicationStatus || launchSnapshot.applicationStatus || "submitted",
+                  identityStatus: result.identityStatus || launchSnapshot.identityStatus || "requires_input",
                   identityResumePending: true,
                 }));
                 if (!window.Stripe) throw new Error("Stripe.js failed to load.");
