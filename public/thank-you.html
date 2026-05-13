@@ -131,6 +131,7 @@
     <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="SLY Transportation Services Logo" class="site-logo"></a>
     <nav class="site-nav">
       <a href="index.html" data-i18n="nav.homeLink">Home</a>
+      <a href="cars.html">Browse Cars</a>
     </nav>
     <a href="tel:+18445114059" class="header-phone">
       <span class="phone-urgency" data-i18n="nav.callNow">Call Now to Get Approved Today</span>
@@ -139,17 +140,17 @@
   </header>
 
   <div class="ty-wrapper">
-    <div class="ty-card">
+    <div class="ty-card" id="tyCard">
       <img src="images/logo.jpg" alt="SLY Transportation Services" class="ty-logo">
-      <h1 data-i18n="thankyou.title">🎉 Thank You!</h1>
-      <p class="ty-sub" data-i18n="thankyou.sub">Your submission has been received!</p>
-      <p class="ty-detail" data-i18n="thankyou.detail">
+      <h1 id="tyTitle" data-i18n="thankyou.title">🎉 Thank You!</h1>
+      <p class="ty-sub" id="tySub" data-i18n="thankyou.sub">Your submission has been received!</p>
+      <p class="ty-detail" id="tyDetail" data-i18n="thankyou.detail">
         Our team at <strong>SLY Transportation Services LLC</strong> will review your information and reach out to you shortly to complete your approval.
       </p>
 
       <div class="ty-actions" id="tyActions">
         <!-- Upload rental-agreement.pdf to the repo root to activate this button -->
-        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download data-i18n="thankyou.download">
+        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download data-i18n="thankyou.download" id="tyDownloadBtn">
           📄 Download PDF
         </a>
         <a href="cars.html" class="ty-btn ty-btn-secondary" id="fillAgainBtn" data-i18n="thankyou.fillAgain">
@@ -224,7 +225,7 @@
       }
 
       function syncLifecycle(snapshot, result) {
-        return Object.assign({}, snapshot, {
+        var next = Object.assign({}, snapshot, {
           applicationId: result.applicationId || snapshot.applicationId || null,
           applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
           identityStatus: result.identityStatus || snapshot.identityStatus || "not_started",
@@ -236,6 +237,20 @@
           hasInsurance: result.hasInsurance || snapshot.hasInsurance,
           protectionPlanPref: result.protectionPlanPref || snapshot.protectionPlanPref,
         });
+        if ("identityResumePending" in result) next.identityResumePending = !!result.identityResumePending;
+        else next.identityResumePending = !!snapshot.identityResumePending;
+        if (
+          next.applicationStatus === "approved" ||
+          next.applicationStatus === "rejected" ||
+          next.applicationStatus === "under_review" ||
+          next.applicationStatus === "withdrawn" ||
+          next.applicationStatus === "expired" ||
+          next.identityStatus === "verified" ||
+          next.identityStatus === "processing"
+        ) {
+          next.identityResumePending = false;
+        }
+        return next;
       }
 
       function isApproved(snapshot) {
@@ -244,6 +259,54 @@
 
       function hasApplication(snapshot) {
         return !!(snapshot && (snapshot.applicationId || snapshot.name || snapshot.phone));
+      }
+
+      function isPendingIdentity(snapshot) {
+        return !!(
+          snapshot &&
+          snapshot.applicationId &&
+          snapshot.applicationStatus !== "approved" &&
+          snapshot.applicationStatus !== "rejected" &&
+          snapshot.applicationStatus !== "withdrawn" &&
+          snapshot.applicationStatus !== "expired" &&
+          snapshot.applicationStatus !== "under_review" &&
+          snapshot.identityStatus !== "verified"
+        );
+      }
+
+      function shouldOfferResume(snapshot) {
+        return !!(
+          snapshot &&
+          (
+            params.get("identity") === "return" ||
+            snapshot.identityResumePending ||
+            snapshot.identityStatus === "requires_input" ||
+            snapshot.identityStatus === "failed" ||
+            snapshot.identityStatus === "canceled"
+          )
+        );
+      }
+
+      function showVerificationLoading() {
+        if (!titleEl || !subEl || !detailEl || !actionsEl || !card) return;
+        if (dlBtn) dlBtn.style.display = "none";
+        titleEl.style.color = "#4caf50";
+        card.style.borderColor = "#2a2a2a";
+        actionsEl.textContent = "";
+        titleEl.textContent = "🔄 Preparing Identity Verification…";
+        subEl.textContent = "Please wait while we reconnect you to your secure verification session.";
+        setDetailHtml(detailEl,
+          "Complete identity verification before review can continue."
+        );
+      }
+
+      function autoResumeIfPending(snapshot) {
+        if (params.get("identity") !== "return") return;
+        window.requestAnimationFrame(function () {
+          window.requestAnimationFrame(function () {
+            if (verifyBtn && !verifyBtn.disabled && isPendingIdentity(snapshot)) verifyBtn.click();
+          });
+        });
       }
 
       function updateVerifyControls(snapshot) {
@@ -255,29 +318,29 @@
 
         if (!snapshot.applicationId) return;
         if (snapshot.applicationStatus === "approved" || snapshot.applicationStatus === "rejected") return;
-        if (snapshot.applicationStatus === "under_review" || snapshot.identityStatus === "verified") return;
+        if (snapshot.applicationStatus === "under_review" || snapshot.identityStatus === "verified" || snapshot.identityStatus === "processing") return;
 
         verifyBtn = document.createElement("button");
         verifyBtn.type = "button";
         verifyBtn.className = "ty-btn ty-btn-primary";
-        verifyBtn.textContent = (
-          snapshot.identityStatus === "requires_input" ||
-          snapshot.identityStatus === "failed" ||
-          snapshot.identityStatus === "canceled"
-        ) ? "🪪 Retry Identity Verification" : "🪪 Verify Identity";
+        verifyBtn.textContent = shouldOfferResume(snapshot)
+          ? "🪪 Resume Identity Verification"
+          : "🪪 Start Identity Verification";
 
         statusEl = document.createElement("div");
         statusEl.className = "ty-identity-status";
         if (snapshot.identityStatus === "requires_input") {
-          statusEl.textContent = "Identity verification needs more information. Please retry to continue.";
+          statusEl.textContent = "More information is needed. Resume identity verification to continue.";
         } else if (snapshot.identityStatus === "failed") {
-          statusEl.textContent = "Identity verification could not be completed. Please retry or contact support.";
+          statusEl.textContent = "Identity verification did not finish. Resume verification to continue.";
         } else if (snapshot.identityStatus === "canceled") {
-          statusEl.textContent = "Identity verification was canceled. Restart when you’re ready.";
+          statusEl.textContent = "Identity verification was canceled. Resume when you’re ready to continue.";
         } else if (params.get("identity") === "return") {
-          statusEl.textContent = "Welcome back. Continue to complete your identity verification if prompted.";
+          statusEl.textContent = "Welcome back. Resume identity verification below so review can continue.";
+        } else if (snapshot.identityResumePending) {
+          statusEl.textContent = "Resume identity verification below to continue your application.";
         } else {
-          statusEl.textContent = "Secure identity verification is the next step before manual review.";
+          statusEl.textContent = "Complete identity verification before your application can move into review.";
         }
 
         verifyBtn.addEventListener("click", async function () {
@@ -285,6 +348,7 @@
           statusEl.className = "ty-identity-status";
           statusEl.textContent = "Preparing secure verification…";
           try {
+            writeStored(syncLifecycle(snapshot, { identityResumePending: true }));
             var resp = await fetch(API_BASE + "/api/create-identity-verification-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -292,14 +356,37 @@
             });
             var result = await resp.json().catch(function () { return {}; });
             if (!resp.ok) throw new Error(result.error || "Unable to start identity verification.");
+            if (result.blocked) {
+              var blocked = syncLifecycle(snapshot, {
+                applicationId: snapshot.applicationId,
+                applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
+                identityStatus: result.identityStatus || snapshot.identityStatus || "not_started",
+                identityResumePending: false,
+              });
+              writeStored(blocked);
+              renderApplyState(blocked);
+              return;
+            }
             if (result.alreadyVerified) {
-              var stored = syncLifecycle(getSnapshot(), {
+              var stored = syncLifecycle(snapshot, {
                 applicationId: snapshot.applicationId,
                 applicationStatus: "under_review",
                 identityStatus: "verified",
+                identityResumePending: false,
               });
               writeStored(stored);
               renderApplyState(stored);
+              return;
+            }
+            if (result.processing) {
+              var processing = syncLifecycle(snapshot, {
+                applicationId: snapshot.applicationId,
+                applicationStatus: result.applicationStatus || snapshot.applicationStatus || "submitted",
+                identityStatus: "processing",
+                identityResumePending: false,
+              });
+              writeStored(processing);
+              renderApplyState(processing);
               return;
             }
             if (!result.clientSecret || !result.publishableKey) {
@@ -313,14 +400,15 @@
               throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
             }
 
-            var next = syncLifecycle(getSnapshot(), {
+            var next = syncLifecycle(snapshot, {
               applicationId: snapshot.applicationId,
               applicationStatus: snapshot.applicationStatus || "submitted",
               identityStatus: "processing",
+              identityResumePending: false,
             });
             writeStored(next);
             statusEl.className = "ty-identity-status success";
-            statusEl.textContent = "Identity verification submitted. We’ll continue your application review.";
+            statusEl.textContent = "Identity verification submitted. Review will continue after processing is complete.";
           } catch (err) {
             statusEl.className = "ty-identity-status error";
             statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
@@ -328,7 +416,7 @@
           }
         });
 
-        actionsEl.appendChild(verifyBtn);
+        actionsEl.prepend(verifyBtn);
         actionsEl.parentNode.insertBefore(statusEl, actionsEl.nextSibling);
       }
 
@@ -364,35 +452,44 @@
             "Your identity verification is complete. Our team will review your application and contact you with the next update."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
+        } else if (snapshot.identityStatus === "processing") {
+          titleEl.textContent = "⏳ Identity Verification Submitted";
+          subEl.textContent = "Your identity verification is still processing.";
+          setDetailHtml(detailEl,
+            "Thanks for completing identity verification. We’ll continue to the manual review stage after processing is complete."
+          );
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "requires_input") {
           titleEl.textContent = "⚠️ Action Needed";
           titleEl.style.color = "#ffb400";
-          subEl.textContent = "Your identity verification needs more information.";
+          subEl.textContent = "Complete identity verification before review can continue.";
           setDetailHtml(detailEl,
-            "Please retry identity verification and correct any missing or unclear details so we can continue your application review."
+            "More information is needed. Resume identity verification and correct any missing or unclear details so your application can move into review."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "failed") {
           titleEl.textContent = "⚠️ Verification Issue";
           titleEl.style.color = "#ffb400";
-          subEl.textContent = "We couldn’t complete your identity verification.";
+          subEl.textContent = "Complete identity verification before review can continue.";
           setDetailHtml(detailEl,
-            "Please retry identity verification, or call <strong>(844) 511-4059</strong> if you need help."
+            "We couldn’t finish identity verification. Resume verification below, or call <strong>(844) 511-4059</strong> if you need help."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else if (snapshot.identityStatus === "canceled") {
           titleEl.textContent = "⏸️ Verification Canceled";
           titleEl.style.color = "#ffb400";
-          subEl.textContent = "Your identity verification was canceled before completion.";
+          subEl.textContent = "Complete identity verification before review can continue.";
           setDetailHtml(detailEl,
-            "Please restart identity verification when you’re ready so we can continue your application review."
+            "Your identity verification was canceled before completion. Resume verification when you’re ready so your application can move into review."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         } else {
-          titleEl.textContent = "📝 Application Submitted";
-          subEl.textContent = "Complete identity verification to continue.";
+          titleEl.textContent = shouldOfferResume(snapshot) ? "🪪 Resume Identity Verification" : "🪪 Identity Verification Required";
+          subEl.textContent = "Complete identity verification before review can continue.";
           setDetailHtml(detailEl,
-            "We’ve received your application. The next step is secure identity verification before your application can move into manual review."
+            shouldOfferResume(snapshot)
+              ? "Your application is waiting on identity verification. Resume where you left off so review can continue."
+              : "We’ve received your application. The next step is secure identity verification before your application can move into review."
           );
           actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "🏠 " + t("thankyou.backHome", "Back to Home")));
         }
@@ -454,6 +551,7 @@
                 applicationId:     result.applicationId,
                 applicationStatus: result.applicationStatus || "submitted",
                 identityStatus:    result.identityStatus    || "not_started",
+                identityResumePending: !!result.clientSecret,
               });
               writeStored(snap);
             }
@@ -521,6 +619,13 @@
               launchStatus.className = "ty-identity-status";
               launchStatus.textContent = "Launching verification…";
               try {
+                writeStored(syncLifecycle({
+                  applicationId: result.applicationId || null,
+                  applicationStatus: result.applicationStatus || "submitted",
+                  identityStatus: result.identityStatus || "requires_input",
+                }, {
+                  identityResumePending: true,
+                }));
                 if (!window.Stripe) throw new Error("Stripe.js failed to load.");
                 var stripe = window.Stripe(result.publishableKey);
                 var verifyResult = await stripe.verifyIdentity(result.clientSecret);
@@ -531,10 +636,11 @@
                   applicationId:     result.applicationId,
                   applicationStatus: "submitted",
                   identityStatus:    "processing",
+                  identityResumePending: false,
                 });
                 writeStored(next);
                 launchStatus.className = "ty-identity-status success";
-                launchStatus.textContent = "Identity verification submitted. We'll continue your application review.";
+                launchStatus.textContent = "Identity verification submitted. Review will continue after processing is complete.";
                 launchBtn.style.display = "none";
               } catch (err) {
                 launchStatus.className = "ty-identity-status error";
@@ -568,18 +674,29 @@
 
       var initialSnapshot = getSnapshot();
       writeStored(initialSnapshot);
-      renderApplyState(initialSnapshot);
+      if (shouldOfferResume(initialSnapshot)) showVerificationLoading();
+      else renderApplyState(initialSnapshot);
 
       (async function refreshApplicationState() {
-        if (!initialSnapshot.applicationId) return;
+        if (!initialSnapshot.applicationId) {
+          renderApplyState(initialSnapshot);
+          return;
+        }
         try {
           var resp = await fetch(API_BASE + "/api/get-renter-application?applicationId=" + encodeURIComponent(initialSnapshot.applicationId));
           var result = await resp.json().catch(function () { return {}; });
-          if (!resp.ok || !result || !result.success) return;
+          if (!resp.ok || !result || !result.success) {
+            renderApplyState(initialSnapshot);
+            autoResumeIfPending(initialSnapshot);
+            return;
+          }
           var nextSnapshot = syncLifecycle(initialSnapshot, result);
           writeStored(nextSnapshot);
           renderApplyState(nextSnapshot);
-        } catch (_) {}
+          autoResumeIfPending(nextSnapshot);
+        } catch (_) {
+          renderApplyState(initialSnapshot);
+        }
       }());
 
       var link = document.getElementById("browseCarsNavLink");
