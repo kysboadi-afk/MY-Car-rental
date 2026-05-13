@@ -300,6 +300,14 @@
         );
       }
 
+      function autoResumeIfPending(snapshot) {
+        if (params.get("identity") !== "return") return;
+        if (!verifyBtn || verifyBtn.disabled || !isPendingIdentity(snapshot)) return;
+        setTimeout(function () {
+          if (verifyBtn && !verifyBtn.disabled) verifyBtn.click();
+        }, 0);
+      }
+
       function updateVerifyControls(snapshot) {
         if (!actionsEl) return;
         if (verifyBtn && verifyBtn.parentNode) verifyBtn.parentNode.removeChild(verifyBtn);
@@ -686,17 +694,13 @@
           var result = await resp.json().catch(function () { return {}; });
           if (!resp.ok || !result || !result.success) {
             renderApplyState(initialSnapshot);
-            if (params.get("identity") === "return" && verifyBtn && !verifyBtn.disabled && isPendingIdentity(initialSnapshot)) {
-              setTimeout(function () { if (verifyBtn && !verifyBtn.disabled) verifyBtn.click(); }, 0);
-            }
+            autoResumeIfPending(initialSnapshot);
             return;
           }
           var nextSnapshot = syncLifecycle(initialSnapshot, result);
           writeStored(nextSnapshot);
           renderApplyState(nextSnapshot);
-          if (params.get("identity") === "return" && verifyBtn && !verifyBtn.disabled && isPendingIdentity(nextSnapshot)) {
-            setTimeout(function () { if (verifyBtn && !verifyBtn.disabled) verifyBtn.click(); }, 0);
-          }
+          autoResumeIfPending(nextSnapshot);
         } catch (_) {
           renderApplyState(initialSnapshot);
         }
