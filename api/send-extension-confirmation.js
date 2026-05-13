@@ -95,6 +95,7 @@ export default async function handler(req, res) {
       renter_phone,
       extension_label,
       new_return_date,
+      new_return_time,
       previous_return_date,
       original_pickup_date,
       original_pickup_time,
@@ -174,12 +175,13 @@ export default async function handler(req, res) {
         }
         if (renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
+            const fallbackReturnTime = normalizeClockTime(new_return_time) || DEFAULT_RETURN_TIME;
             await sendDedupedSms({
               bookingId: bookingRef,
               templateKey: "extend_confirmed_economy",
               phone: renter_phone,
               body: render(EXTEND_CONFIRMED_ECONOMY, {
-                return_time: DEFAULT_RETURN_TIME,
+                return_time: fallbackReturnTime,
                 return_date: new_return_date,
               }),
               returnDateAtSend: new_return_date,
