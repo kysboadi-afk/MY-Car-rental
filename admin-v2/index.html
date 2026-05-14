@@ -3922,19 +3922,13 @@ async function apiPost(path, body, signal = undefined) {
     body: JSON.stringify(body),
     signal,
   });
+  let data = null;
+  try { data = await resp.json(); } catch {}
   if (resp.status === 401) {
     handleUnauthorizedApiResponse();
-    let msg = 'Unauthorized';
-    try {
-      const unauthorizedData = await resp.json();
-      if (unauthorizedData && unauthorizedData.error) msg = unauthorizedData.error;
-    } catch {}
-    throw new Error(msg);
+    throw new Error(data?.error || 'Unauthorized');
   }
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
+  if (!data) {
     // Server returned a non-JSON body (e.g. Vercel HTML error page).
     throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab for configuration issues.`);
   }
@@ -11899,17 +11893,13 @@ const APP_CONFLICT_REFRESH_DELAY_MS = 1200;
 async function apiGet(path) {
   if (window.DEMO_MODE) return {};
   const resp = await fetch(API_BASE + path);
+  let data = null;
+  try { data = await resp.json(); } catch {}
   if (resp.status === 401) {
     handleUnauthorizedApiResponse();
-    let msg = 'Unauthorized';
-    try {
-      const unauthorizedData = await resp.json();
-      if (unauthorizedData && unauthorizedData.error) msg = unauthorizedData.error;
-    } catch {}
-    throw new Error(msg);
+    throw new Error(data?.error || 'Unauthorized');
   }
-  let data;
-  try { data = await resp.json(); } catch {
+  if (!data) {
     throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab.`);
   }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
