@@ -9198,14 +9198,14 @@ async function acknowledgeSystemHealthManualSms(bookingId, returnDate, templateK
   } catch {
     templateKeys = [];
   }
-  if (templateKeys.length === 0) {
-    templateKeys = ['late_warning_30min', 'late_at_return', 'late_grace_expired'];
-  }
+  const displayKeys = templateKeys.length > 0
+    ? templateKeys.join(', ')
+    : 'all critical return-window keys';
 
   const confirmed = confirm(
     `Acknowledge manual SMS for ${normalizedBookingId}?\n\n` +
     `This will mark these critical keys as handled without resending:\n` +
-    `${templateKeys.join(', ')}`
+    `${displayKeys}`
   );
   if (!confirmed) return;
 

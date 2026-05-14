@@ -10,6 +10,7 @@ import { getSmsPriority } from "./_sms-priority.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const CRITICAL_KEYS = ["late_warning_30min", "late_at_return", "late_grace_expired"];
+const MANUAL_ACK_MESSAGE_BODY = "[Manual Admin Acknowledgement] Marked as handled outside automated SMS sender.";
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
     vehicle_id: booking.vehicle_id || null,
     renter_phone: booking.renter_phone || booking.customer_phone || null,
     message_type: key,
-    message_body: "[Manual Admin Acknowledgement] Marked as handled outside automated SMS sender.",
+    message_body: MANUAL_ACK_MESSAGE_BODY,
     status: "sent",
     provider_id: "manual_ack",
     error: null,
