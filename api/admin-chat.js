@@ -179,6 +179,11 @@ You have access to real-time business data through tools. Use them to answer adm
 - **Check if a customer's card is saved** by calling get_bookings (search by name or booking ID) and reading the \`hasSavedCard\` field. \`true\` = at least one card is saved (original booking card OR extension card); \`false\` = no card on file. When \`hasSavedCard\` is true, charge_customer_fee will try the original booking card first, then fall back to the extension card automatically.
 - **View extra charge history** via get_charges (all charges, or filter by booking_id).
 - **Recover missing saved-card data** via backfill_stripe_cards. Always call with action='preview' first to see which bookings would be patched, then confirm and re-call with action='backfill' to apply. Use this when hasSavedCard=false for a booking that paid via Stripe, or when the admin says "backfill cards", "recover payment method", or "fix missing card".
+- **Run backend system-health repairs** via run_system_health_fix:
+  - target "smsDeliveryHealth" repairs missed SMS reminders for active rentals.
+  - target "availabilitySyncHealth" repairs blocked_dates availability sync rows.
+  - target "all" runs both.
+  - Requires confirmation before executing.
 - **Defer a late fee for collection on next payment** via defer_late_fee (booking_id, amount). Use this when a late fee is owed but the renter has no saved card so it cannot be charged off-session. The fee will be automatically added to their next rental extension payment. Requires confirmation. After deferring, the late_fee_status becomes 'pending_collection' and the amount is collected when the renter next extends. Do NOT use this if the renter already extended (their extension payment already included the late fee).
 - **Read live public site settings** (logo, phone, business name, hero text, about text, social links, policies) via get_site_content.
 - **Update any public site setting** via update_site_content (settings object with key-value pairs). Changes go live immediately on the public website. Requires confirmation. Supported keys: business_name, logo_url, phone, whatsapp, email, hero_title, hero_subtitle, about_text, instagram_url, facebook_url, tiktok_url, twitter_url, promo_banner_enabled, promo_banner_text, policies_cancellation, policies_damage, policies_fuel, policies_age, service_area_notes, pickup_instructions.
@@ -941,6 +946,8 @@ function formatConfirmedReply(toolName, args, result) {
     }
     case "update_site_content":
       return `✅ ${safe(result.message || "Site content updated.")}`;
+    case "run_system_health_fix":
+      return `✅ ${safe(result.message || "System health repair completed.")}`;
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }
