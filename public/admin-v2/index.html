@@ -506,6 +506,13 @@
     }
     #preview-close-btn:hover { color: #fff; }
     #preview-iframe { flex: 1; width: 100%; border: none; background: #fff; }
+    .expense-receipt-cell { display: flex; flex-direction: column; gap: 8px; min-width: 220px; }
+    .expense-receipt-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .expense-receipt-viewer { min-height: 240px; max-height: 72vh; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+    .expense-receipt-viewer img,
+    .expense-receipt-viewer iframe { display: block; width: 100%; border: 0; border-radius: 10px; background: #fff; }
+    .expense-receipt-viewer img { max-height: 68vh; object-fit: contain; }
+    .expense-receipt-viewer iframe { min-height: 68vh; }
 
     /* ── Multi-tab warning ──────────────────────────────────────── */
     #multi-tab-warning {
@@ -1566,6 +1573,7 @@
                   <th>Category</th>
                   <th>Amount</th>
                   <th>Notes</th>
+                  <th>Receipt</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -2532,6 +2540,25 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-expense-modal')">Cancel</button>
       <button class="btn btn-primary" id="exp-submit-btn" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="expense-receipt-modal">
+  <div class="modal" style="width:min(960px,100%);max-width:min(960px,calc(100vw - 24px));">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Expense Receipt</div>
+        <div class="modal-subtitle" id="expense-receipt-modal-meta">Secure receipt preview</div>
+      </div>
+      <button class="modal-close" onclick="closeExpenseReceiptModal()">✕</button>
+    </div>
+    <div class="expense-receipt-viewer" id="expense-receipt-modal-body">
+      <div class="loading" style="display:flex;min-height:200px;"><div class="loading-spinner"></div><div>Loading receipt…</div></div>
+    </div>
+    <div class="modal-footer">
+      <a class="btn btn-secondary" id="expense-receipt-modal-open" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Open in new tab ↗</a>
+      <button class="btn btn-secondary" onclick="closeExpenseReceiptModal()">Close</button>
     </div>
   </div>
 </div>
@@ -5985,6 +6012,166 @@ function getCategoryLabel(expense) {
   return esc(text.charAt(0).toUpperCase() + text.slice(1));
 }
 
+function expenseHasReceipt(expense) {
+  return Boolean(expense && expense.receipt_url);
+}
+
+function formatExpenseReceiptSize(size) {
+  const bytes = Number(size || 0);
+  if (!bytes) return 'Unknown size';
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
+function getExpenseReceiptStatusHtml(expense) {
+  if (expenseHasReceipt(expense)) {
+    const details = [expense.receipt_filename || '', expense.receipt_uploaded_at ? new Date(expense.receipt_uploaded_at).toLocaleString() : ''].filter(Boolean).join(' · ');
+    return `<span class="badge badge-green" title="${esc(details || 'Receipt attached')}">Receipt Attached ✅</span>`;
+  }
+  return '<span class="badge badge-orange">Missing Receipt ⚠️</span>';
+}
+
+function renderExpenseReceiptCell(expense) {
+  const expenseId = esc(expense.expense_id || '');
+  const hasReceipt = expenseHasReceipt(expense);
+  return `
+    <div class="expense-receipt-cell">
+      ${getExpenseReceiptStatusHtml(expense)}
+      <div class="expense-receipt-actions">
+        <input type="file" id="expense-receipt-input-${expenseId}" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" capture="environment" style="display:none" onchange="handleExpenseReceiptSelected(this, '${expenseId}')">
+        <button class="btn btn-secondary btn-sm" onclick="triggerExpenseReceiptUpload('${expenseId}')">${hasReceipt ? 'Replace' : 'Upload Receipt'}</button>
+        ${hasReceipt ? `<button class="btn btn-secondary btn-sm" onclick="viewExpenseReceipt('${expenseId}')">View</button>` : ''}
+        ${hasReceipt ? `<button class="btn btn-danger btn-sm" onclick="deleteExpenseReceipt('${expenseId}')">Delete</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function setExpenseReceiptModalContent(html, meta = '', url = '') {
+  const body = document.getElementById('expense-receipt-modal-body');
+  const metaEl = document.getElementById('expense-receipt-modal-meta');
+  const openLink = document.getElementById('expense-receipt-modal-open');
+  if (body) body.innerHTML = html;
+  if (metaEl) metaEl.textContent = meta || 'Secure receipt preview';
+  if (openLink) {
+    if (url) {
+      openLink.href = url;
+      openLink.style.display = '';
+    } else {
+      openLink.href = '#';
+      openLink.style.display = 'none';
+    }
+  }
+}
+
+function closeExpenseReceiptModal() {
+  setExpenseReceiptModalContent('<div class="loading" style="display:flex;min-height:200px;"><div class="loading-spinner"></div><div>Loading receipt…</div></div>');
+  closeModal('expense-receipt-modal');
+}
+
+function triggerExpenseReceiptUpload(expenseId) {
+  const input = document.getElementById(`expense-receipt-input-${expenseId}`);
+  if (input) input.click();
+}
+
+function handleExpenseReceiptSelected(input, expenseId) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowedTypes.includes((file.type || '').toLowerCase())) {
+    showToast('Receipts must be JPG, PNG, WEBP, or PDF files.', 'error');
+    input.value = '';
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('Receipt files must be 10MB or smaller.', 'error');
+    input.value = '';
+    return;
+  }
+
+  const hadReceipt = allExpenses.some((expense) => expense.expense_id === expenseId && expenseHasReceipt(expense));
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    try {
+      await apiPost('/api/upload-expense-receipt', {
+        secret: adminSecret,
+        expenseId,
+        fileData: event.target.result,
+        mimeType: file.type,
+        fileName: file.name,
+      });
+      showToast(hadReceipt ? 'Receipt replaced.' : 'Receipt uploaded.', 'success');
+      allExpenses = [];
+      loadExpenses();
+    } catch (err) {
+      showToast('Upload failed: ' + err.message, 'error');
+    } finally {
+      input.value = '';
+    }
+  };
+  reader.onerror = () => {
+    showToast('Could not read the selected receipt file.', 'error');
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function viewExpenseReceipt(expenseId) {
+  const expense = allExpenses.find((item) => item.expense_id === expenseId) || {};
+  openModal('expense-receipt-modal');
+  setExpenseReceiptModalContent('<div class="loading" style="display:flex;min-height:200px;"><div class="loading-spinner"></div><div>Loading receipt…</div></div>', expense.receipt_filename || 'Secure receipt preview');
+
+  try {
+    const data = await apiPost('/api/get-expense-receipt-url', { secret: adminSecret, expenseId });
+    const metaBits = [
+      data.fileName || expense.receipt_filename || 'Receipt',
+      data.size ? formatExpenseReceiptSize(data.size) : '',
+      data.uploadedAt ? new Date(data.uploadedAt).toLocaleString() : '',
+    ].filter(Boolean);
+
+    if (data.isImage) {
+      setExpenseReceiptModalContent(
+        `<img src="${esc(data.url)}" alt="${esc(data.fileName || 'Expense receipt')}">`,
+        metaBits.join(' · '),
+        data.url,
+      );
+      return;
+    }
+
+    if (data.isPdf) {
+      setExpenseReceiptModalContent(
+        `<iframe src="${esc(data.url)}#toolbar=1&navpanes=0" title="${esc(data.fileName || 'Expense receipt PDF')}"></iframe>`,
+        metaBits.join(' · '),
+        data.url,
+      );
+      return;
+    }
+
+    setExpenseReceiptModalContent(
+      `<div style="display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--text-sub);">Preview unavailable. Use the button below to open the receipt.</div>`,
+      metaBits.join(' · '),
+      data.url,
+    );
+  } catch (err) {
+    closeExpenseReceiptModal();
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function deleteExpenseReceipt(expenseId) {
+  if (!confirm('Delete this receipt attachment?')) return;
+  apiPost('/api/delete-expense-receipt', { secret: adminSecret, expenseId })
+    .then(() => {
+      closeExpenseReceiptModal();
+      showToast('Receipt deleted.', 'success');
+      allExpenses = [];
+      loadExpenses();
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
 function loadExpenses() {
   document.getElementById('expenses-loading').style.display = '';
   document.getElementById('expenses-table-wrap').style.display = 'none';
@@ -6092,6 +6279,7 @@ function applyExpenseFilters() {
       <td><span class="badge badge-gray" title="${esc(e.category_group || '')}">${getCategoryLabel(e)}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
+      <td>${renderExpenseReceiptCell(e)}</td>
       <td>
         <button class="btn btn-danger btn-sm" onclick="deleteExpense('${esc(e.expense_id || '')}')">Delete</button>
       </td>
@@ -6100,7 +6288,7 @@ function applyExpenseFilters() {
     <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg);">
       <td colspan="3" style="text-align:right;padding-right:8px;">Total (${filtered.length} record${filtered.length !== 1 ? 's' : ''})</td>
       <td style="color:var(--danger);">$${formatMoney(filteredTotal)}</td>
-      <td colspan="2"></td>
+      <td colspan="3"></td>
     </tr>
   `;
 }
@@ -9875,10 +10063,10 @@ async function loadAiInsights() {
   ];
 
   window.DEMO_EXPENSES = [
-    { id: 1, vehicleId: 'camry',     vehicle_id: 'camry',     date: ago(30), category: 'maintenance', amount: 120, notes: 'Oil change + tire rotation' },
-    { id: 2, vehicleId: 'rav4',      vehicle_id: 'rav4',      date: ago(15), category: 'insurance',   amount: 280, notes: 'Monthly insurance premium' },
-    { id: 3, vehicleId: 'civic',     vehicle_id: 'civic',     date: ago(8),  category: 'repair',      amount: 85,  notes: 'Brake pad replacement' },
-    { id: 4, vehicleId: 'slingshot', vehicle_id: 'slingshot', date: ago(5),  category: 'maintenance', amount: 220, notes: 'Belt inspection + fluid change' },
+    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry',     vehicle_id: 'camry',     date: ago(30), category: 'maintenance', amount: 120, notes: 'Oil change + tire rotation', receipt_url: 'demo/expense-1', receipt_filename: 'oil-change.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
+    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',      vehicle_id: 'rav4',      date: ago(15), category: 'insurance',   amount: 280, notes: 'Monthly insurance premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
+    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic',     vehicle_id: 'civic',     date: ago(8),  category: 'repair',      amount: 85,  notes: 'Brake pad replacement', receipt_url: 'demo/expense-3', receipt_filename: 'brake-pad.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
+    { expense_id: 'exp-demo-004', id: 4, vehicleId: 'slingshot', vehicle_id: 'slingshot', date: ago(5),  category: 'maintenance', amount: 220, notes: 'Belt inspection + fluid change', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
   ];
 
   window.DEMO_REVENUE = [
@@ -9981,6 +10169,40 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });
   if (p.endsWith('/api/get-expenses'))       return Promise.resolve({ expenses: window.DEMO_EXPENSES });
   if (p.endsWith('/api/add-expense'))        return Promise.resolve({ ok: true, expense: { id: Date.now() } });
+  if (p.endsWith('/api/upload-expense-receipt')) {
+    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
+    if (!expense) return Promise.reject(new Error('Expense not found'));
+    expense.receipt_url = `demo/${expense.expense_id}`;
+    expense.receipt_filename = body.fileName || 'receipt.jpg';
+    expense.receipt_uploaded_at = new Date().toISOString();
+    expense.receipt_size = 245760;
+    expense.receipt_mime_type = body.mimeType || 'image/jpeg';
+    return Promise.resolve({ success: true, expense });
+  }
+  if (p.endsWith('/api/get-expense-receipt-url')) {
+    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
+    if (!expense || !expense.receipt_url) return Promise.reject(new Error('No receipt attached to this expense'));
+    return Promise.resolve({
+      success: true,
+      url: expense.receipt_mime_type === 'image/png' ? '/images/car2.jpg' : '/images/logo.jpg',
+      fileName: expense.receipt_filename,
+      mimeType: expense.receipt_mime_type,
+      size: expense.receipt_size,
+      uploadedAt: expense.receipt_uploaded_at,
+      isImage: true,
+      isPdf: false,
+    });
+  }
+  if (p.endsWith('/api/delete-expense-receipt')) {
+    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
+    if (!expense || !expense.receipt_url) return Promise.reject(new Error('No receipt attached to this expense'));
+    expense.receipt_url = null;
+    expense.receipt_filename = null;
+    expense.receipt_uploaded_at = null;
+    expense.receipt_size = null;
+    expense.receipt_mime_type = null;
+    return Promise.resolve({ success: true, expense });
+  }
   if (p.endsWith('/api/delete-expense'))     return Promise.resolve({ ok: true });
   if (p.endsWith('/api/admin-update-pricing'))  return Promise.resolve({ ok: true, pricing: {} });
   if (p.endsWith('/api/admin-ai-insights'))  return Promise.resolve({ summary: 'Demo mode — live AI insights are not available.', problems: [], metrics: {} });
