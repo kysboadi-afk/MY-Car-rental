@@ -46,6 +46,19 @@ const CAMRY_VEHICLE = {
   monthly:     null,
 };
 
+const TWO_DAY_OVERDUE_NOW = "2020-01-03T17:29:00-08:00";
+const FIVE_DAY_OVERDUE_NOW = "2026-05-05T12:00:00-07:00";
+
+async function withMockedNow(iso, fn) {
+  const originalNow = Date.now;
+  Date.now = () => new Date(iso).getTime();
+  try {
+    return await fn();
+  } finally {
+    Date.now = originalNow;
+  }
+}
+
 mock.module("./_vehicles.js", {
   namedExports: {
     getVehicleById: async (id) =>
@@ -102,6 +115,7 @@ mock.module("./_pricing.js", {
       monthly_price:  null,
     }),
     computeAmountFromPricing: (await import("./_pricing.js")).computeAmountFromPricing,
+    computeLateFeeAmount: (await import("./_pricing.js")).computeLateFeeAmount,
   },
 });
 
@@ -622,7 +636,7 @@ test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over booking
 
 // ── Waiver tests ──────────────────────────────────────────────────────────────
 
-test("extend-rental: late fee stays flat and non-taxed in extension total", async () => {
+test("extend-rental: late fee is charged per overdue day and remains non-taxed", async () => {
   capturedStripeParams = null;
   const active = makeActiveBooking({
     returnDate: "2020-01-01",
@@ -640,29 +654,30 @@ test("extend-rental: late fee stays flat and non-taxed in extension total", asyn
   });
 
   const res = makeRes();
-  await handler(makeReq({
-    vehicleId:     "camry",
-    email:         "alice@example.com",
-    newReturnDate: "2020-01-03", // 2 extension days => $110 base
-  }), res);
+  await withMockedNow(TWO_DAY_OVERDUE_NOW, async () => {
+    await handler(makeReq({
+      vehicleId:     "camry",
+      email:         "alice@example.com",
+      newReturnDate: "2020-01-03", // 2 extension days => $110 base
+    }), res);
+  });
 
   // Base extension amount: $110
   // Tax on base only (9.5%): $10.45
-  // Late fee (non-taxed): $25
-  // Total: $145.45 => 14545 cents.
+  // Overdue from Jan 1 to Jan 3 => 2 late-fee days = $50 (non-taxed)
+  // Total: $170.45 => 17045 cents.
   assert.equal(res._status, 200);
-  assert.equal(res._body.lateFeeIncluded, 25);
-  assert.equal(capturedStripeParams.amount, 14545);
+  assert.equal(res._body.lateFeeIncluded, 50);
+  assert.equal(capturedStripeParams.amount, 17045);
 });
 
-test("extend-rental: full waiver (late_fee_waived_amount = $25) removes late fee from total", async () => {
+test("extend-rental: full waiver removes a multi-day late fee from total", async () => {
   // Simulate a booking that is past the 3-hour reset window.
-  // Without a waiver, LATE_FEE ($25) would be added.
-  // With a full waiver (waived_amount = $25) the late fee must be $0.
+  // Without a waiver, the late fee would be $125 for five overdue days.
+  // With a full waiver (waived_amount = $125) the late fee must be $0.
   capturedStripeParams = null;
   const active = makeActiveBooking({
     returnDate: "2026-04-30",
-    returnTime: "10:00",  // will be used as the base return time in our mock
   });
   mockBookings = { camry: [active] };
 
@@ -672,19 +687,21 @@ test("extend-rental: full waiver (late_fee_waived_amount = $25) removes late fee
       return_date:             "2026-04-30",
       return_time:             "17:00:00",
       status:                  "active_rental",
-      late_fee_waived_amount:  25,  // full waiver for flat late fee
+      late_fee_waived_amount:  125,
     }],
   });
 
   const res = makeRes();
-  await handler(makeReq({
-    vehicleId:     "camry",
-    email:         "alice@example.com",
-    newReturnDate: "2026-05-05",
-  }), res);
+  await withMockedNow(FIVE_DAY_OVERDUE_NOW, async () => {
+    await handler(makeReq({
+      vehicleId:     "camry",
+      email:         "alice@example.com",
+      newReturnDate: "2026-05-05",
+    }), res);
+  });
 
   assert.equal(res._status, 200, "handler must succeed");
-  assert.equal(res._body.lateFeeWaived, 25, "lateFeeWaived must be 25");
+  assert.equal(res._body.lateFeeWaived, 125, "lateFeeWaived must match the full assessed late fee");
   // lateFeeIncluded after full waiver is applied: 0.
   assert.equal(res._body.lateFeeIncluded, 0,
     "lateFeeIncluded must be 0 when the full waiver covers the fee");
@@ -706,15 +723,18 @@ test("extend-rental: partial waiver reduces late fee proportionally", async () =
   });
 
   const res = makeRes();
-  await handler(makeReq({
-    vehicleId:     "camry",
-    email:         "alice@example.com",
-    newReturnDate: "2026-05-05",
-  }), res);
+  await withMockedNow(FIVE_DAY_OVERDUE_NOW, async () => {
+    await handler(makeReq({
+      vehicleId:     "camry",
+      email:         "alice@example.com",
+      newReturnDate: "2026-05-05",
+    }), res);
+  });
 
   assert.equal(res._status, 200);
   // lateFeeWaived must always reflect what was read from Supabase.
   assert.equal(res._body.lateFeeWaived, 10);
+  assert.equal(res._body.lateFeeIncluded, 115);
 });
 
 test("extend-rental: no waiver when late_fee_waived_amount is absent from Supabase row", async () => {

@@ -337,8 +337,8 @@ export const PRE_RETURN_LATE_FEE_WARNING =
   "Your rental is due at {return_time}.\n\n" +
   "Please return or extend your booking on time to avoid additional charges.\n\n" +
   "Late fees:\n" +
-  "\u2022 After 30 minutes: +$25\n" +
-  "\u2022 After 3 hours: +$25\n\n" +
+  "\u2022 After 30 minutes late: $25\n" +
+  "\u2022 Each additional overdue day: +$25/day\n\n" +
   "Extend here:\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
@@ -346,7 +346,7 @@ export const PRE_RETURN_LATE_FEE_WARNING =
 
 /**
  * Sent after the 30-minute grace period has started.
- * Informs the renter that a $25 late fee now applies.
+ * Informs the renter that the first $25 late fee day now applies.
  * Variables: customer_name, extend_link
  */
 export const LATE_GRACE_STARTED =
@@ -354,14 +354,14 @@ export const LATE_GRACE_STARTED =
   "Hi {customer_name},\n\n" +
   "Your rental is now past the grace period.\n\n" +
   "A $25 late fee now applies.\n\n" +
-  "Extend or return your vehicle now. The late fee is $25 and does not increase further.\n\n" +
+  "Extend or return your vehicle now. Late fees continue at $25 for each overdue day.\n\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
   "Reply STOP to opt out.";
 
 /**
  * Sent after the 3-hour escalation window.
- * Informs the renter that the flat $25 late fee applies.
+ * Informs the renter that late fees continue at $25 per overdue day.
  * Variables: customer_name, extend_link
  */
 export const LATE_ESCALATION =
@@ -369,7 +369,7 @@ export const LATE_ESCALATION =
   "Hi {customer_name},\n\n" +
   "Your rental has exceeded the 3-hour late window.\n\n" +
   "A $25 late fee applies.\n\n" +
-  "Please extend or return immediately to avoid further charges.\n\n" +
+  "Please extend or return immediately. Late fees continue at $25 for each overdue day.\n\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
   "Reply STOP to opt out.";

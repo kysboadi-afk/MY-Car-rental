@@ -3,7 +3,15 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeBreakdownLines, CAMRY_BOOKING_DEPOSIT, computeAmountFromPricing } from "./_pricing.js";
+import {
+  computeAmount,
+  computeProtectionPlanCost,
+  computeBreakdownLines,
+  CAMRY_BOOKING_DEPOSIT,
+  computeAmountFromPricing,
+  computeLateFeeDays,
+  computeLateFeeAmount,
+} from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -288,4 +296,29 @@ test("computeAmountFromPricing: all-zero prices returns null (not $0)", () => {
   const pricing = { daily_price: 0, weekly_price: 0, biweekly_price: 0, monthly_price: 0 };
   assert.equal(computeAmountFromPricing(pricing, 5), null);
   assert.equal(computeAmountFromPricing(pricing, 7), null);
+});
+
+test("computeLateFeeDays: returns 0 before the 30-minute grace window ends", () => {
+  assert.equal(
+    computeLateFeeDays("2026-05-01", "5:00 PM", "2026-05-01T17:20:00-07:00"),
+    0
+  );
+});
+
+test("computeLateFeeAmount: charges $25 for the first overdue day after grace period expires", () => {
+  assert.equal(
+    computeLateFeeAmount("2026-05-01", "5:00 PM", "2026-05-01T17:31:00-07:00"),
+    25
+  );
+});
+
+test("computeLateFeeAmount: charges $25 per overdue day", () => {
+  assert.equal(
+    computeLateFeeDays("2026-05-01", "5:00 PM", "2026-05-03T17:31:00-07:00"),
+    3
+  );
+  assert.equal(
+    computeLateFeeAmount("2026-05-01", "5:00 PM", "2026-05-03T17:31:00-07:00"),
+    75
+  );
 });
