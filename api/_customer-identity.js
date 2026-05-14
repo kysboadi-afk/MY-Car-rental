@@ -163,8 +163,8 @@ export async function findCustomerMatch(supabase, booking) {
   const isMultiMatchError = (err) => {
     if (!err) return false;
     const code = typeof err.code === "string" ? err.code.toUpperCase() : "";
-    const message = typeof err.message === "string" ? err.message.toLowerCase() : "";
-    return code === "PGRST116" || message.includes("multiple");
+    const details = typeof err.details === "string" ? err.details.toLowerCase() : "";
+    return code === "PGRST116" || details.includes("more than 1 row");
   };
 
   const buildAmbiguousResult = async (queryBuilder, reason) => {
