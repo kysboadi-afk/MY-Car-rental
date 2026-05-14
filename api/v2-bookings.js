@@ -640,10 +640,12 @@ export default async function handler(req, res) {
       const hasContactUpdate = safeUpdates.customerName !== undefined || safeUpdates.customerPhone !== undefined || safeUpdates.customerEmail !== undefined;
       const hasPickupUpdate  = safeUpdates.pickupDate !== undefined || safeUpdates.pickupTime !== undefined;
       const hasPaymentStatusUpdate = safeUpdates.paymentStatus !== undefined;
+      const hasPaymentMethodUpdate = safeUpdates.paymentMethod !== undefined;
+      const hasNotesUpdate = safeUpdates.notes !== undefined;
       const hasVehicleUpdate = safeUpdates.vehicleId !== undefined;
-      if (sbInstance && (safeUpdates.status || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasVehicleUpdate)) {
+      if (sbInstance && (safeUpdates.status || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasPaymentMethodUpdate || hasNotesUpdate || hasVehicleUpdate)) {
         const dbStatus = safeUpdates.status ? APP_TO_DB_STATUS[safeUpdates.status] : null;
-        if (dbStatus || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasVehicleUpdate) {
+        if (dbStatus || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasPaymentMethodUpdate || hasNotesUpdate || hasVehicleUpdate) {
           try {
             const sbPayload = {
               ...(dbStatus ? { status: dbStatus } : {}),
@@ -660,6 +662,7 @@ export default async function handler(req, res) {
               ...(safeUpdates.pickupDate !== undefined ? { pickup_date: safeUpdates.pickupDate } : {}),
               ...(safeUpdates.pickupTime !== undefined ? { pickup_time: parseTime12h(safeUpdates.pickupTime) } : {}),
               ...(safeUpdates.paymentStatus !== undefined ? { payment_status: safeUpdates.paymentStatus } : {}),
+              ...(safeUpdates.paymentMethod !== undefined ? { payment_method: safeUpdates.paymentMethod } : {}),
               ...(safeUpdates.vehicleId !== undefined ? { vehicle_id: safeUpdates.vehicleId } : {}),
             };
 
