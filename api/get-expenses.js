@@ -15,6 +15,7 @@ import { loadExpenses } from "./_expenses.js";
 import { loadVehicles } from "./_vehicles.js";
 import { enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
@@ -36,13 +37,13 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
   const { secret, vehicle_id, scope } = req.body || {};
 
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

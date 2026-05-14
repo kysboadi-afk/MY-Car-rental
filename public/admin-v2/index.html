@@ -2425,7 +2425,7 @@
           <button class="btn btn-secondary btn-sm" onclick="loadBalanceLedger()">Load</button>
         </div>
         <!-- Summary cards -->
-        <div id="bl-summary-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;display:none;">
+        <div id="bl-summary-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
           <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
             <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Charges</div>
             <div id="bl-total-charges" style="font-size:22px;font-weight:700;color:var(--danger);">—</div>
@@ -3677,6 +3677,7 @@ function signIn() {
   apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => {
       dashboardData = data;
+      closeAllModals();
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
@@ -3725,6 +3726,7 @@ function logout() {
   aiClearHistory();
   aiTyping = false;
   aiInitialized = false;
+  closeAllModals();
   document.getElementById('app').classList.remove('ready');
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('auth-password').value = '';
@@ -6947,10 +6949,29 @@ function closeModal(id) {
     document.body.classList.remove('modal-open');
   }
 }
+function closeAllModals() {
+  document.querySelectorAll('.modal-overlay').forEach((el) => {
+    el.classList.remove('open');
+    el.style.display = '';
+    el.style.visibility = '';
+    el.style.opacity = '';
+    el.style.pointerEvents = '';
+  });
+  document.body.classList.remove('modal-open');
+  const preview = document.getElementById('preview-modal-overlay');
+  if (preview) {
+    preview.classList.remove('open');
+    preview.style.display = '';
+    preview.style.visibility = '';
+    preview.style.opacity = '';
+    preview.style.pointerEvents = '';
+  }
+}
+closeAllModals();
 // Close modal on overlay click (delegated so it covers modals added after script parse)
 document.addEventListener('click', (e) => {
   if (e.target.classList && e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
+    closeModal(e.target.id);
   }
 });
 

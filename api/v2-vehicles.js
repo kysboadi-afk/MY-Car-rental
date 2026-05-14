@@ -15,6 +15,7 @@
 //   update — { secret, action:"update", vehicleId, updates:{...} }
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -221,14 +222,14 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
   const body   = req.body || {};
   const { secret, action } = body;
 
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
