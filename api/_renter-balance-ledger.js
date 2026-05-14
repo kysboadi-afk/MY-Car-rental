@@ -38,7 +38,8 @@ const DEFAULT_DIRECTION_BY_TYPE = {
 };
 
 function roundMoney(value) {
-  return Math.round(Number(value) * 100) / 100;
+  const rounded = Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  return Number(rounded.toFixed(2));
 }
 
 function parsePositiveAmount(value, field = "amount") {
@@ -117,27 +118,32 @@ export function normalizeLedgerTransactionInput(input = {}) {
 }
 
 export function computeLedgerSummary(transactions = []) {
-  let totalCharges = 0;
-  let totalCredits = 0;
-  let totalPayments = 0;
-  let totalWaived = 0;
-  let totalRefunds = 0;
+  let totalChargesRaw = 0;
+  let totalCreditsRaw = 0;
+  let totalPaymentsRaw = 0;
+  let totalWaivedRaw = 0;
+  let totalRefundsRaw = 0;
 
   for (const row of transactions) {
-    const amount = roundMoney(Number(row.amount) || 0);
+    const amount = Number(row.amount) || 0;
     if (amount <= 0) continue;
     const direction = row.direction === "credit" ? "credit" : "debit";
     const type = String(row.transaction_type || "");
 
-    if (direction === "debit") totalCharges = roundMoney(totalCharges + amount);
-    else totalCredits = roundMoney(totalCredits + amount);
+    if (direction === "debit") totalChargesRaw += amount;
+    else totalCreditsRaw += amount;
 
-    if (type === "payment" && direction === "credit") totalPayments = roundMoney(totalPayments + amount);
-    if (type === "waiver"  && direction === "credit") totalWaived   = roundMoney(totalWaived + amount);
-    if (type === "refund"  && direction === "debit")  totalRefunds  = roundMoney(totalRefunds + amount);
+    if (type === "payment" && direction === "credit") totalPaymentsRaw += amount;
+    if (type === "waiver"  && direction === "credit") totalWaivedRaw   += amount;
+    if (type === "refund"  && direction === "debit")  totalRefundsRaw  += amount;
   }
 
-  const netBalance = roundMoney(totalCharges - totalCredits);
+  const totalCharges = roundMoney(totalChargesRaw);
+  const totalCredits = roundMoney(totalCreditsRaw);
+  const totalPayments = roundMoney(totalPaymentsRaw);
+  const totalWaived = roundMoney(totalWaivedRaw);
+  const totalRefunds = roundMoney(totalRefundsRaw);
+  const netBalance = roundMoney(totalChargesRaw - totalCreditsRaw);
   const remainingBalance = Math.max(0, netBalance);
   const creditBalance = netBalance < 0 ? Math.abs(netBalance) : 0;
 
