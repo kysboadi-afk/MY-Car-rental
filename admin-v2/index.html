@@ -3923,7 +3923,9 @@ async function apiPost(path, body, signal = undefined) {
     signal,
   });
   let data = null;
-  try { data = await resp.json(); } catch {}
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiPost: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
   if (resp.status === 401) {
     handleUnauthorizedApiResponse();
     throw new Error(data?.error || 'Unauthorized');
@@ -11894,7 +11896,9 @@ async function apiGet(path) {
   if (window.DEMO_MODE) return {};
   const resp = await fetch(API_BASE + path);
   let data = null;
-  try { data = await resp.json(); } catch {}
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
   if (resp.status === 401) {
     handleUnauthorizedApiResponse();
     throw new Error(data?.error || 'Unauthorized');
