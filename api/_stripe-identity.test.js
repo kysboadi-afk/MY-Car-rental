@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 process.env.STRIPE_SECRET_KEY = "sk_test_123";
 process.env.STRIPE_PUBLISHABLE_KEY = "pk_test_123";
 process.env.STRIPE_IDENTITY_WEBHOOK_SECRET = "whsec_identity_test";
+process.env.ADMIN_SECRET = "test-admin-secret";
 process.env.SMTP_HOST = "smtp.test.invalid";
 process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
@@ -18,6 +19,9 @@ const calls = {
   retrievedSessions: [],
   patched: [],
   fetched: [],
+  listedReviewQueue: [],
+  listedRecoveryCandidates: [],
+  fetchedReviewDetail: [],
   eventInserts: [],
   sentMails: [],
   sentMessages: [],
@@ -31,6 +35,9 @@ let webhookEvent = null;
 let duplicateEvent = false;
 let insertEventError = null;
 let throwConstructEvent = false;
+let reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+let recoveryCandidatesResult = { ok: true, data: [] };
+let reviewDetailResult = { ok: true, data: null, history: [] };
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
   calls.fetched.push(applicationId);
@@ -42,10 +49,28 @@ const patchRenterApplicationIdentityById = mock.fn(async (applicationId, patch) 
   return patchResult;
 });
 
+const listReviewQueueApplications = mock.fn(async (...args) => {
+  calls.listedReviewQueue.push(args);
+  return reviewQueueResult;
+});
+
+const listPendingIdentityRecoveryApplications = mock.fn(async (...args) => {
+  calls.listedRecoveryCandidates.push(args);
+  return recoveryCandidatesResult;
+});
+
+const fetchReviewApplicationById = mock.fn(async (...args) => {
+  calls.fetchedReviewDetail.push(args);
+  return reviewDetailResult;
+});
+
 mock.module("./_renter-applications.js", {
   namedExports: {
     fetchRenterApplicationById,
     patchRenterApplicationIdentityById,
+    listReviewQueueApplications,
+    listPendingIdentityRecoveryApplications,
+    fetchReviewApplicationById,
   },
 });
 
@@ -122,6 +147,8 @@ mock.module("./_supabase.js", {
 
 const { default: createIdentitySessionHandler } = await import("./create-identity-verification-session.js");
 const { default: stripeIdentityWebhookHandler } = await import("./stripe-identity-webhook.js");
+const { default: adminReviewQueueHandler } = await import("./admin-review-queue.js");
+const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
 
 function makeRes() {
   return {
@@ -151,11 +178,22 @@ function makeWebhookReq() {
   return req;
 }
 
+function makeAdminGetReq(query = {}) {
+  return {
+    method: "GET",
+    headers: { origin: "https://www.slytrans.com" },
+    query,
+  };
+}
+
 beforeEach(() => {
   calls.createdSessions.length = 0;
   calls.retrievedSessions.length = 0;
   calls.patched.length = 0;
   calls.fetched.length = 0;
+  calls.listedReviewQueue.length = 0;
+  calls.listedRecoveryCandidates.length = 0;
+  calls.fetchedReviewDetail.length = 0;
   calls.eventInserts.length = 0;
   calls.sentMails.length = 0;
   calls.sentMessages.length = 0;
@@ -187,6 +225,13 @@ beforeEach(() => {
   duplicateEvent = false;
   insertEventError = null;
   throwConstructEvent = false;
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+  recoveryCandidatesResult = { ok: true, data: [] };
+  reviewDetailResult = { ok: true, data: null, history: [] };
+  fetchReviewApplicationById.mock.mockImplementation(async (...args) => {
+    calls.fetchedReviewDetail.push(args);
+    return reviewDetailResult;
+  });
 });
 
 test("create-identity-verification-session creates a Stripe Identity session with application metadata", async () => {
@@ -496,6 +541,128 @@ test("create-identity-verification-session creates new session when Stripe retri
   // A new session must be created when retrieve fails
   assert.equal(calls.createdSessions.length, 1);
   assert.equal(res._body.sessionReused, undefined);
+});
+
+test("admin-review-queue recovers verified Stripe applications before loading the queue", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vs_recover_1",
+    }],
+  };
+  reviewQueueResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      age: 28,
+      experience: "3 years",
+      application_status: "under_review",
+      identity_status: "verified",
+      review_version: 0,
+      reviewed_by: "admin_review_queue_sync",
+      reviewed_at: "2026-05-14T03:00:00.000Z",
+      needs_info_reason: null,
+      precheck_decision: "review",
+      submitted_at: "2026-05-14T02:00:00.000Z",
+      updated_at: "2026-05-14T03:00:00.000Z",
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+  };
+  stripeRetrieveResult = {
+    id: "vs_recover_1",
+    status: "verified",
+  };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.total, 1);
+  assert.equal(calls.listedRecoveryCandidates.length, 1);
+  assert.equal(calls.retrievedSessions[0], "vs_recover_1");
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.patched[0].patch.reviewedBy, "admin_review_queue_sync");
+  assert.equal(calls.listedReviewQueue.length, 1);
+  assert.ok(calls.sentMails.some((mail) => String(mail.subject).includes("Identity Verified")));
+});
+
+test("admin-review-detail recovers a verified Stripe application before returning detail", async () => {
+  const submittedDetail = {
+    id: "11111111-1111-1111-1111-111111111111",
+    name: "Jane Driver",
+    phone: "3105550199",
+    email: "jane@example.com",
+    age: 28,
+    experience: "3 years",
+    apps: ["Camry 2012"],
+    has_insurance: "yes",
+    protection_plan_pref: "basic",
+    has_license_upload: true,
+    has_insurance_proof: true,
+    license_file_name: "license.jpg",
+    insurance_file_name: "insurance.jpg",
+    precheck_decision: "review",
+    application_status: "submitted",
+    identity_status: "requires_input",
+    identity_session_id: "vs_detail_sync",
+    identity_verified_at: null,
+    review_version: 0,
+    reviewed_by: null,
+    reviewed_at: null,
+    needs_info_reason: null,
+    last_reviewer_notes: null,
+    submitted_at: "2026-05-14T02:00:00.000Z",
+    created_at: "2026-05-14T02:00:00.000Z",
+    updated_at: "2026-05-14T02:00:00.000Z",
+  };
+  const syncedDetail = {
+    ...submittedDetail,
+    application_status: "under_review",
+    identity_status: "verified",
+    identity_verified_at: "2026-05-14T03:00:00.000Z",
+    reviewed_by: "admin_review_detail_sync",
+    reviewed_at: "2026-05-14T03:00:00.000Z",
+    updated_at: "2026-05-14T03:00:00.000Z",
+  };
+  let detailFetchCount = 0;
+  fetchReviewApplicationById.mock.mockImplementation(async (...args) => {
+    calls.fetchedReviewDetail.push(args);
+    detailFetchCount += 1;
+    return detailFetchCount === 1
+      ? { ok: true, data: submittedDetail, history: [] }
+      : { ok: true, data: syncedDetail, history: [] };
+  });
+  stripeRetrieveResult = {
+    id: "vs_detail_sync",
+    status: "verified",
+  };
+  patchResult = { ok: true, data: syncedDetail };
+
+  const res = makeRes();
+  await adminReviewDetailHandler(makeAdminGetReq({
+    secret: "test-admin-secret",
+    applicationId: "11111111-1111-1111-1111-111111111111",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.applicationStatus, "under_review");
+  assert.equal(res._body.identityStatus, "verified");
+  assert.equal(calls.patched[0].patch.reviewedBy, "admin_review_detail_sync");
+  assert.equal(detailFetchCount, 2);
 });
 
 // ─── Notification link assertions ─────────────────────────────────────────────

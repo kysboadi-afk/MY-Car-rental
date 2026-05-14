@@ -7,6 +7,7 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { fetchReviewApplicationById } from "./_renter-applications.js";
+import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -36,7 +37,23 @@ export default async function handler(req, res) {
     return res.status(result.status || 500).json({ error: result.error });
   }
 
-  const r = result.data;
+  let r = result.data;
+  let reviewHistory = result.history || [];
+  if (r?.identity_session_id && r?.identity_status !== "verified") {
+    const recovery = await recoverVerifiedApplicationFromStripe(r, {
+      reviewedBy: "admin_review_detail_sync",
+    });
+    if (!recovery.ok) {
+      if (recovery.details) console.error("admin-review-detail recovery:", recovery.details);
+    } else if (recovery.synced) {
+      const refreshed = await fetchReviewApplicationById(applicationId.trim());
+      if (refreshed.ok) {
+        r = refreshed.data;
+        reviewHistory = refreshed.history || reviewHistory;
+      }
+    }
+  }
+
   return res.status(200).json({
     success: true,
     applicationId: r.id,
@@ -65,7 +82,7 @@ export default async function handler(req, res) {
     submittedAt: r.submitted_at || null,
     createdAt: r.created_at || null,
     updatedAt: r.updated_at || null,
-    reviewHistory: (result.history || []).map((h) => ({
+    reviewHistory: reviewHistory.map((h) => ({
       id: h.id,
       action: h.action,
       performedBy: h.performed_by,

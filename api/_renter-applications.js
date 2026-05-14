@@ -433,6 +433,34 @@ export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = 
   return { ok: true, data: data || [], total: count ?? 0, page: safePage, pageSize: safePageSize };
 }
 
+export async function listPendingIdentityRecoveryApplications({ limit = 25 } = {}, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const safeLimit = Math.max(1, Math.min(100, Number(limit) || 25));
+  const recoverableIdentityStatuses = ["not_started", "requires_input", "processing", "failed", "canceled"];
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select("*")
+    .eq("application_status", "submitted")
+    .in("identity_status", recoverableIdentityStatuses)
+    .not("identity_session_id", "is", null)
+    .order("submitted_at", { ascending: true })
+    .limit(safeLimit);
+
+  if (error) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Could not load Stripe identity recovery candidates.",
+      details: error.message,
+    };
+  }
+
+  return { ok: true, data: data || [] };
+}
+
 /**
  * Fetch a single application (full detail) for admin review.
  *
