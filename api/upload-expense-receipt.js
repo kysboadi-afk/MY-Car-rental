@@ -9,6 +9,7 @@ import {
   parseExpenseReceiptBuffer,
   sanitizeExpenseReceiptFilename,
   isAllowedExpenseReceiptMimeType,
+  matchesExpenseReceiptMimeSignature,
 } from "./_expense-receipts.js";
 
 export const config = {
@@ -62,6 +63,9 @@ export default async function handler(req, res) {
   if (buffer.length > EXPENSE_RECEIPT_MAX_SIZE_BYTES) {
     return res.status(400).json({ error: `File too large. Maximum size is ${EXPENSE_RECEIPT_MAX_SIZE_BYTES / 1024 / 1024} MB.` });
   }
+  if (!matchesExpenseReceiptMimeSignature(buffer, mime)) {
+    return res.status(400).json({ error: "Receipt file contents do not match mimeType" });
+  }
 
   const sb = getSupabaseAdmin();
   if (!sb) {
@@ -100,10 +104,11 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: `Upload failed: ${uploadErr.message}` });
     }
 
+    const receiptPath = filePath;
     const { data: updatedExpense, error: updateErr } = await sb
       .from("expenses")
       .update({
-        receipt_url:         filePath,
+        receipt_url:         receiptPath,
         receipt_filename:    sanitizeExpenseReceiptFilename(fileName, mime),
         receipt_uploaded_at: new Date().toISOString(),
         receipt_size:        buffer.length,
@@ -113,7 +118,15 @@ export default async function handler(req, res) {
       .select(EXPENSE_SELECT)
       .maybeSingle();
 
-    if (updateErr) throw updateErr;
+    if (updateErr) {
+      if (!previousPath || previousPath !== filePath) {
+        const { error: rollbackErr } = await sb.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([filePath]);
+        if (rollbackErr) {
+          console.warn("upload-expense-receipt: rollback cleanup failed:", rollbackErr.message);
+        }
+      }
+      throw updateErr;
+    }
 
     return res.status(200).json({ success: true, expense: updatedExpense });
   } catch (err) {

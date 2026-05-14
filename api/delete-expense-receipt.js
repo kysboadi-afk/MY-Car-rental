@@ -51,7 +51,7 @@ export default async function handler(req, res) {
 
     const { error: removeErr } = await sb.storage.from(EXPENSE_RECEIPTS_BUCKET).remove([expense.receipt_url]);
     if (removeErr) {
-      console.warn("delete-expense-receipt: storage delete failed:", removeErr.message);
+      return res.status(500).json({ error: `Failed to delete receipt from storage: ${removeErr.message}` });
     }
 
     const { data: updatedExpense, error: updateErr } = await sb

@@ -46,5 +46,6 @@ DROP POLICY IF EXISTS "expense-receipts: service write" ON storage.objects;
 
 CREATE POLICY "expense-receipts: service write"
   ON storage.objects FOR ALL
-  USING     (bucket_id = 'expense-receipts' AND auth.role() = 'service_role')
-  WITH CHECK (bucket_id = 'expense-receipts' AND auth.role() = 'service_role');
+  TO service_role
+  USING     (bucket_id = 'expense-receipts')
+  WITH CHECK (bucket_id = 'expense-receipts');

@@ -7,6 +7,7 @@ let expenseRow;
 let uploadError = null;
 let removeError = null;
 let signedUrl = "https://signed.example.test/receipt";
+const VALID_PNG_BUFFER = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 const calls = {
   upload: [],
@@ -181,7 +182,7 @@ beforeEach(() => {
 
 test("upload-expense-receipt: uploads file, stores metadata, and returns updated expense", async () => {
   const res = makeRes();
-  const fileData = `data:image/png;base64,${Buffer.from("receipt-image").toString("base64")}`;
+  const fileData = `data:image/png;base64,${VALID_PNG_BUFFER.toString("base64")}`;
 
   await uploadExpenseReceipt(makeReq({
     secret: "test-admin-secret",
@@ -197,6 +198,21 @@ test("upload-expense-receipt: uploads file, stores metadata, and returns updated
   assert.equal(res._body.expense.receipt_filename, "May_receipt.png");
   assert.equal(res._body.expense.receipt_mime_type, "image/png");
   assert.equal(res._body.expense.receipt_url, "exp-1/receipt-file");
+});
+
+test("upload-expense-receipt: rejects file bytes that do not match mime type", async () => {
+  const res = makeRes();
+
+  await uploadExpenseReceipt(makeReq({
+    secret: "test-admin-secret",
+    expenseId: "exp-1",
+    fileData: `data:image/png;base64,${Buffer.from("not-a-real-png").toString("base64")}`,
+    mimeType: "image/png",
+    fileName: "bad.png",
+  }), res);
+
+  assert.equal(res._status, 400);
+  assert.match(res._body.error, /do not match mimetype/i);
 });
 
 test("upload-expense-receipt: rejects unsupported mime type", async () => {
@@ -249,6 +265,22 @@ test("delete-expense-receipt: removes the storage object and clears metadata", a
   assert.equal(res._body.expense.receipt_mime_type, null);
 });
 
+test("delete-expense-receipt: fails without clearing metadata when storage delete fails", async () => {
+  expenseRow.receipt_url = "exp-1/receipt-file";
+  expenseRow.receipt_filename = "repair.pdf";
+  expenseRow.receipt_uploaded_at = "2026-05-14T01:23:45.000Z";
+  expenseRow.receipt_size = 4096;
+  expenseRow.receipt_mime_type = "application/pdf";
+  removeError = new Error("cannot delete");
+
+  const res = makeRes();
+  await deleteExpenseReceipt(makeReq({ secret: "test-admin-secret", expenseId: "exp-1" }), res);
+
+  assert.equal(res._status, 500);
+  assert.equal(expenseRow.receipt_url, "exp-1/receipt-file");
+  assert.equal(expenseRow.receipt_filename, "repair.pdf");
+});
+
 test("delete-expense: cleans up stored receipts before removing the expense row", async () => {
   expenseRow.receipt_url = "exp-1/receipt-file";
   expenseRow.receipt_filename = "repair.pdf";
@@ -266,4 +298,20 @@ test("delete-expense: cleans up stored receipts before removing the expense row"
   assert.equal(res._status, 200);
   assert.deepEqual(calls.remove[0], ["exp-1/receipt-file"]);
   assert.equal(expenseRow, null);
+});
+
+test("delete-expense: aborts delete when receipt cleanup fails", async () => {
+  expenseRow.receipt_url = "exp-1/receipt-file";
+  removeError = new Error("storage down");
+
+  const res = makeRes();
+  await deleteExpense({
+    method: "POST",
+    headers: { origin: "https://www.slytrans.com" },
+    body: { secret: "test-admin-secret", expense_id: "exp-1" },
+  }, res);
+
+  assert.equal(res._status, 500);
+  assert.ok(expenseRow);
+  assert.equal(expenseRow.expense_id, "exp-1");
 });
