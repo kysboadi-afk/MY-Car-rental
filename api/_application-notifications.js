@@ -407,31 +407,6 @@ export async function sendIdentityIssueNotifications(application = {}, kind = "r
   const ctx = getContext(application);
   const copy = buildIdentityIssueContent(kind, ctx);
 
-  await sendMailIfPossible({
-    to: OWNER_EMAIL,
-    subject: copy.ownerSubject,
-    text: [
-      copy.ownerSubject.replace(/^[^\w]+/, ""),
-      "",
-      `Name            : ${ctx.name}`,
-      `Application ID  : ${ctx.applicationId || "Not available"}`,
-      `Phone           : ${ctx.phone}`,
-      `Email           : ${ctx.email || "Not provided"}`,
-      `Identity Status : ${copy.ownerLabel}`,
-    ].join("\n"),
-    html: `
-      <h2>${esc(copy.ownerSubject)}</h2>
-      <p>The applicant identity verification status changed and needs operational attention.</p>
-      <table style="border-collapse:collapse;width:100%;max-width:520px">
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Identity Status</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">${esc(copy.ownerLabel)}</td></tr>
-      </table>
-    `,
-  });
-
   if (isValidEmail(ctx.email)) {
     await sendMailIfPossible({
       to: ctx.email,
