@@ -354,7 +354,7 @@ export const LATE_GRACE_STARTED =
   "Hi {customer_name},\n\n" +
   "Your rental is now past the grace period.\n\n" +
   "A $25 late fee now applies.\n\n" +
-  "Extend or return your vehicle now. The late fee remains $25 after the 3-hour mark.\n\n" +
+  "Extend or return your vehicle now. The late fee is $25 and does not increase further.\n\n" +
   "{extend_link}\n\n" +
   "\u2013 SLY Rides\n\n" +
   "Reply STOP to opt out.";
