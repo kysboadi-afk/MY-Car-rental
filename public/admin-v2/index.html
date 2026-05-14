@@ -3306,7 +3306,6 @@ function signIn() {
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
-      loadReviewApplications().catch(() => {});
       aiRestoreHistory();
       checkFirstTimeUser(data);
 
