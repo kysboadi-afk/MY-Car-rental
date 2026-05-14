@@ -19,7 +19,7 @@
 //   OPENAI_MODEL   — model ID override (default: gpt-4.1-mini)
 
 import OpenAI from "openai";
-import { isAdminAuthorized } from "./_admin-auth.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { executeAction } from "./_admin-actions.js";
 import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
@@ -967,7 +967,7 @@ export default async function handler(req, res) {
 
   try {
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
   if (!process.env.OPENAI_API_KEY) {

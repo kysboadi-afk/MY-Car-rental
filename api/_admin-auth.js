@@ -5,6 +5,11 @@
 
 import crypto from "crypto";
 
+function normalizeSecret(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
 /**
  * Returns true when the supplied secret matches the configured admin password.
  * Always uses constant-time comparison — never short-circuits.
@@ -13,13 +18,14 @@ import crypto from "crypto";
  * @returns {boolean}
  */
 export function isAdminAuthorized(supplied) {
-  const expected = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || "";
+  const expected = normalizeSecret(process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD || "");
   if (!expected) return false; // env var not configured → deny all
-  if (!supplied) return false;
+  const suppliedNormalized = normalizeSecret(String(supplied || ""));
+  if (!suppliedNormalized) return false;
 
   // Constant-time compare — both buffers padded to the longer length so
   // timingSafeEqual never throws on length mismatch.
-  const a = Buffer.from(String(supplied));
+  const a = Buffer.from(suppliedNormalized);
   const b = Buffer.from(expected);
   const len = Math.max(a.length, b.length);
   const aPadded = Buffer.concat([a, Buffer.alloc(len - a.length)]);
