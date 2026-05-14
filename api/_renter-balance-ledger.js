@@ -185,6 +185,13 @@ export async function insertLedgerTransaction(sb, input) {
   if (input.due_date) {
     payload.due_date = normalizeOptionalString(input.due_date, { max: 10 });
   }
+  // Optional created_at override for backfill operations — preserves original
+  // source timestamps so historical integrity is maintained.  Callers must
+  // supply a valid ISO-8601 timestamp string; otherwise now() is used by DB.
+  if (input.created_at) {
+    const ts = normalizeOptionalString(input.created_at, { max: 40 });
+    if (ts) payload.created_at = ts;
+  }
   const { data, error } = await sb
     .from("renter_balance_ledger")
     .insert(payload)
@@ -447,6 +454,99 @@ export async function getLedgerRemainingBalance(sb, { bookingId } = {}) {
   } catch (_) {
     return 0;
   }
+}
+
+// getLedgerOverdueBookings: returns bookings where net balance > 0 and at
+// least one ledger entry has a due_date in the past (past cutoffDays offset).
+// agingBuckets=true annotates each row with its aging bucket:
+//   current (0–29 d), 30-59, 60-89, 90+
+export async function getLedgerOverdueBookings(sb, { cutoffDays = 0, agingBuckets = true, limit = 200 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
+
+  // Step 1: find all booking_ids with any past-due ledger entry.
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - Math.max(0, Number(cutoffDays) || 0));
+  const cutoffIso = cutoffDate.toISOString();
+
+  const { data: dueRows, error: dueErr } = await sb
+    .from("renter_balance_ledger")
+    .select("booking_id, due_date")
+    .not("due_date", "is", null)
+    .lt("due_date", cutoffIso)
+    .order("due_date", { ascending: true })
+    .limit(safeLimit * 5);
+  if (dueErr) throw new Error(`getLedgerOverdueBookings due-date query failed: ${dueErr.message}`);
+
+  if (!dueRows || dueRows.length === 0) return [];
+
+  // Unique booking IDs with any overdue entry.
+  const overdueBookingIds = [...new Set((dueRows || []).map((r) => r.booking_id))];
+
+  // Step 2: compute per-booking net balances from the summary view.
+  const { data: summaryRows, error: sumErr } = await sb
+    .from("renter_balance_ledger_summary")
+    .select("booking_id, customer_id, total_charges, total_credits, net_balance")
+    .in("booking_id", overdueBookingIds);
+  if (sumErr) throw new Error(`getLedgerOverdueBookings summary query failed: ${sumErr.message}`);
+
+  // Only include bookings with net balance > 0.
+  const overdueWithBalance = (summaryRows || []).filter((r) => Number(r.net_balance || 0) > 0);
+  if (overdueWithBalance.length === 0) return [];
+
+  const finalBookingIds = overdueWithBalance.map((r) => r.booking_id);
+
+  // Step 3: fetch booking metadata.
+  const { data: bookingRows, error: bErr } = await sb
+    .from("bookings")
+    .select("booking_ref, customer_email, customer_phone, customer_name, vehicle_id, return_date")
+    .in("booking_ref", finalBookingIds)
+    .limit(safeLimit);
+  if (bErr) throw new Error(`getLedgerOverdueBookings bookings query failed: ${bErr.message}`);
+
+  const bookingMap = {};
+  for (const bk of bookingRows || []) {
+    bookingMap[bk.booking_ref] = bk;
+  }
+
+  const now = Date.now();
+
+  return overdueWithBalance
+    .slice(0, safeLimit)
+    .map((row) => {
+      const bk = bookingMap[row.booking_id] || {};
+      // Earliest overdue due_date for this booking.
+      const earliestDue = (dueRows || [])
+        .filter((d) => d.booking_id === row.booking_id)
+        .map((d) => d.due_date)
+        .sort()[0];
+      const daysOverdue = earliestDue
+        ? Math.floor((now - new Date(earliestDue).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      let aging_bucket = "current";
+      if (daysOverdue !== null) {
+        if (daysOverdue >= 90) aging_bucket = "90+";
+        else if (daysOverdue >= 60) aging_bucket = "60-89";
+        else if (daysOverdue >= 30) aging_bucket = "30-59";
+        else aging_bucket = "current";
+      }
+
+      return {
+        booking_id: row.booking_id,
+        customer_id: row.customer_id || null,
+        customer_email: bk.customer_email || null,
+        customer_phone: bk.customer_phone || null,
+        customer_name: bk.customer_name || null,
+        vehicle_id: bk.vehicle_id || null,
+        net_balance: roundMoney(Number(row.net_balance || 0)),
+        total_charges: roundMoney(Number(row.total_charges || 0)),
+        total_credits: roundMoney(Number(row.total_credits || 0)),
+        earliest_due_date: earliestDue || null,
+        days_overdue: daysOverdue,
+        ...(agingBuckets ? { aging_bucket } : {}),
+      };
+    })
+    .sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0));
 }
 
 export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {

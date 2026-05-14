@@ -555,6 +555,43 @@ export const RETENTION_DAY_30 =
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12. BALANCE REMINDERS (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Sent 3 days before the balance due_date when net balance > 0. */
+export const BALANCE_DUE_REMINDER =
+  "Hi {customer_name},\n\n" +
+  "A balance of ${balance_amount} on your SLY RIDES account is due on {due_date}.\n\n" +
+  "Pay now to avoid a late fee:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent on the day a balance becomes overdue (day 0). */
+export const BALANCE_OVERDUE =
+  "Hi {customer_name},\n\n" +
+  "Your SLY RIDES balance of ${balance_amount} is now overdue.\n\n" +
+  "Please pay as soon as possible to keep your account in good standing:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent at 30 days past due. */
+export const BALANCE_OVERDUE_30 =
+  "Hi {customer_name},\n\n" +
+  "Your SLY RIDES balance of ${balance_amount} is 30 days past due.\n\n" +
+  "Continued non-payment may affect your ability to rent.\n\n" +
+  "Pay now:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent at 60 days past due. */
+export const BALANCE_OVERDUE_60 =
+  "Hi {customer_name},\n\n" +
+  "Your SLY RIDES balance of ${balance_amount} is 60 days past due.\n\n" +
+  "This account is at risk of being sent to collections. Please contact us immediately:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Convenience map keyed by template name — useful for admin tooling
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -612,4 +649,8 @@ export const TEMPLATES = {
   violation_transfer_submitted:  VIOLATION_TRANSFER_SUBMITTED,
   violation_charged:             VIOLATION_CHARGED,
   violation_charge_failed:       VIOLATION_CHARGE_FAILED,
+  balance_due_reminder:   BALANCE_DUE_REMINDER,
+  balance_overdue:        BALANCE_OVERDUE,
+  balance_overdue_30:     BALANCE_OVERDUE_30,
+  balance_overdue_60:     BALANCE_OVERDUE_60,
 };

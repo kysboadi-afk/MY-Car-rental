@@ -47,6 +47,10 @@ const DEFAULT_SETTINGS = [
   { key: "notify_email_on_approve",     value: true,    description: "Send email to customer when booking approved",    category: "notification" },
   { key: "overdue_grace_period_hours",  value: 2,       description: "Hours after return time before booking flagged overdue", category: "automation" },
   { key: "violation_admin_fee",         value: 25,      description: "Admin processing fee added to violation ticket charge (USD)", category: "fees" },
+  { key: "balance_reminder_enabled",    value: false,   description: "Enable automated balance due/overdue SMS reminders", category: "notification" },
+  { key: "balance_overdue_threshold_days", value: 0,    description: "Days past due before the first overdue SMS reminder fires (0 = same day)", category: "notification" },
+  { key: "balance_overdue_30_enabled",  value: true,    description: "Send a reminder SMS at 30 days past due", category: "notification" },
+  { key: "balance_overdue_60_enabled",  value: true,    description: "Send a reminder SMS at 60 days past due (escalation notice)", category: "notification" },
 ];
 
 export default async function handler(req, res) {
