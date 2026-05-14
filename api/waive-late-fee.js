@@ -34,6 +34,7 @@ import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin }  from "./_supabase.js";
 import { writeAuditLog }     from "./_booking-automation.js";
 import { LATE_FEE_BASE } from "./_pricing.js";
+import { addLedgerWaiver }   from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -281,6 +282,50 @@ export default async function handler(req, res) {
 
   // ── Audit log ─────────────────────────────────────────────────────────────
   await writeAuditLog(bookingRef, auditChanges, adminLabel);
+
+  // ── Ledger: append idempotent waiver credit entries ───────────────────────
+  // The waiverKey encodes booking_ref + fee_type + second-truncated timestamp
+  // so the same request cannot insert duplicate rows on retry within 1 second.
+  const nowSec = now.substring(0, 19);
+  if (lateFeeWaivedAmount !== null && lateFeeWaivedAmount > 0) {
+    try {
+      const waiverKey = `${bookingRef}:late_fee_waiver:${nowSec}`;
+      const ledgerResult = await addLedgerWaiver(sb, {
+        bookingId:  bookingRef,
+        waiverKey,
+        amount:     lateFeeWaivedAmount,
+        notes:      `Late fee waiver (${effectiveWaiverType}): ${trimmedReason} — applied by ${adminLabel}`,
+        created_by: adminLabel,
+      });
+      console.log("[LEDGER_LATE_FEE_WAIVER]", {
+        booking_ref: bookingRef,
+        amount:      lateFeeWaivedAmount,
+        duplicate:   ledgerResult.duplicate,
+      });
+    } catch (lateLedgerErr) {
+      console.error("waive-late-fee: late_fee waiver ledger write failed (non-fatal):", lateLedgerErr.message);
+    }
+  }
+
+  if (rentalBalanceWaivedAmount !== null && rentalBalanceWaivedAmount > 0) {
+    try {
+      const waiverKey = `${bookingRef}:rental_balance_waiver:${nowSec}`;
+      const ledgerResult = await addLedgerWaiver(sb, {
+        bookingId:  bookingRef,
+        waiverKey,
+        amount:     rentalBalanceWaivedAmount,
+        notes:      `Rental balance waiver (${effectiveWaiverType}): ${trimmedReason} — applied by ${adminLabel}`,
+        created_by: adminLabel,
+      });
+      console.log("[LEDGER_RENTAL_BALANCE_WAIVER]", {
+        booking_ref: bookingRef,
+        amount:      rentalBalanceWaivedAmount,
+        duplicate:   ledgerResult.duplicate,
+      });
+    } catch (balLedgerErr) {
+      console.error("waive-late-fee: rental_balance waiver ledger write failed (non-fatal):", balLedgerErr.message);
+    }
+  }
 
   // ── Response ───────────────────────────────────────────────────────────────
   const isUpdate = !!(booking.late_fee_waived || booking.rental_balance_waived);

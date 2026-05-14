@@ -280,6 +280,175 @@ export async function listLedgerTransactions(sb, { bookingId, customerId, limit 
   return data || [];
 }
 
+// addLedgerPayment: idempotent Stripe payment credit.
+// Keyed on source_type='stripe_payment' + source_id=paymentIntentId.
+// Returns the existing row with duplicate=true on replay — safe for webhook retries.
+export async function addLedgerPayment(sb, input = {}) {
+  const piId = normalizeOptionalString(
+    input.stripePaymentIntentId || input.stripe_payment_intent_id || input.paymentIntentId,
+    { max: 255 }
+  );
+  if (!piId) throw new Error("stripe_payment_intent_id is required for addLedgerPayment");
+
+  const { data: existing, error: lookupErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("source_type", "stripe_payment")
+    .eq("source_id", piId)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`Idempotency check failed: ${lookupErr.message}`);
+  if (existing) return { transaction: existing, duplicate: true };
+
+  const payload = normalizeLedgerTransactionInput({
+    booking_id:               input.bookingId || input.booking_id || input.booking_ref,
+    customer_id:              input.customerId || input.customer_id,
+    transaction_type:         normalizeOptionalString(input.transactionType || input.transaction_type, { max: 50 }) || "payment",
+    amount:                   input.amount,
+    notes:                    input.notes,
+    source_type:              "stripe_payment",
+    source_id:                piId,
+    stripe_payment_intent_id: piId,
+    metadata:                 input.metadata || {},
+    created_by:               normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "system",
+  });
+
+  const { data, error } = await sb
+    .from("renter_balance_ledger")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) {
+    if (error.code === "23505") {
+      const { data: raced } = await sb
+        .from("renter_balance_ledger")
+        .select("*")
+        .eq("source_type", "stripe_payment")
+        .eq("source_id", piId)
+        .maybeSingle();
+      if (raced) return { transaction: raced, duplicate: true };
+    }
+    throw new Error(`Could not add payment ledger entry: ${error.message}`);
+  }
+  return { transaction: data, duplicate: false };
+}
+
+// addLedgerRefund: idempotent Stripe refund debit.
+// Keyed on source_type='stripe_refund' + source_id=chargeId (or refundId).
+// A Stripe refund increases the renter's net balance because a previously
+// collected payment was returned to the renter's card.
+export async function addLedgerRefund(sb, input = {}) {
+  const refundKey = normalizeOptionalString(
+    input.chargeId || input.charge_id || input.refundId || input.refund_id,
+    { max: 255 }
+  );
+  if (!refundKey) throw new Error("chargeId or refundId is required for addLedgerRefund");
+
+  const { data: existing, error: lookupErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("source_type", "stripe_refund")
+    .eq("source_id", refundKey)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`Idempotency check failed: ${lookupErr.message}`);
+  if (existing) return { transaction: existing, duplicate: true };
+
+  const payload = normalizeLedgerTransactionInput({
+    booking_id:               input.bookingId || input.booking_id || input.booking_ref,
+    customer_id:              input.customerId || input.customer_id,
+    transaction_type:         "refund",
+    amount:                   input.amount,
+    notes:                    input.notes,
+    source_type:              "stripe_refund",
+    source_id:                refundKey,
+    stripe_payment_intent_id: normalizeOptionalString(
+      input.stripePaymentIntentId || input.stripe_payment_intent_id, { max: 255 }
+    ),
+    metadata:                 input.metadata || {},
+    created_by:               normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "system",
+  });
+
+  const { data, error } = await sb
+    .from("renter_balance_ledger")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) {
+    if (error.code === "23505") {
+      const { data: raced } = await sb
+        .from("renter_balance_ledger")
+        .select("*")
+        .eq("source_type", "stripe_refund")
+        .eq("source_id", refundKey)
+        .maybeSingle();
+      if (raced) return { transaction: raced, duplicate: true };
+    }
+    throw new Error(`Could not add refund ledger entry: ${error.message}`);
+  }
+  return { transaction: data, duplicate: false };
+}
+
+// addLedgerWaiver: idempotent admin waiver credit.
+// Keyed on source_type='admin_waiver' + source_id=waiverKey.
+// The waiverKey is caller-supplied; callers should build it from
+// bookingRef + feeType + second-truncated ISO timestamp for dedup.
+export async function addLedgerWaiver(sb, input = {}) {
+  const waiverKey = normalizeOptionalString(input.waiverKey || input.waiver_key, { max: 255 });
+  if (!waiverKey) throw new Error("waiverKey is required for addLedgerWaiver");
+
+  const { data: existing, error: lookupErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("source_type", "admin_waiver")
+    .eq("source_id", waiverKey)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`Idempotency check failed: ${lookupErr.message}`);
+  if (existing) return { transaction: existing, duplicate: true };
+
+  const payload = normalizeLedgerTransactionInput({
+    booking_id:  input.bookingId || input.booking_id || input.booking_ref,
+    customer_id: input.customerId || input.customer_id,
+    transaction_type: "waiver",
+    amount:      input.amount,
+    notes:       input.notes,
+    source_type: "admin_waiver",
+    source_id:   waiverKey,
+    metadata:    input.metadata || {},
+    created_by:  normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "admin",
+  });
+
+  const { data, error } = await sb
+    .from("renter_balance_ledger")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) {
+    if (error.code === "23505") {
+      const { data: raced } = await sb
+        .from("renter_balance_ledger")
+        .select("*")
+        .eq("source_type", "admin_waiver")
+        .eq("source_id", waiverKey)
+        .maybeSingle();
+      if (raced) return { transaction: raced, duplicate: true };
+    }
+    throw new Error(`Could not add waiver ledger entry: ${error.message}`);
+  }
+  return { transaction: data, duplicate: false };
+}
+
+// getLedgerRemainingBalance: convenience helper for pre-payment cap checks.
+// Returns 0 when no ledger entries exist (booking has no outstanding balance on record).
+export async function getLedgerRemainingBalance(sb, { bookingId } = {}) {
+  const bookingRef = normalizeOptionalString(bookingId, { max: 200 });
+  if (!bookingRef) throw new Error("bookingId is required");
+  try {
+    const summary = await getLedgerSummary(sb, { bookingId: bookingRef });
+    return summary.remaining_balance;
+  } catch (_) {
+    return 0;
+  }
+}
+
 export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {
   const bookingRef = normalizeOptionalString(bookingId, { max: 200 });
   const customerRef = normalizeOptionalString(customerId, { max: 80 });

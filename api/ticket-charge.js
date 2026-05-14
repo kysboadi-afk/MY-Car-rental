@@ -35,6 +35,7 @@ import { render, VIOLATION_CHARGED, VIOLATION_CHARGE_FAILED } from "./_sms-templ
 import { normalizePhone } from "./_bookings.js";
 import { loadNumericSetting } from "./_settings.js";
 import { autoCreateRevenueRecord } from "./_booking-automation.js";
+import { addLedgerPayment } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -281,6 +282,27 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       }, { strict: false, requireStripeFee: false });
     } catch (revErr) {
       console.error("ticket-charge: revenue record creation failed (non-fatal):", revErr.message);
+    }
+    // ── Ledger: record ticket payment credit (idempotent on PI ID) ──────────
+    try {
+      const sbLedger = getSupabaseAdmin();
+      if (sbLedger) {
+        const ledgerResult = await addLedgerPayment(sbLedger, {
+          bookingId:       ticket.booking_ref,
+          paymentIntentId: stripePI.id,
+          amount:          totalAmount,
+          notes:           `Violation ticket #${ticket.ticket_number} payment — $${totalAmount.toFixed(2)}`,
+          created_by:      "system",
+        });
+        console.log("[LEDGER_TICKET_PAYMENT]", {
+          booking_ref: ticket.booking_ref,
+          pi_id:       stripePI.id,
+          amount:      totalAmount,
+          duplicate:   ledgerResult.duplicate,
+        });
+      }
+    } catch (ledgerErr) {
+      console.error("ticket-charge: ledger payment write failed (non-fatal):", ledgerErr.message);
     }
   }
 
