@@ -231,6 +231,9 @@
             if (cfg.error) { showFatal(cfg.error); return; }
 
             var extAmount      = cfg.amount;
+            var extTotal       = cfg.extensionTotal || extAmount;
+            var extRemaining   = cfg.remainingBalance || "0.00";
+            var extStatus      = cfg.extensionPaymentStatus || (parseFloat(extRemaining) > 0 ? "partially_paid" : "paid");
             var extLabel       = cfg.extensionLabel;
             var extVehicleName = cfg.vehicleName || cfg.vehicleId || "your vehicle";
             var extRenterName  = cfg.renterName;
@@ -246,7 +249,12 @@
             if (extRenterName) rows.push(["Renter",    escHtml(extRenterName)]);
             rows.push(["Vehicle",    escHtml(extVehicleName)]);
             if (extLabel)      rows.push(["Extension", escHtml(extLabel)]);
-            rows.push(["Amount Due", "<strong style='color:#ffb400'>$" + escHtml(extAmount) + "</strong>"]);
+            rows.push(["Extension Total", "<strong style='color:#ffb400'>$" + escHtml(extTotal) + "</strong>"]);
+            rows.push(["Paying Now", "<strong style='color:#ffb400'>$" + escHtml(extAmount) + "</strong>"]);
+            if (parseFloat(extRemaining) > 0) {
+              rows.push(["Remaining Balance", "<strong style='color:#f59e0b'>$" + escHtml(extRemaining) + "</strong>"]);
+            }
+            rows.push(["Payment Status", escHtml(String(extStatus).replace(/_/g, " "))]);
 
             document.getElementById("extensionTable").innerHTML = rows.map(function (r) {
               return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";

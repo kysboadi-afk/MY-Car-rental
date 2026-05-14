@@ -99,6 +99,10 @@ export default async function handler(req, res) {
       previous_return_date,
       original_pickup_date,
       original_pickup_time,
+      extension_total_amount,
+      extension_amount_paid,
+      extension_remaining_balance,
+      extension_payment_status,
     } = meta;
 
     // Use canonical booking_id; fall back to original_booking_id for historical PIs.
@@ -225,6 +229,41 @@ export default async function handler(req, res) {
     const updatedReturnTime = resolvedReturnTime;
     const oldReturnDate     = booking.returnDate;
     const resolvedLabel     = ext.label || extension_label || "";
+    const parsedExtensionTotal = Number(extension_total_amount);
+    const parsedExtensionPaid = Number(extension_amount_paid);
+    const parsedExtensionRemaining = Number(extension_remaining_balance);
+    const extensionTotalAmount = Number.isFinite(parsedExtensionTotal) && parsedExtensionTotal > 0
+      ? parsedExtensionTotal
+      : (Number(ext.price) > 0 ? Number(ext.price) : Math.round(Number(pi.amount || 0)) / 100);
+    const extensionAmountPaid = Number.isFinite(parsedExtensionPaid) && parsedExtensionPaid > 0
+      ? parsedExtensionPaid
+      : Math.round(Number(pi.amount || 0)) / 100;
+    const extensionRemainingBalance = Number.isFinite(parsedExtensionRemaining) && parsedExtensionRemaining >= 0
+      ? parsedExtensionRemaining
+      : Math.max(0, extensionTotalAmount - extensionAmountPaid);
+    const extensionPaymentStatusResolved =
+      (typeof extension_payment_status === "string" && extension_payment_status.trim())
+        ? extension_payment_status.trim().toLowerCase()
+        : (extensionRemainingBalance > 0 ? "partially_paid" : "paid");
+    const partialExtensionState = extensionRemainingBalance > 0
+      ? {
+          ...(ext && typeof ext === "object" ? ext : {}),
+          extensionTotal: extensionTotalAmount,
+          amountPaid: extensionAmountPaid,
+          remainingBalance: extensionRemainingBalance,
+          paymentStatus: extensionPaymentStatusResolved,
+          paymentHistory: [
+            ...((ext && Array.isArray(ext.paymentHistory)) ? ext.paymentHistory : []),
+            {
+              paymentIntentId: pi.id,
+              amountPaid: Math.round(Number(pi.amount || 0)) / 100,
+              paidAt: new Date().toISOString(),
+            },
+          ],
+          newReturnDate: updatedReturnDate,
+          newReturnTime: updatedReturnTime,
+        }
+      : null;
 
     // ── Update booking record with new return date (if not already done) ───
     // The Stripe webhook also does this, so guard against overwriting a newer
@@ -264,7 +303,7 @@ export default async function handler(req, res) {
             }
             delete cur.lateFeeApplied;
           }
-          cur.extensionPendingPayment = null;
+          cur.extensionPendingPayment = partialExtensionState;
           cur.extensionEmailSent      = true;
         },
         save:    saveBookings,
@@ -286,7 +325,7 @@ export default async function handler(req, res) {
           } : {}),
           returnTime: updatedReturnTime,
         } : {}),
-        extensionPendingPayment: null,
+        extensionPendingPayment: partialExtensionState,
         extensionEmailSent:      true,
       };
       await autoUpsertBooking(updatedBooking);

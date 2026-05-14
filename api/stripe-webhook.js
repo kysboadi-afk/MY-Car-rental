@@ -1869,6 +1869,10 @@ export default async function handler(req, res) {
         new_return_date,
         new_return_time,
         previous_return_date,                   // return date before this extension (set by extend-rental.js)
+        extension_total_amount,
+        extension_amount_paid,
+        extension_remaining_balance,
+        extension_payment_status,
       } = paymentIntent.metadata || {};
 
       // Use canonical booking_id; fall back to original_booking_id for PIs
@@ -1938,10 +1942,10 @@ export default async function handler(req, res) {
             return res.status(200).json({ received: true });
           }
           const { data: sbExtRow, error: sbExtRowErr } = await sbExtClient
-            .from("bookings")
-            .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid, stripe_customer_id, stripe_payment_method_id")
-            .eq("booking_ref", bookingRef)
-            .maybeSingle();
+              .from("bookings")
+              .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid, stripe_customer_id, stripe_payment_method_id, extension_pending_payment, balance_due")
+              .eq("booking_ref", bookingRef)
+              .maybeSingle();
           if (sbExtRowErr || !sbExtRow) {
             console.error(
               `stripe-webhook: rental_extension booking not found in Supabase: ${bookingRef}`,
@@ -1962,6 +1966,22 @@ export default async function handler(req, res) {
           const alreadyApplied = !!(sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date);
           const oldReturnDate = sbCurrentReturnDate || "";
           const extensionAmountDollars = Math.round(paymentIntent.amount || 0) / 100;
+          const parsedExtensionTotal = Number(extension_total_amount);
+          const parsedExtensionPaid = Number(extension_amount_paid);
+          const parsedExtensionRemaining = Number(extension_remaining_balance);
+          const extensionTotalAmount = Number.isFinite(parsedExtensionTotal) && parsedExtensionTotal > 0
+            ? parsedExtensionTotal
+            : extensionAmountDollars;
+          const extensionAmountPaid = Number.isFinite(parsedExtensionPaid) && parsedExtensionPaid > 0
+            ? parsedExtensionPaid
+            : extensionAmountDollars;
+          const extensionRemainingBalance = Number.isFinite(parsedExtensionRemaining) && parsedExtensionRemaining >= 0
+            ? parsedExtensionRemaining
+            : Math.max(0, extensionTotalAmount - extensionAmountPaid);
+          const extensionPaymentStatusResolved =
+            (typeof extension_payment_status === "string" && extension_payment_status.trim())
+              ? extension_payment_status.trim().toLowerCase()
+              : (extensionRemainingBalance > 0 ? "partially_paid" : "paid");
 
           // Build normalized booking snapshot for downstream reuse.
           // Preserve the current DB status so autoUpsertBooking does not
@@ -2115,8 +2135,32 @@ export default async function handler(req, res) {
                 .from("bookings")
                 .update({
                   extend_pending:            false,
-                  extension_pending_payment: null,
-                  balance_due:               0,
+                  extension_pending_payment: extensionRemainingBalance > 0 ? (() => {
+                    const prior = sbExtRow.extension_pending_payment && typeof sbExtRow.extension_pending_payment === "object"
+                      ? sbExtRow.extension_pending_payment
+                      : {};
+                    const priorHistory = Array.isArray(prior.paymentHistory) ? prior.paymentHistory : [];
+                    return {
+                      ...prior,
+                      extensionTotal: extensionTotalAmount,
+                      amountPaid: extensionAmountPaid,
+                      remainingBalance: extensionRemainingBalance,
+                      paymentStatus: extensionPaymentStatusResolved,
+                      paymentHistory: [
+                        ...priorHistory,
+                        {
+                          paymentIntentId: paymentIntent.id,
+                          amountPaid: extensionAmountDollars,
+                          paidAt: new Date().toISOString(),
+                        },
+                      ],
+                      newReturnDate: new_return_date || updatedBooking.returnDate || "",
+                      newReturnTime: updatedBooking.returnTime || "",
+                    };
+                  })() : null,
+                  balance_due:               extensionRemainingBalance > 0
+                    ? Math.round(((Number(sbExtRow.balance_due) || 0) + extensionRemainingBalance) * 100) / 100
+                    : (Number(sbExtRow.balance_due) || 0),
                   updated_at:                new Date().toISOString(),
                 })
                 .eq("booking_ref", bookingRef);

@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error." });
   }
 
-  const { vehicleId, email, phone, newReturnDate, name } = req.body || {};
+  const { vehicleId, email, phone, newReturnDate, name, customPaymentAmount } = req.body || {};
 
   // ── Input validation ────────────────────────────────────────────────────────
   const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
           // directly, matching by vehicle_id + email or phone + active status.
           const { data: sbActive } = await sb
             .from("bookings")
-            .select("booking_ref, pickup_date, pickup_time, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount, late_fee_status, late_fee_amount")
+            .select("booking_ref, pickup_date, pickup_time, return_date, return_time, status, customer_name, customer_email, customer_phone, late_fee_waived_amount, late_fee_status, late_fee_amount")
             .eq("vehicle_id", vehicleId)
             .in("status", ["active", "active_rental", "overdue"]);
 
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
                     pickupTime:       row.pickup_time ? formatTime12h(String(row.pickup_time).substring(0, 5)) : "",
                     returnDate:       row.return_date ? String(row.return_date).split("T")[0] : "",
                     returnTime:       row.return_time ? String(row.return_time).substring(0, 5) : "",
-                    status:           "active_rental",
+                    status:           row.status || "active_rental",
                   };
                 }
                 sbActiveBookingRef = row.booking_ref || null;
@@ -222,6 +222,25 @@ export default async function handler(req, res) {
         error: "No active rental found for this vehicle with the provided contact info. " +
                "Please check your email or phone number, or call us at (844) 511-4059.",
       });
+    }
+
+    const isActiveRentalForPartial = activeBooking.status === "active_rental" || activeBooking.status === "active";
+    const hasCustomPaymentAmount =
+      customPaymentAmount !== undefined &&
+      customPaymentAmount !== null &&
+      String(customPaymentAmount).trim() !== "";
+
+    let requestedPaymentAmount = null;
+    if (hasCustomPaymentAmount) {
+      if (!isActiveRentalForPartial) {
+        return res.status(400).json({
+          error: "Custom extension payments are only available for active rentals.",
+        });
+      }
+      requestedPaymentAmount = Number(customPaymentAmount);
+      if (!Number.isFinite(requestedPaymentAmount) || requestedPaymentAmount <= 0) {
+        return res.status(400).json({ error: "Custom payment amount must be a positive number." });
+      }
     }
 
     // If sbActiveBookingRef is still null after the enrichment block (e.g. the booking
@@ -545,11 +564,21 @@ export default async function handler(req, res) {
       extensionAmount = applyTax(price, settings) + lateFeeIncluded + deferredFeeIncluded;
     }
 
+    const extensionTotal = Math.round(extensionAmount * 100) / 100;
+    const amountPaidNow = requestedPaymentAmount != null
+      ? Math.round(requestedPaymentAmount * 100) / 100
+      : extensionTotal;
+    if (amountPaidNow > extensionTotal) {
+      return res.status(400).json({ error: "Custom payment amount cannot exceed the extension balance." });
+    }
+    const extensionRemainingBalance = Math.round(Math.max(0, extensionTotal - amountPaidNow) * 100) / 100;
+    const extensionPaymentStatus = extensionRemainingBalance > 0 ? "partially_paid" : "paid";
+
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
 
     const pi = await stripe.paymentIntents.create({
-      amount:   Math.round(extensionAmount * 100),
+      amount:   Math.round(amountPaidNow * 100),
       currency: "usd",
       description: `Rental extension — ${vehicleData.name} — ${extensionLabel} — ${activeBooking.name || ""}`,
       automatic_payment_methods: { enabled: true },
@@ -592,9 +621,13 @@ export default async function handler(req, res) {
         late_fee_included:     String(lateFeeIncluded),
         // Amount of late fee waived by admin (0 when no waiver applied).
         late_fee_waived:       String(sbWaivedAmount),
-        // Previously-assessed late fee that was deferred because no card was on
-        // file; now collected as part of this extension.
-        deferred_late_fee:     String(sbDeferredLateFee),
+         // Previously-assessed late fee that was deferred because no card was on
+         // file; now collected as part of this extension.
+         deferred_late_fee:     String(sbDeferredLateFee),
+         extension_total_amount:     extensionTotal.toFixed(2),
+         extension_amount_paid:      amountPaidNow.toFixed(2),
+         extension_remaining_balance: extensionRemainingBalance.toFixed(2),
+         extension_payment_status:    extensionPaymentStatus,
       },
     });
 
@@ -606,12 +639,16 @@ export default async function handler(req, res) {
       try {
         await updateBooking(vehicleId, bookingId, {
           ...(needsReturnTimePersist ? { returnTime: resolvedReturnTime } : {}),
-          extensionPendingPayment: {
-            label:               extensionLabel,
-            price:               extensionAmount,
-            lateFeeIncluded,
-            deferredLateFee:     sbDeferredLateFee,
-            newReturnDate,
+           extensionPendingPayment: {
+             label:               extensionLabel,
+             price:               amountPaidNow,
+             extensionTotal:      extensionTotal,
+             amountPaid:          amountPaidNow,
+             remainingBalance:    extensionRemainingBalance,
+             paymentStatus:       extensionPaymentStatus,
+             lateFeeIncluded,
+             deferredLateFee:     sbDeferredLateFee,
+             newReturnDate,
             newReturnTime:       resolvedReturnTime,
             paymentIntentId:     pi.id,
             createdAt:           new Date().toISOString(),
@@ -627,7 +664,11 @@ export default async function handler(req, res) {
     return res.status(200).json({
       clientSecret:      pi.client_secret,
       publishableKey:    process.env.STRIPE_PUBLISHABLE_KEY,
-      extensionAmount:   extensionAmount.toFixed(2),
+      extensionAmount:   amountPaidNow.toFixed(2),
+      extensionTotal:    extensionTotal.toFixed(2),
+      amountPaidNow:     amountPaidNow.toFixed(2),
+      remainingBalance:  extensionRemainingBalance.toFixed(2),
+      extensionPaymentStatus,
       extensionLabel,
       lateFeeIncluded,
       deferredLateFee:   sbDeferredLateFee,

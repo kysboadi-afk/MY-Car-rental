@@ -541,6 +541,80 @@ test("extend-rental: 404 when no active booking matches the provided email", asy
   assert.equal(res._status, 404);
 });
 
+test("extend-rental: 200 accepts customPaymentAmount for active extension and tracks partial status", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 150,
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.extensionAmount, "150.00", "extensionAmount should be the pay-now amount");
+  assert.equal(res._body.amountPaidNow, "150.00");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+  assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance should be tracked");
+  assert.equal(capturedStripeParams.amount, 15000, "Stripe PI amount must use the custom pay-now amount");
+  assert.equal(capturedStripeParams.metadata.extension_amount_paid, "150.00");
+  assert.equal(capturedStripeParams.metadata.extension_payment_status, "partially_paid");
+});
+
+test("extend-rental: 400 when customPaymentAmount exceeds extension balance", async () => {
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 99999,
+  }), res);
+
+  assert.equal(res._status, 400);
+  assert.match(String(res._body?.error || ""), /cannot exceed/i);
+});
+
+test("extend-rental: 400 rejects customPaymentAmount for overdue rentals", async () => {
+  mockBookings = { camry: [] };
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      {
+        match: (t) => t === "bookings",
+        rows: [{
+          booking_ref: "bk-camry-overdue-001",
+          pickup_date: "2026-04-15",
+          pickup_time: "10:00:00",
+          return_date: "2026-04-30",
+          return_time: "17:00:00",
+          status: "overdue",
+          customer_name: "Alice Tester",
+          customer_email: "alice@example.com",
+          customer_phone: "2135550100",
+        }],
+      },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 100,
+  }), res);
+
+  assert.equal(res._status, 400);
+  assert.match(String(res._body?.error || ""), /only available for active rentals/i);
+});
+
 // ── Metadata ──────────────────────────────────────────────────────────────────
 
 test("extend-rental: PaymentIntent is created with type=rental_extension metadata", async () => {
