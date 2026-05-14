@@ -49,6 +49,7 @@ import { getVehicleById } from "./_vehicles.js";
 import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
+import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1432,6 +1433,14 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
 
   // Step 4 — SMS notifications are handled by the type-specific callers above.
 
+  // Step 4b — Phase C shadow-mode customer-ledger append (non-blocking).
+  await appendStripePaymentToCustomerLedger({
+    bookingRef: booking_id,
+    paymentIntent,
+    amountDollars: gross,
+    paymentType: type || null,
+  });
+
   // Step 5 — Logging
   console.log("[processStripePayment] complete", {
     paymentIntentId: paymentIntent.id,
@@ -1495,6 +1504,83 @@ function normalizeCurrency(value) {
 
 function sanitizeSmsValue(value) {
   return String(value || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, amountDollars, paymentType }) {
+  try {
+    const sb = getSupabaseAdmin();
+    if (!sb || !bookingRef || !paymentIntent?.id) return;
+
+    const result = await appendCustomerLedgerShadowEntry(sb, {
+      caller: "stripe-webhook:payment_intent.succeeded",
+      bookingRef,
+      transactionType: paymentType === "balance_payment" ? "balance_payment" : "stripe_payment",
+      direction: "credit",
+      amountCents: Math.round(Number(amountDollars || 0) * 100),
+      sourceType: "stripe_payment",
+      sourceId: paymentIntent.id,
+      description: `Stripe payment (${paymentType || "untyped"})`,
+      metadata: {
+        payment_intent_id: paymentIntent.id,
+        payment_type: paymentType || null,
+      },
+      recordedBy: "stripe_webhook",
+      fallbackIdentity: {
+        stripeCustomerId: paymentIntent.customer || null,
+        email: paymentIntent.metadata?.email || paymentIntent.metadata?.renter_email || null,
+        phone: paymentIntent.metadata?.renter_phone || paymentIntent.customer_details?.phone || null,
+      },
+    });
+
+    if (!result.written && !String(result.reason || "").startsWith("dual_write_disabled:")) {
+      console.warn("[customer-ledger] payment append skipped (non-fatal):", {
+        payment_intent_id: paymentIntent.id,
+        booking_ref: bookingRef,
+        reason: result.reason,
+      });
+    }
+  } catch (err) {
+    console.warn("[customer-ledger] payment append failed (non-fatal):", err.message);
+  }
+}
+
+async function appendStripeRefundToCustomerLedger({ bookingRef, charge, amountDollars }) {
+  try {
+    const sb = getSupabaseAdmin();
+    if (!sb || !bookingRef || !charge?.id) return;
+
+    const result = await appendCustomerLedgerShadowEntry(sb, {
+      caller: "stripe-webhook:charge.refunded",
+      bookingRef,
+      transactionType: "stripe_refund",
+      direction: "credit",
+      amountCents: Math.round(Number(amountDollars || 0) * 100),
+      sourceType: "stripe_refund",
+      sourceId: charge.id,
+      description: "Stripe charge refund",
+      metadata: {
+        charge_id: charge.id,
+        payment_intent_id: typeof charge.payment_intent === "string" ? charge.payment_intent : null,
+        amount_refunded_cents: charge.amount_refunded || 0,
+      },
+      recordedBy: "stripe_webhook",
+      fallbackIdentity: {
+        stripeCustomerId: charge.customer || null,
+        email: charge.billing_details?.email || null,
+        phone: charge.billing_details?.phone || null,
+      },
+    });
+
+    if (!result.written && !String(result.reason || "").startsWith("dual_write_disabled:")) {
+      console.warn("[customer-ledger] refund append skipped (non-fatal):", {
+        charge_id: charge.id,
+        booking_ref: bookingRef,
+        reason: result.reason,
+      });
+    }
+  } catch (err) {
+    console.warn("[customer-ledger] refund append failed (non-fatal):", err.message);
+  }
 }
 
 function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking }) {
@@ -3849,6 +3935,13 @@ export default async function handler(req, res) {
       });
       return res.status(200).json({ received: true });
     }
+
+    // Phase C shadow-mode customer-ledger append (non-blocking).
+    await appendStripeRefundToCustomerLedger({
+      bookingRef: refundBookingRef,
+      charge,
+      amountDollars: amountRefunded,
+    });
 
     // Step 1: Cancel the booking.
     try {
