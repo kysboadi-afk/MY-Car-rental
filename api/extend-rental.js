@@ -470,10 +470,9 @@ export default async function handler(req, res) {
     // Late fee is a fixed non-taxed amount after the grace window.
     const LATE_FEE = LATE_FEE_BASE;
 
-    let extensionBaseAmount = 0;
+    let extensionAmount = 0;
     let extensionLabel;
     let lateFeeIncluded = 0;
-    const deferredFeeIncluded = sbDeferredLateFee;
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -526,6 +525,7 @@ export default async function handler(req, res) {
       // this extension total.  The deferred fee is separate from the time-based
       // late fee above and is never waived by sbWaivedAmount (waiver only applies
       // to the new time-based fee).
+      const deferredFeeIncluded = sbDeferredLateFee;
       if (deferredFeeIncluded > 0) {
         console.log('[pricing-extension-deferred-fee]', {
           vehicle:        vehicleId,
@@ -545,11 +545,8 @@ export default async function handler(req, res) {
         reset_time_iso: new Date(resetTimeMs).toISOString(),
       });
 
-      extensionBaseAmount = price;
+      extensionAmount = applyTax(price, settings) + lateFeeIncluded + deferredFeeIncluded;
     }
-
-    // Tax applies to rental extension days only. Late fees are non-taxed.
-    const extensionAmount = applyTax(extensionBaseAmount, settings) + lateFeeIncluded + deferredFeeIncluded;
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);

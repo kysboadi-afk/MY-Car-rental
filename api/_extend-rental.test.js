@@ -657,7 +657,7 @@ test("extend-rental: late fee stays flat and non-taxed in extension total", asyn
 
 test("extend-rental: full waiver (late_fee_waived_amount = $25) removes late fee from total", async () => {
   // Simulate a booking that is past the 3-hour reset window.
-  // Without a waiver, EXTENDED_LATE_FEE ($25) would be added.
+  // Without a waiver, LATE_FEE ($25) would be added.
   // With a full waiver (waived_amount = $25) the late fee must be $0.
   capturedStripeParams = null;
   const active = makeActiveBooking({
