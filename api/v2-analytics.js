@@ -215,7 +215,9 @@ export default async function handler(req, res) {
         const { data: rrRows, error: rrErr } = rrResult;
 
         if (rrErr) {
-          console.error("v2-analytics: revenue records unavailable, falling back to bookings.json:", rrErr.message);
+          const logFn = isSchemaError(rrErr) ? console.warn : console.error;
+          logFn("v2-analytics: revenue records unavailable, falling back to bookings.json:", rrErr.message,
+            isSchemaError(rrErr) ? "(migration 0142 not yet applied)" : "");
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {

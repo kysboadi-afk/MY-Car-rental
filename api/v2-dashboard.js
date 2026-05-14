@@ -388,7 +388,9 @@ export default async function handler(req, res) {
           .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, refund_amount");
 
         if (rrErr) {
-          console.error("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrErr.message);
+          const logFn = isSchemaError(rrErr) ? console.warn : console.error;
+          logFn("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrErr.message,
+            isSchemaError(rrErr) ? "(migration 0142 not yet applied)" : "");
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
