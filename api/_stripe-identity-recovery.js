@@ -48,7 +48,7 @@ export async function recoverVerifiedApplicationFromStripe(
   }
 
   const applicationStatus = String(application.application_status || "").toLowerCase();
-  const shouldNotify = notify && ["", "submitted", "under_review", "needs_info"].includes(applicationStatus);
+  const shouldNotify = notify && ["submitted", "under_review", "needs_info"].includes(applicationStatus);
   const now = new Date().toISOString();
   const patch = {
     identitySessionId: session.id || identitySessionId,
@@ -56,7 +56,7 @@ export async function recoverVerifiedApplicationFromStripe(
     identityVerifiedAt: now,
   };
 
-  if (!applicationStatus || applicationStatus === "submitted") {
+  if (applicationStatus === "submitted") {
     patch.applicationStatus = "under_review";
     patch.reviewedAt = now;
     patch.reviewedBy = reviewedBy;

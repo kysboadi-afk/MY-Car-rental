@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
   try {
     const recoveryCandidates = await listPendingIdentityRecoveryApplications({
-      limit: Math.min(Math.max(Number(pageSize) || 50, 10), 25),
+      limit: Math.max(Math.min(Number(pageSize) || 50, 25), 10),
     });
     if (!recoveryCandidates.ok) {
       if (recoveryCandidates.details) {
