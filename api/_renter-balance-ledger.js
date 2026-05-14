@@ -1,5 +1,19 @@
-// Unified renter balance ledger helpers (Phase 1).
+// Unified renter balance ledger helpers (Phase 1 + 2).
 // Balance is derived from append-only transactions.
+
+// Charge-category types that admin can manually create via Add Charge.
+export const CHARGE_TRANSACTION_TYPES = [
+  "extension",
+  "late_fee",
+  "ticket",
+  "damage",
+  "repair",
+  "deductible",
+  "smoking",
+  "cleaning",
+  "towing",
+  "misc",
+];
 
 export const LEDGER_TRANSACTION_TYPES = [
   "extension",
@@ -168,6 +182,9 @@ export function computeLedgerSummary(transactions = []) {
 
 export async function insertLedgerTransaction(sb, input) {
   const payload = normalizeLedgerTransactionInput(input);
+  if (input.due_date) {
+    payload.due_date = normalizeOptionalString(input.due_date, { max: 10 });
+  }
   const { data, error } = await sb
     .from("renter_balance_ledger")
     .insert(payload)
@@ -175,6 +192,68 @@ export async function insertLedgerTransaction(sb, input) {
     .single();
   if (error) throw new Error(`Could not insert ledger transaction: ${error.message}`);
   return data;
+}
+
+// addLedgerCharge: idempotent admin charge insertion.
+// Uses source_type='manual_charge' + charge_request_id as the deduplication key.
+// Returns the existing row on duplicate without error (idempotent).
+export async function addLedgerCharge(sb, input = {}) {
+  const chargeRequestId = normalizeOptionalString(input.chargeRequestId || input.charge_request_id, { max: 200 });
+  if (!chargeRequestId) throw new Error("charge_request_id is required for idempotent Add Charge");
+
+  const bookingRef = normalizeOptionalString(input.bookingId || input.booking_id || input.booking_ref, { max: 200 });
+  if (!bookingRef) throw new Error("booking_id is required");
+
+  const transactionType = normalizeOptionalString(input.transactionType || input.transaction_type, { max: 50 });
+  if (!transactionType) throw new Error("transaction_type is required");
+  if (!CHARGE_TRANSACTION_TYPES.includes(transactionType)) {
+    throw new Error(`transaction_type must be a charge category. Allowed: ${CHARGE_TRANSACTION_TYPES.join(", ")}`);
+  }
+
+  // Check for existing entry with same idempotency key (idempotent)
+  const { data: existing, error: lookupErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("source_type", "manual_charge")
+    .eq("source_id", chargeRequestId)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`Idempotency check failed: ${lookupErr.message}`);
+  if (existing) return { transaction: existing, duplicate: true };
+
+  const payload = normalizeLedgerTransactionInput({
+    booking_id: bookingRef,
+    customer_id: input.customerId || input.customer_id,
+    transaction_type: transactionType,
+    amount: input.amount,
+    notes: input.notes,
+    source_type: "manual_charge",
+    source_id: chargeRequestId,
+    metadata: input.metadata || {},
+    created_by: normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "admin",
+  });
+
+  const dueDate = normalizeOptionalString(input.dueDate || input.due_date, { max: 10 });
+  if (dueDate) payload.due_date = dueDate;
+
+  const { data, error } = await sb
+    .from("renter_balance_ledger")
+    .insert(payload)
+    .select("*")
+    .single();
+  if (error) {
+    // Handle uniqueness constraint violation from concurrent requests (race-safe)
+    if (error.code === "23505") {
+      const { data: raced } = await sb
+        .from("renter_balance_ledger")
+        .select("*")
+        .eq("source_type", "manual_charge")
+        .eq("source_id", chargeRequestId)
+        .maybeSingle();
+      if (raced) return { transaction: raced, duplicate: true };
+    }
+    throw new Error(`Could not add charge: ${error.message}`);
+  }
+  return { transaction: data, duplicate: false };
 }
 
 export async function listLedgerTransactions(sb, { bookingId, customerId, limit = 100, offset = 0 } = {}) {

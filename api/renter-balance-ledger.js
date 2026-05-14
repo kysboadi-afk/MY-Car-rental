@@ -12,6 +12,7 @@ import {
   getLedgerSummary,
   insertLedgerTransaction,
   listLedgerTransactions,
+  addLedgerCharge,
 } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -62,6 +63,25 @@ export default async function handler(req, res) {
           customer_id: customerId || null,
           count: transactions.length,
           transactions,
+        });
+      }
+      case "add_charge": {
+        const result = await addLedgerCharge(sb, {
+          bookingId,
+          customerId,
+          transactionType: body.transaction_type,
+          amount: body.amount,
+          notes: body.notes,
+          dueDate: body.due_date,
+          chargeRequestId: body.charge_request_id,
+          metadata: body.metadata,
+          createdBy: body.created_by || "admin",
+        });
+        return res.status(200).json({
+          success: true,
+          duplicate: result.duplicate,
+          message: result.duplicate ? "Charge already recorded (idempotent)." : "Charge added to ledger.",
+          transaction: result.transaction,
         });
       }
       case "add_transaction": {

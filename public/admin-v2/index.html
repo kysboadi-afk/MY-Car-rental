@@ -1097,13 +1097,10 @@
         Tickets
         <span class="nav-badge" id="tickets-badge" style="display:none">0</span>
       </a>
-    </nav>
-
-    <nav class="nav-section">
-      <div class="nav-section-label">Communication</div>
-      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        SMS Automation
+      <a class="nav-item" data-page="balance-ledger" href="#" onclick="navigate('balance-ledger');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Balance Ledger
+        <span class="nav-badge" id="balance-ledger-badge" style="display:none;background:var(--danger);">!</span>
       </a>
     </nav>
 
@@ -2396,12 +2393,82 @@
         </div>
       </div>
 
+      <!-- BALANCE LEDGER PAGE -->
+      <div class="page" id="page-balance-ledger">
+        <!-- Page header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Balance Ledger</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Append-only charge and payment history per booking</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddChargeModal()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Charge
+          </button>
+        </div>
+        <!-- Booking ID search -->
+        <div class="filters-row" style="margin-bottom:12px;">
+          <input type="text" class="filter-input" id="bl-booking-search" placeholder="Enter Booking ID or Ref to load ledger…" style="flex:1;max-width:380px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadBalanceLedger()">Load</button>
+        </div>
+        <!-- Summary cards -->
+        <div id="bl-summary-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;display:none;">
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Charges</div>
+            <div id="bl-total-charges" style="font-size:22px;font-weight:700;color:var(--danger);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Paid</div>
+            <div id="bl-total-paid" style="font-size:22px;font-weight:700;color:var(--success);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Waived</div>
+            <div id="bl-total-waived" style="font-size:22px;font-weight:700;color:var(--info);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;border:2px solid var(--warning);">
+            <div style="font-size:11px;font-weight:600;color:var(--warning);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Remaining Balance</div>
+            <div id="bl-remaining" style="font-size:22px;font-weight:700;color:var(--warning);">—</div>
+          </div>
+        </div>
+        <!-- Transaction history table -->
+        <div class="card">
+          <div id="bl-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading ledger…</div></div>
+          <div id="bl-table-wrap" style="display:none;" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Direction</th>
+                  <th>Amount</th>
+                  <th>Running Balance</th>
+                  <th>Notes</th>
+                  <th>Created By</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody id="bl-tbody"></tbody>
+            </table>
+          </div>
+          <div id="bl-empty" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            <p>No ledger transactions found for this booking.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddChargeModal()">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add First Charge
+            </button>
+          </div>
+          <div id="bl-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
+            Enter a Booking ID above and click <strong>Load</strong> to view the balance ledger.
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 
   <!-- Mobile Bottom Navigation -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-    <button class="mbn-item active" id="mbn-dashboard" onclick="navigate('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       <span>Home</span>
     </button>
@@ -2478,11 +2545,55 @@
   </div>
 </div>
 
-<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
-<div class="modal-overlay" id="ticket-detail-modal">
-  <div class="modal" style="max-width:620px;">
+<!-- ── Add Charge Modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-charge-modal">
+  <div class="modal" style="max-width:560px;">
     <div class="modal-header">
-      <div>
+      <div class="modal-title">Add Charge to Ledger</div>
+      <button class="modal-close" onclick="closeModal('add-charge-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Booking ID *</label>
+        <input type="text" class="form-input" id="ac-booking-id" placeholder="e.g. BK-1029" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-select" id="ac-type">
+          <option value="">Select category…</option>
+          <option value="damage">Damage</option>
+          <option value="repair">Repair</option>
+          <option value="deductible">Deductible</option>
+          <option value="smoking">Smoking Fee</option>
+          <option value="cleaning">Cleaning Fee</option>
+          <option value="towing">Towing</option>
+          <option value="late_fee">Late Fee</option>
+          <option value="ticket">Ticket / Violation</option>
+          <option value="extension">Extension</option>
+          <option value="misc">Miscellaneous</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="ac-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due Date (optional)</label>
+        <input type="date" class="form-input" id="ac-due-date">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="ac-notes" placeholder="Describe the charge…" style="min-height:64px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-charge-modal')">Cancel</button>
+      <button class="btn btn-primary" id="ac-submit-btn" onclick="saveCharge()">Add Charge</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
         <div class="modal-title" id="td-title">Ticket Details</div>
         <div id="td-badge-wrap" style="margin-top:4px;"></div>
       </div>
@@ -3526,6 +3637,7 @@ function navigate(page) {
     'ai':               'AI Assistant',
     'system-health':    'System Health',
     'tickets':          'Tickets / Violations',
+    'balance-ledger':   'Balance Ledger',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -3562,6 +3674,7 @@ function navigate(page) {
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
   else if (page === 'late-fees') loadLateFees();
   else if (page === 'tickets') loadTickets();
+  else if (page === 'balance-ledger') initBalanceLedgerPage();
 }
 
 function refreshCurrentPage() {
@@ -11689,8 +11802,193 @@ async function deleteCurrentTicket() {
     showToast('Failed to delete ticket: ' + err.message, 'error');
   }
 }
-</script>
+// ── Balance Ledger Page ────────────────────────────────────────────────────
 
-<script src="voice-assistant.js"></script>
-</body>
-</html>
+let currentLedgerBookingId = '';
+
+function initBalanceLedgerPage() {
+  const hash = window.location.hash || '';
+  const m = hash.match(/balance-ledger:([^&]+)/);
+  if (m) {
+    const el = document.getElementById('bl-booking-search');
+    if (el && !el.value) el.value = decodeURIComponent(m[1]);
+    loadBalanceLedger();
+  }
+}
+
+function loadBalanceLedger() {
+  const bookingId = (document.getElementById('bl-booking-search')?.value || '').trim();
+  if (!bookingId) { showToast('Enter a Booking ID first.', 'error'); return; }
+  currentLedgerBookingId = bookingId;
+
+  const loading    = document.getElementById('bl-loading');
+  const tableWrap  = document.getElementById('bl-table-wrap');
+  const empty      = document.getElementById('bl-empty');
+  const placeholder = document.getElementById('bl-placeholder');
+  const summaryRow = document.getElementById('bl-summary-row');
+
+  if (loading)     loading.style.display    = 'flex';
+  if (tableWrap)   tableWrap.style.display  = 'none';
+  if (empty)       empty.style.display      = 'none';
+  if (placeholder) placeholder.style.display = 'none';
+  if (summaryRow)  summaryRow.style.display  = 'none';
+
+  Promise.all([
+    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'summary',  booking_id: bookingId }),
+    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'history',  booking_id: bookingId, limit: 200 }),
+  ])
+    .then(([sumData, histData]) => {
+      if (loading) loading.style.display = 'none';
+      renderBalanceSummary(sumData.summary);
+      renderBalanceHistory(histData.transactions || []);
+    })
+    .catch((err) => {
+      if (loading) loading.style.display = 'none';
+      showToast('Failed to load ledger: ' + err.message, 'error');
+      if (placeholder) placeholder.style.display = '';
+    });
+}
+
+function renderBalanceSummary(summary) {
+  const row = document.getElementById('bl-summary-row');
+  if (!row) return;
+  const fmt = (n) => '$' + Number(n || 0).toFixed(2);
+  document.getElementById('bl-total-charges').textContent = fmt(summary.total_charges);
+  document.getElementById('bl-total-paid').textContent    = fmt(summary.total_paid);
+  document.getElementById('bl-total-waived').textContent  = fmt(summary.total_waived);
+  document.getElementById('bl-remaining').textContent     = fmt(summary.remaining_balance);
+  row.style.display = 'flex';
+}
+
+const LEDGER_TYPE_LABELS = {
+  extension: 'Extension', late_fee: 'Late Fee', ticket: 'Ticket',
+  damage: 'Damage', repair: 'Repair', deductible: 'Deductible',
+  smoking: 'Smoking', cleaning: 'Cleaning', towing: 'Towing', misc: 'Misc',
+  payment: 'Payment', refund: 'Refund', waiver: 'Waiver', adjustment: 'Adjustment',
+};
+
+const LEDGER_TYPE_COLORS = {
+  extension: '#7c3aed', late_fee: '#dc2626', ticket: '#b45309',
+  damage: '#dc2626', repair: '#d97706', deductible: '#7c3aed',
+  smoking: '#6b7280', cleaning: '#0891b2', towing: '#b45309', misc: '#6b7280',
+  payment: '#16a34a', refund: '#dc2626', waiver: '#0891b2', adjustment: '#6b7280',
+};
+
+function renderBalanceHistory(transactions) {
+  const wrap  = document.getElementById('bl-table-wrap');
+  const empty = document.getElementById('bl-empty');
+  const tbody = document.getElementById('bl-tbody');
+  if (!tbody) return;
+
+  if (!transactions.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  const sorted = [...transactions].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  let running = 0;
+  const withBalance = sorted.map((row) => {
+    const amt = Number(row.amount || 0);
+    if (row.direction === 'debit')  running += amt;
+    else                             running -= amt;
+    return { ...row, _running: Math.max(0, running) };
+  }).reverse();
+
+  tbody.innerHTML = withBalance.map((row) => {
+    const date    = row.created_at
+      ? new Date(row.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '\u2014';
+    const typeLabel = LEDGER_TYPE_LABELS[row.transaction_type] || row.transaction_type;
+    const typeColor = LEDGER_TYPE_COLORS[row.transaction_type] || '#6b7280';
+    const dirLabel = row.direction === 'debit'
+      ? '<span style="color:var(--danger);font-weight:600;">Charge ↑</span>'
+      : '<span style="color:var(--success);font-weight:600;">Credit ↓</span>';
+    const amt = '$' + Number(row.amount || 0).toFixed(2);
+    const runBal = '$' + row._running.toFixed(2);
+    const notes   = row.notes ? esc(row.notes) : '<span style="color:var(--text-sub);">—</span>';
+    const dueDate = row.due_date
+      ? new Date(row.due_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '<span style="color:var(--text-sub);">—</span>';
+    return `<tr>
+      <td style="white-space:nowrap;">${date}</td>
+      <td><span style="background:${typeColor}22;color:${typeColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${esc(typeLabel)}</span></td>
+      <td>${dirLabel}</td>
+      <td style="font-weight:700;white-space:nowrap;">${esc(amt)}</td>
+      <td style="white-space:nowrap;font-weight:600;color:${row._running > 0 ? 'var(--warning)' : 'var(--success)'};">${esc(runBal)}</td>
+      <td style="max-width:220px;word-break:break-word;">${notes}</td>
+      <td style="font-size:12px;color:var(--text-sub);">${esc(row.created_by || 'system')}</td>
+      <td style="white-space:nowrap;">${dueDate}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Add Charge Modal ─────────────────────────────────────────────────────────
+
+function openAddChargeModal(prefillBookingId) {
+  ['ac-amount', 'ac-notes', 'ac-due-date'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const typeEl = document.getElementById('ac-type');
+  if (typeEl) typeEl.value = '';
+
+  const bookingEl = document.getElementById('ac-booking-id');
+  if (bookingEl) {
+    bookingEl.value = prefillBookingId || currentLedgerBookingId || '';
+  }
+  openModal('add-charge-modal');
+}
+
+async function saveCharge() {
+  const btn       = document.getElementById('ac-submit-btn');
+  const bookingId = document.getElementById('ac-booking-id')?.value.trim();
+  const typeVal   = document.getElementById('ac-type')?.value;
+  const amountVal = document.getElementById('ac-amount')?.value;
+  const notes     = document.getElementById('ac-notes')?.value.trim() || '';
+  const dueDate   = document.getElementById('ac-due-date')?.value || '';
+
+  if (!bookingId) { showToast('Booking ID is required.', 'error'); return; }
+  if (!typeVal)   { showToast('Please select a charge category.', 'error'); return; }
+  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
+    showToast('Please enter a valid amount.', 'error'); return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+
+  const chargeRequestId = 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+
+  try {
+    const data = await apiPost('/api/renter-balance-ledger', {
+      secret: adminSecret,
+      action: 'add_charge',
+      booking_id: bookingId,
+      transaction_type: typeVal,
+      amount: Number(amountVal),
+      notes: notes || undefined,
+      due_date: dueDate || undefined,
+      charge_request_id: chargeRequestId,
+      created_by: 'admin',
+    });
+
+    closeModal('add-charge-modal');
+    showToast(data.duplicate ? 'Charge already recorded.' : 'Charge added to ledger.', 'success');
+
+    if (bookingId === currentLedgerBookingId) loadBalanceLedger();
+    else {
+      currentLedgerBookingId = bookingId;
+      const el = document.getElementById('bl-booking-search');
+      if (el) el.value = bookingId;
+      navigate('balance-ledger');
+      loadBalanceLedger();
+    }
+  } catch (err) {
+    showToast('Failed to add charge: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Charge'; }
+  }
+}
+
+
