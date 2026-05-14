@@ -468,13 +468,12 @@ export default async function handler(req, res) {
     const pricing = await getVehiclePricing(sb, vehicleId);
 
     // Late fee is a fixed non-taxed amount after the grace window.
-    const SHORT_LATE_FEE = LATE_FEE_BASE;
-    const EXTENDED_LATE_FEE = SHORT_LATE_FEE;
+    const LATE_FEE = LATE_FEE_BASE;
 
     let extensionBaseAmount = 0;
     let extensionLabel;
     let lateFeeIncluded = 0;
-    let deferredFeeIncluded = 0;
+    const deferredFeeIncluded = sbDeferredLateFee;
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -487,8 +486,8 @@ export default async function handler(req, res) {
       const price = computeAmountFromPricing(pricing, days);
 
       // ── Time-based late fee ─────────────────────────────────────────────────
-      // grace_end  = return_time + 30 min  → SHORT_LATE_FEE applies
-      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE applies
+      // grace_end  = return_time + 30 min  → LATE_FEE applies
+      // reset_time = return_time + 3 hours → LATE_FEE applies
       // Always ONE PaymentIntent; late fee is folded into the total.
       //
       // IMPORTANT: Use buildDateTimeLA so that a stored return_time of "10:00"
@@ -501,9 +500,9 @@ export default async function handler(req, res) {
       const resetTimeMs = currentReturnMsLA + 3  * 60 * 60 * 1000;   // +3 h
       const nowMs = Date.now();
       if (nowMs > resetTimeMs) {
-        lateFeeIncluded = EXTENDED_LATE_FEE;
+        lateFeeIncluded = LATE_FEE;
       } else if (nowMs > graceEndMs) {
-        lateFeeIncluded = SHORT_LATE_FEE;
+        lateFeeIncluded = LATE_FEE;
       }
 
       // ── Apply admin-granted waiver ──────────────────────────────────────────
@@ -527,7 +526,6 @@ export default async function handler(req, res) {
       // this extension total.  The deferred fee is separate from the time-based
       // late fee above and is never waived by sbWaivedAmount (waiver only applies
       // to the new time-based fee).
-      deferredFeeIncluded = sbDeferredLateFee;
       if (deferredFeeIncluded > 0) {
         console.log('[pricing-extension-deferred-fee]', {
           vehicle:        vehicleId,
