@@ -9,6 +9,12 @@
 
 // ── Default categories (mirrors migration 0126) ───────────────────────────────
 export const DEFAULT_CATEGORIES = [
+  // Fleet ops canonical categories
+  { name: "Maintenance",           group_name: "Maintenance", is_default: true, is_active: true  },
+  { name: "Repairs",               group_name: "Repairs",     is_default: true, is_active: true  },
+  { name: "Cleaning",              group_name: "Cleaning",    is_default: true, is_active: true  },
+  { name: "GPS",                   group_name: "Usage",       is_default: true, is_active: true  },
+  { name: "Misc",                  group_name: "Other",       is_default: true, is_active: true  },
   // Ownership
   { name: "Loan / Lease",           group_name: "Ownership",   is_default: true, is_active: true  },
   { name: "Insurance",              group_name: "Ownership",   is_default: true, is_active: true  },
@@ -54,12 +60,17 @@ export const DEFAULT_CATEGORIES = [
 
 // Maps old flat category text → { name, group_name } in the new hierarchy
 export const LEGACY_CATEGORY_MAP = {
-  maintenance:  { name: "Oil Change",       group_name: "Maintenance" },
-  insurance:    { name: "Insurance",        group_name: "Ownership"   },
-  repair:       { name: "Repair (General)", group_name: "Repairs"     },
-  fuel:         { name: "Fuel",             group_name: "Usage"       },
-  registration: { name: "Registration",     group_name: "Ownership"   },
-  other:        { name: "Other",            group_name: "Other"       },
+  maintenance:  { name: "Maintenance", group_name: "Maintenance" },
+  repairs:      { name: "Repairs",     group_name: "Repairs"     },
+  repair:       { name: "Repairs",     group_name: "Repairs"     },
+  registration: { name: "Registration",group_name: "Ownership"   },
+  insurance:    { name: "Insurance",   group_name: "Ownership"   },
+  fuel:         { name: "Fuel",        group_name: "Usage"       },
+  cleaning:     { name: "Cleaning",    group_name: "Cleaning"    },
+  gps:          { name: "GPS",         group_name: "Usage"       },
+  tolls:        { name: "Tolls",       group_name: "Usage"       },
+  misc:         { name: "Misc",        group_name: "Other"       },
+  other:        { name: "Misc",        group_name: "Other"       },
 };
 
 /**
