@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { EXPENSE_RECEIPTS_BUCKET, emptyExpenseReceiptMetadata } from "./_expense-receipts.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -47,7 +48,7 @@ export default async function handler(req, res) {
     if (sb) {
       // ── Supabase path (preferred) ──────────────────────────────────────
       const { data: existing, error: fetchErr } = await sb
-        .from("expenses").select("expense_id").eq("expense_id", expense_id).maybeSingle();
+        .from("expenses").select("expense_id, receipt_url").eq("expense_id", expense_id).maybeSingle();
 
       if (fetchErr && isSchemaError(fetchErr)) {
         console.warn("delete-expense: expenses table missing in Supabase, falling back to GitHub");
@@ -57,6 +58,21 @@ export default async function handler(req, res) {
       } else if (!existing) {
         return res.status(404).json({ error: "Expense not found" });
       } else {
+        if (existing.receipt_url) {
+          const { error: removeReceiptErr } = await sb.storage
+            .from(EXPENSE_RECEIPTS_BUCKET)
+            .remove([existing.receipt_url]);
+          if (removeReceiptErr) {
+            console.warn("delete-expense: receipt cleanup failed:", removeReceiptErr.message);
+          }
+          const { error: clearReceiptErr } = await sb
+            .from("expenses")
+            .update(emptyExpenseReceiptMetadata())
+            .eq("expense_id", expense_id);
+          if (clearReceiptErr) {
+            console.warn("delete-expense: receipt metadata clear failed:", clearReceiptErr.message);
+          }
+        }
         const { error: delErr } = await sb.from("expenses").delete().eq("expense_id", expense_id);
         if (delErr && isSchemaError(delErr)) {
           console.warn("delete-expense: expenses table missing in Supabase, falling back to GitHub");
