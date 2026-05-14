@@ -3361,13 +3361,15 @@ async function toolRunSystemHealthFix({ target = "all", confirmed } = {}) {
     const sentMarks = [];
     await processActiveRentals(allBookings, new Date(), sentMarks, false, { repairMode: true });
     const sent = sentMarks.filter((m) => !m.key.startsWith("_")).length;
+    const skippedMarkers = sentMarks.filter((m) => m.key.startsWith("_")).length;
+    const skipped = Math.max(skippedMarkers, processed - sent);
 
     return {
       check: "smsDeliveryHealth",
       ok: true,
       processed,
       sent,
-      skipped: Math.max(processed - sent, 0),
+      skipped,
       message:
         sent > 0
           ? `Sent ${sent} missing SMS across ${processed} active rental${processed !== 1 ? "s" : ""}.`
