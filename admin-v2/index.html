@@ -3389,6 +3389,21 @@ const FLEET_EXPENSE_CATEGORIES = [
   { key: 'misc',         label: 'Misc' },
 ];
 const FLEET_EXPENSE_CATEGORY_LABELS = Object.fromEntries(FLEET_EXPENSE_CATEGORIES.map((c) => [c.key, c.label]));
+const FLEET_EXPENSE_CATEGORY_COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#0f766e', '#dc2626', '#f59e0b', '#475569', '#52525b'];
+const FLEET_EXPENSE_CATEGORY_COLOR_BY_KEY = Object.fromEntries(FLEET_EXPENSE_CATEGORIES.map((c, i) => [c.key, FLEET_EXPENSE_CATEGORY_COLORS[i % FLEET_EXPENSE_CATEGORY_COLORS.length]]));
+const FLEET_EXPENSE_CATEGORY_ALIASES = {
+  maintenance: new Set(['maintenance', 'oil change', 'tires', 'brakes', 'fluids', 'filters', 'battery', 'inspection / emissions']),
+  repairs: new Set(['repairs', 'repair', 'repair (general)', 'parts', 'labor', 'diagnostics']),
+  registration: new Set(['registration']),
+  insurance: new Set(['insurance', 'insurance deductible']),
+  fuel: new Set(['fuel', 'ev charging']),
+  cleaning: new Set(['cleaning', 'car wash', 'detailing']),
+  gps: new Set(['gps', 'subscriptions']),
+  tolls: new Set(['tolls', 'toll']),
+  misc: new Set(['misc', 'other']),
+};
+const MAINTENANCE_WARNING_THRESHOLD_MIN = 500;
+const MAINTENANCE_WARNING_THRESHOLD_PERCENT = 0.35;
 
 // ── State ──────────────────────────────────────────────────────────────────
 let adminSecret   = '';
@@ -6157,19 +6172,21 @@ function loadExpenseCategories() {
 }
 
 function normalizeExpenseCategoryKey(expense) {
-  const rawValue = typeof expense === 'string'
-    ? expense
-    : (expense?.category || expense?.category_name || '');
-  const value = String(rawValue || '').trim().toLowerCase();
-  if (!value) return 'misc';
-  if (value === 'maintenance' || value.includes('oil') || value.includes('tire') || value.includes('brake') || value.includes('filter') || value.includes('inspection')) return 'maintenance';
-  if (value === 'repairs' || value === 'repair' || value.includes('repair') || value.includes('parts') || value.includes('labor') || value.includes('diagnostic')) return 'repairs';
-  if (value === 'registration') return 'registration';
-  if (value === 'insurance' || value.includes('deductible')) return 'insurance';
-  if (value === 'fuel' || value.includes('charging')) return 'fuel';
-  if (value === 'cleaning' || value.includes('wash') || value.includes('detail')) return 'cleaning';
-  if (value === 'gps' || value.includes('subscription')) return 'gps';
-  if (value === 'tolls' || value === 'toll') return 'tolls';
+  const category = String(
+    typeof expense === 'string'
+      ? expense
+      : (expense?.category || '')
+  ).trim().toLowerCase();
+  const categoryName = String(expense?.category_name || '').trim().toLowerCase();
+  const categoryGroup = String(expense?.category_group || '').trim().toLowerCase();
+
+  for (const [key, aliases] of Object.entries(FLEET_EXPENSE_CATEGORY_ALIASES)) {
+    if (aliases.has(category) || aliases.has(categoryName)) return key;
+  }
+  if (categoryGroup === 'maintenance') return 'maintenance';
+  if (categoryGroup === 'repairs') return 'repairs';
+  if (categoryGroup === 'cleaning') return 'cleaning';
+
   return 'misc';
 }
 
@@ -6218,16 +6235,18 @@ function getExpenseReceiptStatusHtml(expense) {
 }
 
 function renderExpenseReceiptCell(expense) {
-  const expenseId = esc(expense.expense_id || '');
+  const expenseId = String(expense.expense_id || '');
+  const expenseIdAttr = esc(expenseId);
+  const expenseIdJs = JSON.stringify(expenseId);
   const hasReceipt = expenseHasReceipt(expense);
   return `
     <div class="expense-receipt-cell">
       ${getExpenseReceiptStatusHtml(expense)}
       <div class="expense-receipt-actions">
-        <input type="file" id="expense-receipt-input-${expenseId}" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" capture="environment" style="display:none" onchange="handleExpenseReceiptSelected(this, '${expenseId}')">
-        <button class="btn btn-secondary btn-sm" onclick="triggerExpenseReceiptUpload('${expenseId}')">${hasReceipt ? 'Replace' : 'Upload Receipt'}</button>
-        ${hasReceipt ? `<button class="btn btn-secondary btn-sm" onclick="viewExpenseReceipt('${expenseId}')">View</button>` : ''}
-        ${hasReceipt ? `<button class="btn btn-danger btn-sm" onclick="deleteExpenseReceipt('${expenseId}')">Delete</button>` : ''}
+        <input type="file" id="expense-receipt-input-${expenseIdAttr}" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" capture="environment" style="display:none" onchange='handleExpenseReceiptSelected(this, ${expenseIdJs})'>
+        <button class="btn btn-secondary btn-sm" onclick='triggerExpenseReceiptUpload(${expenseIdJs})'>${hasReceipt ? 'Replace' : 'Upload Receipt'}</button>
+        ${hasReceipt ? `<button class="btn btn-secondary btn-sm" onclick='viewExpenseReceipt(${expenseIdJs})'>View</button>` : ''}
+        ${hasReceipt ? `<button class="btn btn-danger btn-sm" onclick='deleteExpenseReceipt(${expenseIdJs})'>Delete</button>` : ''}
       </div>
     </div>
   `;
@@ -6445,7 +6464,9 @@ function applyExpenseFilters() {
   document.getElementById('expenses-empty').style.display = 'none';
 
   const filteredTotal = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
-  document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => `
+  document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => {
+    const expenseIdJs = JSON.stringify(String(e.expense_id || ''));
+    return `
     <tr>
       <td>${esc(e.date || '–')}</td>
       <td>${esc(getVehicleLabel(e.vehicle_id) || '–')}</td>
@@ -6454,11 +6475,12 @@ function applyExpenseFilters() {
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
       <td>${renderExpenseReceiptCell(e)}</td>
       <td>
-        <button class="btn btn-secondary btn-sm" onclick="openAddExpenseModal('${esc(e.expense_id || '')}')">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteExpense('${esc(e.expense_id || '')}')">Delete</button>
+        <button class="btn btn-secondary btn-sm" onclick='openAddExpenseModal(${expenseIdJs})'>Edit</button>
+        <button class="btn btn-danger btn-sm" onclick='deleteExpense(${expenseIdJs})'>Delete</button>
       </td>
     </tr>
-  `).join('') + `
+  `;
+  }).join('') + `
     <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg);">
       <td colspan="3" style="text-align:right;padding-right:8px;">Total (${filtered.length} record${filtered.length !== 1 ? 's' : ''})</td>
       <td style="color:var(--danger);">$${formatMoney(filteredTotal)}</td>
@@ -6496,7 +6518,8 @@ function submitExpense() {
   const btn = document.getElementById('exp-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  const endpoint = editingExpenseId ? '/api/update-expense' : '/api/add-expense';
+  const isEditing = Boolean(editingExpenseId);
+  const endpoint = isEditing ? '/api/update-expense' : '/api/add-expense';
   const payload = { secret: adminSecret, vehicle_id, date, category, amount, notes };
   if (editingExpenseId) payload.expense_id = editingExpenseId;
 
@@ -6505,7 +6528,7 @@ function submitExpense() {
       closeModal('add-expense-modal');
       editingExpenseId = null;
       document.querySelector('#add-expense-modal .modal-title').textContent = 'Add Expense';
-      showToast(payload.expense_id ? 'Expense updated.' : 'Expense added.', 'success');
+      showToast(isEditing ? 'Expense updated.' : 'Expense added.', 'success');
       allExpenses = []; // Force refresh
       loadExpenses();
       // Refresh dashboard so Net Profit KPI reflects new expense
@@ -7764,7 +7787,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
         labels: categoryEntries.map(([key]) => FLEET_EXPENSE_CATEGORY_LABELS[key] || key),
         datasets: [{
           data: categoryEntries.map(([, amount]) => Math.round(amount * 100) / 100),
-          backgroundColor: ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#0f766e', '#dc2626', '#f59e0b', '#475569', '#52525b'],
+          backgroundColor: categoryEntries.map(([key]) => FLEET_EXPENSE_CATEGORY_COLOR_BY_KEY[key] || '#64748b'),
         }],
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
@@ -7800,7 +7823,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
   for (const v of vehicles) {
     const vf = normalizeFleetVehicle(v);
     const ev = expenseSummary.byVehicle[v.vehicleId] || { maintenance: 0, repairs: 0, total: 0 };
-    if (ev.maintenance >= Math.max(500, (vf.amount_net || 0) * 0.35)) {
+    if (ev.maintenance >= Math.max(MAINTENANCE_WARNING_THRESHOLD_MIN, (vf.amount_net || 0) * MAINTENANCE_WARNING_THRESHOLD_PERCENT)) {
       warningItems.push({ level: 'High Maintenance', message: `${v.name}: maintenance is $${formatMoney(ev.maintenance)}.` });
     }
     if ((v.roi ?? 0) < 0) {
@@ -7854,7 +7877,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
       const monthlyProfitColor   = v.monthly_profit == null ? 'color:var(--text-sub)' : v.monthly_profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
       const paybackDisplay = v.payback_months != null ? v.payback_months.toFixed(1) + ' mo' : '—';
       const rowWarnings = [];
-      if (ev.maintenance >= Math.max(500, (vf.amount_net || 0) * 0.35)) rowWarnings.push('🛠️ High maint');
+      if (ev.maintenance >= Math.max(MAINTENANCE_WARNING_THRESHOLD_MIN, (vf.amount_net || 0) * MAINTENANCE_WARNING_THRESHOLD_PERCENT)) rowWarnings.push('🛠️ High maint');
       if ((v.roi ?? 0) < 0) rowWarnings.push('📉 ROI');
       const receiptIssue = expenseSummary.receiptWarnings.find((w) => w.vehicleId === v.vehicleId);
       if (receiptIssue) rowWarnings.push('🧾 Missing receipt');

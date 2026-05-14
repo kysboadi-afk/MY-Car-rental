@@ -151,7 +151,7 @@ export default async function handler(req, res) {
           updatedExpense = {
             ...existing,
             ...updates,
-            expense_id: existing.expense_id || expense_id,
+            expense_id: existing.expense_id,
             category_id: updates.category_id || undefined,
           };
           if (updatedExpense.category_id === undefined || updatedExpense.category_id === null) {

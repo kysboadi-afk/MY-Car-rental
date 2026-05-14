@@ -12,12 +12,8 @@ export const DEFAULT_CATEGORIES = [
   // Fleet ops canonical categories
   { name: "Maintenance",           group_name: "Maintenance", is_default: true, is_active: true  },
   { name: "Repairs",               group_name: "Repairs",     is_default: true, is_active: true  },
-  { name: "Registration",          group_name: "Ownership",   is_default: true, is_active: true  },
-  { name: "Insurance",             group_name: "Ownership",   is_default: true, is_active: true  },
-  { name: "Fuel",                  group_name: "Usage",       is_default: true, is_active: true  },
   { name: "Cleaning",              group_name: "Cleaning",    is_default: true, is_active: true  },
   { name: "GPS",                   group_name: "Usage",       is_default: true, is_active: true  },
-  { name: "Tolls",                 group_name: "Usage",       is_default: true, is_active: true  },
   { name: "Misc",                  group_name: "Other",       is_default: true, is_active: true  },
   // Ownership
   { name: "Loan / Lease",           group_name: "Ownership",   is_default: true, is_active: true  },
