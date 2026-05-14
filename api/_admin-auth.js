@@ -31,7 +31,10 @@ export function isAdminAuthorized(supplied) {
   const aPadded = Buffer.concat([a, Buffer.alloc(len - a.length)]);
   const bPadded = Buffer.concat([b, Buffer.alloc(len - b.length)]);
 
-  return crypto.timingSafeEqual(aPadded, bPadded) && a.length === b.length;
+  if (typeof crypto.timingSafeEqual === "function") {
+    return crypto.timingSafeEqual(aPadded, bPadded) && a.length === b.length;
+  }
+  return Buffer.compare(aPadded, bPadded) === 0 && a.length === b.length;
 }
 
 /**
