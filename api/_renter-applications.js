@@ -23,6 +23,7 @@ function cleanApps(value) {
 }
 
 const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approved", "rejected", "withdrawn", "expired"];
+const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "failed", "canceled"];
 
 // Valid manual review actions and the status they produce.
 export const REVIEW_ACTION_MAP = {
@@ -438,13 +439,12 @@ export async function listPendingIdentityRecoveryApplications({ limit = 25 } = {
   if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
 
   const safeLimit = Math.max(1, Math.min(100, Number(limit) || 25));
-  const recoverableIdentityStatuses = ["not_started", "requires_input", "processing", "failed", "canceled"];
 
   const { data, error } = await sb
     .from("renter_applications")
     .select("*")
     .eq("application_status", "submitted")
-    .in("identity_status", recoverableIdentityStatuses)
+    .in("identity_status", RECOVERABLE_IDENTITY_STATUSES)
     .not("identity_session_id", "is", null)
     .order("submitted_at", { ascending: true })
     .limit(safeLimit);

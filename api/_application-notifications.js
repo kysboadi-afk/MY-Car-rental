@@ -366,7 +366,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
       "Lifecycle Stage : identity verified → under review",
       "",
       "Next Step:",
-      "Review this application in the Applications Review Queue and approve, reject, or request more information.",
+      "Open the admin dashboard, go to Applications Review Queue, and approve, reject, or request more information.",
     ].join("\n"),
     html: `
       <h2>&#x2705; Identity Verified — Ready For Review</h2>

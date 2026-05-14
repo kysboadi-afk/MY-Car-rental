@@ -2,6 +2,8 @@ import Stripe from "stripe";
 import { patchRenterApplicationIdentityById } from "./_renter-applications.js";
 import { sendIdentityVerifiedNotifications } from "./_application-notifications.js";
 
+const NOTIFIABLE_APPLICATION_STATUSES = ["submitted", "under_review", "needs_info"];
+
 function getStripeClient(existingClient = null) {
   if (existingClient) return existingClient;
   if (!process.env.STRIPE_SECRET_KEY) return null;
@@ -48,7 +50,7 @@ export async function recoverVerifiedApplicationFromStripe(
   }
 
   const applicationStatus = String(application.application_status || "").toLowerCase();
-  const shouldNotify = notify && ["submitted", "under_review", "needs_info"].includes(applicationStatus);
+  const shouldNotify = notify && NOTIFIABLE_APPLICATION_STATUSES.includes(applicationStatus);
   const now = new Date().toISOString();
   const patch = {
     identitySessionId: session.id || identitySessionId,
