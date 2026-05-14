@@ -39,6 +39,38 @@ export function parseExpenseReceiptBuffer(fileData) {
   return Buffer.from(base64Data, "base64");
 }
 
+function bufferStartsWith(buffer, signature) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < signature.length) return false;
+  for (let i = 0; i < signature.length; i += 1) {
+    if (buffer[i] !== signature[i]) return false;
+  }
+  return true;
+}
+
+export function matchesExpenseReceiptMimeSignature(buffer, mimeType) {
+  const mime = String(mimeType || "").toLowerCase();
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return false;
+
+  if (mime === "image/jpeg") {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mime === "image/png") {
+    return bufferStartsWith(buffer, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (mime === "image/webp") {
+    return (
+      buffer.length >= 12
+      && buffer.toString("ascii", 0, 4) === "RIFF"
+      && buffer.toString("ascii", 8, 12) === "WEBP"
+    );
+  }
+  if (mime === "application/pdf") {
+    return bufferStartsWith(buffer, Buffer.from("%PDF-", "ascii"));
+  }
+
+  return false;
+}
+
 export function isExpenseReceiptImage(mimeType) {
   return String(mimeType || "").toLowerCase().startsWith("image/");
 }
