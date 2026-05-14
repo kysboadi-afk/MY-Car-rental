@@ -178,7 +178,7 @@ test("waive-late-fee: 404 when booking is not found", async () => {
   assert.equal(res._status, 404);
 });
 
-test("waive-late-fee: 200 full waiver sets waived_amount = $25 + vehicle daily rate (max late fee)", async () => {
+test("waive-late-fee: 200 full waiver sets waived_amount = flat $25 max late fee", async () => {
   reset();
   sbClient = makeSupabaseClient({ bookingRow: makeBookingRow() });
   const res = makeRes();
@@ -192,8 +192,8 @@ test("waive-late-fee: 200 full waiver sets waived_amount = $25 + vehicle daily r
   assert.equal(res._status, 200, "must return 200");
   assert.equal(res._body.success, true);
   assert.equal(res._body.waiver_type, "full");
-  // full waiver = $25 + camry daily rate ($55) = $80
-  assert.equal(res._body.waived_amount, 80);
+  // full waiver = flat $25 for all vehicles
+  assert.equal(res._body.waived_amount, 25);
   assert.equal(res._body.new_late_fee,  0, "new_late_fee must be 0 after full waiver");
   assert.equal(res._body.booking_ref,   "bk-test-001");
   assert.ok(res._body.applied_at, "applied_at must be set");
@@ -214,8 +214,8 @@ test("waive-late-fee: 200 partial waiver returns correct amounts", async () => {
 
   assert.equal(res._status, 200);
   assert.equal(res._body.waived_amount, 10);
-  // new_late_fee = max(0, 80 - 10) = 70
-  assert.equal(res._body.new_late_fee, 70);
+  // new_late_fee = max(0, 25 - 10) = 15
+  assert.equal(res._body.new_late_fee, 15);
   assert.equal(res._body.applied_by, "alice-admin");
 });
 
@@ -273,7 +273,7 @@ test("waive-late-fee: audit log is written with correct fields", async () => {
 
   const amountField = call.changes.find((c) => c.field === "late_fee_waived_amount");
   assert.ok(amountField, "audit log must include late_fee_waived_amount field");
-  assert.equal(amountField.newValue, "80");
+  assert.equal(amountField.newValue, "25");
 
   const reasonField = call.changes.find((c) => c.field === "late_fee_waived_reason");
   assert.ok(reasonField, "audit log must include late_fee_waived_reason field");
@@ -456,11 +456,11 @@ test("waive-late-fee: fee_type=all_fees waives both late fee and remaining balan
   assert.equal(res._status, 200);
   assert.equal(res._body.fee_type,                     "all_fees");
   assert.equal(res._body.waiver_type,                  "full");
-  assert.equal(res._body.late_fee_waived_amount,       80, "late fee = $25 + camry daily rate ($55)");
+  assert.equal(res._body.late_fee_waived_amount,       25, "late fee is flat $25 for all vehicles");
   assert.equal(res._body.rental_balance_waived_amount, 120);
   assert.equal(res._body.new_late_fee,                 0);
   assert.equal(res._body.new_remaining_balance,        0);
-  assert.equal(res._body.total_waived,                 200);
+  assert.equal(res._body.total_waived,                 145);
   assert.equal(auditCalls.length, 1);
   const lateField   = auditCalls[0].changes.find((c) => c.field === "late_fee_waived");
   const rentalField = auditCalls[0].changes.find((c) => c.field === "rental_balance_waived");

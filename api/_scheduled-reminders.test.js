@@ -74,9 +74,7 @@ mock.module("./_contacts.js", {
 });
 mock.module("./_pricing.js", {
   namedExports: {
-    CARS: {},
     LATE_FEE_BASE: 25,
-    DEFAULT_VEHICLE_DAILY_RATE: 55,
   },
 });
 

@@ -622,10 +622,43 @@ test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over booking
 
 // ── Waiver tests ──────────────────────────────────────────────────────────────
 
-test("extend-rental: full waiver (late_fee_waived_amount = $25 + daily rate) removes late fee from total", async () => {
+test("extend-rental: late fee stays flat and non-taxed in extension total", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking({
+    returnDate: "2020-01-01",
+    returnTime: "5:00 PM",
+  });
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref: "bk-camry-active-001",
+      return_date: "2020-01-01",
+      return_time: "17:00:00",
+      status:      "active_rental",
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2020-01-03", // 2 extension days => $110 base
+  }), res);
+
+  // Base extension amount: $110
+  // Tax on base only (9.5%): $10.45
+  // Late fee (non-taxed): $25
+  // Total: $145.45 => 14545 cents.
+  assert.equal(res._status, 200);
+  assert.equal(res._body.lateFeeIncluded, 25);
+  assert.equal(capturedStripeParams.amount, 14545);
+});
+
+test("extend-rental: full waiver (late_fee_waived_amount = $25) removes late fee from total", async () => {
   // Simulate a booking that is past the 3-hour reset window.
-  // Without a waiver, EXTENDED_LATE_FEE ($25 + vehicle daily rate = $80) would be added.
-  // With a full waiver (waived_amount = $25 + daily rate) the late fee must be $0.
+  // Without a waiver, LATE_FEE ($25) would be added.
+  // With a full waiver (waived_amount = $25) the late fee must be $0.
   capturedStripeParams = null;
   const active = makeActiveBooking({
     returnDate: "2026-04-30",
@@ -639,7 +672,7 @@ test("extend-rental: full waiver (late_fee_waived_amount = $25 + daily rate) rem
       return_date:             "2026-04-30",
       return_time:             "17:00:00",
       status:                  "active_rental",
-      late_fee_waived_amount:  80,  // full waiver for escalated late fee ($25 + $55)
+      late_fee_waived_amount:  25,  // full waiver for flat late fee
     }],
   });
 
@@ -651,10 +684,10 @@ test("extend-rental: full waiver (late_fee_waived_amount = $25 + daily rate) rem
   }), res);
 
   assert.equal(res._status, 200, "handler must succeed");
-  assert.equal(res._body.lateFeeWaived, 80, "lateFeeWaived must be 80");
+  assert.equal(res._body.lateFeeWaived, 25, "lateFeeWaived must be 25");
   // lateFeeIncluded after full waiver is applied: 0.
   assert.equal(res._body.lateFeeIncluded, 0,
-    "lateFeeIncluded must be 0 when the full escalated-fee waiver covers the fee");
+    "lateFeeIncluded must be 0 when the full waiver covers the fee");
 });
 
 test("extend-rental: partial waiver reduces late fee proportionally", async () => {

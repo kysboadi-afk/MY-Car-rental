@@ -88,8 +88,13 @@ export function verifyResumeToken(token) {
       .update(`${TOKEN_PREFIX}${payload}`)
       .digest("base64url");
 
-    const sigBuf      = Buffer.from(sig,         "base64url");
-    const expectedBuf = Buffer.from(expectedSig, "base64url");
+    // Compare the base64url strings as UTF-8 bytes rather than decoding first.
+    // Decoding before comparison is unsafe: Node.js leniently ignores the lower
+    // unused bits of the last base64url character, so a 43-char HMAC-SHA256
+    // signature (32 bytes) would accept any of 4 last-character variants
+    // (e.g. A/B/C/D all decode identically) — effectively leaking 2 signature bits.
+    const sigBuf      = Buffer.from(sig,         "utf8");
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
     if (sigBuf.length !== expectedBuf.length) return null;
     if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
 

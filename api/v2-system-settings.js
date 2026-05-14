@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS = [
   { key: "booking_change_fee",          value: 25,      description: "Fee charged for each booking change after the first free change (USD)", category: "pricing" },
   // Late fees
   { key: "late_fee_short",              value: 25,      description: "Late fee assessed after the 30-minute grace period (USD, fixed)", category: "pricing" },
-  { key: "late_fee_extended",           value: 80,      description: "Reference escalated late fee for Camry (USD): $25 base late fee + $55 daily rental. Actual escalated fee is always $25 + each vehicle's daily rate", category: "pricing" },
+  { key: "late_fee_extended",           value: 25,      description: "Late fee assessed after the 3-hour late window (USD, fixed for all vehicles)", category: "pricing" },
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },
   { key: "auto_create_revenue_on_pay",  value: true,    description: "Auto-create revenue record when payment received",category: "automation" },
   { key: "auto_update_customer_stats",  value: true,    description: "Auto-update customer stats on booking events",    category: "automation" },

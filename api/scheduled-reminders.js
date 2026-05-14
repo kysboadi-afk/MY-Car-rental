@@ -58,7 +58,7 @@ import {
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
-import { CARS, LATE_FEE_BASE, DEFAULT_VEHICLE_DAILY_RATE } from "./_pricing.js";
+import { LATE_FEE_BASE } from "./_pricing.js";
 import { autoUpsertBooking, autoUpsertCustomer, autoCreateRevenueRecord } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
@@ -84,9 +84,7 @@ import {
 } from "./stripe-webhook.js";
 
 // ─── Late-fee amounts ──────────────────────────────────────────────────────────
-// SHORT_LATE_FEE: fixed $25 after the 30-minute grace period.
-// DEFAULT_VEHICLE_DAILY_RATE: fallback daily rate used when vehicleId is not in CARS.
-// Escalated fee is always "$25 + vehicle daily rate" (or fallback daily rate).
+// Global rule for all cars: fixed $25 late fee after grace/reset windows.
 const SHORT_LATE_FEE = LATE_FEE_BASE; // applied after 30-minute grace period (fixed)
 
 // Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
@@ -102,7 +100,7 @@ const BOOKING_BUFFER_HOURS = 2;
 // Maximum hours-overdue window in which a late fee may be triggered.
 // If hoursOverdue exceeds this threshold the booking was never auto-completed
 // (stale status, cron outage, etc.).  The system now uses fixed late fees
-// ($25 at +30 min, and $25 + daily rate at +3 h) rather than hourly amounts, so this guard
+// ($25 at +30 min, and $25 at +3 h) rather than hourly amounts, so this guard
 // prevents escalation SMS alerts from firing on long-stale bookings that
 // should have already been marked completed by the AUTO_COMPLETE_HOURS path.
 const MAX_FEE_OVERDUE_HOURS = 8;
@@ -1079,8 +1077,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           }
 
           if (bookingStillActive) {
-            const vehicleDailyRate = CARS[vehicleId]?.pricePerDay || DEFAULT_VEHICLE_DAILY_RATE;
-            const vehicleEscalatedLateFee = SHORT_LATE_FEE + vehicleDailyRate;
+            const vehicleEscalatedLateFee = SHORT_LATE_FEE;
             logSmsTrigger(id, returnIso, nowIso, "late_escalation");
             console.log("[LATE_ESCALATION]", {
               booking_id:    id,
@@ -1089,7 +1086,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
               late_fee:      vehicleEscalatedLateFee,
             });
 
-            // Notify customer that the escalated late fee ($25 + 1 missed rental day) now applies.
+            // Notify customer that the late fee ($25) now applies.
             // The fee will be included in the total when they extend.
             // message_type is "late_escalation" for delivery logging; dedup key is
             // "late_fee_pending" for backward compatibility with existing sms_logs rows.
