@@ -327,9 +327,9 @@ test("stripe-identity-webhook sends requires-input notifications only on transit
   await stripeIdentityWebhookHandler(makeWebhookReq(), res);
 
   assert.equal(res._status, 200);
-  assert.equal(calls.sentMails.length, 2);
+  assert.equal(calls.sentMails.length, 1);
   assert.equal(calls.sentMessages.length, 1);
-  assert.ok(calls.sentMails[0].subject.includes("Requires Input"));
+  assert.ok(calls.sentMails[0].subject.includes("Action Needed"));
 });
 
 test("stripe-identity-webhook returns 400 when signature verification fails", async () => {
@@ -534,7 +534,7 @@ test("stripe-identity-webhook requires-input notification applicant SMS contains
     `Expected verification URL in SMS, got: ${calls.sentMessages[0].text}`
   );
   assert.ok(
-    calls.sentMails[1].html.includes("thank-you.html"),
+    calls.sentMails[0].html.includes("thank-you.html"),
     `Expected verification URL in applicant email HTML`
   );
 });

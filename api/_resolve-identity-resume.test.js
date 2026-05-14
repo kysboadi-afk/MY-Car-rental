@@ -257,6 +257,11 @@ test("resolve-identity-resume: returns alreadyVerified when Stripe session is ve
   assert.equal(res._status, 200);
   assert.equal(res._body.alreadyVerified, true);
   assert.equal(calls.createdSessions.length, 0);
+  // Catch-up sync: DB should be updated to verified + under_review since webhook was missed
+  assert.equal(calls.patched.length, 1, "should patch application when webhook lag detected");
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.patched[0].patch.reviewedBy, "resolve_resume_sync");
 });
 
 test("resolve-identity-resume: creates fresh session when existing session is canceled", async () => {

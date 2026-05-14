@@ -104,7 +104,29 @@ export default async function handler(req, res) {
       );
 
       if (existing.status === "verified") {
-        // Webhook not yet processed — identity is complete; don't create a new session.
+        // Stripe session is verified but our DB may not reflect it yet (webhook missed or
+        // still in-flight). Sync the application state here so it appears in the review queue.
+        if (application.identity_status !== "verified") {
+          const syncPatch = {
+            identitySessionId: existing.id,
+            identityStatus: "verified",
+            identityVerifiedAt: new Date().toISOString(),
+          };
+          // Only advance application_status if still in the initial submitted state.
+          if (!application.application_status || application.application_status === "submitted") {
+            syncPatch.applicationStatus = "under_review";
+            syncPatch.reviewedAt = new Date().toISOString();
+            syncPatch.reviewedBy = "resolve_resume_sync";
+          }
+          const syncResult = await patchRenterApplicationIdentityById(applicationId, syncPatch);
+          if (!syncResult.ok) {
+            console.error(
+              "resolve-identity-resume: verified sync failed:",
+              syncResult.error,
+              syncResult.details || ""
+            );
+          }
+        }
         return res.status(200).json({
           success: true,
           alreadyVerified: true,
