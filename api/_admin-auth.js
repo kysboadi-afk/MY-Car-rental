@@ -11,6 +11,24 @@ function normalizeSecret(value) {
 }
 
 /**
+ * Extracts the admin secret from a Vercel/Node request object.
+ * Checks (in order):
+ *   1. Authorization: Bearer <secret> header
+ *   2. req.query.secret   (GET query-string, kept for legacy callers)
+ *   3. req.body.secret    (POST body, kept for legacy callers)
+ *
+ * @param {object} req - Vercel/Node HTTP request
+ * @returns {string} The extracted secret, or an empty string if not present.
+ */
+export function extractAdminSecret(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
+  if (authHeader.startsWith("Bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  return String(req.query?.secret || req.body?.secret || "");
+}
+
+/**
  * Returns true when the supplied secret matches the configured admin password.
  * Always uses constant-time comparison — never short-circuits.
  *

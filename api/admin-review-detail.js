@@ -5,7 +5,7 @@
 //
 // GET /api/admin-review-detail?secret=<ADMIN_SECRET>&applicationId=<uuid>
 
-import { isAdminAuthorized } from "./_admin-auth.js";
+import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import { fetchReviewApplicationById } from "./_renter-applications.js";
 import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
 
@@ -17,13 +17,13 @@ export default async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
 
-  const { secret, applicationId } = req.query || {};
-  if (!isAdminAuthorized(secret)) {
+  const { applicationId } = req.query || {};
+  if (!isAdminAuthorized(extractAdminSecret(req))) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
