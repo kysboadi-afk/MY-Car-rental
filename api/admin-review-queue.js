@@ -15,9 +15,14 @@
 // back unchanged as expectedReviewVersion when submitting a review action.
 
 import { isAdminAuthorized } from "./_admin-auth.js";
-import { listReviewQueueApplications } from "./_renter-applications.js";
+import {
+  listPendingIdentityRecoveryApplications,
+  listReviewQueueApplications,
+} from "./_renter-applications.js";
+import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const RECOVERY_SCAN_LIMIT = 25;
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -33,6 +38,32 @@ export default async function handler(req, res) {
   const { secret, page, pageSize } = req.query || {};
   if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const recoveryCandidates = await listPendingIdentityRecoveryApplications({
+      limit: RECOVERY_SCAN_LIMIT,
+    });
+    if (!recoveryCandidates.ok) {
+      if (recoveryCandidates.details) {
+        console.error("admin-review-queue recovery lookup:", recoveryCandidates.details);
+      }
+    } else {
+      const recoveryResults = await Promise.allSettled(
+        (recoveryCandidates.data || []).map((application) => recoverVerifiedApplicationFromStripe(application, {
+          reviewedBy: "admin_review_queue_sync",
+        })),
+      );
+      recoveryResults.forEach((result) => {
+        if (result.status === "fulfilled" && !result.value?.ok && result.value?.details) {
+          console.error("admin-review-queue Stripe recovery failed:", result.value.details);
+        } else if (result.status === "rejected") {
+          console.error("admin-review-queue Stripe recovery failed:", result.reason);
+        }
+      });
+    }
+  } catch (recoveryErr) {
+    console.error("admin-review-queue recovery pass failed:", recoveryErr);
   }
 
   const result = await listReviewQueueApplications({ page, pageSize });

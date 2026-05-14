@@ -75,6 +75,8 @@ function getContext(application = {}) {
   );
   const applicationStatus = resolveFieldAcrossConventions(application, "applicationStatus", "application_status");
   const identityStatus = resolveFieldAcrossConventions(application, "identityStatus", "identity_status");
+  const identitySessionId = resolveFieldAcrossConventions(application, "identitySessionId", "identity_session_id");
+  const identityVerifiedAt = resolveFieldAcrossConventions(application, "identityVerifiedAt", "identity_verified_at");
   const applicationId = resolveFieldAcrossConventions(application, "applicationId", "id");
   const hasLicenseUpload = !!resolveFieldAcrossConventions(application, "hasLicenseUpload", "has_license_upload", licenseFileName);
   const hasInsuranceProof = !!resolveFieldAcrossConventions(application, "hasInsuranceProof", "has_insurance_proof", insuranceFileName);
@@ -119,6 +121,8 @@ function getContext(application = {}) {
     hasInsuranceProof,
     applicationStatus,
     identityStatus,
+    identitySessionId,
+    identityVerifiedAt,
     verificationLink,
   };
 }
@@ -357,16 +361,26 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
       `Application ID  : ${ctx.applicationId || "Not available"}`,
       `Phone           : ${ctx.phone}`,
       `Email           : ${ctx.email || "Not provided"}`,
+      `Stripe Session  : ${ctx.identitySessionId || "Not available"}`,
+      `Verified At     : ${ctx.identityVerifiedAt || "Not available"}`,
       "Lifecycle Stage : identity verified → under review",
+      "",
+      "Next Step:",
+      "Open the admin dashboard, go to Applications Review Queue, and approve, reject, or request more information.",
     ].join("\n"),
     html: `
       <h2>&#x2705; Identity Verified — Ready For Review</h2>
       <p>The applicant completed identity verification successfully and is ready for manual review.</p>
+      <p style="background:#d1fae5;padding:10px;border-left:4px solid #10b981;margin-bottom:16px">
+        <strong>Next admin step:</strong> open the Applications Review Queue to approve, reject, or request more information.
+      </p>
       <table style="border-collapse:collapse;width:100%;max-width:520px">
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Session ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.identitySessionId || "Not available")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Verified At</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.identityVerifiedAt || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">identity verified &rarr; under review</td></tr>
       </table>
     `,
