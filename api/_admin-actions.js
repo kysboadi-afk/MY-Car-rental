@@ -41,6 +41,8 @@ import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMeth
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { normalizeClockTime, isoDateInLA } from "./_time.js";
+import { processActiveRentals, loadBookingsFromSupabase } from "./scheduled-reminders.js";
+import { runAvailabilitySyncFix } from "./system-health-fix-availability.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -3313,6 +3315,103 @@ async function toolDeferLateFee({ booking_id, amount, confirmed }) {
   };
 }
 
+async function toolRunSystemHealthFix({ target = "all", confirmed } = {}) {
+  const normalizedTarget = String(target || "all").trim();
+  const validTargets = new Set(["smsDeliveryHealth", "availabilitySyncHealth", "all"]);
+  if (!validTargets.has(normalizedTarget)) {
+    throw new Error('target must be one of: "smsDeliveryHealth", "availabilitySyncHealth", or "all"');
+  }
+
+  if (!confirmed) {
+    return {
+      requires_confirmation: true,
+      target: normalizedTarget,
+      message:
+        `This will run backend system-health repair action(s) for "${normalizedTarget}". ` +
+        "It can write database repairs and may send missed SMS reminders. " +
+        "Confirm to proceed (retry with confirmed:true).",
+    };
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase is not configured");
+
+  const runSmsFix = async () => {
+    if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
+      return {
+        check: "smsDeliveryHealth",
+        ok: true,
+        skipped: true,
+        processed: 0,
+        sent: 0,
+        message: "TextMagic not configured — no SMS sent.",
+      };
+    }
+
+    const allBookings = await loadBookingsFromSupabase(sb);
+    if (allBookings === null) {
+      throw new Error("Database query error while loading bookings for SMS repair.");
+    }
+
+    const processed = Object.values(allBookings)
+      .flat()
+      .filter((b) => b.status === "active_rental" || b.status === "active" || b.status === "overdue")
+      .length;
+
+    const sentMarks = [];
+    await processActiveRentals(allBookings, new Date(), sentMarks, false, { repairMode: true });
+    const sent = sentMarks.filter((m) => !m.key.startsWith("_")).length;
+    const skippedMarkers = sentMarks.filter((m) => m.key.startsWith("_")).length;
+    // processActiveRentals can emit internal markers that are not strictly
+    // one-per-booking; keep skipped at least as high as processed-sent so the
+    // summary never under-reports evaluated bookings.
+    const skipped = Math.max(skippedMarkers, processed - sent);
+
+    return {
+      check: "smsDeliveryHealth",
+      ok: true,
+      processed,
+      sent,
+      skipped,
+      message:
+        sent > 0
+          ? `Sent ${sent} missing SMS across ${processed} active rental${processed !== 1 ? "s" : ""}.`
+          : `No missing SMS found across ${processed} active rental${processed !== 1 ? "s" : ""}.`,
+    };
+  };
+
+  const runAvailabilityFix = async () => {
+    const result = await runAvailabilitySyncFix(sb);
+    return {
+      check: "availabilitySyncHealth",
+      ok: true,
+      ...result,
+    };
+  };
+
+  if (normalizedTarget === "smsDeliveryHealth") {
+    return await runSmsFix();
+  }
+  if (normalizedTarget === "availabilitySyncHealth") {
+    return await runAvailabilityFix();
+  }
+
+  const [sms, availability] = await Promise.all([
+    runSmsFix(),
+    runAvailabilityFix(),
+  ]);
+
+  return {
+    ok: true,
+    target: "all",
+    results: {
+      smsDeliveryHealth: sms,
+      availabilitySyncHealth: availability,
+    },
+    message: "System-health repairs completed for SMS delivery and availability sync.",
+  };
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
@@ -4250,6 +4349,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "record_extension_payment",
   "update_site_content",
   "defer_late_fee",
+  "run_system_health_fix",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -4332,6 +4432,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "update_site_content":           result = await toolUpdateSiteContent(args);           break;
       case "backfill_stripe_cards":         result = await toolBackfillStripeCards(args);         break;
       case "defer_late_fee":                result = await toolDeferLateFee(args);                break;
+      case "run_system_health_fix":         result = await toolRunSystemHealthFix(args);          break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
