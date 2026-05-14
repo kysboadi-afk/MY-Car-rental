@@ -106,6 +106,10 @@ mock.module("./_sms-templates.js", {
     EXTEND_UNAVAILABLE:              "",
     EXTEND_LIMITED:                  "",
     EXTEND_CONFIRMED:                "",
+    BALANCE_DUE_REMINDER:            "",
+    BALANCE_OVERDUE:                 "",
+    BALANCE_OVERDUE_30:              "",
+    BALANCE_OVERDUE_60:              "",
   },
 });
 

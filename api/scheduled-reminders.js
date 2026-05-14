@@ -55,6 +55,10 @@ import {
   LATE_FEE_APPLIED,
   POST_RENTAL_THANK_YOU,
   RETENTION_DAY_7,
+  BALANCE_DUE_REMINDER,
+  BALANCE_OVERDUE,
+  BALANCE_OVERDUE_30,
+  BALANCE_OVERDUE_60,
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
@@ -2349,6 +2353,151 @@ async function runReconciliation() {
  * sms_logs.  The template key encodes the retry index so all four reminders
  * can fire for the same booking.
  */
+// ─── Phase 4: Ledger-based balance due / overdue reminders ────────────────────
+// Queries renter_balance_ledger for bookings with due_date entries and positive
+// net balance, then fires appropriately aged SMS reminders.
+// Deduplicated via sms_logs using (booking_id, template_key, return_date_at_send).
+// Configurable via system_settings: balance_reminder_enabled, etc.
+// Non-fatal: errors are logged but do not interrupt the cron job.
+async function processLedgerBalanceReminders(now, sentMarks) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    // Check feature flag.
+    const enabled = await loadBooleanSetting("balance_reminder_enabled", false);
+    if (!enabled) return;
+
+    // Find ledger entries with a due_date and positive net balance.
+    const cutoff = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(); // 3 days ahead
+    const { data: dueRows, error: dueErr } = await sb
+      .from("renter_balance_ledger")
+      .select("booking_id, due_date, amount, direction")
+      .not("due_date", "is", null)
+      .lte("due_date", cutoff)
+      .order("due_date", { ascending: true })
+      .limit(500);
+    if (dueErr) {
+      console.warn("[processLedgerBalanceReminders] due-date query failed (non-fatal):", dueErr.message);
+      return;
+    }
+    if (!dueRows || dueRows.length === 0) return;
+
+    // Unique booking IDs with any upcoming/past due date.
+    const bookingIds = [...new Set(dueRows.map((r) => r.booking_id))];
+
+    // Fetch booking metadata for phone numbers.
+    const { data: bookingRows, error: bErr } = await sb
+      .from("bookings")
+      .select("booking_ref, customer_name, customer_phone, balance_due")
+      .in("booking_ref", bookingIds);
+    if (bErr) {
+      console.warn("[processLedgerBalanceReminders] bookings query failed (non-fatal):", bErr.message);
+      return;
+    }
+
+    // Fetch ledger summary for net balance check.
+    const { data: summaryRows, error: sumErr } = await sb
+      .from("renter_balance_ledger_summary")
+      .select("booking_id, net_balance")
+      .in("booking_id", bookingIds);
+    if (sumErr) {
+      console.warn("[processLedgerBalanceReminders] summary query failed (non-fatal):", sumErr.message);
+      return;
+    }
+
+    const summaryMap = {};
+    for (const s of summaryRows || []) summaryMap[s.booking_id] = Number(s.net_balance || 0);
+
+    for (const bk of bookingRows || []) {
+      const phone = normalizePhone(bk.customer_phone);
+      if (!phone) continue;
+
+      const netBalance = summaryMap[bk.booking_ref] || 0;
+      if (netBalance <= 0) continue;
+
+      // Find earliest due_date for this booking.
+      const bookingDueDates = dueRows
+        .filter((r) => r.booking_id === bk.booking_ref && r.due_date)
+        .map((r) => r.due_date)
+        .sort();
+      if (bookingDueDates.length === 0) continue;
+
+      const earliestDue = new Date(bookingDueDates[0]);
+      const daysDiff = Math.floor((now.getTime() - earliestDue.getTime()) / (24 * 60 * 60 * 1000));
+      const dueDateStr = earliestDue.toISOString().slice(0, 10);
+      const balanceStr = netBalance.toFixed(2);
+      const paymentLink = `https://www.slytrans.com/balance?ref=${encodeURIComponent(bk.booking_ref)}`;
+
+      const v = {
+        customer_name: bk.customer_name || "Valued Customer",
+        balance_amount: balanceStr,
+        due_date: dueDateStr,
+        payment_link: paymentLink,
+      };
+
+      // 3 days before due → BALANCE_DUE_REMINDER
+      if (daysDiff >= -3 && daysDiff < 0) {
+        const key = "balance_due_reminder";
+        if (!(await isSmsLogged(bk.booking_ref, key, dueDateStr))) {
+          const sent = await safeSend(phone, render(BALANCE_DUE_REMINDER, v), { booking_ref: bk.booking_ref, message_type: key });
+          if (sent) {
+            sentMarks.push({ vehicleId: "balance", id: bk.booking_ref, key });
+            await logSmsToSupabase(bk.booking_ref, key, dueDateStr);
+          }
+        }
+        continue;
+      }
+
+      // Day 0 overdue
+      if (daysDiff >= 0 && daysDiff < 2) {
+        const key = "balance_overdue";
+        if (!(await isSmsLogged(bk.booking_ref, key, dueDateStr))) {
+          const sent = await safeSend(phone, render(BALANCE_OVERDUE, v), { booking_ref: bk.booking_ref, message_type: key });
+          if (sent) {
+            sentMarks.push({ vehicleId: "balance", id: bk.booking_ref, key });
+            await logSmsToSupabase(bk.booking_ref, key, dueDateStr);
+          }
+        }
+        continue;
+      }
+
+      // 30 days overdue
+      if (daysDiff >= 30 && daysDiff < 32) {
+        const thirtyEnabled = await loadBooleanSetting("balance_overdue_30_enabled", true);
+        if (thirtyEnabled) {
+          const key = "balance_overdue_30";
+          if (!(await isSmsLogged(bk.booking_ref, key, dueDateStr))) {
+            const sent = await safeSend(phone, render(BALANCE_OVERDUE_30, v), { booking_ref: bk.booking_ref, message_type: key });
+            if (sent) {
+              sentMarks.push({ vehicleId: "balance", id: bk.booking_ref, key });
+              await logSmsToSupabase(bk.booking_ref, key, dueDateStr);
+            }
+          }
+        }
+        continue;
+      }
+
+      // 60 days overdue
+      if (daysDiff >= 60 && daysDiff < 62) {
+        const sixtyEnabled = await loadBooleanSetting("balance_overdue_60_enabled", true);
+        if (sixtyEnabled) {
+          const key = "balance_overdue_60";
+          if (!(await isSmsLogged(bk.booking_ref, key, dueDateStr))) {
+            const sent = await safeSend(phone, render(BALANCE_OVERDUE_60, v), { booking_ref: bk.booking_ref, message_type: key });
+            if (sent) {
+              sentMarks.push({ vehicleId: "balance", id: bk.booking_ref, key });
+              await logSmsToSupabase(bk.booking_ref, key, dueDateStr);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[processLedgerBalanceReminders] error (non-fatal):", err.message);
+  }
+}
+
 async function processBalanceDue(allBookings, now, sentMarks) {
   const RETRY_HOURS = [1, 12, 24, 48];
   // Total hours after which all retry windows have closed.  After this point
@@ -2583,6 +2732,7 @@ export default async function handler(req, res) {
     processActiveRentals(allBookings, now, sentMarks),
     processCompleted(allBookings, now, sentMarks),
     processBalanceDue(allBookings, now, sentMarks),
+    processLedgerBalanceReminders(now, sentMarks),
   ]);
 
   await persistSentMarks(sentMarks);

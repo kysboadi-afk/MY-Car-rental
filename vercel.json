@@ -62,7 +62,8 @@
     "api/stripe-identity-webhook.js":         { "maxDuration": 60 },
     "api/admin-review-queue.js":              { "maxDuration": 20 },
     "api/admin-review-detail.js":             { "maxDuration": 20 },
-    "api/review-application.js":              { "maxDuration": 30 }
+    "api/review-application.js":              { "maxDuration": 30 },
+    "api/renter-balance-ledger.js":           { "maxDuration": 20 }
   },
   "crons": [
     {
