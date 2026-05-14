@@ -104,11 +104,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: `Upload failed: ${uploadErr.message}` });
     }
 
-    const receiptPath = filePath;
     const { data: updatedExpense, error: updateErr } = await sb
       .from("expenses")
       .update({
-        receipt_url:         receiptPath,
+        receipt_url:         filePath,
         receipt_filename:    sanitizeExpenseReceiptFilename(fileName, mime),
         receipt_uploaded_at: new Date().toISOString(),
         receipt_size:        buffer.length,
