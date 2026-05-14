@@ -3362,6 +3362,9 @@ async function toolRunSystemHealthFix({ target = "all", confirmed } = {}) {
     await processActiveRentals(allBookings, new Date(), sentMarks, false, { repairMode: true });
     const sent = sentMarks.filter((m) => !m.key.startsWith("_")).length;
     const skippedMarkers = sentMarks.filter((m) => m.key.startsWith("_")).length;
+    // processActiveRentals can emit internal markers that are not strictly
+    // one-per-booking; keep skipped at least as high as processed-sent so the
+    // summary never under-reports evaluated bookings.
     const skipped = Math.max(skippedMarkers, processed - sent);
 
     return {
