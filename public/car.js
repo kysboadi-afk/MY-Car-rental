@@ -1340,6 +1340,7 @@ function initExtendRentalForm() {
   var extEmail      = document.getElementById("extEmail");
   var extPhone      = document.getElementById("extPhone");
   var extNewReturn  = document.getElementById("extNewReturn");
+  var extCustomAmount = document.getElementById("extCustomAmount");
   var extSubmitBtn  = document.getElementById("extSubmitBtn");
   var extPayHint    = document.getElementById("extPayHint");
   var extPriceDisplay = document.getElementById("extPriceDisplay");
@@ -1397,6 +1398,9 @@ function initExtendRentalForm() {
     cost2 += rem * daily;
 
     if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
+    if (extCustomAmount) {
+      extCustomAmount.setAttribute("max", cost2.toFixed(2));
+    }
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
   }
@@ -1405,13 +1409,16 @@ function initExtendRentalForm() {
     var emailOk  = extEmail && isValidEmailFmt(extEmail.value.trim());
     var phoneOk  = extPhone && extPhone.value.trim().length >= 7;
     var dateOk   = extNewReturn && extNewReturn.value;
+    var customAmountRaw = extCustomAmount ? extCustomAmount.value.trim() : "";
+    var customAmount = customAmountRaw ? Number(customAmountRaw) : null;
+    var customAmountOk = !customAmountRaw || (Number.isFinite(customAmount) && customAmount > 0);
     var contactOk = emailOk || phoneOk;
-    var ready    = contactOk && dateOk;
+    var ready    = contactOk && dateOk && customAmountOk;
     if (extSubmitBtn) extSubmitBtn.disabled = !ready;
     if (extPayHint) extPayHint.style.display = ready ? "none" : "";
   }
 
-  [extEmail, extPhone].forEach(function(el) {
+  [extEmail, extPhone, extCustomAmount].forEach(function(el) {
     if (el) el.addEventListener("input", updateExtBtn);
   });
 
@@ -1432,6 +1439,13 @@ async function launchExtendRentalPayment() {
   var extEmail      = document.getElementById("extEmail").value.trim();
   var extPhone      = (document.getElementById("extPhone") || {}).value || "";
   var newReturnDate = document.getElementById("extNewReturn").value;
+  var extCustomAmountEl = document.getElementById("extCustomAmount");
+  var customAmountRaw = extCustomAmountEl ? extCustomAmountEl.value.trim() : "";
+  var customPaymentAmount = customAmountRaw ? Number(customAmountRaw) : null;
+  if (customAmountRaw && (!Number.isFinite(customPaymentAmount) || customPaymentAmount <= 0)) {
+    alert("Enter a valid custom payment amount.");
+    return;
+  }
 
   var submitBtn = document.getElementById("extSubmitBtn");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
@@ -1445,13 +1459,32 @@ async function launchExtendRentalPayment() {
         email:         extEmail,
         phone:         extPhone.trim(),
         newReturnDate,
+        ...(customPaymentAmount != null ? { customPaymentAmount } : {}),
       }),
     });
     var data = await resp.json();
     if (!resp.ok) throw new Error(data.error || "Server error");
 
-    var { clientSecret, publishableKey, extensionAmount, extensionLabel, lateFeeIncluded, deferredLateFee, newReturnDate: confirmedDate, newReturnTime: confirmedTime, vehicleName, renterName } = data;
+    var {
+      clientSecret,
+      publishableKey,
+      extensionAmount,
+      extensionTotal,
+      amountPaidNow,
+      remainingBalance,
+      extensionPaymentStatus,
+      extensionLabel,
+      lateFeeIncluded,
+      deferredLateFee,
+      newReturnDate: confirmedDate,
+      newReturnTime: confirmedTime,
+      vehicleName,
+      renterName
+    } = data;
     if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
+    var payNowAmount = amountPaidNow || extensionAmount;
+    var fullExtensionTotal = extensionTotal || extensionAmount;
+    var remainingAfterPayment = remainingBalance || "0.00";
 
     var stripe   = Stripe(publishableKey);
     var elements = stripe.elements({
@@ -1486,12 +1519,16 @@ async function launchExtendRentalPayment() {
         "Extension: " + extensionLabel + "<br>" +
         lateFeeHtml +
         "<strong>New Return: " + displayReturn + "</strong><br>" +
-        "<strong style='color:#ffb400'>Total: $" + extensionAmount + "</strong>";
+        "<strong style='color:#ffb400'>Extension Total: $" + fullExtensionTotal + "</strong><br>" +
+        "<strong style='color:#ffb400'>Paying Now: $" + payNowAmount + "</strong>" +
+        (Number(remainingAfterPayment) > 0
+          ? ("<br><strong style='color:#f59e0b'>Remaining Balance: $" + remainingAfterPayment + " (" + (extensionPaymentStatus || "partially_paid") + ")</strong>")
+          : "");
     }
 
     // Update the pay button label
     var extPayAmount = document.getElementById("extPayAmount");
-    if (extPayAmount) extPayAmount.textContent = extensionAmount;
+    if (extPayAmount) extPayAmount.textContent = payNowAmount;
 
     paymentElement.mount("#ext-payment-element");
 
@@ -1519,7 +1556,7 @@ async function launchExtendRentalPayment() {
       if (result.error) {
         if (msgEl) msgEl.textContent = result.error.message;
         submitPayBtn.disabled  = false;
-        submitPayBtn.innerHTML = "Pay $" + extensionAmount + " Now 🔒";
+        submitPayBtn.innerHTML = "Pay $" + payNowAmount + " Now 🔒";
         submitting = false;
       }
       // On success Stripe redirects — no cleanup needed here

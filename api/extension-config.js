@@ -60,9 +60,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "This extension request has expired. Please reply EXTEND to start a new one." });
     }
 
+    const extensionTotalAmount = Number((pi.metadata || {}).extension_total_amount);
+    const extensionAmountPaid = Number((pi.metadata || {}).extension_amount_paid);
+    const resolvedAmountPaid = Number.isFinite(extensionAmountPaid) && extensionAmountPaid > 0
+      ? extensionAmountPaid
+      : (pi.amount / 100);
+    const resolvedExtensionTotal = Number.isFinite(extensionTotalAmount) && extensionTotalAmount > 0
+      ? extensionTotalAmount
+      : resolvedAmountPaid;
+    const metadataRemaining = Number((pi.metadata || {}).extension_remaining_balance);
+    const resolvedRemaining = Number.isFinite(metadataRemaining) && metadataRemaining >= 0
+      ? metadataRemaining
+      : Math.max(0, resolvedExtensionTotal - resolvedAmountPaid);
+    const resolvedStatus = ((pi.metadata || {}).extension_payment_status || (resolvedRemaining > 0 ? "partially_paid" : "paid")).toLowerCase();
+
     return res.status(200).json({
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-      amount:         (pi.amount / 100).toFixed(2),
+      amount:         resolvedAmountPaid.toFixed(2),
+      extensionTotal: resolvedExtensionTotal.toFixed(2),
+      amountPaid:     resolvedAmountPaid.toFixed(2),
+      remainingBalance: resolvedRemaining.toFixed(2),
+      extensionPaymentStatus: resolvedStatus,
       extensionLabel: pi.metadata.extension_label || "",
       vehicleName:    pi.metadata.vehicle_name    || pi.metadata.vehicle_id || "",
       vehicleId:      pi.metadata.vehicle_id      || "",
