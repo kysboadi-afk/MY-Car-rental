@@ -46,6 +46,19 @@ const CAMRY_VEHICLE = {
   monthly:     null,
 };
 
+const TWO_DAY_OVERDUE_NOW = "2020-01-03T17:29:00-08:00";
+const FIVE_DAY_OVERDUE_NOW = "2026-05-05T12:00:00-07:00";
+
+async function withMockedNow(iso, fn) {
+  const originalNow = Date.now;
+  Date.now = () => new Date(iso).getTime();
+  try {
+    return await fn();
+  } finally {
+    Date.now = originalNow;
+  }
+}
+
 mock.module("./_vehicles.js", {
   namedExports: {
     getVehicleById: async (id) =>
@@ -641,17 +654,13 @@ test("extend-rental: late fee is charged per overdue day and remains non-taxed",
   });
 
   const res = makeRes();
-  const originalNow = Date.now;
-  Date.now = () => new Date("2020-01-03T17:29:00-08:00").getTime();
-  try {
+  await withMockedNow(TWO_DAY_OVERDUE_NOW, async () => {
     await handler(makeReq({
       vehicleId:     "camry",
       email:         "alice@example.com",
       newReturnDate: "2020-01-03", // 2 extension days => $110 base
     }), res);
-  } finally {
-    Date.now = originalNow;
-  }
+  });
 
   // Base extension amount: $110
   // Tax on base only (9.5%): $10.45
@@ -683,17 +692,13 @@ test("extend-rental: full waiver removes a multi-day late fee from total", async
   });
 
   const res = makeRes();
-  const originalNow = Date.now;
-  Date.now = () => new Date("2026-05-05T12:00:00-07:00").getTime();
-  try {
+  await withMockedNow(FIVE_DAY_OVERDUE_NOW, async () => {
     await handler(makeReq({
       vehicleId:     "camry",
       email:         "alice@example.com",
       newReturnDate: "2026-05-05",
     }), res);
-  } finally {
-    Date.now = originalNow;
-  }
+  });
 
   assert.equal(res._status, 200, "handler must succeed");
   assert.equal(res._body.lateFeeWaived, 125, "lateFeeWaived must match the full assessed late fee");
@@ -718,17 +723,13 @@ test("extend-rental: partial waiver reduces late fee proportionally", async () =
   });
 
   const res = makeRes();
-  const originalNow = Date.now;
-  Date.now = () => new Date("2026-05-05T12:00:00-07:00").getTime();
-  try {
+  await withMockedNow(FIVE_DAY_OVERDUE_NOW, async () => {
     await handler(makeReq({
       vehicleId:     "camry",
       email:         "alice@example.com",
       newReturnDate: "2026-05-05",
     }), res);
-  } finally {
-    Date.now = originalNow;
-  }
+  });
 
   assert.equal(res._status, 200);
   // lateFeeWaived must always reflect what was read from Supabase.

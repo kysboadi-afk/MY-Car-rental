@@ -305,7 +305,7 @@ test("computeLateFeeDays: returns 0 before the 30-minute grace window ends", () 
   );
 });
 
-test("computeLateFeeAmount: charges one day after grace period expires", () => {
+test("computeLateFeeAmount: charges $25 for the first overdue day after grace period expires", () => {
   assert.equal(
     computeLateFeeAmount("2026-05-01", "5:00 PM", "2026-05-01T17:31:00-07:00"),
     25
