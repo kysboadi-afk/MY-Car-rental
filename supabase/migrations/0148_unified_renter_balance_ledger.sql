@@ -67,6 +67,12 @@ COMMENT ON TABLE renter_balance_ledger IS
 COMMENT ON COLUMN renter_balance_ledger.direction IS
   'debit increases amount owed by renter; credit decreases amount owed.';
 
+COMMENT ON COLUMN renter_balance_ledger.related_charge_id IS
+  'Optional source link; ON DELETE SET NULL intentionally preserves immutable ledger history if source rows are removed.';
+
+COMMENT ON COLUMN renter_balance_ledger.related_ticket_id IS
+  'Optional source link; ON DELETE SET NULL intentionally preserves immutable ledger history if source rows are removed.';
+
 CREATE OR REPLACE FUNCTION fn_prevent_renter_balance_ledger_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql

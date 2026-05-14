@@ -32,6 +32,7 @@ const DEFAULT_DIRECTION_BY_TYPE = {
   towing:     "debit",
   misc:       "debit",
   payment:    "credit",
+  // Refund of a previously captured renter payment increases outstanding debt.
   refund:     "debit",
   waiver:     "credit",
   adjustment: null,
@@ -240,8 +241,8 @@ export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {
   }, { total_charges: 0, total_credits: 0, net_balance: 0, transaction_count: 0 });
 
   const typed = computeLedgerSummary(typedRows || []);
-  const remainingBalance = Math.max(0, roundMoney(base.net_balance));
-  const creditBalance = base.net_balance < 0 ? Math.abs(roundMoney(base.net_balance)) : 0;
+  const remainingBalance = roundMoney(Math.max(0, base.net_balance));
+  const creditBalance = base.net_balance < 0 ? roundMoney(Math.abs(base.net_balance)) : 0;
 
   return {
     total_charges: roundMoney(base.total_charges),
