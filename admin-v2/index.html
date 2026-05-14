@@ -3893,6 +3893,26 @@ function logout() {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────
+function handleUnauthorizedApiResponse() {
+  adminSecret = '';
+  const appEl = document.getElementById('app');
+  const authScreen = document.getElementById('auth-screen');
+  if (!appEl || !authScreen || !appEl.classList.contains('ready')) return;
+
+  appEl.classList.remove('ready');
+  authScreen.style.display = 'flex';
+  const pwEl = document.getElementById('auth-password');
+  if (pwEl) pwEl.value = '';
+  const authErr = document.getElementById('auth-error');
+  if (authErr) authErr.textContent = '';
+  const authBtn = document.getElementById('auth-btn');
+  if (authBtn) {
+    authBtn.textContent = 'Sign In';
+    authBtn.disabled = false;
+  }
+  showAuthError('Session expired. Please sign in again.');
+}
+
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
@@ -3908,6 +3928,10 @@ async function apiPost(path, body, signal = undefined) {
   } catch {
     // Server returned a non-JSON body (e.g. Vercel HTML error page).
     throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab for configuration issues.`);
+  }
+  if (resp.status === 401) {
+    handleUnauthorizedApiResponse();
+    throw new Error(data.error || 'Unauthorized');
   }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
@@ -11873,6 +11897,10 @@ async function apiGet(path) {
   let data;
   try { data = await resp.json(); } catch {
     throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab.`);
+  }
+  if (resp.status === 401) {
+    handleUnauthorizedApiResponse();
+    throw new Error(data.error || 'Unauthorized');
   }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
