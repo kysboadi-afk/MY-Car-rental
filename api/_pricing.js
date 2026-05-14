@@ -3,6 +3,8 @@
 // The server always recomputes charges from these constants;
 // any client-supplied amount is intentionally ignored to prevent tampering.
 
+import { buildDateTimeLA } from "./_time.js";
+
 // Los Angeles, CA combined sales tax rate applied to every rental.
 // Business is operated in the City of Los Angeles; tax is always collected
 // at this rate regardless of the renter's home address.
@@ -22,6 +24,39 @@ export const CARS = {
 // Late-fee pricing primitive shared across extension/reminder/admin endpoints.
 // Global rule: a single flat late fee for all vehicles.
 export const LATE_FEE_BASE = 25;
+
+const LATE_FEE_GRACE_MS = 30 * 60 * 1000;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Compute overdue late-fee days after the 30-minute grace window.
+ * Any time beyond the grace window counts as at least 1 late-fee day.
+ *
+ * @param {string} returnDate - YYYY-MM-DD
+ * @param {string} returnTime - HH:MM or H:MM AM/PM
+ * @param {Date|string|number} [now=new Date()]
+ * @returns {number}
+ */
+export function computeLateFeeDays(returnDate, returnTime, now = new Date()) {
+  const returnMs = buildDateTimeLA(returnDate, returnTime).getTime();
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  if (!Number.isFinite(returnMs) || !Number.isFinite(nowMs)) return 0;
+  const overdueAfterGraceMs = nowMs - (returnMs + LATE_FEE_GRACE_MS);
+  if (overdueAfterGraceMs <= 0) return 0;
+  return Math.max(1, Math.ceil(overdueAfterGraceMs / MS_PER_DAY));
+}
+
+/**
+ * Compute the automatic late-fee amount at $25 per overdue day after grace.
+ *
+ * @param {string} returnDate - YYYY-MM-DD
+ * @param {string} returnTime - HH:MM or H:MM AM/PM
+ * @param {Date|string|number} [now=new Date()]
+ * @returns {number}
+ */
+export function computeLateFeeAmount(returnDate, returnTime, now = new Date()) {
+  return computeLateFeeDays(returnDate, returnTime, now) * LATE_FEE_BASE;
+}
 
 // Canonical vehicle IDs derived from the CARS registry above.
 // Adding a new vehicle to CARS automatically adds it here, which propagates to

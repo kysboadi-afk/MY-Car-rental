@@ -110,6 +110,7 @@ export default async function handler(req, res) {
     .select(
       "id, booking_ref, vehicle_id, customer_name, pickup_date, return_date, pickup_time, return_time, status, " +
       "total_price, deposit_paid, remaining_balance, " +
+      "late_fee_amount, " +
       "late_fee_waived, late_fee_waived_amount, late_fee_waived_reason, " +
       "late_fee_waived_by, late_fee_waived_at, " +
       "rental_balance_waived, rental_balance_waived_amount, rental_balance_waived_reason, " +
@@ -146,8 +147,10 @@ export default async function handler(req, res) {
   }
 
   // ── Resolve waived amounts for each fee target ─────────────────────────────
-  // The late fee is a single flat amount for all vehicles.
-  const maxLateFee = LATE_FEE_BASE;
+  // Use the currently assessed late_fee_amount when present so multi-day fees
+  // can be fully waived. Fall back to the base daily amount for older rows.
+  const currentLateFee = Math.max(0, Number(booking.late_fee_amount || 0));
+  const maxLateFee = currentLateFee || LATE_FEE_BASE;
   let lateFeeWaivedAmount       = null; // null = not touching late fee
   let rentalBalanceWaivedAmount = null; // null = not touching rental balance
   let parsedAmount              = null;
