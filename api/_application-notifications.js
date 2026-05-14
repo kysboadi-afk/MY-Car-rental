@@ -483,7 +483,8 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           `Hi ${ctx.firstName},`,
           "",
           "Great news — your application has been approved!",
-          "You can now proceed with booking.",
+          "You can now complete your booking here:",
+          "https://www.slytrans.com/cars.html",
           "",
           `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
           "",
@@ -494,7 +495,8 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
           <p>Great news — your application has been <strong>approved</strong>.</p>
           <p style="background:#d4edda;padding:10px;border-left:4px solid #28a745;margin-bottom:16px">
-            You can now proceed with booking.
+            You can now complete your booking:<br>
+            <a href="https://www.slytrans.com/cars.html">https://www.slytrans.com/cars.html</a>
           </p>
           <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
           <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
@@ -502,7 +504,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       });
     }
 
-    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName }, ctx.phone);
+    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName, waitlist_link: "https://www.slytrans.com/cars.html" }, ctx.phone);
     return;
   }
 
