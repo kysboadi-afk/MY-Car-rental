@@ -5,7 +5,6 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
-import { logSmsToSupabase } from "./_sms-log.js";
 import { getSmsPriority } from "./_sms-priority.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -73,13 +72,21 @@ export default async function handler(req, res) {
     acknowledged_at: new Date().toISOString(),
   };
 
-  let logged = 0;
-  for (const key of keys) {
-    await logSmsToSupabase(normalizedBookingRef, key, normalizedReturnDate, {
+  const smsRows = keys.map((key) => ({
+    booking_id: normalizedBookingRef,
+    template_key: key,
+    return_date_at_send: normalizedReturnDate,
+    metadata: {
       ...metadataBase,
       priority: getSmsPriority(key),
-    });
-    logged += 1;
+    },
+  }));
+  const { error: smsErr } = await sb
+    .from("sms_logs")
+    .upsert(smsRows, { onConflict: "booking_id,template_key,return_date_at_send" });
+  if (smsErr) {
+    console.error("[system-health-ack-sms] sms_logs upsert error:", smsErr.message);
+    return res.status(500).json({ error: "Could not acknowledge SMS logs: " + smsErr.message });
   }
 
   const visibilityRows = keys.map((key) => ({
@@ -105,7 +112,7 @@ export default async function handler(req, res) {
     bookingRef: normalizedBookingRef,
     returnDate: normalizedReturnDate,
     acknowledged: keys,
-    inserted: logged,
+    inserted: keys.length,
     message: `Acknowledged ${keys.length} critical SMS key${keys.length !== 1 ? "s" : ""} for ${normalizedBookingRef}.`,
   });
 }

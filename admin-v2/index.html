@@ -9031,6 +9031,7 @@ function renderSystemHealth(data) {
   if (!grid) return;
 
   const checks  = data.checks || {};
+  const MISSED_CRITICAL_PREFIX = '[MISSED CRITICAL]';
   const overall = data.overallStatus || 'ok';
   const ts      = data.checkedAt ? new Date(data.checkedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) : '';
 
@@ -9092,7 +9093,7 @@ function renderSystemHealth(data) {
           ${(c.items || []).map((item) => {
              const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
              const canOpenBooking = /^bk-/i.test(String(item.id || '').trim());
-             const isMissedCriticalSms = checkKey === 'smsDeliveryHealth' && /^\[MISSED CRITICAL\]/.test(String(item.info || ''));
+             const isMissedCriticalSms = checkKey === 'smsDeliveryHealth' && String(item.info || '').startsWith(MISSED_CRITICAL_PREFIX);
              const parsedMissedCritical = isMissedCriticalSms ? parseMissedCriticalSmsInfo(item.info || '') : null;
              return `
              <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
@@ -9192,11 +9193,15 @@ async function acknowledgeSystemHealthManualSms(bookingId, returnDate, templateK
   if (!normalizedBookingId) return;
 
   let templateKeys = [];
-  try {
-    const parsed = JSON.parse(String(templateKeysRaw || '[]'));
-    if (Array.isArray(parsed)) templateKeys = parsed.map((k) => String(k || '').trim()).filter(Boolean);
-  } catch {
-    templateKeys = [];
+  if (Array.isArray(templateKeysRaw)) {
+    templateKeys = templateKeysRaw.map((k) => String(k || '').trim()).filter(Boolean);
+  } else {
+    try {
+      const parsed = JSON.parse(String(templateKeysRaw || '[]'));
+      if (Array.isArray(parsed)) templateKeys = parsed.map((k) => String(k || '').trim()).filter(Boolean);
+    } catch {
+      templateKeys = [];
+    }
   }
   const displayKeys = templateKeys.length > 0
     ? templateKeys.join(', ')
