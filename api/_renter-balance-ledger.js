@@ -42,12 +42,16 @@ function roundMoney(value) {
   return Number(rounded.toFixed(2));
 }
 
+function toCents(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100);
+}
+
 function parsePositiveAmount(value, field = "amount") {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${field} must be a positive number`);
   }
-  return roundMoney(parsed);
+  return toCents(parsed) / 100;
 }
 
 function normalizeOptionalString(value, { max = 2000 } = {}) {
@@ -118,32 +122,33 @@ export function normalizeLedgerTransactionInput(input = {}) {
 }
 
 export function computeLedgerSummary(transactions = []) {
-  let totalChargesRaw = 0;
-  let totalCreditsRaw = 0;
-  let totalPaymentsRaw = 0;
-  let totalWaivedRaw = 0;
-  let totalRefundsRaw = 0;
+  let totalChargesCents = 0;
+  let totalCreditsCents = 0;
+  let totalPaymentsCents = 0;
+  let totalWaivedCents = 0;
+  let totalRefundsCents = 0;
 
   for (const row of transactions) {
     const amount = Number(row.amount) || 0;
     if (amount <= 0) continue;
+    const amountCents = toCents(amount);
     const direction = row.direction === "credit" ? "credit" : "debit";
     const type = String(row.transaction_type || "");
 
-    if (direction === "debit") totalChargesRaw += amount;
-    else totalCreditsRaw += amount;
+    if (direction === "debit") totalChargesCents += amountCents;
+    else totalCreditsCents += amountCents;
 
-    if (type === "payment" && direction === "credit") totalPaymentsRaw += amount;
-    if (type === "waiver"  && direction === "credit") totalWaivedRaw   += amount;
-    if (type === "refund"  && direction === "debit")  totalRefundsRaw  += amount;
+    if (type === "payment" && direction === "credit") totalPaymentsCents += amountCents;
+    if (type === "waiver"  && direction === "credit") totalWaivedCents   += amountCents;
+    if (type === "refund"  && direction === "debit")  totalRefundsCents  += amountCents;
   }
 
-  const totalCharges = roundMoney(totalChargesRaw);
-  const totalCredits = roundMoney(totalCreditsRaw);
-  const totalPayments = roundMoney(totalPaymentsRaw);
-  const totalWaived = roundMoney(totalWaivedRaw);
-  const totalRefunds = roundMoney(totalRefundsRaw);
-  const netBalance = roundMoney(totalChargesRaw - totalCreditsRaw);
+  const totalCharges = totalChargesCents / 100;
+  const totalCredits = totalCreditsCents / 100;
+  const totalPayments = totalPaymentsCents / 100;
+  const totalWaived = totalWaivedCents / 100;
+  const totalRefunds = totalRefundsCents / 100;
+  const netBalance = (totalChargesCents - totalCreditsCents) / 100;
   const remainingBalance = Math.max(0, netBalance);
   const creditBalance = netBalance < 0 ? Math.abs(netBalance) : 0;
 
@@ -196,6 +201,57 @@ export async function listLedgerTransactions(sb, { bookingId, customerId, limit 
 }
 
 export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {
-  const rows = await listLedgerTransactions(sb, { bookingId, customerId, limit: 5000, offset: 0 });
-  return computeLedgerSummary(rows);
+  const bookingRef = normalizeOptionalString(bookingId, { max: 200 });
+  const customerRef = normalizeOptionalString(customerId, { max: 80 });
+  if (!bookingRef && !customerRef) {
+    throw new Error("booking_id or customer_id is required");
+  }
+
+  let summaryQuery = sb
+    .from("renter_balance_ledger_summary")
+    .select("total_charges,total_credits,net_balance,transaction_count");
+  let typedTotalsQuery = sb
+    .from("renter_balance_ledger")
+    .select("transaction_type,direction,amount")
+    .in("transaction_type", ["payment", "waiver", "refund"]);
+
+  if (bookingRef) {
+    summaryQuery = summaryQuery.eq("booking_id", bookingRef);
+    typedTotalsQuery = typedTotalsQuery.eq("booking_id", bookingRef);
+  }
+  if (customerRef) {
+    summaryQuery = summaryQuery.eq("customer_id", customerRef);
+    typedTotalsQuery = typedTotalsQuery.eq("customer_id", customerRef);
+  }
+
+  const [{ data: summaryRows, error: summaryErr }, { data: typedRows, error: typedErr }] = await Promise.all([
+    summaryQuery,
+    typedTotalsQuery,
+  ]);
+  if (summaryErr) throw new Error(`Could not load ledger summary: ${summaryErr.message}`);
+  if (typedErr) throw new Error(`Could not load ledger typed totals: ${typedErr.message}`);
+
+  const base = (summaryRows || []).reduce((acc, row) => {
+    acc.total_charges += Number(row.total_charges || 0);
+    acc.total_credits += Number(row.total_credits || 0);
+    acc.net_balance += Number(row.net_balance || 0);
+    acc.transaction_count += Number(row.transaction_count || 0);
+    return acc;
+  }, { total_charges: 0, total_credits: 0, net_balance: 0, transaction_count: 0 });
+
+  const typed = computeLedgerSummary(typedRows || []);
+  const remainingBalance = Math.max(0, roundMoney(base.net_balance));
+  const creditBalance = base.net_balance < 0 ? Math.abs(roundMoney(base.net_balance)) : 0;
+
+  return {
+    total_charges: roundMoney(base.total_charges),
+    total_credits: roundMoney(base.total_credits),
+    total_paid: typed.total_paid,
+    total_waived: typed.total_waived,
+    total_refunds: typed.total_refunds,
+    net_balance: roundMoney(base.net_balance),
+    remaining_balance: remainingBalance,
+    credit_balance: creditBalance,
+    transaction_count: base.transaction_count,
+  };
 }

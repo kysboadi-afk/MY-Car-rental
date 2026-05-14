@@ -90,20 +90,23 @@ CREATE TRIGGER trg_renter_balance_ledger_no_delete
   EXECUTE FUNCTION fn_prevent_renter_balance_ledger_mutation();
 
 CREATE OR REPLACE VIEW renter_balance_ledger_summary AS
+WITH grouped AS (
+  SELECT
+    booking_id,
+    customer_id,
+    SUM(CASE WHEN direction = 'debit'  THEN amount ELSE 0 END) AS debit_total,
+    SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END) AS credit_total,
+    COUNT(*)::bigint AS transaction_count,
+    MAX(created_at) AS last_transaction_at
+  FROM renter_balance_ledger
+  GROUP BY booking_id, customer_id
+)
 SELECT
   booking_id,
   customer_id,
-  ROUND(SUM(CASE WHEN direction = 'debit'  THEN amount ELSE 0 END)::numeric, 2) AS total_charges,
-  ROUND(SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END)::numeric, 2) AS total_credits,
-  ROUND(
-    (
-      SUM(CASE WHEN direction = 'debit' THEN amount ELSE 0 END)
-      -
-      SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END)
-    )::numeric,
-    2
-  ) AS net_balance,
-  COUNT(*)::bigint AS transaction_count,
-  MAX(created_at) AS last_transaction_at
-FROM renter_balance_ledger
-GROUP BY booking_id, customer_id;
+  ROUND(debit_total::numeric, 2) AS total_charges,
+  ROUND(credit_total::numeric, 2) AS total_credits,
+  ROUND((debit_total - credit_total)::numeric, 2) AS net_balance,
+  transaction_count,
+  last_transaction_at
+FROM grouped;
