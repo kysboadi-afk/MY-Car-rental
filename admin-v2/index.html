@@ -1924,13 +1924,56 @@
               </div>
               <div class="chart-wrap"><canvas id="analytics-util-chart"></canvas></div>
             </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Expenses by Category</div>
+                  <div class="card-sub">Where fleet expense dollars are going</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="analytics-expense-category-chart"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Monthly Maintenance Trend</div>
+                  <div class="card-sub">Maintenance spend by month</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="analytics-maintenance-trend-chart"></canvas></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">⚠️ Fleet Warnings</div>
+                <div class="card-sub">High maintenance, missing receipts, and ROI alerts</div>
+              </div>
+            </div>
+            <div id="analytics-warning-list" style="display:grid;gap:8px;"></div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Expense Totals by Vehicle</div>
+                <div class="card-sub">Maintenance, repairs, and lifetime expenses</div>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Vehicle</th><th>Maintenance</th><th>Repairs</th><th>Lifetime Expenses</th><th>Net Profit After Expenses</th><th>Profit Margin</th></tr>
+                </thead>
+                <tbody id="analytics-expense-by-vehicle-tbody"></tbody>
+              </table>
+            </div>
           </div>
           <div class="card">
             <div class="card-header"><div class="card-title">Vehicle Performance</div></div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Vehicle</th><th>Bookings</th><th>Gross Revenue</th><th>Stripe Fees</th><th>Net Revenue</th><th>Expenses</th><th>Profit</th><th>Op. ROI</th><th>Invest. ROI</th><th>Monthly Profit</th><th>Payback</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
+                  <tr><th>Vehicle</th><th>Bookings</th><th>Gross Revenue</th><th>Stripe Fees</th><th>Net Revenue</th><th>Maintenance</th><th>Repairs</th><th>Lifetime Expenses</th><th>Profit After Maintenance</th><th>Profit After Expenses</th><th>Profit Margin</th><th>Op. ROI</th><th>Invest. ROI</th><th>Monthly Profit</th><th>Payback</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th><th>Warnings</th></tr>
                 </thead>
                 <tbody id="analytics-tbody"></tbody>
               </table>
@@ -3334,6 +3377,18 @@ loadVehiclesFromApi();
 
 // Per-vehicle day/week rates — populated dynamically from loadVehiclesFromApi().
 const VEHICLE_RATES = {};
+const FLEET_EXPENSE_CATEGORIES = [
+  { key: 'maintenance',  label: 'Maintenance' },
+  { key: 'repairs',      label: 'Repairs' },
+  { key: 'registration', label: 'Registration' },
+  { key: 'insurance',    label: 'Insurance' },
+  { key: 'fuel',         label: 'Fuel' },
+  { key: 'cleaning',     label: 'Cleaning' },
+  { key: 'gps',          label: 'GPS' },
+  { key: 'tolls',        label: 'Tolls' },
+  { key: 'misc',         label: 'Misc' },
+];
+const FLEET_EXPENSE_CATEGORY_LABELS = Object.fromEntries(FLEET_EXPENSE_CATEGORIES.map((c) => [c.key, c.label]));
 
 // ── State ──────────────────────────────────────────────────────────────────
 let adminSecret   = '';
@@ -3341,6 +3396,7 @@ let dashboardData = null;
 let allBookings   = [];
 let allExpenses   = [];
 let allExpenseCategories = [];
+let editingExpenseId = null;
 let allVehicles   = {};
 let smsTemplates  = [];
 let editingVehicleId   = null;
@@ -3507,6 +3563,7 @@ function logout() {
   allVehicles = {};
   allExpenses = [];
   smsTemplates = [];
+  editingExpenseId = null;
   editingVehicleId = null;
   editingSmsKey = null;
   allRevenueRecords = [];
@@ -6099,40 +6156,45 @@ function loadExpenseCategories() {
     .catch((err) => console.warn('Could not load expense categories:', err.message));
 }
 
-function populateCategoryDropdowns() {
-  const active = allExpenseCategories.filter((c) => c.is_active);
-  const groups = {};
-  for (const cat of active) {
-    if (!groups[cat.group_name]) groups[cat.group_name] = [];
-    groups[cat.group_name].push(cat);
-  }
+function normalizeExpenseCategoryKey(expense) {
+  const rawValue = typeof expense === 'string'
+    ? expense
+    : (expense?.category || expense?.category_name || '');
+  const value = String(rawValue || '').trim().toLowerCase();
+  if (!value) return 'misc';
+  if (value === 'maintenance' || value.includes('oil') || value.includes('tire') || value.includes('brake') || value.includes('filter') || value.includes('inspection')) return 'maintenance';
+  if (value === 'repairs' || value === 'repair' || value.includes('repair') || value.includes('parts') || value.includes('labor') || value.includes('diagnostic')) return 'repairs';
+  if (value === 'registration') return 'registration';
+  if (value === 'insurance' || value.includes('deductible')) return 'insurance';
+  if (value === 'fuel' || value.includes('charging')) return 'fuel';
+  if (value === 'cleaning' || value.includes('wash') || value.includes('detail')) return 'cleaning';
+  if (value === 'gps' || value.includes('subscription')) return 'gps';
+  if (value === 'tolls' || value === 'toll') return 'tolls';
+  return 'misc';
+}
 
-  const buildOptgroups = (blankLabel) => {
+function getFleetExpenseCategoryLabel(expense) {
+  const key = normalizeExpenseCategoryKey(expense);
+  return FLEET_EXPENSE_CATEGORY_LABELS[key] || 'Misc';
+}
+
+function populateCategoryDropdowns() {
+  const buildOptions = (blankLabel) => {
     let html = `<option value="">${esc(blankLabel)}</option>`;
-    for (const [group, cats] of Object.entries(groups)) {
-      html += `<optgroup label="${esc(group)}">`;
-      for (const cat of cats) {
-        html += `<option value="${esc(cat.id)}">${esc(cat.name)}</option>`;
-      }
-      html += '</optgroup>';
+    for (const cat of FLEET_EXPENSE_CATEGORIES) {
+      html += `<option value="${esc(cat.key)}">${esc(cat.label)}</option>`;
     }
     return html;
   };
 
   const filterSel = document.getElementById('expense-filter-category');
-  if (filterSel) filterSel.innerHTML = buildOptgroups('All Categories');
+  if (filterSel) filterSel.innerHTML = buildOptions('All Categories');
   const addSel = document.getElementById('exp-category');
-  if (addSel) addSel.innerHTML = buildOptgroups('Select category…');
+  if (addSel) addSel.innerHTML = buildOptions('Select category…');
 }
 
 function getCategoryLabel(expense) {
-  if (expense.category_name) {
-    return expense.category_group
-      ? `${esc(expense.category_group)} / ${esc(expense.category_name)}`
-      : esc(expense.category_name);
-  }
-  const text = expense.category || '–';
-  return esc(text.charAt(0).toUpperCase() + text.slice(1));
+  return esc(getFleetExpenseCategoryLabel(expense));
 }
 
 function expenseHasReceipt(expense) {
@@ -6367,21 +6429,9 @@ function applyExpenseFilters() {
   const vFilter = document.getElementById('expense-filter-vehicle').value;
   const cFilter = document.getElementById('expense-filter-category').value;
 
-  // When cFilter is a UUID from the new system, also resolve it to a category_name
-  // so legacy expenses (which have no category_id) can still be matched by name.
-  let cFilterName = null;
-  if (cFilter) {
-    const cat = allExpenseCategories.find((c) => c.id === cFilter);
-    if (cat) cFilterName = cat.name;
-  }
-
   const filtered = allExpenses.filter((e) => {
     if (vFilter && e.vehicle_id !== vFilter) return false;
-    if (cFilter) {
-      const matchById   = e.category_id === cFilter;
-      const matchByName = cFilterName && (e.category_name === cFilterName || e.category === cFilterName);
-      if (!matchById && !matchByName) return false;
-    }
+    if (cFilter && normalizeExpenseCategoryKey(e) !== cFilter) return false;
     return true;
   });
 
@@ -6404,6 +6454,7 @@ function applyExpenseFilters() {
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
       <td>${renderExpenseReceiptCell(e)}</td>
       <td>
+        <button class="btn btn-secondary btn-sm" onclick="openAddExpenseModal('${esc(e.expense_id || '')}')">Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteExpense('${esc(e.expense_id || '')}')">Delete</button>
       </td>
     </tr>
@@ -6416,35 +6467,45 @@ function applyExpenseFilters() {
   `;
 }
 
-function openAddExpenseModal() {
-  // Reset form
-  document.getElementById('exp-vehicle').value = '';
-  document.getElementById('exp-date').value = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
-  document.getElementById('exp-category').value = '';
-  document.getElementById('exp-amount').value = '';
-  document.getElementById('exp-notes').value = '';
+function openAddExpenseModal(expenseId = '') {
+  const expense = expenseId ? allExpenses.find((e) => e.expense_id === expenseId) : null;
+  editingExpenseId = expense?.expense_id || null;
+  document.querySelector('#add-expense-modal .modal-title').textContent = editingExpenseId ? 'Edit Expense' : 'Add Expense';
+  document.getElementById('exp-submit-btn').textContent = editingExpenseId ? 'Save Changes' : 'Save Expense';
+
+  document.getElementById('exp-vehicle').value = expense?.vehicle_id || '';
+  document.getElementById('exp-date').value = expense?.date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
+  document.getElementById('exp-category').value = expense ? normalizeExpenseCategoryKey(expense) : '';
+  document.getElementById('exp-amount').value = expense?.amount || '';
+  document.getElementById('exp-notes').value = expense?.notes || '';
   openModal('add-expense-modal');
 }
 
 function submitExpense() {
   const vehicle_id  = document.getElementById('exp-vehicle').value;
   const date        = document.getElementById('exp-date').value;
-  const category_id = document.getElementById('exp-category').value;
+  const category    = document.getElementById('exp-category').value;
   const amount      = parseFloat(document.getElementById('exp-amount').value);
   const notes       = document.getElementById('exp-notes').value.trim();
 
   if (!vehicle_id)   { showToast('Please select a vehicle.', 'error'); return; }
   if (!date)         { showToast('Please enter a date.', 'error'); return; }
-  if (!category_id)  { showToast('Please select a category.', 'error'); return; }
+  if (!category)     { showToast('Please select a category.', 'error'); return; }
   if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
 
   const btn = document.getElementById('exp-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
 
-  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category_id, amount, notes })
+  const endpoint = editingExpenseId ? '/api/update-expense' : '/api/add-expense';
+  const payload = { secret: adminSecret, vehicle_id, date, category, amount, notes };
+  if (editingExpenseId) payload.expense_id = editingExpenseId;
+
+  apiPost(endpoint, payload)
     .then(() => {
       closeModal('add-expense-modal');
-      showToast('Expense added.', 'success');
+      editingExpenseId = null;
+      document.querySelector('#add-expense-modal .modal-title').textContent = 'Add Expense';
+      showToast(payload.expense_id ? 'Expense updated.' : 'Expense added.', 'success');
       allExpenses = []; // Force refresh
       loadExpenses();
       // Refresh dashboard so Net Profit KPI reflects new expense
@@ -6452,7 +6513,10 @@ function submitExpense() {
       refreshDashboard();
     })
     .catch((err) => showToast('Error: ' + err.message, 'error'))
-    .finally(() => { btn.disabled = false; btn.textContent = 'Save Expense'; });
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = editingExpenseId ? 'Save Changes' : 'Save Expense';
+    });
 }
 
 function deleteExpense(expenseId) {
@@ -7538,7 +7602,7 @@ async function runBackfillStripeCards(action, btn) {
 }
 
 
-let analyticsChart1 = null, analyticsChart2 = null;
+let analyticsChart1 = null, analyticsChart2 = null, analyticsChart3 = null, analyticsChart4 = null;
 
 function loadAnalytics() {
   document.getElementById('analytics-loading').style.display = '';
@@ -7547,8 +7611,14 @@ function loadAnalytics() {
   Promise.all([
     apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
     apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
-  ]).then(([fleetData, trendData]) => {
-    renderAnalytics(fleetData.fleet || {}, trendData.trend || [], fleetData.kpi_total_revenue ?? null);
+    apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' }),
+  ]).then(([fleetData, trendData, expenseData]) => {
+    renderAnalytics(
+      fleetData.fleet || {},
+      trendData.trend || [],
+      fleetData.kpi_total_revenue ?? null,
+      expenseData.expenses || [],
+    );
     document.getElementById('analytics-loading').style.display = 'none';
     document.getElementById('analytics-content').style.display = '';
   }).catch((err) => {
@@ -7557,7 +7627,57 @@ function loadAnalytics() {
   });
 }
 
-function renderAnalytics(fleet, trend, kpiTotalRevenue) {
+function summarizeExpenseAnalytics(expenses) {
+  const byCategory = {};
+  const byVehicle = {};
+  const maintenanceMonthly = {};
+  const receiptWarnings = [];
+
+  for (const e of expenses) {
+    const amount = Number(e.amount || 0);
+    if (!amount) continue;
+    const key = normalizeExpenseCategoryKey(e);
+    const vehicleId = e.vehicle_id || 'unknown';
+
+    byCategory[key] = (byCategory[key] || 0) + amount;
+    if (!byVehicle[vehicleId]) byVehicle[vehicleId] = { maintenance: 0, repairs: 0, total: 0 };
+    byVehicle[vehicleId].total += amount;
+    if (key === 'maintenance') byVehicle[vehicleId].maintenance += amount;
+    if (key === 'repairs') byVehicle[vehicleId].repairs += amount;
+
+    if (key === 'maintenance') {
+      const month = String(e.date || '').slice(0, 7);
+      if (month) maintenanceMonthly[month] = (maintenanceMonthly[month] || 0) + amount;
+    }
+
+    if (!expenseHasReceipt(e) && amount >= 500) {
+      receiptWarnings.push({
+        expenseId: e.expense_id || '',
+        vehicleId,
+        amount,
+      });
+    }
+  }
+
+  return { byCategory, byVehicle, maintenanceMonthly, receiptWarnings };
+}
+
+function renderAnalyticsWarnings(warnings) {
+  const warningList = document.getElementById('analytics-warning-list');
+  if (!warningList) return;
+  if (!warnings.length) {
+    warningList.innerHTML = '<div class="badge badge-green" style="width:max-content;">No critical warnings ✅</div>';
+    return;
+  }
+  warningList.innerHTML = warnings.map((w) => `
+    <div style="padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div style="font-size:13px;color:#9a3412;">${esc(w.message)}</div>
+      <span class="badge badge-orange">${esc(w.level || 'Warning')}</span>
+    </div>
+  `).join('');
+}
+
+function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
   // KPI grid — all totals via the shared financial engine.
   const vehicles = Object.values(fleet);
   const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle), 'Fleet');
@@ -7566,6 +7686,9 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
     ? Math.round(vehicles.reduce((s, v) => s + v.utilizationRate, 0) / vehicles.length * 10) / 10
     : 0;
   const activeNow = vehicles.filter((v) => v.activeNow).length;
+  const expenseSummary = summarizeExpenseAnalytics(expenses || []);
+  const totalMaintenance = Object.values(expenseSummary.byVehicle).reduce((s, v) => s + v.maintenance, 0);
+  const profitAfterMaintenance = fin.amount_net - totalMaintenance;
 
   const kpiGrid = document.getElementById('analytics-kpi-grid');
   if (kpiGrid) {
@@ -7584,6 +7707,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
       { label: 'Gross Revenue',   value: '$' + formatMoney(grossRevenue), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',     value: '$' + formatMoney(fin.stripe_fee),   icon: '💳', sub: 'Total processing fees' },
       { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees & refunds' },
+      { label: 'Profit After Maintenance', value: '$' + formatMoney(profitAfterMaintenance), icon: '🛠️', sub: '$' + formatMoney(totalMaintenance) + ' maintenance costs' },
       { label: 'Avg Utilization', value: avgUtil + '%',                       icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
       { label: 'Operational ROI', value: roiDisplay,                          icon: '📈', sub: 'Fleet profit ÷ expenses' },
     ].map((k) => `
@@ -7629,13 +7753,97 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
     });
   }
 
+  // Expenses by category chart
+  const ctx3 = document.getElementById('analytics-expense-category-chart')?.getContext('2d');
+  if (ctx3) {
+    if (analyticsChart3) analyticsChart3.destroy();
+    const categoryEntries = Object.entries(expenseSummary.byCategory).sort((a, b) => b[1] - a[1]);
+    analyticsChart3 = new Chart(ctx3, {
+      type: 'doughnut',
+      data: {
+        labels: categoryEntries.map(([key]) => FLEET_EXPENSE_CATEGORY_LABELS[key] || key),
+        datasets: [{
+          data: categoryEntries.map(([, amount]) => Math.round(amount * 100) / 100),
+          backgroundColor: ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#0f766e', '#dc2626', '#f59e0b', '#475569', '#52525b'],
+        }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
+    });
+  }
+
+  // Monthly maintenance trend chart
+  const ctx4 = document.getElementById('analytics-maintenance-trend-chart')?.getContext('2d');
+  if (ctx4) {
+    if (analyticsChart4) analyticsChart4.destroy();
+    const maintenanceTrend = Object.entries(expenseSummary.maintenanceMonthly)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12);
+    analyticsChart4 = new Chart(ctx4, {
+      type: 'line',
+      data: {
+        labels: maintenanceTrend.map(([month]) => month),
+        datasets: [{
+          label: 'Maintenance',
+          data: maintenanceTrend.map(([, amount]) => Math.round(amount * 100) / 100),
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220,38,38,0.12)',
+          tension: 0.25,
+          fill: true,
+        }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+    });
+  }
+
+  // Warning indicators
+  const warningItems = [];
+  for (const v of vehicles) {
+    const vf = normalizeFleetVehicle(v);
+    const ev = expenseSummary.byVehicle[v.vehicleId] || { maintenance: 0, repairs: 0, total: 0 };
+    if (ev.maintenance >= Math.max(500, (vf.amount_net || 0) * 0.35)) {
+      warningItems.push({ level: 'High Maintenance', message: `${v.name}: maintenance is $${formatMoney(ev.maintenance)}.` });
+    }
+    if ((v.roi ?? 0) < 0) {
+      warningItems.push({ level: 'Negative ROI', message: `${v.name}: operational ROI is ${v.roi?.toFixed(1) || '0.0'}%.` });
+    }
+  }
+  for (const w of expenseSummary.receiptWarnings.slice(0, 6)) {
+    warningItems.push({
+      level: 'Receipt Missing',
+      message: `${getVehicleLabel(w.vehicleId)} has a $${formatMoney(w.amount)} expense without a receipt.`,
+    });
+  }
+  renderAnalyticsWarnings(warningItems);
+
+  // Expense totals by vehicle table
+  const expenseByVehicleTbody = document.getElementById('analytics-expense-by-vehicle-tbody');
+  if (expenseByVehicleTbody) {
+    expenseByVehicleTbody.innerHTML = vehicles.map((v) => {
+      const vf = normalizeFleetVehicle(v);
+      const ev = expenseSummary.byVehicle[v.vehicleId] || { maintenance: 0, repairs: 0, total: 0 };
+      const netAfterExpenses = vf.amount_net - ev.total;
+      const margin = vf.amount_net > 0 ? Math.round((netAfterExpenses / vf.amount_net) * 1000) / 10 : null;
+      return `<tr>
+        <td style="font-weight:600;">${esc(v.name)}</td>
+        <td style="color:var(--danger);">$${formatMoney(ev.maintenance)}</td>
+        <td style="color:var(--danger);">$${formatMoney(ev.repairs)}</td>
+        <td style="color:var(--danger);font-weight:600;">$${formatMoney(ev.total)}</td>
+        <td style="font-weight:700;${netAfterExpenses >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(netAfterExpenses)}</td>
+        <td style="${margin == null ? 'color:var(--text-sub)' : (margin >= 0 ? 'color:var(--success)' : 'color:var(--danger)')}">${margin == null ? '—' : esc(margin.toFixed(1) + '%')}</td>
+      </tr>`;
+    }).join('');
+  }
+
   // Vehicle table
   const tbody = document.getElementById('analytics-tbody');
   if (tbody) {
     tbody.innerHTML = vehicles.map((v) => {
       const utilColor  = v.utilizationRate >= 70 ? 'var(--success)' : v.utilizationRate >= 40 ? 'var(--warning)' : 'var(--danger)';
       const vf         = normalizeFleetVehicle(v);
-      const profit     = vf.amount_net - vf.expenses;
+      const ev         = expenseSummary.byVehicle[v.vehicleId] || { maintenance: 0, repairs: 0, total: 0 };
+      const profitAfterMaintenance = vf.amount_net - ev.maintenance;
+      const profitAfterExpenses = vf.amount_net - ev.total;
+      const profitMargin = vf.amount_net > 0 ? Math.round((profitAfterExpenses / vf.amount_net) * 1000) / 10 : null;
       const roiVal     = v.roi;
       const roiDisplay = roiVal === null ? '—' : roiVal.toFixed(1) + '%';
       const roiColor   = roiVal === null ? 'color:var(--text-sub)' : roiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
@@ -7645,14 +7853,23 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
       const monthlyProfitDisplay = v.monthly_profit != null ? '$' + formatMoney(v.monthly_profit) : '—';
       const monthlyProfitColor   = v.monthly_profit == null ? 'color:var(--text-sub)' : v.monthly_profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
       const paybackDisplay = v.payback_months != null ? v.payback_months.toFixed(1) + ' mo' : '—';
+      const rowWarnings = [];
+      if (ev.maintenance >= Math.max(500, (vf.amount_net || 0) * 0.35)) rowWarnings.push('🛠️ High maint');
+      if ((v.roi ?? 0) < 0) rowWarnings.push('📉 ROI');
+      const receiptIssue = expenseSummary.receiptWarnings.find((w) => w.vehicleId === v.vehicleId);
+      if (receiptIssue) rowWarnings.push('🧾 Missing receipt');
       return `<tr>
         <td style="font-weight:600;">${esc(v.name)}</td>
         <td>${v.totalBookings}</td>
         <td>$${formatMoney(vf.amount_gross)}</td>
         <td style="color:var(--danger);">$${formatMoney(vf.stripe_fee)}</td>
         <td style="font-weight:600;">$${formatMoney(vf.amount_net)}</td>
-        <td style="color:var(--danger);">$${formatMoney(vf.expenses)}</td>
-        <td style="font-weight:700;${profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profit)}</td>
+        <td style="color:var(--danger);">$${formatMoney(ev.maintenance)}</td>
+        <td style="color:var(--danger);">$${formatMoney(ev.repairs)}</td>
+        <td style="color:var(--danger);">$${formatMoney(ev.total)}</td>
+        <td style="font-weight:700;${profitAfterMaintenance >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profitAfterMaintenance)}</td>
+        <td style="font-weight:700;${profitAfterExpenses >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profitAfterExpenses)}</td>
+        <td style="${profitMargin == null ? 'color:var(--text-sub)' : (profitMargin >= 0 ? 'color:var(--success)' : 'color:var(--danger)')}">${profitMargin == null ? '—' : esc(profitMargin.toFixed(1) + '%')}</td>
         <td style="${roiColor}">${esc(roiDisplay)}</td>
         <td style="${invRoiColor}">${esc(invRoiDisplay)}</td>
         <td style="${monthlyProfitColor}">${esc(monthlyProfitDisplay)}</td>
@@ -7663,6 +7880,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue) {
           ? (v.activeNow ? '<span class="badge badge-success">On Rental</span>' : '<span class="badge badge-success">Available</span>')
           : '<span class="badge badge-danger">Inactive</span>'
         }</td>
+        <td>${rowWarnings.length ? `<span class="badge badge-orange">${esc(rowWarnings.join(' · '))}</span>` : '<span class="badge badge-green">OK</span>'}</td>
       </tr>`;
     }).join('');
   }
@@ -10291,7 +10509,29 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: '', phone: '', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });
   if (p.endsWith('/api/get-expenses'))       return Promise.resolve({ expenses: window.DEMO_EXPENSES });
-  if (p.endsWith('/api/add-expense'))        return Promise.resolve({ ok: true, expense: { id: Date.now() } });
+  if (p.endsWith('/api/add-expense')) {
+    const expense = {
+      expense_id: 'exp-demo-' + Date.now(),
+      vehicle_id: body.vehicle_id || 'camry',
+      date: body.date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date()),
+      category: body.category || 'misc',
+      amount: Number(body.amount || 0),
+      notes: body.notes || '',
+      receipt_url: null,
+    };
+    window.DEMO_EXPENSES.unshift(expense);
+    return Promise.resolve({ ok: true, expense });
+  }
+  if (p.endsWith('/api/update-expense')) {
+    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expense_id);
+    if (!expense) return Promise.reject(new Error('Expense not found'));
+    expense.vehicle_id = body.vehicle_id || expense.vehicle_id;
+    expense.date = body.date || expense.date;
+    expense.category = body.category || expense.category;
+    expense.amount = Number(body.amount || expense.amount || 0);
+    expense.notes = body.notes || '';
+    return Promise.resolve({ ok: true, expense });
+  }
   if (p.endsWith('/api/upload-expense-receipt')) {
     const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
     if (!expense) return Promise.reject(new Error('Expense not found'));

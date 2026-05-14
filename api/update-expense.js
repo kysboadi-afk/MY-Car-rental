@@ -1,31 +1,29 @@
-// api/add-expense.js
-// Vercel serverless function — appends a new expense record to the Supabase
-// `expenses` table.  Falls back to GitHub (expenses.json) when Supabase is
-// not configured so the endpoint never hard-fails due to missing env vars.
+// api/update-expense.js
+// Vercel serverless function — updates an existing expense record by expense_id.
+// Uses Supabase when configured, with GitHub fallback when unavailable.
 // Admin-protected: requires ADMIN_SECRET.
 //
-// POST /api/add-expense
+// POST /api/update-expense
 // Body: {
 //   "secret":      "<ADMIN_SECRET>",
+//   "expense_id":  "<expense id>",
 //   "vehicle_id":  "camry",
 //   "date":        "YYYY-MM-DD",
-//   "category_id": "<uuid>",          // preferred: FK to expense_categories
-//   "category":    "fuel" | ...,      // legacy fallback (still accepted)
+//   "category_id": "<uuid>",     // optional
+//   "category":    "maintenance" // optional legacy/category key fallback
 //   "amount":      number,
-//   "notes":       string  (optional)
+//   "notes":       string
 // }
 
-import crypto from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { loadCategories, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
-import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
+import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { getActiveVehicleIds } from "./_pricing.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
-// Legacy flat categories still accepted for backward-compat
-const LEGACY_CATEGORIES  = Object.keys(LEGACY_CATEGORY_MAP);
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const LEGACY_CATEGORIES = Object.keys(LEGACY_CATEGORY_MAP);
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -41,12 +39,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret, vehicle_id, date, category_id, category, amount, notes } = req.body || {};
+  const { secret, expense_id, vehicle_id, date, category_id, category, amount, notes } = req.body || {};
 
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-
+  if (!expense_id || typeof expense_id !== "string") {
+    return res.status(400).json({ error: "expense_id is required" });
+  }
   if (!vehicle_id || !(await getActiveVehicleIds(getSupabaseAdmin())).includes(vehicle_id)) {
     return res.status(400).json({ error: "Invalid or missing vehicle_id" });
   }
@@ -56,37 +56,30 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "date must be in YYYY-MM-DD format" });
   }
 
-  // Category validation — accept category_id (new) or legacy category text
   const sb = getSupabaseAdmin();
-  let resolvedCategoryId   = null;
+  let resolvedCategoryId = null;
   let resolvedCategoryText = null;
 
   if (category_id && typeof category_id === "string") {
-    // New path: validate the UUID exists in expense_categories
     if (sb) {
       const { data: catRow, error: catErr } = await sb
         .from("expense_categories")
-        .select("id, name, group_name")
+        .select("id, name")
         .eq("id", category_id)
         .maybeSingle();
-      if (catErr || !catRow) {
-        return res.status(400).json({ error: "Invalid category_id" });
-      }
-      resolvedCategoryId   = catRow.id;
+      if (catErr || !catRow) return res.status(400).json({ error: "Invalid category_id" });
+      resolvedCategoryId = catRow.id;
       resolvedCategoryText = catRow.name;
     } else {
-      // Supabase unavailable — accept the ID as-is and use it for text too
-      resolvedCategoryId   = category_id;
-      resolvedCategoryText = category || "other";
+      resolvedCategoryId = category_id;
+      resolvedCategoryText = category || "misc";
     }
   } else if (category && typeof category === "string") {
-    // Legacy path: accept old flat category names
     const normalizedCategory = category.trim().toLowerCase();
     if (!LEGACY_CATEGORIES.includes(normalizedCategory)) {
       return res.status(400).json({ error: "category must be one of: " + LEGACY_CATEGORIES.join(", ") });
     }
     resolvedCategoryText = normalizedCategory;
-    // Try to resolve the category_id from the DB
     if (sb) {
       const allCats = await loadCategories(sb);
       const { name: targetName, group_name: targetGroup } = LEGACY_CATEGORY_MAP[normalizedCategory];
@@ -102,51 +95,81 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "amount must be a positive number" });
   }
 
-  const expense = {
-    expense_id:  crypto.randomBytes(8).toString("hex"),
+  const updates = {
     vehicle_id,
     date,
-    category:    resolvedCategoryText || "",
-    category_id: resolvedCategoryId   || undefined,
-    amount:      Math.round(parsedAmount * 100) / 100,
-    notes:       typeof notes === "string" ? notes.trim().slice(0, 500) : "",
-    created_at:  new Date().toISOString(),
+    category: resolvedCategoryText || "",
+    category_id: resolvedCategoryId || null,
+    amount: Math.round(parsedAmount * 100) / 100,
+    notes: typeof notes === "string" ? notes.trim().slice(0, 500) : "",
   };
-  // Remove category_id if it wasn't resolved, so the field is absent rather than null/undefined
-  if (expense.category_id === undefined || expense.category_id === null) delete expense.category_id;
 
   try {
     let useGitHub = !sb;
+
     if (sb) {
-      // ── Supabase path (preferred) ──────────────────────────────────────
-      const { error: sbErr } = await sb.from("expenses").insert(expense);
-      if (sbErr) {
-        // Fall back to GitHub for any Supabase error (missing table, constraint
-        // violation, network hiccup, etc.) so the admin never gets a hard 500.
-        console.warn("add-expense: Supabase insert failed, falling back to GitHub:", sbErr.message);
+      const { data: existing, error: existingErr } = await sb
+        .from("expenses")
+        .select("expense_id")
+        .eq("expense_id", expense_id)
+        .maybeSingle();
+      if (existingErr) {
+        console.warn("update-expense: Supabase lookup failed, falling back to GitHub:", existingErr.message);
         useGitHub = true;
+      } else if (!existing) {
+        return res.status(404).json({ error: "Expense not found" });
+      } else {
+        const { data: updated, error: updateErr } = await sb
+          .from("expenses")
+          .update(updates)
+          .eq("expense_id", expense_id)
+          .select("*")
+          .single();
+        if (updateErr) {
+          console.warn("update-expense: Supabase update failed, falling back to GitHub:", updateErr.message);
+          useGitHub = true;
+        } else {
+          return res.status(200).json({ success: true, expense: updated });
+        }
       }
     }
+
     if (useGitHub) {
-      // ── GitHub fallback ────────────────────────────────────────────────
       if (!process.env.GITHUB_TOKEN) {
         return res.status(503).json({ error: "Neither Supabase nor GITHUB_TOKEN is configured." });
       }
+
+      let updatedExpense = null;
+      let found = false;
       await updateJsonFileWithRetry({
-        load:    loadExpenses,
-        apply:   (data) => {
-          if (!data.some((e) => e.expense_id === expense.expense_id)) {
-            data.push(expense);
+        load: loadExpenses,
+        apply: (data) => {
+          const idx = data.findIndex((e) => e.expense_id === expense_id);
+          if (idx === -1) return;
+          found = true;
+          const existing = data[idx] || {};
+          updatedExpense = {
+            ...existing,
+            ...updates,
+            expense_id: existing.expense_id || expense_id,
+            category_id: updates.category_id || undefined,
+          };
+          if (updatedExpense.category_id === undefined || updatedExpense.category_id === null) {
+            delete updatedExpense.category_id;
           }
+          data[idx] = updatedExpense;
         },
-        save:    saveExpenses,
-        message: `Add expense for ${vehicle_id}: ${resolvedCategoryText || category_id} $${expense.amount} on ${date}`,
+        save: saveExpenses,
+        message: `Update expense ${expense_id}`,
       });
+
+      if (!found) return res.status(404).json({ error: "Expense not found" });
+      return res.status(200).json({ success: true, expense: updatedExpense });
     }
 
-    return res.status(200).json({ success: true, expense });
+    return res.status(500).json({ error: "Unable to update expense" });
   } catch (err) {
-    console.error("add-expense error:", err);
+    console.error("update-expense error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
