@@ -9031,6 +9031,7 @@ function renderSystemHealth(data) {
   if (!grid) return;
 
   const checks  = data.checks || {};
+  const MISSED_CRITICAL_PREFIX = '[MISSED CRITICAL]';
   const overall = data.overallStatus || 'ok';
   const ts      = data.checkedAt ? new Date(data.checkedAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) : '';
 
@@ -9090,16 +9091,28 @@ function renderSystemHealth(data) {
     const itemsHtml = (c.items || []).length > 0
       ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
           ${(c.items || []).map((item) => {
-            const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
-            const canOpenBooking = /^bk-/i.test(String(item.id || '').trim());
-            return `
-            <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
-              ${canOpenBooking
-                ? `<button type="button" class="health-booking-btn" data-booking-id="${esc(item.id)}" style="appearance:none;background:none;border:none;padding:1px 0 0;color:var(--primary);font-size:11px;font-family:monospace;flex-shrink:0;cursor:pointer;text-align:left;">${esc(item.id)}</button>`
-                : `<code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>`}
-              <span style="color:var(--text-sub);">${esc(displayInfo)}</span>
-            </div>`;
-          }).join('')}
+             const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
+             const canOpenBooking = /^bk-/i.test(String(item.id || '').trim());
+             const isMissedCriticalSms = checkKey === 'smsDeliveryHealth' && String(item.info || '').startsWith(MISSED_CRITICAL_PREFIX);
+             const parsedMissedCritical = isMissedCriticalSms ? parseMissedCriticalSmsInfo(item.info || '') : null;
+             return `
+             <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
+               ${canOpenBooking
+                 ? `<button type="button" class="health-booking-btn" data-booking-id="${esc(item.id)}" style="appearance:none;background:none;border:none;padding:1px 0 0;color:var(--primary);font-size:11px;font-family:monospace;flex-shrink:0;cursor:pointer;text-align:left;">${esc(item.id)}</button>`
+                 : `<code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>`}
+               <span style="color:var(--text-sub);">${esc(displayInfo)}</span>
+               ${isMissedCriticalSms
+                 ? `<button
+                      type="button"
+                      class="btn btn-secondary btn-xs health-sms-ack-btn"
+                      data-booking-id="${esc(item.id)}"
+                      data-return-date="${esc(parsedMissedCritical?.returnDate || '')}"
+                      data-template-keys="${esc(JSON.stringify(parsedMissedCritical?.templateKeys || []))}"
+                      style="margin-left:auto;white-space:nowrap;font-size:11px;padding:3px 8px;"
+                    >✅ Acknowledge Manual SMS</button>`
+                 : ''}
+             </div>`;
+           }).join('')}
         </div>`
       : '';
 
@@ -9139,6 +9152,30 @@ function renderSystemHealth(data) {
   grid.querySelectorAll('.health-booking-btn').forEach((btn) => {
     btn.addEventListener('click', function() { openSystemHealthBooking(this.dataset.bookingId); });
   });
+  grid.querySelectorAll('.health-sms-ack-btn').forEach((btn) => {
+    btn.addEventListener('click', function() {
+      acknowledgeSystemHealthManualSms(
+        this.dataset.bookingId,
+        this.dataset.returnDate,
+        this.dataset.templateKeys,
+        this
+      );
+    });
+  });
+}
+
+function parseMissedCriticalSmsInfo(info) {
+  const text = String(info || '');
+  const returnDateMatch = text.match(/\breturn=(\d{4}-\d{2}-\d{2})\b/);
+  const missedMatch = text.match(/\bmissed=\[([^\]]*)\]/);
+  const templateKeys = (missedMatch?.[1] || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  return {
+    returnDate: returnDateMatch?.[1] || '',
+    templateKeys,
+  };
 }
 
 async function openSystemHealthBooking(bookingId) {
@@ -9149,6 +9186,48 @@ async function openSystemHealthBooking(bookingId) {
     await loadBookings();
   }
   viewBooking(normalizedBookingId, '');
+}
+
+async function acknowledgeSystemHealthManualSms(bookingId, returnDate, templateKeysRaw, btn) {
+  const normalizedBookingId = String(bookingId || '').trim();
+  if (!normalizedBookingId) return;
+
+  let templateKeys = [];
+  if (Array.isArray(templateKeysRaw)) {
+    templateKeys = templateKeysRaw.map((k) => String(k || '').trim()).filter(Boolean);
+  } else {
+    try {
+      const parsed = JSON.parse(String(templateKeysRaw || '[]'));
+      if (Array.isArray(parsed)) templateKeys = parsed.map((k) => String(k || '').trim()).filter(Boolean);
+    } catch {
+      templateKeys = [];
+    }
+  }
+  const displayKeys = templateKeys.length > 0
+    ? templateKeys.join(', ')
+    : 'all critical return-window keys';
+
+  const confirmed = confirm(
+    `Acknowledge manual SMS for ${normalizedBookingId}?\n\n` +
+    `This will mark these critical keys as handled without resending:\n` +
+    `${displayKeys}`
+  );
+  if (!confirmed) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const result = await apiPost('/api/system-health-ack-sms', {
+      secret: adminSecret,
+      bookingRef: normalizedBookingId,
+      returnDate: String(returnDate || '').trim() || undefined,
+      templateKeys,
+    });
+    showToast(result.message || 'Manual SMS acknowledgement saved.', 'success');
+    await loadSystemHealth();
+  } catch (err) {
+    showToast('Acknowledge failed: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Acknowledge Manual SMS'; }
+  }
 }
 
 async function fixHealthCheck(checkKey, btn) {
