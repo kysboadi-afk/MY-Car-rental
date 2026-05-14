@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `File too large. Maximum size is ${EXPENSE_RECEIPT_MAX_SIZE_BYTES / 1024 / 1024} MB.` });
   }
   if (!matchesExpenseReceiptMimeSignature(buffer, mime)) {
-    return res.status(400).json({ error: "Receipt file contents do not match mimeType" });
+    return res.status(400).json({ error: "Receipt file contents do not match MIME type" });
   }
 
   const sb = getSupabaseAdmin();

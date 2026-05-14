@@ -212,7 +212,7 @@ test("upload-expense-receipt: rejects file bytes that do not match mime type", a
   }), res);
 
   assert.equal(res._status, 400);
-  assert.match(res._body.error, /do not match mimetype/i);
+  assert.match(res._body.error, /do not match MIME type/i);
 });
 
 test("upload-expense-receipt: rejects unsupported mime type", async () => {
