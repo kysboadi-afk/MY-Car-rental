@@ -22,6 +22,7 @@ import {
 import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const RECOVERY_SCAN_LIMIT = 25;
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
 
   try {
     const recoveryCandidates = await listPendingIdentityRecoveryApplications({
-      limit: Math.max(Math.min(Number(pageSize) || 50, 25), 10),
+      limit: RECOVERY_SCAN_LIMIT,
     });
     if (!recoveryCandidates.ok) {
       if (recoveryCandidates.details) {

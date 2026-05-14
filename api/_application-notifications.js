@@ -364,7 +364,9 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
       `Stripe Session  : ${ctx.identitySessionId || "Not available"}`,
       `Verified At     : ${ctx.identityVerifiedAt || "Not available"}`,
       "Lifecycle Stage : identity verified → under review",
-      "Admin Action    : Review this application in the Applications Review Queue and approve, reject, or request more information.",
+      "",
+      "Next Step:",
+      "Review this application in the Applications Review Queue and approve, reject, or request more information.",
     ].join("\n"),
     html: `
       <h2>&#x2705; Identity Verified — Ready For Review</h2>
