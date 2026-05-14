@@ -3736,6 +3736,26 @@ function logout() {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────
+function handleUnauthorizedApiResponse() {
+  adminSecret = '';
+  const appEl = document.getElementById('app');
+  const authScreen = document.getElementById('auth-screen');
+  if (!appEl || !authScreen || !appEl.classList.contains('ready')) return;
+
+  appEl.classList.remove('ready');
+  authScreen.style.display = 'flex';
+  const pwEl = document.getElementById('auth-password');
+  if (pwEl) pwEl.value = '';
+  const authErr = document.getElementById('auth-error');
+  if (authErr) authErr.textContent = '';
+  const authBtn = document.getElementById('auth-btn');
+  if (authBtn) {
+    authBtn.textContent = 'Sign In';
+    authBtn.disabled = false;
+  }
+  showAuthError('Session expired. Please sign in again.');
+}
+
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
@@ -3745,10 +3765,15 @@ async function apiPost(path, body, signal = undefined) {
     body: JSON.stringify(body),
     signal,
   });
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
+  let data = null;
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiPost: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
+  if (resp.status === 401) {
+    handleUnauthorizedApiResponse();
+    throw new Error(data?.error || 'Unauthorized');
+  }
+  if (!data) {
     // Server returned a non-JSON body (e.g. Vercel HTML error page).
     throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab for configuration issues.`);
   }
@@ -3764,10 +3789,15 @@ async function apiGet(path, params = {}, signal = undefined) {
   });
   const url = API_BASE + path + (qp.toString() ? `?${qp.toString()}` : '');
   const resp = await fetch(url, { method: 'GET', signal });
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
+  let data = null;
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
+  if (resp.status === 401) {
+    handleUnauthorizedApiResponse();
+    throw new Error(data?.error || 'Unauthorized');
+  }
+  if (!data) {
     throw new Error(`Server error (HTTP ${resp.status}).`);
   }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
