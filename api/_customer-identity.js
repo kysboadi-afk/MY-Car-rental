@@ -167,8 +167,8 @@ export async function findCustomerMatch(supabase, booking) {
     return code === "PGRST116" || details.includes("more than 1 row");
   };
 
-  const buildAmbiguousResult = async (queryBuilder, reason) => {
-    const { data: candidates = [] } = await queryBuilder.limit(25);
+  const buildAmbiguousResult = async (queryFactory, reason) => {
+    const { data: candidates = [] } = await queryFactory().limit(25);
     return {
       ambiguous: true,
       reason,
@@ -190,7 +190,10 @@ export async function findCustomerMatch(supabase, booking) {
     }
     if (isMultiMatchError(byStripeErr)) {
       return buildAmbiguousResult(
-        stripeQuery,
+        () => supabase
+          .from("customers")
+          .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
+          .eq("stripe_customer_id", booking.stripe_customer_id),
         "multi_match_stripe_customer_id: multiple customers share the same stripe_customer_id"
       );
     }
@@ -211,7 +214,10 @@ export async function findCustomerMatch(supabase, booking) {
     }
     if (isMultiMatchError(byEmailErr)) {
       return buildAmbiguousResult(
-        byEmailQuery,
+        () => supabase
+          .from("customers")
+          .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
+          .eq("normalized_email", normEmail),
         "multi_match_normalized_email: multiple customers share the same normalized_email"
       );
     }
@@ -230,7 +236,11 @@ export async function findCustomerMatch(supabase, booking) {
     }
     if (isMultiMatchError(byEmailRawErr)) {
       return buildAmbiguousResult(
-        byEmailRawQuery,
+        () => supabase
+          .from("customers")
+          .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
+          .eq("email", normEmail)
+          .is("normalized_email", null),
         "multi_match_email_raw: multiple unnormalized customers share the same email"
       );
     }
@@ -251,7 +261,10 @@ export async function findCustomerMatch(supabase, booking) {
     }
     if (isMultiMatchError(byPhoneErr)) {
       return buildAmbiguousResult(
-        byPhoneQuery,
+        () => supabase
+          .from("customers")
+          .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
+          .eq("normalized_phone", normPhone),
         "multi_match_normalized_phone: multiple customers share the same normalized_phone"
       );
     }
@@ -270,7 +283,11 @@ export async function findCustomerMatch(supabase, booking) {
     }
     if (isMultiMatchError(byPhoneRawErr)) {
       return buildAmbiguousResult(
-        byPhoneRawQuery,
+        () => supabase
+          .from("customers")
+          .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
+          .eq("phone", normPhone)
+          .is("normalized_phone", null),
         "multi_match_phone_raw: multiple unnormalized customers share the same phone"
       );
     }
