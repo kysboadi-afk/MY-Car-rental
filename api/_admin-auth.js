@@ -25,7 +25,11 @@ export function extractAdminSecret(req) {
   if (authHeader.startsWith("Bearer ")) {
     return authHeader.slice(7).trim();
   }
-  return String(req.query?.secret || req.body?.secret || "");
+  // req.query.secret — legacy GET endpoints (kept for backward compatibility)
+  if (req.query?.secret) return String(req.query.secret);
+  // req.body.secret — POST endpoints that have not yet been migrated to the header
+  if (req.body?.secret) return String(req.body.secret);
+  return "";
 }
 
 /**
