@@ -164,6 +164,7 @@ export default async function handler(req, res) {
 
   // ── 5. Orphaned Stripe events ──────────────────────────────────────────────────
   try {
+    // Fetch all paid revenue_records with a payment_intent_id.
     const { data: rrRows, error: rrErr } = await sb
       .from("revenue_records")
       .select("id, booking_id, payment_intent_id")
@@ -172,22 +173,29 @@ export default async function handler(req, res) {
       .limit(5000);
     if (rrErr) throw new Error(rrErr.message);
 
-    for (const row of rrRows || []) {
-      if (!row.payment_intent_id) continue;
-      const { data: ledgerRow } = await sb
+    if (rrRows && rrRows.length > 0) {
+      // Build lookup set of all payment_intent_ids present in the ledger for stripe_payment source_type.
+      const piIds = [...new Set(rrRows.map((r) => r.payment_intent_id))];
+      const { data: ledgerPiRows, error: ledgerPiErr } = await sb
         .from("renter_balance_ledger")
-        .select("id")
+        .select("source_id")
         .eq("source_type", "stripe_payment")
-        .eq("source_id", row.payment_intent_id)
-        .maybeSingle();
-      if (!ledgerRow) {
-        anomalies.push({
-          type: "orphaned_stripe_event",
-          booking_id: row.booking_id,
-          source_id: row.payment_intent_id,
-          detail: `revenue_record ${row.id} has payment_intent_id ${row.payment_intent_id} with no matching ledger row`,
-          severity: "warning",
-        });
+        .in("source_id", piIds);
+      if (ledgerPiErr) throw new Error(ledgerPiErr.message);
+
+      const ledgerPiSet = new Set((ledgerPiRows || []).map((r) => r.source_id));
+
+      for (const row of rrRows) {
+        if (!row.payment_intent_id) continue;
+        if (!ledgerPiSet.has(row.payment_intent_id)) {
+          anomalies.push({
+            type: "orphaned_stripe_event",
+            booking_id: row.booking_id,
+            source_id: row.payment_intent_id,
+            detail: `revenue_record ${row.id} has payment_intent_id ${row.payment_intent_id} with no matching ledger row`,
+            severity: "warning",
+          });
+        }
       }
     }
   } catch (err) {

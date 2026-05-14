@@ -251,10 +251,9 @@ export default async function handler(req, res) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function mapRevenueType(type) {
-  if (!type) return "payment";
-  const t = String(type).toLowerCase();
-  if (t === "extension" || t === "rental_extension") return "payment";
+function mapRevenueType(_type) {
+  // All replayed revenue_records map to "payment" — extensions and other subtypes
+  // are stored as the same transaction_type in the ledger.
   return "payment";
 }
 

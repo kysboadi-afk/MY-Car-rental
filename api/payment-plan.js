@@ -26,7 +26,6 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
-import { addLedgerPayment } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -235,20 +234,48 @@ async function handlePayInstallment(sb, body, res) {
   if (!installment) throw new Error("Installment not found");
   if (installment.status === "paid") throw new Error("Installment is already paid");
 
-  // Write a ledger payment entry for this installment.
-  const ledgerResult = await addLedgerPayment(sb, {
-    bookingId: plan.booking_id,
-    transactionType: "payment",
-    amount: amtPaid,
-    stripe_payment_intent_id: payment_intent_id,
-    source_type: "stripe_payment",
-    source_id: payment_intent_id,
-    notes: `Payment plan installment ${installment_number} of ${plan.installments}`,
-    metadata: { plan_id: plan.id, installment_number: Number(installment_number) },
-    created_by: body.created_by || "admin",
-  });
+  // Use a distinct source_type for payment plan installments so these credits
+  // are distinguishable from regular one-time Stripe payments in the ledger.
+  // source_id = payment_intent_id for Stripe dedup; source_type = "payment_plan_installment"
+  // for traceability (allows future non-Stripe installment methods without key conflicts).
+  const sourceType = "payment_plan_installment";
+  const sourceId = payment_intent_id;
 
-  const ledgerTxId = ledgerResult.transaction ? ledgerResult.transaction.id : null;
+  // Idempotency check — if this PI was already written for this installment, return existing.
+  const { data: existingLedger } = await sb
+    .from("renter_balance_ledger")
+    .select("id")
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId)
+    .maybeSingle();
+
+  let ledgerTxId = null;
+  let isDuplicate = false;
+
+  if (existingLedger) {
+    ledgerTxId = existingLedger.id;
+    isDuplicate = true;
+  } else {
+    // Write a ledger payment entry for this installment.
+    const { data: ledgerRow, error: ledgerErr } = await sb
+      .from("renter_balance_ledger")
+      .insert({
+        booking_id: plan.booking_id,
+        transaction_type: "payment",
+        direction: "credit",
+        amount: amtPaid,
+        source_type: sourceType,
+        source_id: sourceId,
+        stripe_payment_intent_id: payment_intent_id,
+        notes: `Payment plan installment ${installment_number} of ${plan.installments}`,
+        metadata: { plan_id: plan.id, installment_number: Number(installment_number) },
+        created_by: body.created_by || "admin",
+      })
+      .select("id")
+      .single();
+    if (ledgerErr) throw new Error(`Could not write ledger transaction: ${ledgerErr.message}`);
+    ledgerTxId = ledgerRow.id;
+  }
 
   // Determine installment status: partial vs paid.
   const outstanding = Math.round((Number(installment.amount) - amtPaid) * 100) / 100;
@@ -294,6 +321,6 @@ async function handlePayInstallment(sb, body, res) {
     installment_status: newStatus,
     ledger_transaction_id: ledgerTxId,
     plan_completed: allPaid,
-    duplicate_ledger: ledgerResult.duplicate || false,
+    duplicate_ledger: isDuplicate,
   });
 }
