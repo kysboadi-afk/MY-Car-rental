@@ -44,6 +44,10 @@
       display: flex; align-items: center; justify-content: center;
       min-height: 100vh; background: var(--sidebar-bg);
     }
+    body.auth-active .modal-overlay,
+    body.auth-active #preview-modal-overlay {
+      display: none !important;
+    }
     .auth-card {
       background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 16px;
       padding: 40px 36px; width: 100%; max-width: 380px;
@@ -3390,6 +3394,7 @@ document.getElementById('auth-password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') signIn();
 });
 document.getElementById('auth-btn').addEventListener('click', signIn);
+document.body.classList.add('auth-active');
 
 function signIn() {
   const pw = document.getElementById('auth-password').value.trim();
@@ -3401,6 +3406,8 @@ function signIn() {
   apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => {
       dashboardData = data;
+      closeAllModals();
+      document.body.classList.remove('auth-active');
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
@@ -3449,6 +3456,8 @@ function logout() {
   aiClearHistory();
   aiTyping = false;
   aiInitialized = false;
+  closeAllModals();
+  document.body.classList.add('auth-active');
   document.getElementById('app').classList.remove('ready');
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('auth-password').value = '';
@@ -6666,10 +6675,23 @@ function closeModal(id) {
     document.body.classList.remove('modal-open');
   }
 }
+function closeAllModals() {
+  document.querySelectorAll('.modal-overlay.open').forEach((el) => {
+    closeModal(el.id);
+  });
+  const preview = document.getElementById('preview-modal-overlay');
+  if (preview) {
+    preview.classList.remove('open');
+    preview.style.display = '';
+    preview.style.visibility = '';
+    preview.style.opacity = '';
+    preview.style.pointerEvents = '';
+  }
+}
 // Close modal on overlay click (delegated so it covers modals added after script parse)
 document.addEventListener('click', (e) => {
   if (e.target.classList && e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
+    closeModal(e.target.id);
   }
 });
 
