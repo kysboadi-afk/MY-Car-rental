@@ -467,16 +467,14 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
     const pricing = await getVehiclePricing(sb, vehicleId);
 
-    // Fixed late fee for the grace period; escalated late fee equals
-    // "$25 + one full missed rental day" after the 3-hour reset window.
-    const SHORT_LATE_FEE = LATE_FEE_BASE;                             // applied after 30-minute grace period
-    const EXTENDED_LATE_FEE = SHORT_LATE_FEE + pricing.daily_price;   // applied after the 3-hour reset window
+    // Late fee is a fixed non-taxed amount after the grace window.
+    const SHORT_LATE_FEE = LATE_FEE_BASE;
+    const EXTENDED_LATE_FEE = SHORT_LATE_FEE;
 
-    let extensionAmountPreTax;
+    let extensionBaseAmount = 0;
     let extensionLabel;
-    let extensionDays = null;
-    let pricePerDay   = null;
     let lateFeeIncluded = 0;
+    let deferredFeeIncluded = 0;
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -489,8 +487,8 @@ export default async function handler(req, res) {
       const price = computeAmountFromPricing(pricing, days);
 
       // ── Time-based late fee ─────────────────────────────────────────────────
-      // grace_end  = return_time + 30 min  → SHORT_LATE_FEE ($25) applies
-      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE ($25 + vehicle daily rate) applies
+      // grace_end  = return_time + 30 min  → SHORT_LATE_FEE applies
+      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE applies
       // Always ONE PaymentIntent; late fee is folded into the total.
       //
       // IMPORTANT: Use buildDateTimeLA so that a stored return_time of "10:00"
@@ -529,7 +527,7 @@ export default async function handler(req, res) {
       // this extension total.  The deferred fee is separate from the time-based
       // late fee above and is never waived by sbWaivedAmount (waiver only applies
       // to the new time-based fee).
-      const deferredFeeIncluded = sbDeferredLateFee;
+      deferredFeeIncluded = sbDeferredLateFee;
       if (deferredFeeIncluded > 0) {
         console.log('[pricing-extension-deferred-fee]', {
           vehicle:        vehicleId,
@@ -549,12 +547,11 @@ export default async function handler(req, res) {
         reset_time_iso: new Date(resetTimeMs).toISOString(),
       });
 
-      extensionAmountPreTax = price + lateFeeIncluded + deferredFeeIncluded;
-      extensionDays = days;
-      pricePerDay   = pricing.daily_price;
+      extensionBaseAmount = price;
     }
 
-    const extensionAmount = applyTax(extensionAmountPreTax, settings);
+    // Tax applies to rental extension days only. Late fees are non-taxed.
+    const extensionAmount = applyTax(extensionBaseAmount, settings) + lateFeeIncluded + deferredFeeIncluded;
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
