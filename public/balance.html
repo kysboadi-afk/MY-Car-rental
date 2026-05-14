@@ -90,6 +90,80 @@
     }
     #fatalSection p { color: #f44336; font-size: 17px; margin-bottom: 20px; }
     #fatalSection a { color: #ffb400; text-decoration: none; font-weight: bold; }
+    /* Partial payment input */
+    .partial-payment-wrap {
+      margin-bottom: 18px;
+    }
+    .partial-payment-wrap label {
+      display: block;
+      color: #aaa;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    .partial-payment-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    #partialAmountInput {
+      flex: 1;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 18px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #partialAmountInput:focus { border-color: #ffb400; }
+    #partialAmountInput::-webkit-outer-spin-button,
+    #partialAmountInput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    #partialAmountInput[type=number] { -moz-appearance: textfield; }
+    #partialMaxBtn {
+      background: transparent;
+      border: 1px solid #555;
+      color: #aaa;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #partialMaxBtn:hover { border-color: #ffb400; color: #ffb400; }
+    #paymentPreview {
+      font-size: 13px;
+      color: #888;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+    /* Ledger history */
+    .ledger-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+    }
+    .ledger-table th {
+      text-align: left;
+      color: #aaa;
+      padding: 7px 10px;
+      border-bottom: 1px solid #333;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .ledger-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #222;
+      vertical-align: top;
+    }
+    .ledger-table tr:last-child td { border-bottom: none; }
+    .ledger-debit  { color: #f87171; }
+    .ledger-credit { color: #4ade80; }
+    .ledger-empty  { color: #555; text-align: center; padding: 20px; }
+    #historySection { display: none; }
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -110,6 +184,7 @@
     <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="SLY Transportation Services Logo" class="site-logo"></a>
     <nav class="site-nav">
       <a href="index.html" data-i18n="nav.homeLink">Home</a>
+      <a href="cars.html">Browse Cars</a>
     </nav>
     <a href="tel:+18445114059" class="header-phone">📞 (844) 511-4059</a>
   </header>
@@ -128,9 +203,36 @@
           <table class="balance-summary-table" id="bookingTable"></table>
         </div>
 
+        <!-- Payment history (shown when ledger has entries) -->
+        <div class="balance-card" id="historySection">
+          <h2>📊 Balance &amp; Payment History</h2>
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Balance</th>
+              </tr>
+            </thead>
+            <tbody id="ledgerHistoryBody">
+              <tr><td colspan="4" class="ledger-empty">No transactions yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="balance-card">
           <h2>💳 Pay Remaining Balance</h2>
           <div class="balance-amount-display" id="balanceDisplay"></div>
+          <!-- Partial payment input -->
+          <div class="partial-payment-wrap" id="partialPaymentWrap" style="display:none">
+            <label for="partialAmountInput">💰 Amount to Pay Now</label>
+            <div class="partial-payment-row">
+              <input type="number" id="partialAmountInput" min="1" step="0.01" placeholder="0.00" />
+              <button type="button" id="partialMaxBtn">Pay Full</button>
+            </div>
+            <div id="paymentPreview"></div>
+          </div>
           <div id="errorBanner" role="alert"></div>
           <div id="payment-element"></div>
           <button id="payBtn" disabled>Loading…</button>
@@ -312,17 +414,20 @@
       }
 
       // ── Build booking summary table ───────────────────────────────────────
-      function buildSummaryTable(balanceAmount, fullTotal, depositPaid) {
+      function buildSummaryTable(balanceAmount, fullTotal, depositPaid, waiverApplied) {
         var rows = [
-          ["Vehicle",       carName],
-          ["Renter",        renterName || "—"],
-          ["Email",         renterEmail],
+          ["Vehicle",       escHtml(carName)],
+          ["Renter",        escHtml(renterName || "—")],
+          ["Email",         escHtml(renterEmail)],
         ];
-        rows.push(["Pickup",  pickup + (pickupTime  ? " at " + pickupTime  : "")]);
-        rows.push(["Return",  returnDate + (returnTime ? " at " + returnTime : "")]);
+        rows.push(["Pickup",  escHtml(pickup + (pickupTime  ? " at " + pickupTime  : ""))]);
+        rows.push(["Return",  escHtml(returnDate + (returnTime ? " at " + returnTime : ""))]);
         rows.push(["Insurance", protectionPlan ? "Damage Protection Plan" : "Own insurance"]);
-        rows.push(["Deposit Paid", "$" + depositPaid + " (non-refundable)"]);
-        rows.push(["Rental Subtotal", "$" + fullTotal + " (+ applicable tax)"]);
+        rows.push(["Deposit Paid", escHtml("$" + depositPaid + " (non-refundable)")]);
+        rows.push(["Rental Subtotal", escHtml("$" + fullTotal + " (+ applicable tax)")]);
+        if (waiverApplied && parseFloat(waiverApplied) > 0) {
+          rows.push(["Admin Waiver", "<span style='color:#4caf50'>-$" + escHtml(waiverApplied) + " (applied)</span>"]);
+        }
         rows.push(["Balance Remaining", "<strong style='color:#ffb400'>$" + escHtml(balanceAmount) + "</strong>"]);
 
         return rows.map(function (r) {
@@ -331,113 +436,236 @@
       }
 
       // ── Fetch balance PaymentIntent from API ──────────────────────────────
-      fetch(API_BASE + "/api/pay-balance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vehicleId:         vehicleId,
-          name:              renterName,
-          email:             renterEmail,
-          pickup:            pickup,
-          returnDate:        returnDate,
-          protectionPlan:    protectionPlan,
-          bookingId:         bookingId || undefined,
-          originalPaymentIntentId: originalPiId || undefined,
-          depositPaymentIntentId:  originalPiId || undefined,
-        }),
-      })
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (data.error) { showFatal(data.error); return; }
+      var currentPaymentAmount = null; // tracks the selected partial amount
 
-          var clientSecret   = data.clientSecret;
-          var publishableKey = data.publishableKey;
-          var balanceAmount  = data.balanceAmount;
-          var fullTotal      = data.preTaxAmount;
-          var depositPaid    = data.depositPaid;
-
-          // Show main content now that we have the amounts
-          document.getElementById("loadingSection").style.display = "none";
-          document.getElementById("mainSection").style.display    = "";
-          document.getElementById("bookingTable").innerHTML = buildSummaryTable(balanceAmount, fullTotal, depositPaid);
-          document.getElementById("balanceDisplay").textContent   = "Balance Due: $" + balanceAmount;
-
-          // ── Mount Stripe Payment Element ──────────────────────────────────
-          var stripe   = Stripe(publishableKey);
-          var elements = stripe.elements({ clientSecret: clientSecret, appearance: { theme: "night" } });
-          var payEl    = elements.create("payment");
-          payEl.mount("#payment-element");
-
-          var payBtn = document.getElementById("payBtn");
-          payEl.on("ready", function () {
-            payBtn.disabled    = false;
-            payBtn.textContent = "Pay $" + balanceAmount + " Now 🔒";
-          });
-
-          // ── Build booking data for success.html ───────────────────────────
-          function buildBookingData() {
-            var data = {
-              vehicleId:          vehicleId,
-              car:                carName,
-              name:               renterName,
-              email:              renterEmail,
-              phone:              renterPhone,
-              pickup:             pickup,
-              pickupTime:         pickupTime,
-              returnDate:         returnDate,
-              returnTime:         returnTime,
-              total:              balanceAmount,
-              protectionPlan:     protectionPlan,
-              paymentType:        "balance_payment",
-              depositAlreadyPaid: depositPaid,
-              fullRentalTotal:    fullTotal,
-            };
-            return data;
-          }
-
-          // ── Payment submission ────────────────────────────────────────────
-          payBtn.addEventListener("click", function () {
-            if (payBtn.disabled) return;
-            payBtn.disabled    = true;
-            payBtn.textContent = "Processing…";
-            document.getElementById("errorBanner").style.display = "none";
-
-            // Save booking data BEFORE the redirect so success.html can send
-            // the confirmation email.  Also save the PI secret for Path 3.
-            var bookingData = buildBookingData();
-            try {
-              sessionStorage.setItem("slyRidesBooking",      JSON.stringify(bookingData));
-              sessionStorage.setItem("slyStripePublishable", publishableKey);
-              sessionStorage.setItem("slyPiSecret",          clientSecret);
-            } catch (e) { /* quota exceeded — continue anyway */ }
-
-            stripe.confirmPayment({
-              elements: elements,
-              confirmParams: {
-                return_url: window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId),
-              },
-              redirect: "if_required",
-            }).then(function (result) {
-              if (result.error) {
-                // Payment failed — show the error and restore the button
-                document.getElementById("errorBanner").textContent = result.error.message;
-                document.getElementById("errorBanner").style.display = "";
-                payBtn.disabled    = false;
-                payBtn.textContent = "Pay $" + balanceAmount + " Now 🔒";
-                // Remove stale session data so success.html is not confused
-                try { sessionStorage.removeItem("slyRidesBooking"); } catch (e) { /* ok */ }
-                try { sessionStorage.removeItem("slyPiSecret");     } catch (e) { /* ok */ }
-              } else if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
-                // Immediate success (no 3DS redirect required)
-                window.location.href = "/success.html?vehicle=" + encodeURIComponent(vehicleId);
-              }
-            });
-          });
+      function loadBalance() {
+        fetch(API_BASE + "/api/pay-balance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vehicleId:         vehicleId,
+            name:              renterName,
+            email:             renterEmail,
+            pickup:            pickup,
+            returnDate:        returnDate,
+            protectionPlan:    protectionPlan,
+            bookingId:         bookingId || undefined,
+            originalPaymentIntentId: originalPiId || undefined,
+            depositPaymentIntentId:  originalPiId || undefined,
+            payment_amount:    currentPaymentAmount || undefined,
+          }),
         })
-        .catch(function (err) {
-          console.error("pay-balance fetch error:", err);
-          showFatal("Failed to load payment information. Please refresh the page or contact us.");
-        });
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.error) { showFatal(data.error); return; }
+
+            var clientSecret        = data.clientSecret;
+            var publishableKey      = data.publishableKey;
+            var balanceAmount       = data.balanceAmount;          // full remaining
+            var paymentAmount       = data.paymentAmount || data.balanceAmount; // this PI's amount
+            var remainingAfter      = data.remainingAfterPayment || "0.00";
+            var isPartial           = data.isPartialPayment || false;
+            var fullTotal           = data.preTaxAmount;
+            var depositPaid         = data.depositPaid;
+            var waiverApplied       = data.waiverApplied || "0.00";
+            var maxAmount           = parseFloat(balanceAmount);
+
+            // Show main content now that we have the amounts
+            document.getElementById("loadingSection").style.display = "none";
+            document.getElementById("mainSection").style.display    = "";
+            document.getElementById("bookingTable").innerHTML = buildSummaryTable(balanceAmount, fullTotal, depositPaid, waiverApplied);
+            document.getElementById("balanceDisplay").textContent   = "Balance Remaining: $" + balanceAmount;
+
+            // ── Partial payment input ─────────────────────────────────────
+            if (maxAmount > 0) {
+              var partialWrap = document.getElementById("partialPaymentWrap");
+              var partialInput = document.getElementById("partialAmountInput");
+              var partialMaxBtn = document.getElementById("partialMaxBtn");
+              var payPreview = document.getElementById("paymentPreview");
+
+              partialWrap.style.display = "";
+              partialInput.min = "1";
+              partialInput.max = maxAmount.toFixed(2);
+              partialInput.value = paymentAmount;
+              partialInput.step = "0.01";
+
+              function updatePreview() {
+                var val = parseFloat(partialInput.value);
+                if (!isFinite(val) || val <= 0) {
+                  payPreview.textContent = "";
+                  return;
+                }
+                val = Math.round(val * 100) / 100;
+                if (val > maxAmount) {
+                  payPreview.innerHTML = "<span style='color:#f87171'>Amount exceeds remaining balance ($" + escHtml(maxAmount.toFixed(2)) + ")</span>";
+                  return;
+                }
+                var afterPay = Math.max(0, Math.round((maxAmount - val) * 100) / 100);
+                if (afterPay > 0) {
+                  payPreview.innerHTML = "After payment: <strong style='color:#f59e0b'>$" + escHtml(afterPay.toFixed(2)) + " still due</strong>";
+                } else {
+                  payPreview.innerHTML = "<span style='color:#4ade80'>✓ Pays in full</span>";
+                }
+              }
+              updatePreview();
+
+              partialInput.addEventListener("input", updatePreview);
+              partialMaxBtn.addEventListener("click", function () {
+                partialInput.value = maxAmount.toFixed(2);
+                updatePreview();
+              });
+            }
+
+            // ── Mount Stripe Payment Element ──────────────────────────────
+            var stripe   = Stripe(publishableKey);
+            var elements = stripe.elements({ clientSecret: clientSecret, appearance: { theme: "night" } });
+            var payEl    = elements.create("payment");
+            payEl.mount("#payment-element");
+
+            var payBtn = document.getElementById("payBtn");
+            payEl.on("ready", function () {
+              payBtn.disabled    = false;
+              payBtn.textContent = "Pay $" + paymentAmount + " Now 🔒";
+            });
+
+            // ── Build booking data for success.html ───────────────────────
+            function buildBookingData() {
+              var data = {
+                vehicleId:          vehicleId,
+                car:                carName,
+                name:               renterName,
+                email:              renterEmail,
+                phone:              renterPhone,
+                pickup:             pickup,
+                pickupTime:         pickupTime,
+                returnDate:         returnDate,
+                returnTime:         returnTime,
+                total:              paymentAmount,
+                protectionPlan:     protectionPlan,
+                paymentType:        "balance_payment",
+                depositAlreadyPaid: depositPaid,
+                fullRentalTotal:    fullTotal,
+              };
+              return data;
+            }
+
+            // ── Payment submission ────────────────────────────────────────
+            payBtn.addEventListener("click", function () {
+              if (payBtn.disabled) return;
+
+              // Validate partial amount before submitting
+              var partialInput = document.getElementById("partialAmountInput");
+              var requestedAmount = partialInput ? parseFloat(partialInput.value) : null;
+              if (requestedAmount !== null && isFinite(requestedAmount)) {
+                requestedAmount = Math.round(requestedAmount * 100) / 100;
+                if (requestedAmount <= 0 || requestedAmount > maxAmount) {
+                  document.getElementById("errorBanner").textContent =
+                    "Enter a valid amount between $1.00 and $" + maxAmount.toFixed(2) + ".";
+                  document.getElementById("errorBanner").style.display = "";
+                  return;
+                }
+                // If the user changed the amount, reload the PI with the new amount.
+                var existingPI = Math.round(parseFloat(paymentAmount) * 100);
+                var newPI = Math.round(requestedAmount * 100);
+                if (newPI !== existingPI) {
+                  currentPaymentAmount = requestedAmount.toFixed(2);
+                  payBtn.disabled    = true;
+                  payBtn.textContent = "Preparing…";
+                  // Unmount current Stripe elements and reload with new PI
+                  try { payEl.unmount(); } catch (e) { /* ok */ }
+                  loadBalance();
+                  return;
+                }
+              }
+
+              payBtn.disabled    = true;
+              payBtn.textContent = "Processing…";
+              document.getElementById("errorBanner").style.display = "none";
+
+              // Save booking data BEFORE the redirect so success.html can send
+              // the confirmation email.  Also save the PI secret for Path 3.
+              var bookingData = buildBookingData();
+              try {
+                sessionStorage.setItem("slyRidesBooking",      JSON.stringify(bookingData));
+                sessionStorage.setItem("slyStripePublishable", publishableKey);
+                sessionStorage.setItem("slyPiSecret",          clientSecret);
+              } catch (e) { /* quota exceeded — continue anyway */ }
+
+              stripe.confirmPayment({
+                elements: elements,
+                confirmParams: {
+                  return_url: window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId),
+                },
+                redirect: "if_required",
+              }).then(function (result) {
+                if (result.error) {
+                  // Payment failed — show the error and restore the button
+                  document.getElementById("errorBanner").textContent = result.error.message;
+                  document.getElementById("errorBanner").style.display = "";
+                  payBtn.disabled    = false;
+                  payBtn.textContent = "Pay $" + paymentAmount + " Now 🔒";
+                  // Remove stale session data so success.html is not confused
+                  try { sessionStorage.removeItem("slyRidesBooking"); } catch (e) { /* ok */ }
+                  try { sessionStorage.removeItem("slyPiSecret");     } catch (e) { /* ok */ }
+                } else if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
+                  // Immediate success (no 3DS redirect required)
+                  window.location.href = "/success.html?vehicle=" + encodeURIComponent(vehicleId);
+                }
+              });
+            });
+          })
+          .catch(function (err) {
+            console.error("pay-balance fetch error:", err);
+            showFatal("Failed to load payment information. Please refresh the page or contact us.");
+          });
+      }
+
+      loadBalance();
+
+      // ── Fetch & render ledger history (non-critical) ──────────────────────
+      if (bookingId) {
+        fetch(API_BASE + "/api/renter-ledger-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ booking_id: bookingId }),
+        })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (ledger) {
+            if (!ledger || !ledger.success) return;
+            var txns = ledger.transactions || [];
+            if (txns.length === 0) return;
+
+            // Compute running balance (oldest first → newest last)
+            var reversed = txns.slice().reverse();
+            var runningCents = 0;
+            var rows = reversed.map(function (tx) {
+              var amountCents = Math.round(parseFloat(tx.amount || 0) * 100);
+              if (tx.direction === "debit")  runningCents += amountCents;
+              else                           runningCents -= amountCents;
+              return {
+                date:      tx.created_at ? tx.created_at.substring(0, 10) : "—",
+                desc:      tx.notes || tx.transaction_type || "—",
+                type:      tx.direction,
+                amount:    (tx.direction === "debit" ? "+" : "-") + "$" + parseFloat(tx.amount).toFixed(2),
+                balance:   "$" + (Math.max(0, runningCents) / 100).toFixed(2),
+                cssClass:  tx.direction === "debit" ? "ledger-debit" : "ledger-credit",
+              };
+            }).reverse(); // back to newest-first for display
+
+            var html = rows.map(function (r) {
+              return "<tr>" +
+                "<td style='white-space:nowrap;color:#888'>" + escHtml(r.date) + "</td>" +
+                "<td style='color:#ccc'>" + escHtml(r.desc) + "</td>" +
+                "<td class='" + r.cssClass + "' style='white-space:nowrap;text-align:right'>" + escHtml(r.amount) + "</td>" +
+                "<td style='text-align:right;white-space:nowrap;color:#ffb400'>" + escHtml(r.balance) + "</td>" +
+                "</tr>";
+            }).join("");
+
+            document.getElementById("ledgerHistoryBody").innerHTML = html || "<tr><td colspan='4' class='ledger-empty'>No transactions yet</td></tr>";
+            document.getElementById("historySection").style.display = "";
+          })
+          .catch(function () { /* ledger history is non-critical */ });
+      }
     })();
   </script>
 </body>

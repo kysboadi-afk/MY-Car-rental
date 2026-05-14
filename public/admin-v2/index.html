@@ -1097,13 +1097,23 @@
         Tickets
         <span class="nav-badge" id="tickets-badge" style="display:none">0</span>
       </a>
-    </nav>
-
-    <nav class="nav-section">
-      <div class="nav-section-label">Communication</div>
-      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        SMS Automation
+      <a class="nav-item" data-page="balance-ledger" href="#" onclick="navigate('balance-ledger');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Balance Ledger
+        <span class="nav-badge" id="balance-ledger-badge" style="display:none;background:var(--danger);">!</span>
+      </a>
+      <a class="nav-item" data-page="reconcile-report" href="#" onclick="navigate('reconcile-report');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Reconciliation
+      </a>
+      <a class="nav-item" data-page="overdue-balances" href="#" onclick="navigate('overdue-balances');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Overdue Balances
+        <span class="nav-badge" id="overdue-badge" style="display:none;background:var(--danger);">0</span>
+      </a>
+      <a class="nav-item" data-page="payment-plans" href="#" onclick="navigate('payment-plans');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+        Payment Plans
       </a>
     </nav>
 
@@ -2396,12 +2406,234 @@
         </div>
       </div>
 
+      <!-- BALANCE LEDGER PAGE -->
+      <div class="page" id="page-balance-ledger">
+        <!-- Page header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Balance Ledger</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Append-only charge and payment history per booking</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddChargeModal()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Charge
+          </button>
+        </div>
+        <!-- Booking ID search -->
+        <div class="filters-row" style="margin-bottom:12px;">
+          <input type="text" class="filter-input" id="bl-booking-search" placeholder="Enter Booking ID or Ref to load ledger…" style="flex:1;max-width:380px;">
+          <button class="btn btn-secondary btn-sm" onclick="loadBalanceLedger()">Load</button>
+        </div>
+        <!-- Summary cards -->
+        <div id="bl-summary-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;display:none;">
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Charges</div>
+            <div id="bl-total-charges" style="font-size:22px;font-weight:700;color:var(--danger);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Paid</div>
+            <div id="bl-total-paid" style="font-size:22px;font-weight:700;color:var(--success);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Total Waived</div>
+            <div id="bl-total-waived" style="font-size:22px;font-weight:700;color:var(--info);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:160px;padding:16px 20px;border:2px solid var(--warning);">
+            <div style="font-size:11px;font-weight:600;color:var(--warning);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Remaining Balance</div>
+            <div id="bl-remaining" style="font-size:22px;font-weight:700;color:var(--warning);">—</div>
+          </div>
+        </div>
+        <!-- Transaction history table -->
+        <div class="card">
+          <div id="bl-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading ledger…</div></div>
+          <div id="bl-table-wrap" style="display:none;" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Direction</th>
+                  <th>Amount</th>
+                  <th>Running Balance</th>
+                  <th>Notes</th>
+                  <th>Created By</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody id="bl-tbody"></tbody>
+            </table>
+          </div>
+          <div id="bl-empty" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            <p>No ledger transactions found for this booking.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddChargeModal()">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add First Charge
+            </button>
+          </div>
+          <div id="bl-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
+            Enter a Booking ID above and click <strong>Load</strong> to view the balance ledger.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Reconciliation Report page ─────────────────────────────────── -->
+      <div class="page" id="page-reconcile-report">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Reconciliation Report</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Compare ledger credits against source revenue records</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runReconcileReport()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Run Report
+          </button>
+        </div>
+        <div class="filters-row" style="margin-bottom:12px;flex-wrap:wrap;gap:10px;">
+          <input type="date" class="filter-input" id="rc-date-from" style="max-width:160px;" title="Date From">
+          <input type="date" class="filter-input" id="rc-date-to" style="max-width:160px;" title="Date To">
+          <select class="filter-input" id="rc-status-filter" style="max-width:160px;">
+            <option value="">All statuses</option>
+            <option value="under">Under (ledger &lt; source)</option>
+            <option value="over">Over (ledger &gt; source)</option>
+            <option value="missing">Missing from ledger</option>
+            <option value="matched">Matched</option>
+          </select>
+        </div>
+        <div id="rc-kpi-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+          <div class="card" style="flex:1;min-width:140px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Checked</div>
+            <div id="rc-kpi-checked" style="font-size:22px;font-weight:700;">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:140px;padding:16px 20px;">
+            <div style="font-size:11px;font-weight:600;color:var(--success);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Matched %</div>
+            <div id="rc-kpi-pct" style="font-size:22px;font-weight:700;color:var(--success);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:140px;padding:16px 20px;border:2px solid var(--warning);">
+            <div style="font-size:11px;font-weight:600;color:var(--warning);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Unresolved</div>
+            <div id="rc-kpi-unresolved" style="font-size:22px;font-weight:700;color:var(--warning);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:140px;padding:16px 20px;border:2px solid var(--danger);">
+            <div style="font-size:11px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Discrepancy $</div>
+            <div id="rc-kpi-discrepancy" style="font-size:22px;font-weight:700;color:var(--danger);">—</div>
+          </div>
+        </div>
+        <div class="card">
+          <div id="rc-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Running reconciliation…</div></div>
+          <div id="rc-table-wrap" style="display:none;" class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Booking</th><th>Customer</th><th>Source Total</th>
+                <th>Ledger Total</th><th>Discrepancy</th><th>Status</th>
+              </tr></thead>
+              <tbody id="rc-tbody"></tbody>
+            </table>
+          </div>
+          <div id="rc-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
+            Select a date range and click <strong>Run Report</strong>.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Overdue Balances page ───────────────────────────────────────── -->
+      <div class="page" id="page-overdue-balances">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Overdue Balances</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Bookings with past-due ledger balances, sorted by aging</div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadOverdueBalances()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div id="ov-bucket-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+          <div class="card" style="flex:1;min-width:130px;padding:14px 18px;">
+            <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Current (0–29 d)</div>
+            <div id="ov-bucket-current" style="font-size:20px;font-weight:700;">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:130px;padding:14px 18px;border:2px solid var(--warning);">
+            <div style="font-size:11px;font-weight:600;color:var(--warning);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">30–59 Days</div>
+            <div id="ov-bucket-30" style="font-size:20px;font-weight:700;color:var(--warning);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:130px;padding:14px 18px;border:2px solid var(--orange,#f97316);">
+            <div style="font-size:11px;font-weight:600;color:var(--orange,#f97316);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">60–89 Days</div>
+            <div id="ov-bucket-60" style="font-size:20px;font-weight:700;color:var(--orange,#f97316);">—</div>
+          </div>
+          <div class="card" style="flex:1;min-width:130px;padding:14px 18px;border:2px solid var(--danger);">
+            <div style="font-size:11px;font-weight:600;color:var(--danger);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">90+ Days</div>
+            <div id="ov-bucket-90" style="font-size:20px;font-weight:700;color:var(--danger);">—</div>
+          </div>
+        </div>
+        <div class="card">
+          <div id="ov-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading overdue balances…</div></div>
+          <div id="ov-table-wrap" style="display:none;" class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Booking</th><th>Customer</th><th>Email</th>
+                <th>Balance</th><th>Due Date</th><th>Days Overdue</th><th>Bucket</th>
+              </tr></thead>
+              <tbody id="ov-tbody"></tbody>
+            </table>
+          </div>
+          <div id="ov-empty" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="16 10 10 14 8 10"/></svg>
+            <p>No overdue balances. 🎉</p>
+          </div>
+          <div id="ov-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
+            Click <strong>Refresh</strong> to load overdue balances.
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Payment Plans page ─────────────────────────────────────────── -->
+      <div class="page" id="page-payment-plans">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:15px;font-weight:700;">Payment Plans</div>
+            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Multi-installment plans for renters with outstanding balances</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <select class="filter-input" id="pp-status-filter" style="max-width:140px;" onchange="loadPaymentPlans()">
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="defaulted">Defaulted</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openCreatePlanModal()">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Plan
+            </button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="pp-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading payment plans…</div></div>
+          <div id="pp-table-wrap" style="display:none;" class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Plan ID</th><th>Booking</th><th>Customer</th>
+                <th>Total</th><th>Installments</th><th>Status</th>
+                <th>Next Due</th><th>Actions</th>
+              </tr></thead>
+              <tbody id="pp-tbody"></tbody>
+            </table>
+          </div>
+          <div id="pp-empty" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+            <p>No payment plans yet.</p>
+          </div>
+          <div id="pp-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
+            Click <strong>Refresh</strong> to load payment plans.
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 
   <!-- Mobile Bottom Navigation -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-    <button class="mbn-item active" id="mbn-dashboard" onclick="navigate('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       <span>Home</span>
     </button>
@@ -2478,11 +2710,55 @@
   </div>
 </div>
 
-<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
-<div class="modal-overlay" id="ticket-detail-modal">
-  <div class="modal" style="max-width:620px;">
+<!-- ── Add Charge Modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-charge-modal">
+  <div class="modal" style="max-width:560px;">
     <div class="modal-header">
-      <div>
+      <div class="modal-title">Add Charge to Ledger</div>
+      <button class="modal-close" onclick="closeModal('add-charge-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Booking ID *</label>
+        <input type="text" class="form-input" id="ac-booking-id" placeholder="e.g. BK-1029" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-select" id="ac-type">
+          <option value="">Select category…</option>
+          <option value="damage">Damage</option>
+          <option value="repair">Repair</option>
+          <option value="deductible">Deductible</option>
+          <option value="smoking">Smoking Fee</option>
+          <option value="cleaning">Cleaning Fee</option>
+          <option value="towing">Towing</option>
+          <option value="late_fee">Late Fee</option>
+          <option value="ticket">Ticket / Violation</option>
+          <option value="extension">Extension</option>
+          <option value="misc">Miscellaneous</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="ac-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due Date (optional)</label>
+        <input type="date" class="form-input" id="ac-due-date">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="ac-notes" placeholder="Describe the charge…" style="min-height:64px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-charge-modal')">Cancel</button>
+      <button class="btn btn-primary" id="ac-submit-btn" onclick="saveCharge()">Add Charge</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
         <div class="modal-title" id="td-title">Ticket Details</div>
         <div id="td-badge-wrap" style="margin-top:4px;"></div>
       </div>
@@ -3528,6 +3804,7 @@ function navigate(page) {
     'ai':               'AI Assistant',
     'system-health':    'System Health',
     'tickets':          'Tickets / Violations',
+    'balance-ledger':   'Balance Ledger',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -3564,6 +3841,10 @@ function navigate(page) {
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
   else if (page === 'late-fees') loadLateFees();
   else if (page === 'tickets') loadTickets();
+  else if (page === 'balance-ledger') initBalanceLedgerPage();
+  else if (page === 'reconcile-report') initReconcileReportPage();
+  else if (page === 'overdue-balances') loadOverdueBalances();
+  else if (page === 'payment-plans') loadPaymentPlans();
 }
 
 function refreshCurrentPage() {
@@ -11710,8 +11991,431 @@ async function deleteCurrentTicket() {
     showToast('Failed to delete ticket: ' + err.message, 'error');
   }
 }
-</script>
+// ── Balance Ledger Page ────────────────────────────────────────────────────
 
-<script src="voice-assistant.js"></script>
-</body>
-</html>
+let currentLedgerBookingId = '';
+
+function initBalanceLedgerPage() {
+  const hash = window.location.hash || '';
+  const m = hash.match(/balance-ledger:([^&]+)/);
+  if (m) {
+    const el = document.getElementById('bl-booking-search');
+    if (el && !el.value) el.value = decodeURIComponent(m[1]);
+    loadBalanceLedger();
+  }
+}
+
+function loadBalanceLedger() {
+  const bookingId = (document.getElementById('bl-booking-search')?.value || '').trim();
+  if (!bookingId) { showToast('Enter a Booking ID first.', 'error'); return; }
+  currentLedgerBookingId = bookingId;
+
+  const loading    = document.getElementById('bl-loading');
+  const tableWrap  = document.getElementById('bl-table-wrap');
+  const empty      = document.getElementById('bl-empty');
+  const placeholder = document.getElementById('bl-placeholder');
+  const summaryRow = document.getElementById('bl-summary-row');
+
+  if (loading)     loading.style.display    = 'flex';
+  if (tableWrap)   tableWrap.style.display  = 'none';
+  if (empty)       empty.style.display      = 'none';
+  if (placeholder) placeholder.style.display = 'none';
+  if (summaryRow)  summaryRow.style.display  = 'none';
+
+  Promise.all([
+    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'summary',  booking_id: bookingId }),
+    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'history',  booking_id: bookingId, limit: 200 }),
+  ])
+    .then(([sumData, histData]) => {
+      if (loading) loading.style.display = 'none';
+      renderBalanceSummary(sumData.summary);
+      renderBalanceHistory(histData.transactions || []);
+    })
+    .catch((err) => {
+      if (loading) loading.style.display = 'none';
+      showToast('Failed to load ledger: ' + err.message, 'error');
+      if (placeholder) placeholder.style.display = '';
+    });
+}
+
+function renderBalanceSummary(summary) {
+  const row = document.getElementById('bl-summary-row');
+  if (!row) return;
+  const fmt = (n) => '$' + Number(n || 0).toFixed(2);
+  document.getElementById('bl-total-charges').textContent = fmt(summary.total_charges);
+  document.getElementById('bl-total-paid').textContent    = fmt(summary.total_paid);
+  document.getElementById('bl-total-waived').textContent  = fmt(summary.total_waived);
+  document.getElementById('bl-remaining').textContent     = fmt(summary.remaining_balance);
+  row.style.display = 'flex';
+}
+
+const LEDGER_TYPE_LABELS = {
+  extension: 'Extension', late_fee: 'Late Fee', ticket: 'Ticket',
+  damage: 'Damage', repair: 'Repair', deductible: 'Deductible',
+  smoking: 'Smoking', cleaning: 'Cleaning', towing: 'Towing', misc: 'Misc',
+  payment: 'Payment', refund: 'Refund', waiver: 'Waiver', adjustment: 'Adjustment',
+};
+
+const LEDGER_TYPE_COLORS = {
+  extension: '#7c3aed', late_fee: '#dc2626', ticket: '#b45309',
+  damage: '#dc2626', repair: '#d97706', deductible: '#7c3aed',
+  smoking: '#6b7280', cleaning: '#0891b2', towing: '#b45309', misc: '#6b7280',
+  payment: '#16a34a', refund: '#dc2626', waiver: '#0891b2', adjustment: '#6b7280',
+};
+
+function renderBalanceHistory(transactions) {
+  const wrap  = document.getElementById('bl-table-wrap');
+  const empty = document.getElementById('bl-empty');
+  const tbody = document.getElementById('bl-tbody');
+  if (!tbody) return;
+
+  if (!transactions.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  const sorted = [...transactions].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  let running = 0;
+  const withBalance = sorted.map((row) => {
+    const amt = Number(row.amount || 0);
+    if (row.direction === 'debit')  running += amt;
+    else                             running -= amt;
+    return { ...row, _running: Math.max(0, running) };
+  }).reverse();
+
+  tbody.innerHTML = withBalance.map((row) => {
+    const date    = row.created_at
+      ? new Date(row.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '\u2014';
+    const typeLabel = LEDGER_TYPE_LABELS[row.transaction_type] || row.transaction_type;
+    const typeColor = LEDGER_TYPE_COLORS[row.transaction_type] || '#6b7280';
+    const dirLabel = row.direction === 'debit'
+      ? '<span style="color:var(--danger);font-weight:600;">Charge ↑</span>'
+      : '<span style="color:var(--success);font-weight:600;">Credit ↓</span>';
+    const amt = '$' + Number(row.amount || 0).toFixed(2);
+    const runBal = '$' + row._running.toFixed(2);
+    const notes   = row.notes ? esc(row.notes) : '<span style="color:var(--text-sub);">—</span>';
+    const dueDate = row.due_date
+      ? new Date(row.due_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+      : '<span style="color:var(--text-sub);">—</span>';
+    return `<tr>
+      <td style="white-space:nowrap;">${date}</td>
+      <td><span style="background:${typeColor}22;color:${typeColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${esc(typeLabel)}</span></td>
+      <td>${dirLabel}</td>
+      <td style="font-weight:700;white-space:nowrap;">${esc(amt)}</td>
+      <td style="white-space:nowrap;font-weight:600;color:${row._running > 0 ? 'var(--warning)' : 'var(--success)'};">${esc(runBal)}</td>
+      <td style="max-width:220px;word-break:break-word;">${notes}</td>
+      <td style="font-size:12px;color:var(--text-sub);">${esc(row.created_by || 'system')}</td>
+      <td style="white-space:nowrap;">${dueDate}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Add Charge Modal ─────────────────────────────────────────────────────────
+
+function openAddChargeModal(prefillBookingId) {
+  ['ac-amount', 'ac-notes', 'ac-due-date'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const typeEl = document.getElementById('ac-type');
+  if (typeEl) typeEl.value = '';
+
+  const bookingEl = document.getElementById('ac-booking-id');
+  if (bookingEl) {
+    bookingEl.value = prefillBookingId || currentLedgerBookingId || '';
+  }
+  openModal('add-charge-modal');
+}
+
+async function saveCharge() {
+  const btn       = document.getElementById('ac-submit-btn');
+  const bookingId = document.getElementById('ac-booking-id')?.value.trim();
+  const typeVal   = document.getElementById('ac-type')?.value;
+  const amountVal = document.getElementById('ac-amount')?.value;
+  const notes     = document.getElementById('ac-notes')?.value.trim() || '';
+  const dueDate   = document.getElementById('ac-due-date')?.value || '';
+
+  if (!bookingId) { showToast('Booking ID is required.', 'error'); return; }
+  if (!typeVal)   { showToast('Please select a charge category.', 'error'); return; }
+  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
+    showToast('Please enter a valid amount.', 'error'); return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+
+  const chargeRequestId = 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+
+  try {
+    const data = await apiPost('/api/renter-balance-ledger', {
+      secret: adminSecret,
+      action: 'add_charge',
+      booking_id: bookingId,
+      transaction_type: typeVal,
+      amount: Number(amountVal),
+      notes: notes || undefined,
+      due_date: dueDate || undefined,
+      charge_request_id: chargeRequestId,
+      created_by: 'admin',
+    });
+
+    closeModal('add-charge-modal');
+    showToast(data.duplicate ? 'Charge already recorded.' : 'Charge added to ledger.', 'success');
+
+    if (bookingId === currentLedgerBookingId) loadBalanceLedger();
+    else {
+      currentLedgerBookingId = bookingId;
+      const el = document.getElementById('bl-booking-search');
+      if (el) el.value = bookingId;
+      navigate('balance-ledger');
+      loadBalanceLedger();
+    }
+  } catch (err) {
+    showToast('Failed to add charge: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Charge'; }
+  }
+}
+
+// ── Reconciliation Report ──────────────────────────────────────────────────────
+
+function initReconcileReportPage() {
+  const placeholder = document.getElementById('rc-placeholder');
+  const tableWrap   = document.getElementById('rc-table-wrap');
+  if (placeholder) placeholder.style.display = '';
+  if (tableWrap)   tableWrap.style.display   = 'none';
+}
+
+async function runReconcileReport() {
+  const loading     = document.getElementById('rc-loading');
+  const placeholder = document.getElementById('rc-placeholder');
+  const kpiRow      = document.getElementById('rc-kpi-row');
+  const tableWrap   = document.getElementById('rc-table-wrap');
+  const tbody       = document.getElementById('rc-tbody');
+
+  if (loading)     loading.style.display     = 'flex';
+  if (placeholder) placeholder.style.display = 'none';
+  if (kpiRow)      kpiRow.style.display      = 'none';
+  if (tableWrap)   tableWrap.style.display   = 'none';
+
+  const dateFrom     = document.getElementById('rc-date-from')?.value || null;
+  const dateTo       = document.getElementById('rc-date-to')?.value || null;
+  const statusFilter = document.getElementById('rc-status-filter')?.value || null;
+
+  try {
+    const data = await apiPost('/api/ledger-reconcile-report', {
+      secret: adminSecret,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      status: statusFilter || undefined,
+      limit: 200,
+      save_snapshot: true,
+    });
+
+    if (kpiRow) {
+      document.getElementById('rc-kpi-checked').textContent    = data.bookings_checked ?? '—';
+      document.getElementById('rc-kpi-pct').textContent        = data.matched_pct != null ? data.matched_pct + '%' : '—';
+      document.getElementById('rc-kpi-unresolved').textContent = data.unresolved_count ?? '—';
+      document.getElementById('rc-kpi-discrepancy').textContent = data.discrepancy_total != null ? '$' + data.discrepancy_total.toFixed(2) : '—';
+      kpiRow.style.display = 'flex';
+    }
+
+    if (tbody) {
+      tbody.innerHTML = '';
+      if (!data.results || data.results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-sub);padding:20px;">No results for this filter.</td></tr>';
+      } else {
+        for (const row of data.results) {
+          const statusColor = row.status === 'matched' ? 'var(--success)' : row.status === 'over' ? 'var(--info)' : 'var(--danger)';
+          tbody.insertAdjacentHTML('beforeend', `
+            <tr>
+              <td><code style="font-size:11px;">${esc(row.booking_ref || '')}</code></td>
+              <td>${esc(row.customer_name || row.customer_email || '—')}</td>
+              <td style="font-family:monospace;">$${(row.source_total || 0).toFixed(2)}</td>
+              <td style="font-family:monospace;">$${(row.ledger_total || 0).toFixed(2)}</td>
+              <td style="font-family:monospace;color:${row.discrepancy > 0 ? 'var(--danger)' : 'inherit'};">$${(row.discrepancy || 0).toFixed(2)}</td>
+              <td><span class="badge" style="background:${statusColor};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">${esc(row.status)}</span></td>
+            </tr>
+          `);
+        }
+      }
+      if (tableWrap) tableWrap.style.display = '';
+    }
+  } catch (err) {
+    showToast('Reconciliation failed: ' + err.message, 'error');
+    if (placeholder) placeholder.style.display = '';
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+// ── Overdue Balances ───────────────────────────────────────────────────────────
+
+async function loadOverdueBalances() {
+  const loading   = document.getElementById('ov-loading');
+  const placeholder = document.getElementById('ov-placeholder');
+  const bucketRow = document.getElementById('ov-bucket-row');
+  const tableWrap = document.getElementById('ov-table-wrap');
+  const empty     = document.getElementById('ov-empty');
+  const tbody     = document.getElementById('ov-tbody');
+
+  if (loading)     loading.style.display     = 'flex';
+  if (placeholder) placeholder.style.display = 'none';
+  if (bucketRow)   bucketRow.style.display   = 'none';
+  if (tableWrap)   tableWrap.style.display   = 'none';
+  if (empty)       empty.style.display       = 'none';
+
+  try {
+    const data = await apiPost('/api/overdue-balances', {
+      secret: adminSecret,
+      aging_buckets: true,
+      limit: 200,
+    });
+
+    if (bucketRow && data.bucket_totals) {
+      const bt = data.bucket_totals;
+      document.getElementById('ov-bucket-current').textContent = `${bt.current?.count || 0} · $${(bt.current?.amount || 0).toFixed(2)}`;
+      document.getElementById('ov-bucket-30').textContent      = `${bt['30-59']?.count || 0} · $${(bt['30-59']?.amount || 0).toFixed(2)}`;
+      document.getElementById('ov-bucket-60').textContent      = `${bt['60-89']?.count || 0} · $${(bt['60-89']?.amount || 0).toFixed(2)}`;
+      document.getElementById('ov-bucket-90').textContent      = `${bt['90+']?.count || 0} · $${(bt['90+']?.amount || 0).toFixed(2)}`;
+      bucketRow.style.display = 'flex';
+    }
+
+    const badge = document.getElementById('overdue-badge');
+    if (badge) {
+      const count = data.total_overdue || 0;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? '' : 'none';
+    }
+
+    if (!data.results || data.results.length === 0) {
+      if (empty) empty.style.display = '';
+    } else {
+      if (tbody) {
+        tbody.innerHTML = '';
+        for (const row of data.results) {
+          const bucketColor = row.aging_bucket === '90+' ? 'var(--danger)'
+            : row.aging_bucket === '60-89' ? 'var(--orange,#f97316)'
+            : row.aging_bucket === '30-59' ? 'var(--warning)'
+            : 'var(--text-sub)';
+          tbody.insertAdjacentHTML('beforeend', `
+            <tr>
+              <td><a href="#" onclick="navigate('balance-ledger');document.getElementById('bl-booking-search').value=${JSON.stringify(row.booking_id)};loadBalanceLedger();return false;" style="color:var(--primary);font-family:monospace;font-size:12px;">${esc(row.booking_id)}</a></td>
+              <td>${esc(row.customer_name || '—')}</td>
+              <td>${esc(row.customer_email || '—')}</td>
+              <td style="font-family:monospace;font-weight:600;color:var(--danger);">$${(row.net_balance || 0).toFixed(2)}</td>
+              <td>${esc(row.earliest_due_date || '—')}</td>
+              <td style="font-family:monospace;">${row.days_overdue != null ? row.days_overdue + 'd' : '—'}</td>
+              <td><span style="color:${bucketColor};font-weight:600;">${esc(row.aging_bucket || '—')}</span></td>
+            </tr>
+          `);
+        }
+      }
+      if (tableWrap) tableWrap.style.display = '';
+    }
+  } catch (err) {
+    showToast('Failed to load overdue balances: ' + err.message, 'error');
+    if (placeholder) placeholder.style.display = '';
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+// ── Payment Plans ──────────────────────────────────────────────────────────────
+
+async function loadPaymentPlans() {
+  const loading   = document.getElementById('pp-loading');
+  const placeholder = document.getElementById('pp-placeholder');
+  const tableWrap = document.getElementById('pp-table-wrap');
+  const empty     = document.getElementById('pp-empty');
+  const tbody     = document.getElementById('pp-tbody');
+
+  if (loading)     loading.style.display     = 'flex';
+  if (placeholder) placeholder.style.display = 'none';
+  if (tableWrap)   tableWrap.style.display   = 'none';
+  if (empty)       empty.style.display       = 'none';
+
+  const status = document.getElementById('pp-status-filter')?.value || null;
+
+  try {
+    const data = await apiPost('/api/payment-plan', {
+      secret: adminSecret,
+      action: 'list',
+      status: status || undefined,
+      limit: 100,
+    });
+
+    if (!data.plans || data.plans.length === 0) {
+      if (empty) empty.style.display = '';
+    } else {
+      if (tbody) {
+        tbody.innerHTML = '';
+        for (const plan of data.plans) {
+          const statusColor = plan.status === 'completed' ? 'var(--success)'
+            : plan.status === 'cancelled' ? 'var(--text-sub)'
+            : plan.status === 'defaulted' ? 'var(--danger)'
+            : 'var(--info)';
+          tbody.insertAdjacentHTML('beforeend', `
+            <tr>
+              <td style="font-family:monospace;font-size:11px;">${esc((plan.id || '').slice(0, 8))}…</td>
+              <td><a href="#" onclick="navigate('balance-ledger');document.getElementById('bl-booking-search').value=${JSON.stringify(plan.booking_id)};loadBalanceLedger();return false;" style="color:var(--primary);">${esc(plan.booking_id || '—')}</a></td>
+              <td>${esc(plan.customer_email || '—')}</td>
+              <td style="font-family:monospace;font-weight:600;">$${(plan.total_amount || 0).toFixed(2)}</td>
+              <td>${esc(String(plan.installments || '?'))} × ${esc(String(plan.interval_days || '?'))}d</td>
+              <td><span style="color:${statusColor};font-weight:600;">${esc(plan.status || '—')}</span></td>
+              <td>${plan.next_due_date ? esc(plan.next_due_date.slice(0, 10)) : '—'}</td>
+              <td>
+                ${plan.status === 'active' ? `<button class="btn btn-danger btn-sm" onclick="cancelPaymentPlan('${esc(plan.id)}')">Cancel</button>` : ''}
+              </td>
+            </tr>
+          `);
+        }
+      }
+      if (tableWrap) tableWrap.style.display = '';
+    }
+  } catch (err) {
+    showToast('Failed to load payment plans: ' + err.message, 'error');
+    if (placeholder) placeholder.style.display = '';
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function openCreatePlanModal() {
+  const booking = prompt('Booking ID for the payment plan:');
+  if (!booking) return;
+  const email = prompt('Customer email:');
+  if (!email) return;
+  const total = parseFloat(prompt('Total amount ($):') || '0');
+  if (!total || total <= 0) { showToast('Invalid amount.', 'error'); return; }
+  const inst = parseInt(prompt('Number of installments (2–24):') || '0', 10);
+  if (!inst || inst < 2 || inst > 24) { showToast('Installments must be 2–24.', 'error'); return; }
+  const interval = parseInt(prompt('Days between installments (1–90):') || '30', 10);
+
+  apiPost('/api/payment-plan', {
+    secret: adminSecret,
+    action: 'create',
+    booking_id: booking.trim(),
+    customer_email: email.trim(),
+    total_amount: total,
+    installments: inst,
+    interval_days: interval,
+  }).then(() => {
+    showToast('Payment plan created.', 'success');
+    loadPaymentPlans();
+  }).catch((err) => showToast('Failed: ' + err.message, 'error'));
+}
+
+async function cancelPaymentPlan(planId) {
+  if (!confirm('Cancel this payment plan?')) return;
+  try {
+    await apiPost('/api/payment-plan', { secret: adminSecret, action: 'cancel', plan_id: planId });
+    showToast('Payment plan cancelled.', 'success');
+    loadPaymentPlans();
+  } catch (err) {
+    showToast('Failed to cancel plan: ' + err.message, 'error');
+  }
+}

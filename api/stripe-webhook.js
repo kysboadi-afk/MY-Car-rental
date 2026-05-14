@@ -50,6 +50,7 @@ import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
+import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -2433,6 +2434,28 @@ export default async function handler(req, res) {
             new_return: updatedBooking.returnDate,
             payment_intent_id: paymentIntent.id,
           });
+
+          // ── Ledger: record extension payment credit (idempotent on PI ID) ──
+          try {
+            const sbLedger = getSupabaseAdmin();
+            if (sbLedger && resolvedBookingId) {
+              const ledgerResult = await addLedgerPayment(sbLedger, {
+                bookingId:               resolvedBookingId,
+                paymentIntentId:         paymentIntent.id,
+                amount:                  extensionAmountDollars,
+                transaction_type:        "payment",
+                notes:                   `Extension payment — ${extension_label || ""} (+${extensionAmountDollars} paid)`,
+              });
+              console.log("[LEDGER_EXTENSION_PAYMENT]", {
+                booking_ref:       resolvedBookingId,
+                pi_id:             paymentIntent.id,
+                amount:            extensionAmountDollars,
+                duplicate:         ledgerResult.duplicate,
+              });
+            }
+          } catch (ledgerErr) {
+            console.error("stripe-webhook: extension ledger payment write failed (non-fatal):", ledgerErr.message);
+          }
         } catch (err) {
           console.error("stripe-webhook: extension confirmation error:", err);
         }
@@ -2753,6 +2776,27 @@ export default async function handler(req, res) {
           amount:            amountPaid,
           reason,
         });
+        // ── Ledger: record post-rental payment credit (idempotent on PI ID) ─
+        try {
+          const sbLedger = getSupabaseAdmin();
+          if (sbLedger && resolvedRef) {
+            const ledgerResult = await addLedgerPayment(sbLedger, {
+              bookingId:       resolvedRef,
+              paymentIntentId: paymentIntent.id,
+              amount:          amountPaid,
+              notes:           `${paymentType} payment${reason ? ` — ${reason}` : ""}`,
+            });
+            console.log("[LEDGER_POST_RENTAL_PAYMENT]", {
+              payment_type: paymentType,
+              booking_ref:  resolvedRef,
+              pi_id:        paymentIntent.id,
+              amount:       amountPaid,
+              duplicate:    ledgerResult.duplicate,
+            });
+          }
+        } catch (ledgerErr) {
+          console.error(`stripe-webhook: post-rental ledger write failed for PI ${paymentIntent.id} (non-fatal):`, ledgerErr.message);
+        }
       } catch (revErr) {
         console.error(`stripe-webhook: post-rental revenue record failed for PI ${paymentIntent.id}:`, revErr.message);
       }
@@ -3173,6 +3217,26 @@ export default async function handler(req, res) {
             await autoActivateIfPickupArrived(bookingPatch);
           } catch (activErr) {
             console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
+          }
+          // ── Ledger: record balance payment credit (idempotent on PI ID) ────
+          try {
+            const sbLedger = getSupabaseAdmin();
+            if (sbLedger && (bookingPatch.bookingId || bookingRef)) {
+              const ledgerResult = await addLedgerPayment(sbLedger, {
+                bookingId:       bookingPatch.bookingId || bookingRef,
+                paymentIntentId: paymentIntent.id,
+                amount:          paidAmount,
+                notes:           `Rental balance payment ($${paidAmount.toFixed(2)})`,
+              });
+              console.log("[LEDGER_BALANCE_PAYMENT]", {
+                booking_ref: bookingPatch.bookingId || bookingRef,
+                pi_id:       paymentIntent.id,
+                amount:      paidAmount,
+                duplicate:   ledgerResult.duplicate,
+              });
+            }
+          } catch (ledgerErr) {
+            console.error("stripe-webhook: balance_payment ledger write failed (non-fatal):", ledgerErr.message);
           }
         } catch (err) {
           console.error("stripe-webhook: balance_payment DB write error:", err);
@@ -3878,6 +3942,40 @@ export default async function handler(req, res) {
         charge_id:       charge.id,
         amount_refunded: amountRefunded,
       });
+      // ── Ledger: record partial refund debit (idempotent on charge ID) ──
+      if (amountRefunded > 0) {
+        try {
+          let partialRefBookingRef = null;
+          const partialMeta = charge.metadata || {};
+          const partialMetaRef = partialMeta.booking_id || partialMeta.booking_ref || partialMeta.original_booking_id || "";
+          if (partialMetaRef && partialMetaRef.startsWith("bk-")) {
+            partialRefBookingRef = await resolveBookingId(partialMetaRef);
+          }
+          if (!partialRefBookingRef && piId) {
+            partialRefBookingRef = await resolveBookingIdByPaymentIntent(piId);
+          }
+          if (partialRefBookingRef) {
+            const sbPartialRefund = getSupabaseAdmin();
+            if (sbPartialRefund) {
+              const ledgerResult = await addLedgerRefund(sbPartialRefund, {
+                bookingId:               partialRefBookingRef,
+                chargeId:                charge.id,
+                stripePaymentIntentId:   piId || undefined,
+                amount:                  amountRefunded,
+                notes:                   `Partial refund — $${amountRefunded.toFixed(2)} returned to renter`,
+              });
+              console.log("[LEDGER_PARTIAL_REFUND]", {
+                booking_ref:  partialRefBookingRef,
+                charge_id:    charge.id,
+                amount:       amountRefunded,
+                duplicate:    ledgerResult.duplicate,
+              });
+            }
+          }
+        } catch (partialLedgerErr) {
+          console.error("[CHARGE_REFUNDED] partial refund ledger write failed (non-fatal):", partialLedgerErr.message);
+        }
+      }
       return res.status(200).json({ received: true });
     }
 
@@ -3965,6 +4063,30 @@ export default async function handler(req, res) {
         });
       } catch (releaseErr) {
         console.error("[CHARGE_REFUNDED] blocked_dates release failed (non-fatal):", releaseErr.message);
+      }
+    }
+
+    // ── Ledger: record full refund debit (idempotent on charge ID) ───────
+    if (amountRefunded > 0) {
+      try {
+        const sbRefundLedger = getSupabaseAdmin();
+        if (sbRefundLedger) {
+          const ledgerResult = await addLedgerRefund(sbRefundLedger, {
+            bookingId:             refundBookingRef,
+            chargeId:              charge.id,
+            stripePaymentIntentId: piId || undefined,
+            amount:                amountRefunded,
+            notes:                 `Full refund — $${amountRefunded.toFixed(2)} returned to renter`,
+          });
+          console.log("[LEDGER_FULL_REFUND]", {
+            booking_ref: refundBookingRef,
+            charge_id:   charge.id,
+            amount:      amountRefunded,
+            duplicate:   ledgerResult.duplicate,
+          });
+        }
+      } catch (refundLedgerErr) {
+        console.error("[CHARGE_REFUNDED] full refund ledger write failed (non-fatal):", refundLedgerErr.message);
       }
     }
 

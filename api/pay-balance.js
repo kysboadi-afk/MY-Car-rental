@@ -22,6 +22,7 @@ import {
 } from "./_settings.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getVehicleById } from "./_vehicles.js";
+import { getLedgerRemainingBalance } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -51,6 +52,7 @@ export default async function handler(req, res) {
     const {
       vehicleId, name, email, pickup, returnDate, protectionPlan,
       bookingId, originalPaymentIntentId, depositPaymentIntentId,
+      payment_amount,
     } = req.body;
 
     // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
@@ -135,6 +137,41 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No balance due for this booking." });
     }
 
+    // ── Ledger-based remaining balance cap ────────────────────────────────────
+    // If the booking has ledger entries, derive the authoritative remaining
+    // balance from the ledger and use the smaller of the two to prevent
+    // overpayment even when the computed price diverges from ledger history.
+    const totalRemainingBalance = balanceAmount; // full computed balance before partial adjustment
+    let paymentAmount = balanceAmount;
+    if (bookingRef) {
+      try {
+        const ledgerRemaining = await getLedgerRemainingBalance(sb, { bookingId: bookingRef });
+        if (ledgerRemaining > 0) {
+          paymentAmount = Math.min(paymentAmount, ledgerRemaining);
+        }
+      } catch (ledgerCapErr) {
+        console.warn("pay-balance: ledger remaining balance cap check failed (non-fatal):", ledgerCapErr.message);
+      }
+    }
+
+    // ── Optional partial payment amount from frontend ─────────────────────────
+    // Renter may request to pay less than the full balance.  Server caps the
+    // amount to paymentAmount (ledger-capped balance) to prevent overpayment.
+    if (payment_amount !== undefined && payment_amount !== null) {
+      const requestedAmount = Math.round(Number(payment_amount) * 100) / 100;
+      if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+        return res.status(400).json({ error: "payment_amount must be a positive number." });
+      }
+      if (requestedAmount > paymentAmount) {
+        return res.status(400).json({
+          error: `Payment amount ($${requestedAmount.toFixed(2)}) exceeds remaining balance ($${paymentAmount.toFixed(2)}).`,
+        });
+      }
+      paymentAmount = Math.round(requestedAmount * 100) / 100;
+    }
+
+    const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(totalRemainingBalance * 100);
+
     // Find or create a Stripe Customer so the card can be saved for future
     // off-session charges (e.g., damages, late fees).
     let stripeCustomerId;
@@ -155,7 +192,7 @@ export default async function handler(req, res) {
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
+      amount: Math.round(paymentAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
       customer: stripeCustomerId,
       // Save the card for future off-session charges (damages, late fees, etc.).
@@ -181,18 +218,23 @@ export default async function handler(req, res) {
         deposit_payment_intent_id:  depositPaymentIntentId || originalPaymentIntentId || "",
         deposit_already_paid:  depositPaid.toFixed(2),
         full_rental_amount:    (computedFullRental + protectionCost).toFixed(2),
-        balance_paid:          balanceAmount.toFixed(2),
+        balance_paid:          paymentAmount.toFixed(2),
         waiver_applied:        waiverApplied.toFixed(2),
+        is_partial_payment:    isPartialPayment ? "true" : "false",
+        total_remaining_balance: totalRemainingBalance.toFixed(2),
       },
     });
 
     res.status(200).json({
-      clientSecret:   paymentIntent.client_secret,
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-      balanceAmount:  balanceAmount.toFixed(2),
-      preTaxAmount:   preTaxAmount.toFixed(2),
-      depositPaid:    depositPaid.toFixed(2),
-      waiverApplied:  waiverApplied.toFixed(2),
+      clientSecret:           paymentIntent.client_secret,
+      publishableKey:         process.env.STRIPE_PUBLISHABLE_KEY,
+      balanceAmount:          totalRemainingBalance.toFixed(2),
+      paymentAmount:          paymentAmount.toFixed(2),
+      remainingAfterPayment:  Math.max(0, totalRemainingBalance - paymentAmount).toFixed(2),
+      isPartialPayment,
+      preTaxAmount:           preTaxAmount.toFixed(2),
+      depositPaid:            depositPaid.toFixed(2),
+      waiverApplied:          waiverApplied.toFixed(2),
     });
   } catch (err) {
     console.error("Stripe PaymentIntent (balance) error:", err);
