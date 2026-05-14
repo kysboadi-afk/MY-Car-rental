@@ -18,7 +18,7 @@
 //  14. logSkippedBooking — writes log with action=skipped
 //  15. normalizeAllCustomers — processes all customers in chunks
 
-import { mock, test, beforeEach } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
