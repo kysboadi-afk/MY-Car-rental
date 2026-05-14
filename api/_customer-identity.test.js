@@ -10,13 +10,14 @@
 //   6. findCustomerMatch — tier 3: exact_phone
 //   7. findCustomerMatch — no match (null result)
 //   8. findCustomerMatch — skips tier when booking field is null
-//   9. writeMigrationLog — happy path
-//  10. writeMigrationLog — idempotent on unique_violation (23505)
-//  11. linkBookingToCustomer — writes bookings + customers + log
-//  12. linkBookingToCustomer — non-destructive (skips customer_id update when already set)
-//  13. createIdentityConflict — writes conflict + log
-//  14. logSkippedBooking — writes log with action=skipped
-//  15. normalizeAllCustomers — processes all customers in chunks
+//   9. findCustomerMatch — routes multi-match collision as ambiguous
+//  10. writeMigrationLog — happy path
+//  11. writeMigrationLog — idempotent on unique_violation (23505)
+//  12. linkBookingToCustomer — writes bookings + customers + log
+//  13. linkBookingToCustomer — non-destructive (skips customer_id update when already set)
+//  14. createIdentityConflict — writes conflict + log
+//  15. logSkippedBooking — writes log with action=skipped
+//  16. normalizeAllCustomers — processes all customers in chunks
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -184,7 +185,9 @@ function makeFindMatchSupabase(responses) {
 function makeChainableThat(fn) {
   const handler = {
     get(_, prop) {
-      if (["maybeSingle"].includes(prop)) return fn;
+      if (prop === "maybeSingle") return () => Promise.resolve(fn(prop));
+      if (prop === "single") return () => Promise.resolve(fn(prop));
+      if (prop === "limit") return () => Promise.resolve(fn(prop));
       return () => new Proxy({}, handler);
     },
   };
@@ -263,6 +266,28 @@ test("findCustomerMatch — skips stripe tier when booking.stripe_customer_id is
   const result = await findCustomerMatch(sb, booking);
   assert.ok(result);
   assert.equal(result.confidenceTier, "exact_email");
+});
+
+test("findCustomerMatch — returns ambiguous result for PGRST116 multi-match collisions", async () => {
+  const booking = {
+    booking_ref: "bk-6",
+    stripe_customer_id: "cus_missing",
+    customer_email: "dupe@example.com",
+    customer_phone: null,
+  };
+
+  const sb = makeFindMatchSupabase([
+    { data: null, error: null }, // stripe miss
+    { data: null, error: { code: "PGRST116", message: "multiple rows returned" } }, // normalized_email collision
+    { data: [{ id: "c-a" }, { id: "c-b" }], error: null }, // collision candidates
+  ]);
+
+  const result = await findCustomerMatch(sb, booking);
+  assert.ok(result);
+  assert.equal(result.ambiguous, true);
+  assert.match(result.reason, /multi_match_normalized_email/);
+  assert.equal(result.candidates.length, 2);
+  assert.equal(result.candidates[0].id, "c-a");
 });
 
 // ── Test 9–10: writeMigrationLog ──────────────────────────────────────────────

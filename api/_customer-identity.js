@@ -149,77 +149,130 @@ export async function normalizeAllCustomers(supabase, { chunkSize = 200 } = {}) 
  *
  * Returns:
  *   { customer: {...}, confidenceTier: 'exact_stripe_id'|'exact_email'|'exact_phone' }
- *   OR null if no deterministic match was found (ambiguous / conflict case).
+ *   OR { ambiguous: true, reason: string, candidates: [{id,...}] } when a tier
+ *      returns multiple rows (e.g. PGRST116 / multi-match collision)
+ *   OR null if no deterministic match was found.
  *
  * Does NOT write to any table.
  *
  * @param {object} supabase
  * @param {object} booking  - must include: booking_ref, customer_email, customer_phone, stripe_customer_id
- * @returns {Promise<{customer: object, confidenceTier: string}|null>}
+ * @returns {Promise<{customer: object, confidenceTier: string}|{ambiguous: true, reason: string, candidates: object[]}|null>}
  */
 export async function findCustomerMatch(supabase, booking) {
+  const isMultiMatchError = (err) => {
+    if (!err) return false;
+    const code = typeof err.code === "string" ? err.code.toUpperCase() : "";
+    const message = typeof err.message === "string" ? err.message.toLowerCase() : "";
+    return code === "PGRST116" || message.includes("multiple");
+  };
+
+  const buildAmbiguousResult = async (queryBuilder, reason) => {
+    const { data: candidates = [] } = await queryBuilder.limit(25);
+    return {
+      ambiguous: true,
+      reason,
+      candidates: candidates.filter((c) => c?.id),
+    };
+  };
+
   // ── Tier 1: exact Stripe customer ID ──────────────────────────────────────
   if (booking.stripe_customer_id) {
-    const { data: byStripe } = await supabase
+    const stripeQuery = supabase
       .from("customers")
       .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
-      .eq("stripe_customer_id", booking.stripe_customer_id)
-      .maybeSingle();
+      .eq("stripe_customer_id", booking.stripe_customer_id);
+
+    const { data: byStripe, error: byStripeErr } = await stripeQuery.maybeSingle();
 
     if (byStripe) {
       return { customer: byStripe, confidenceTier: "exact_stripe_id" };
+    }
+    if (isMultiMatchError(byStripeErr)) {
+      return buildAmbiguousResult(
+        stripeQuery,
+        "multi_match_stripe_customer_id: multiple customers share the same stripe_customer_id"
+      );
     }
   }
 
   // ── Tier 2: exact normalized email ────────────────────────────────────────
   const normEmail = normalizeEmailForLinking(booking.customer_email);
   if (normEmail) {
-    const { data: byEmail } = await supabase
+    const byEmailQuery = supabase
       .from("customers")
       .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
-      .eq("normalized_email", normEmail)
-      .maybeSingle();
+      .eq("normalized_email", normEmail);
+
+    const { data: byEmail, error: byEmailErr } = await byEmailQuery.maybeSingle();
 
     if (byEmail) {
       return { customer: byEmail, confidenceTier: "exact_email" };
     }
+    if (isMultiMatchError(byEmailErr)) {
+      return buildAmbiguousResult(
+        byEmailQuery,
+        "multi_match_normalized_email: multiple customers share the same normalized_email"
+      );
+    }
 
     // Also try customers.email directly (for records not yet normalized)
-    const { data: byEmailRaw } = await supabase
+    const byEmailRawQuery = supabase
       .from("customers")
       .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
       .eq("email", normEmail)
-      .is("normalized_email", null)
-      .maybeSingle();
+      .is("normalized_email", null);
+
+    const { data: byEmailRaw, error: byEmailRawErr } = await byEmailRawQuery.maybeSingle();
 
     if (byEmailRaw) {
       return { customer: byEmailRaw, confidenceTier: "exact_email" };
+    }
+    if (isMultiMatchError(byEmailRawErr)) {
+      return buildAmbiguousResult(
+        byEmailRawQuery,
+        "multi_match_email_raw: multiple unnormalized customers share the same email"
+      );
     }
   }
 
   // ── Tier 3: exact normalized phone ────────────────────────────────────────
   const normPhone = normalizePhoneForLinking(booking.customer_phone);
   if (normPhone) {
-    const { data: byPhone } = await supabase
+    const byPhoneQuery = supabase
       .from("customers")
       .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
-      .eq("normalized_phone", normPhone)
-      .maybeSingle();
+      .eq("normalized_phone", normPhone);
+
+    const { data: byPhone, error: byPhoneErr } = await byPhoneQuery.maybeSingle();
 
     if (byPhone) {
       return { customer: byPhone, confidenceTier: "exact_phone" };
     }
+    if (isMultiMatchError(byPhoneErr)) {
+      return buildAmbiguousResult(
+        byPhoneQuery,
+        "multi_match_normalized_phone: multiple customers share the same normalized_phone"
+      );
+    }
 
     // Also try customers.phone directly (for records not yet normalized)
-    const { data: byPhoneRaw } = await supabase
+    const byPhoneRawQuery = supabase
       .from("customers")
       .select("id, email, phone, normalized_email, normalized_phone, stripe_customer_id, ledger_migration_status")
       .eq("phone", normPhone)
-      .is("normalized_phone", null)
-      .maybeSingle();
+      .is("normalized_phone", null);
+
+    const { data: byPhoneRaw, error: byPhoneRawErr } = await byPhoneRawQuery.maybeSingle();
 
     if (byPhoneRaw) {
       return { customer: byPhoneRaw, confidenceTier: "exact_phone" };
+    }
+    if (isMultiMatchError(byPhoneRawErr)) {
+      return buildAmbiguousResult(
+        byPhoneRawQuery,
+        "multi_match_phone_raw: multiple unnormalized customers share the same phone"
+      );
     }
   }
 

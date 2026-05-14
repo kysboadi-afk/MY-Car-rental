@@ -148,7 +148,15 @@ export default async function handler(req, res) {
         // 3-tier match
         const match = await findCustomerMatch(supabase, booking);
 
-        if (match) {
+        if (match?.ambiguous) {
+          await createIdentityConflict(
+            supabase,
+            booking,
+            match.candidates ?? [],
+            match.reason ?? "ambiguous_match_detected"
+          );
+          counters.conflicts++;
+        } else if (match) {
           const { linked, reason } = await linkBookingToCustomer(
             supabase,
             booking,
@@ -163,10 +171,7 @@ export default async function handler(req, res) {
             counters.errors++;
           }
         } else {
-          // No deterministic match found.
-          // Check if multiple partial candidates exist (phone or email collision
-          // across different customer records). For now, log as skipped since
-          // findCustomerMatch already returns null for ambiguous multi-match.
+          // No deterministic match found and no multi-match ambiguity.
           await logSkippedBooking(
             supabase,
             booking.booking_ref,
