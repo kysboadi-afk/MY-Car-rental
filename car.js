@@ -708,11 +708,13 @@ idUpload.addEventListener("change", function(e) {
     return;
   }
 
-  // Validate file type — also accept HEIC/HEIF (iPhone) and WebP, and fall back
-  // to extension check when the browser reports an empty MIME type (some mobile browsers).
-  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', 'image/webp'];
-  const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-  if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+  // Validate file type — accept any image format (covers HEIC/HEIF from iPhone,
+  // WebP, JPEG, PNG, BMP, etc.) plus PDF. Also fall back to extension check when
+  // the browser reports an empty MIME type (some mobile browsers).
+  const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+  const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    || (file.type === '' && allowedExts.test(file.name));
+  if (!isValidType) {
     alert(window.slyI18n.t("booking.alertIdType"));
     e.target.value = '';
     uploadedFile = null;
@@ -750,9 +752,10 @@ idBackUpload.addEventListener("change", function(e) {
     return;
   }
 
-  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', 'image/webp'];
-  const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-  if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+  const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+  const isValidBackType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    || (file.type === '' && allowedExts.test(file.name));
+  if (!isValidBackType) {
     alert(window.slyI18n.t("booking.alertIdType"));
     e.target.value = '';
     uploadedFileBack = null;
@@ -798,9 +801,10 @@ insuranceUpload.addEventListener("change", function(e) {
     updatePayBtn();
   };
 
-  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf', 'image/heic', 'image/heif', 'image/webp'];
-  const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-  if (!allowedTypes.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
+  const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+  const isValidInsType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    || (file.type === '' && allowedExts.test(file.name));
+  if (!isValidInsType) {
     rejectInsuranceUpload(window.slyI18n.t("booking.alertInsuranceType"));
     return;
   }

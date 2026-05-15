@@ -419,6 +419,22 @@ function initFileUpload(inputId, infoId, onFile) {
       }
       return;
     }
+    // Accept any image format (covers HEIC/HEIF from iPhone, WebP, JPEG, PNG, etc.)
+    // plus PDF. Fall back to extension check for browsers that report empty MIME types.
+    var allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+    var validType = file.type.startsWith("image/") || file.type === "application/pdf"
+      || (file.type === "" && allowedExts.test(file.name));
+    if (!validType) {
+      alert("Please upload a photo or image of your ID (JPG, PNG, HEIC, WebP, etc.) or a PDF.");
+      input.value = "";
+      onFile(null);
+      if (info) {
+        info.querySelector(".file-name").textContent = "No file selected";
+        info.querySelector(".file-size").textContent = "";
+      }
+      updateBookBtn();
+      return;
+    }
     onFile(file);
     if (info) {
       info.querySelector(".file-name").textContent = file.name;
