@@ -590,6 +590,16 @@ function alreadySentAny(booking, keys) {
   return keys.some((key) => alreadySent(booking, key));
 }
 
+function buildVehicleExtendLink(booking) {
+  const vehicleId = String(booking?.vehicleId || booking?.vehicle_id || "").trim();
+  if (!vehicleId) return "https://www.slytrans.com/manage-booking.html";
+  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(vehicleId)}&extend=1`;
+}
+
+function resolveBookingPaymentOrPortalLink(booking) {
+  return booking?.paymentLink || booking?.balancePaymentLink || buildVehicleExtendLink(booking);
+}
+
 /**
  * Build template variables for a booking.
  */
@@ -606,8 +616,8 @@ function vars(booking) {
     buffered_time: booking.returnTime ? (formatTime(bufferedReturnDt) || "") : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
-    payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",
-    extend_link:   "https://www.slytrans.com/manage-booking.html",
+    payment_link:  resolveBookingPaymentOrPortalLink(booking),
+    extend_link:   buildVehicleExtendLink(booking),
   };
 }
 
@@ -899,8 +909,8 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
       ) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
-          manage_link: "https://www.slytrans.com/manage-booking.html",
-          payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+          manage_link: buildVehicleExtendLink(booking),
+          payment_link: resolveBookingPaymentOrPortalLink(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
@@ -959,7 +969,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
           if (!(await hasRecentSmsWithin(sb, id, 30))) {
             const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
               ...v,
-              payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+              payment_link: resolveBookingPaymentOrPortalLink(booking),
             }), {
               booking_ref: id,
               vehicle_id: vehicleId,
@@ -1004,8 +1014,8 @@ export async function processOnboardingCatchup(allBookings, now, sentMarks) {
       ) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
-          manage_link: "https://www.slytrans.com/manage-booking.html",
-          payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+          manage_link: buildVehicleExtendLink(booking),
+          payment_link: resolveBookingPaymentOrPortalLink(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
@@ -1050,7 +1060,7 @@ export async function processOnboardingCatchup(allBookings, now, sentMarks) {
         if (!(await hasRecentSmsWithin(sb, id, 30))) {
           const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
             ...v,
-            payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+            payment_link: resolveBookingPaymentOrPortalLink(booking),
           }), {
             booking_ref: id,
             vehicle_id: vehicleId,
@@ -1645,7 +1655,7 @@ export async function loadBookingsFromSupabase(sb) {
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, remaining_balance, " +
-      "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, updated_at, created_at";
+      "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, balance_payment_link, updated_at, created_at";
 
     const SELECT_COLS_FALLBACK =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
@@ -1769,7 +1779,7 @@ export async function loadBookingsFromSupabase(sb) {
         lateFeeStatus:  row.late_fee_status || null,
         balanceDue:     Number(row.balance_due || 0),
         balanceDueSetAt: row.balance_due_set_at || null,
-        paymentLink:    "https://www.slytrans.com/balance.html",
+        paymentLink:    row.balance_payment_link || buildVehicleExtendLink({ vehicleId }),
         smsSentAt:      {},   // populated below from sms_logs
         createdAt:      row.created_at || null,
       });

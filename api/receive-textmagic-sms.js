@@ -116,6 +116,12 @@ function findExtendPending(allBookings, phone) {
   return null;
 }
 
+function buildVehicleExtendEntryLink(vehicleId) {
+  const normalized = String(vehicleId || "").trim();
+  if (!normalized) return "https://www.slytrans.com/manage-booking.html";
+  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
+}
+
 /**
  * Check whether there is a conflict (next booking) within `extraMinutes` of
  * the current return time for the given vehicle.
@@ -512,7 +518,7 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, selected.price, selected.label);
   const rawPaymentLink = pi
     ? buildExtensionPaymentLink(pi.client_secret, pi.id)
-    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
+    : (booking.paymentLink || buildVehicleExtendEntryLink(vehicleId));
 
   // Validate the base page is reachable before storing or sending the link
   const bookingId = booking.bookingId || booking.paymentIntentId;
@@ -623,7 +629,7 @@ async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, price, label);
   const rawPaymentLink = pi
     ? buildExtensionPaymentLink(pi.client_secret, pi.id)
-    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
+    : (booking.paymentLink || buildVehicleExtendEntryLink(vehicleId));
 
   // Validate base page before storing or sending the link
   const bookingId = booking.bookingId || booking.paymentIntentId;

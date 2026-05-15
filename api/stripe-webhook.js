@@ -1517,6 +1517,12 @@ function sanitizeSmsValue(value) {
   return String(value || "").replace(/[\r\n]+/g, " ").trim();
 }
 
+function buildVehicleExtendEntryLink(vehicleId) {
+  const normalized = String(uiVehicleId(vehicleId || "") || "").trim();
+  if (!normalized) return "https://www.slytrans.com/manage-booking.html";
+  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
+}
+
 async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, amountDollars, paymentType }) {
   try {
     const sb = getSupabaseAdmin();
@@ -3140,7 +3146,7 @@ export default async function handler(req, res) {
                 phone: preContact.phone,
                 body: render(BOOKING_ONBOARDING, {
                   customer_name: sanitizeSmsValue(preContact.name || ""),
-                  manage_link: "https://www.slytrans.com/manage-booking.html",
+                  manage_link: buildVehicleExtendEntryLink(preContact.vehicleId),
                 }),
               });
             }
@@ -3658,7 +3664,7 @@ export default async function handler(req, res) {
               phone: sl_renter_phone,
               body: render(BOOKING_ONBOARDING, {
                 customer_name: sanitizeSmsValue(sl_renter_name || ""),
-                manage_link: "https://www.slytrans.com/manage-booking.html",
+                manage_link: buildVehicleExtendEntryLink(sl_vehicle_id),
               }),
             });
           }
@@ -3778,7 +3784,7 @@ export default async function handler(req, res) {
               phone: _notifyMeta.renter_phone,
               body: render(BOOKING_ONBOARDING, {
                 customer_name: sanitizeSmsValue(_notifyMeta.renter_name || ""),
-                manage_link: "https://www.slytrans.com/manage-booking.html",
+                manage_link: buildVehicleExtendEntryLink(_notifyMeta.vehicle_id),
               }),
             });
           }

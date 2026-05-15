@@ -247,7 +247,7 @@ export default async function handler(req, res) {
     const lookupBookingRef = normalizeLookupBookingRef(identifier);
     const baseVerifyQuery = () => sb
       .from("bookings")
-      .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
+      .select("*")
       .in("status", MANAGE_ELIGIBLE_STATUSES)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -279,14 +279,33 @@ export default async function handler(req, res) {
     }
 
     const matches = (candidates || []).filter((row) => {
-      const rowEmail      = String(row.customer_email || "").trim().toLowerCase();
-      const rowPhone      = normalizeLookupPhone(row.customer_phone || "");
+      const metadata = row && typeof row.metadata === "object" && row.metadata ? row.metadata : {};
+      const rowEmails = [
+        row.customer_email,
+        row.renter_email,
+        row.email,
+        metadata.customer_email,
+        metadata.renter_email,
+        metadata.email,
+      ]
+        .map((v) => String(v || "").trim().toLowerCase())
+        .filter(Boolean);
+      const rowPhones = [
+        row.customer_phone,
+        row.renter_phone,
+        row.phone,
+        metadata.customer_phone,
+        metadata.renter_phone,
+        metadata.phone,
+      ]
+        .map((v) => normalizeLookupPhone(v))
+        .filter(Boolean);
       const rowBookingRef = String(row.booking_ref || "").trim().toLowerCase();
-      if (lookupEmail)      return rowEmail === lookupEmail;
+      if (lookupEmail)      return rowEmails.includes(lookupEmail);
       // Check booking ref BEFORE phone: booking refs like "bk-3bcf479ac6ec" contain
       // digits which make lookupPhone truthy, so phone must not take priority here.
       if (lookupBookingRef) return !!rowBookingRef && rowBookingRef === lookupBookingRef;
-      if (lookupPhone)      return !!rowPhone && rowPhone === lookupPhone;
+      if (lookupPhone)      return rowPhones.includes(lookupPhone);
       return false;
     });
 
