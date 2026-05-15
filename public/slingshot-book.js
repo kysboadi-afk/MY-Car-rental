@@ -99,6 +99,10 @@ async function storeBookingDocsOrThrow(payload) {
   }
 }
 
+/**
+ * Only validation-size failures block checkout immediately.
+ * Other failures remain recoverable via the success-page/IndexedDB fallback.
+ */
 function shouldBlockPaymentForDocFailure(error) {
   var status = error && typeof error.status === "number" ? error.status : 0;
   return status === 400 || status === 413;
@@ -132,22 +136,6 @@ async function updatePendingBookingLifecycle(targetStatus, reason, options) {
       return true;
     }
     console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
-  } else {
-    try {
-      var res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body,
-      });
-      if (!res.ok) {
-        throw new Error("HTTP " + res.status);
-      }
-      if (shouldClearLocal) pendingBookingId = null;
-      return true;
-    } catch (e) {
-      console.warn("cancel-pending-booking fetch error:", e);
-      return false;
-    }
   }
   try {
     var fallbackRes = await fetch(url, {

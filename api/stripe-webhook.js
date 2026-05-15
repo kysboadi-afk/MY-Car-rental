@@ -1900,7 +1900,7 @@ function isInitialBookingPayment(paymentType) {
  * @param {object} sb           - Supabase admin client
  * @param {string} bookingRef   - booking_ref value (e.g. "bk-abc123")
  * @param {string} logPrefix    - prefix for log messages (e.g. "[PAYMENT_FAILED]")
- * @param {string} targetStatus - lifecycle state to write
+ * @param {string} targetStatus - lifecycle state to write (payment_failed, abandoned_checkout, etc.)
  * @param {string} reason       - cleanup reason for structured logs
  */
 async function transitionCheckoutBooking(sb, bookingRef, logPrefix, targetStatus, reason) {

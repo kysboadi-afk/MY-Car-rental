@@ -110,6 +110,10 @@ async function storeBookingDocsOrThrow(payload) {
   }
 }
 
+/**
+ * Only validation-size failures block checkout immediately.
+ * Other failures remain recoverable via the success-page/IndexedDB fallback.
+ */
 function shouldBlockPaymentForDocFailure(error) {
   const status = error && typeof error.status === "number" ? error.status : 0;
   return status === 400 || status === 413;

@@ -315,7 +315,7 @@ export default async function handler(req, res) {
         activeBookings++;
         activeOrOverdueBookings.push(booking);
       }
-       if (booking.status === "reserved_unpaid") pendingApprovals++;
+      if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
       if (booking.returnDate === todayStr && bookingIsActive
           && booking.status !== "completed_rental") {

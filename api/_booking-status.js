@@ -50,11 +50,21 @@ export const INCOMPLETE_CHECKOUT_APP_STATUSES = new Set([
   "abandoned_checkout",
 ]);
 
+/**
+ * Convert an app-layer booking status into the canonical DB status.
+ * Falls back to pending_checkout for empty input and passes through unknown
+ * non-empty values so older environments remain debuggable instead of masking data.
+ */
 export function toDbBookingStatus(status) {
   const normalized = String(status || "").trim();
   return APP_TO_DB_STATUS[normalized] || normalized || "pending_checkout";
 }
 
+/**
+ * Convert a DB booking status into the admin/app-layer status label.
+ * Falls back to pending_checkout for empty input and passes through unknown
+ * non-empty values so the UI still surfaces unexpected lifecycle values.
+ */
 export function toAppBookingStatus(status) {
   const normalized = String(status || "").trim();
   return DB_TO_APP_STATUS[normalized] || normalized || "pending_checkout";
