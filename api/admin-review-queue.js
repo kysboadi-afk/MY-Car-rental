@@ -14,7 +14,7 @@
 // reviewVersion is the optimistic concurrency token — callers must pass it
 // back unchanged as expectedReviewVersion when submitting a review action.
 
-import { isAdminAuthorized } from "./_admin-auth.js";
+import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import {
   listPendingIdentityRecoveryApplications,
   listReviewQueueApplications,
@@ -30,13 +30,13 @@ export default async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
 
-  const { secret, page, pageSize } = req.query || {};
-  if (!isAdminAuthorized(secret)) {
+  const { page, pageSize } = req.query || {};
+  if (!isAdminAuthorized(extractAdminSecret(req))) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

@@ -8,7 +8,7 @@
 //                          provider_id, created_at }, … ] }
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { isAdminAuthorized, isAdminConfigured, extractAdminSecret } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET" && req.method !== "DELETE") return res.status(405).send("Method Not Allowed");
 
@@ -26,8 +26,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const secret = req.query?.secret;
-  if (!isAdminAuthorized(secret)) {
+  if (!isAdminAuthorized(extractAdminSecret(req))) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

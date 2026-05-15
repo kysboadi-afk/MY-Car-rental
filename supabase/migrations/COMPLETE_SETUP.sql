@@ -10393,3 +10393,1312 @@ WHERE (
     OR lower(data->>'vehicle_name') LIKE '%slingshot%'
 )
   AND (data->>'category' IS NULL OR data->>'category' != 'slingshot');
+
+
+-- ===========================================================================
+-- 0142_canonical_revenue_pipeline.sql
+-- ===========================================================================
+-- Migration 0142: Canonical revenue pipeline + reconciliation audit surface
+--
+-- Goal:
+--   Ensure every admin financial surface derives from one canonical dataset.
+--
+-- Canonical inclusion rules:
+--   payment_status = 'paid'
+--   sync_excluded  = false
+--   is_orphan      = false
+--   is_cancelled   = false
+--   is_no_show     = false
+--
+-- Notes:
+--   • revenue_reporting_base already applies payment_status/sync_excluded/is_orphan.
+--   • This migration adds the remaining is_cancelled/is_no_show filters in one place.
+--   • The audit view preserves a reusable reconciliation query shape for diagnostics.
+--
+-- Safe to re-run: CREATE OR REPLACE VIEW is idempotent.
+
+-- Canonical row-level reporting source for all financial surfaces.
+CREATE OR REPLACE VIEW revenue_reporting_canonical AS
+SELECT
+  booking_id,
+  vehicle_id,
+  customer_name,
+  customer_phone,
+  customer_email,
+  pickup_date,
+  return_date,
+  gross_amount,
+  COALESCE(stripe_fee, 0)                         AS stripe_fee,
+  COALESCE(refund_amount, 0)                      AS refund_amount,
+  (gross_amount - COALESCE(stripe_fee, 0) - COALESCE(refund_amount, 0))
+                                                  AS canonical_net_amount,
+  deposit_amount,
+  payment_method,
+  payment_status,
+  type
+FROM revenue_reporting_base
+WHERE COALESCE(is_cancelled, false) = false
+  AND COALESCE(is_no_show, false)   = false;
+
+-- Canonical gross KPI (all fleets combined).
+CREATE OR REPLACE VIEW total_revenue_kpi_canonical AS
+SELECT COALESCE(SUM(gross_amount), 0) AS total_revenue
+FROM revenue_reporting_canonical;
+
+-- Reconciliation audit surface (preserved diagnostic artifact).
+-- Includes raw ledger rows and supplemental charges in one report shape.
+CREATE OR REPLACE VIEW revenue_reconciliation_audit AS
+WITH rr AS (
+  SELECT
+    rr.booking_id,
+    rr.payment_intent_id,
+    COALESCE(rr.gross_amount, 0)::numeric         AS gross,
+    COALESCE(rr.stripe_fee, 0)::numeric           AS fees,
+    COALESCE(rr.refund_amount, 0)::numeric        AS refunds,
+    (COALESCE(rr.gross_amount, 0)
+      - COALESCE(rr.stripe_fee, 0)
+      - COALESCE(rr.refund_amount, 0))::numeric   AS net,
+    'revenue_records'::text                        AS source_table,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan, false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show, false) = false
+    ) AS included_in_dashboard,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan, false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show, false) = false
+    ) AS included_in_revenue_page,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan, false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show, false) = false
+    ) AS included_in_fleet_analytics
+  FROM revenue_records rr
+),
+charges_only AS (
+  SELECT
+    c.booking_id,
+    c.stripe_payment_intent_id                       AS payment_intent_id,
+    COALESCE(c.amount, 0)::numeric                   AS gross,
+    0::numeric                                       AS fees,
+    0::numeric                                       AS refunds,
+    COALESCE(c.amount, 0)::numeric                   AS net,
+    'charges'::text                                  AS source_table,
+    false                                            AS included_in_dashboard,
+    false                                            AS included_in_revenue_page,
+    false                                            AS included_in_fleet_analytics
+  FROM charges c
+  WHERE c.status = 'succeeded'
+    AND (
+      c.stripe_payment_intent_id IS NULL
+      OR c.stripe_payment_intent_id NOT IN (
+        SELECT payment_intent_id
+        FROM revenue_records
+        WHERE payment_intent_id IS NOT NULL
+      )
+    )
+)
+SELECT * FROM rr
+UNION ALL
+SELECT * FROM charges_only;
+
+
+-- ===========================================================================
+-- 0143_reconciliation_audit_vehicle_id.sql
+-- ===========================================================================
+-- Migration 0143: Add vehicle_id to revenue_reconciliation_audit view
+--
+-- Extends the reconciliation audit view from 0142 to include vehicle_id for
+-- per-vehicle diagnostics and API filtering by the v2-revenue-reconciliation
+-- endpoint.  The charges CTE pulls vehicle_id via the bookings table join so
+-- unlinked charges still appear (with a NULL vehicle_id).
+--
+-- Safe to re-run: CREATE OR REPLACE VIEW is idempotent.
+
+CREATE OR REPLACE VIEW revenue_reconciliation_audit AS
+WITH rr AS (
+  SELECT
+    rr.booking_id,
+    rr.vehicle_id,
+    rr.payment_intent_id,
+    COALESCE(rr.gross_amount, 0)::numeric          AS gross,
+    COALESCE(rr.stripe_fee, 0)::numeric            AS fees,
+    COALESCE(rr.refund_amount, 0)::numeric         AS refunds,
+    (COALESCE(rr.gross_amount, 0)
+      - COALESCE(rr.stripe_fee, 0)
+      - COALESCE(rr.refund_amount, 0))::numeric    AS net,
+    'revenue_records'::text                         AS source_table,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan,    false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show,   false) = false
+    ) AS included_in_dashboard,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan,    false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show,   false) = false
+    ) AS included_in_revenue_page,
+    (
+      rr.payment_status = 'paid'
+      AND COALESCE(rr.sync_excluded, false) = false
+      AND COALESCE(rr.is_orphan,    false) = false
+      AND COALESCE(rr.is_cancelled, false) = false
+      AND COALESCE(rr.is_no_show,   false) = false
+    ) AS included_in_fleet_analytics
+  FROM revenue_records rr
+),
+charges_only AS (
+  SELECT
+    c.booking_id,
+    b.vehicle_id,
+    c.stripe_payment_intent_id                        AS payment_intent_id,
+    COALESCE(c.amount, 0)::numeric                    AS gross,
+    0::numeric                                        AS fees,
+    0::numeric                                        AS refunds,
+    COALESCE(c.amount, 0)::numeric                    AS net,
+    'charges'::text                                   AS source_table,
+    false                                             AS included_in_dashboard,
+    false                                             AS included_in_revenue_page,
+    false                                             AS included_in_fleet_analytics
+  FROM charges c
+  -- charges.booking_id stores the booking reference value (equivalent to bookings.booking_ref).
+  -- The naming difference is an existing schema convention; the join is intentionally cross-column.
+  LEFT JOIN bookings b ON b.booking_ref = c.booking_id
+  WHERE c.status = 'succeeded'
+    AND (
+      c.stripe_payment_intent_id IS NULL
+      OR c.stripe_payment_intent_id NOT IN (
+        SELECT payment_intent_id
+        FROM revenue_records
+        WHERE payment_intent_id IS NOT NULL
+      )
+    )
+)
+SELECT * FROM rr
+UNION ALL
+SELECT * FROM charges_only;
+
+
+-- ===========================================================================
+-- 0144_renter_applications_foundation.sql
+-- ===========================================================================
+-- Migration 0144: renter_applications persistence foundation (Phase 1)
+--
+-- Establishes a durable renter application record independent of email/localStorage
+-- and defines explicit lifecycle + identity status columns for future Stripe Identity
+-- integration without changing booking/payment flows.
+
+CREATE TABLE IF NOT EXISTS renter_applications (
+  id                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                  text        NOT NULL,
+  phone                 text        NOT NULL,
+  email                 text,
+  age                   integer,
+  experience            text        NOT NULL,
+  apps                  jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  agree_terms           boolean     NOT NULL DEFAULT false,
+  agree_sms_consent     boolean     NOT NULL DEFAULT false,
+  has_insurance         text,
+  protection_plan_pref  text,
+  license_file_name     text,
+  license_mime_type     text,
+  insurance_file_name   text,
+  insurance_mime_type   text,
+  has_license_upload    boolean     NOT NULL DEFAULT false,
+  has_insurance_proof   boolean     NOT NULL DEFAULT false,
+  precheck_decision     text,
+  application_status    text        NOT NULL DEFAULT 'submitted',
+  identity_status       text        NOT NULL DEFAULT 'not_started',
+  identity_session_id   text,
+  identity_verified_at  timestamptz,
+  identity_last_error   text,
+  submitted_at          timestamptz NOT NULL DEFAULT now(),
+  reviewed_at           timestamptz,
+  reviewed_by           text,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_age_check
+      CHECK (age IS NULL OR (age >= 18 AND age <= 100));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_apps_check
+      CHECK (jsonb_typeof(apps) = 'array');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_has_insurance_check
+      CHECK (has_insurance IS NULL OR has_insurance IN ('yes','no'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_protection_plan_pref_check
+      CHECK (protection_plan_pref IS NULL OR protection_plan_pref IN ('basic','standard','premium','none'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_precheck_decision_check
+      CHECK (precheck_decision IS NULL OR precheck_decision IN ('approved','review','declined'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_application_status_check
+      CHECK (application_status IN ('submitted','under_review','approved','rejected','withdrawn','expired'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_identity_status_check
+      CHECK (identity_status IN ('not_started','requires_input','processing','verified','failed','canceled'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    ADD CONSTRAINT renter_applications_identity_verified_at_check
+      CHECK (
+        (identity_status = 'verified' AND identity_verified_at IS NOT NULL)
+        OR (identity_status <> 'verified' AND identity_verified_at IS NULL)
+      );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS renter_applications_identity_session_id_uq
+  ON renter_applications (identity_session_id)
+  WHERE identity_session_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS renter_applications_application_status_idx
+  ON renter_applications (application_status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS renter_applications_identity_status_idx
+  ON renter_applications (identity_status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS renter_applications_created_at_idx
+  ON renter_applications (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS renter_applications_phone_idx
+  ON renter_applications (phone);
+
+CREATE INDEX IF NOT EXISTS renter_applications_email_idx
+  ON renter_applications (lower(email))
+  WHERE email IS NOT NULL;
+
+DROP TRIGGER IF EXISTS renter_applications_updated_at ON renter_applications;
+CREATE TRIGGER renter_applications_updated_at
+  BEFORE UPDATE ON renter_applications
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE renter_applications ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE renter_applications FROM anon;
+REVOKE ALL ON TABLE renter_applications FROM authenticated;
+GRANT ALL ON TABLE renter_applications TO service_role;
+
+DO $$
+BEGIN
+  CREATE POLICY renter_applications_service_role_all
+    ON renter_applications
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ===========================================================================
+-- 0145_stripe_identity_webhook_events.sql
+-- ===========================================================================
+-- Migration 0145: Stripe Identity webhook idempotency log
+--
+-- Stores processed Stripe Identity webhook event IDs so webhook handling
+-- is idempotent across retries/replays.
+
+CREATE TABLE IF NOT EXISTS stripe_identity_webhook_events (
+  id                  bigserial   PRIMARY KEY,
+  stripe_event_id     text        NOT NULL UNIQUE,
+  event_type          text        NOT NULL,
+  application_id      uuid        REFERENCES renter_applications(id) ON DELETE SET NULL,
+  identity_session_id text,
+  payload             jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  processed_at        timestamptz NOT NULL DEFAULT now(),
+  created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS stripe_identity_webhook_events_application_id_idx
+  ON stripe_identity_webhook_events (application_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS stripe_identity_webhook_events_identity_session_id_idx
+  ON stripe_identity_webhook_events (identity_session_id)
+  WHERE identity_session_id IS NOT NULL;
+
+ALTER TABLE stripe_identity_webhook_events ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE stripe_identity_webhook_events FROM anon;
+REVOKE ALL ON TABLE stripe_identity_webhook_events FROM authenticated;
+GRANT ALL ON TABLE stripe_identity_webhook_events TO service_role;
+
+DO $$
+BEGIN
+  CREATE POLICY stripe_identity_webhook_events_service_role_all
+    ON stripe_identity_webhook_events
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ===========================================================================
+-- 0146_application_review_phase3.sql
+-- ===========================================================================
+-- Migration 0146: Phase 3 — admin review operations
+--
+-- Extends renter_applications with:
+--   • review_version        — monotonic counter for optimistic concurrency protection
+--   • needs_info_reason     — reason text when action is "needs_info"
+--   • last_reviewer_notes   — freeform notes from the most recent reviewer
+--   • checkr_candidate_id,
+--     checkr_report_id,
+--     checkr_report_status,
+--     checkr_mvr_status     — inert Checkr attachment points (nullable, no integration yet)
+--
+-- Expands application_status to include "needs_info".
+--
+-- Creates application_review_actions (append-only audit table) with:
+--   • action_request_id uniqueness constraint to prevent duplicate submissions.
+
+-- ── 1. New columns on renter_applications ─────────────────────────────────────
+
+ALTER TABLE renter_applications
+  ADD COLUMN IF NOT EXISTS review_version       bigint  NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS needs_info_reason    text,
+  ADD COLUMN IF NOT EXISTS last_reviewer_notes  text,
+  ADD COLUMN IF NOT EXISTS checkr_candidate_id  text,
+  ADD COLUMN IF NOT EXISTS checkr_report_id     text,
+  ADD COLUMN IF NOT EXISTS checkr_report_status text,
+  ADD COLUMN IF NOT EXISTS checkr_mvr_status    text;
+
+-- ── 2. Expand the application_status check constraint to include needs_info ───
+
+DO $$
+BEGIN
+  ALTER TABLE renter_applications
+    DROP CONSTRAINT IF EXISTS renter_applications_application_status_check;
+EXCEPTION WHEN undefined_object THEN NULL;
+END $$;
+
+ALTER TABLE renter_applications
+  ADD CONSTRAINT renter_applications_application_status_check
+    CHECK (application_status IN (
+      'submitted', 'under_review', 'needs_info',
+      'approved',  'rejected', 'withdrawn', 'expired'
+    ));
+
+-- ── 3. application_review_actions audit table ─────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS application_review_actions (
+  id                bigserial    PRIMARY KEY,
+  application_id    uuid         NOT NULL REFERENCES renter_applications(id) ON DELETE CASCADE,
+  action            text         NOT NULL,
+  performed_by      text         NOT NULL,
+  notes             text,
+  previous_status   text         NOT NULL,
+  new_status        text         NOT NULL,
+  action_request_id uuid         NOT NULL,
+  created_at        timestamptz  NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+  ALTER TABLE application_review_actions
+    ADD CONSTRAINT application_review_actions_action_check
+      CHECK (action IN ('approved', 'rejected', 'needs_info'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE application_review_actions
+    ADD CONSTRAINT application_review_actions_previous_status_check
+      CHECK (previous_status IN (
+        'submitted', 'under_review', 'needs_info',
+        'approved',  'rejected', 'withdrawn', 'expired'
+      ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE application_review_actions
+    ADD CONSTRAINT application_review_actions_new_status_check
+      CHECK (new_status IN (
+        'submitted', 'under_review', 'needs_info',
+        'approved',  'rejected', 'withdrawn', 'expired'
+      ));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Idempotency: one action per (application, request-id)
+CREATE UNIQUE INDEX IF NOT EXISTS application_review_actions_idempotency_uq
+  ON application_review_actions (application_id, action_request_id);
+
+CREATE INDEX IF NOT EXISTS application_review_actions_application_id_idx
+  ON application_review_actions (application_id, created_at DESC);
+
+ALTER TABLE application_review_actions ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE application_review_actions FROM anon;
+REVOKE ALL ON TABLE application_review_actions FROM authenticated;
+GRANT  ALL ON TABLE application_review_actions TO service_role;
+GRANT  USAGE, SELECT ON SEQUENCE application_review_actions_id_seq TO service_role;
+
+DO $$
+BEGIN
+  CREATE POLICY application_review_actions_service_role_all
+    ON application_review_actions
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+
+-- ===========================================================================
+-- 0147_expense_receipts.sql
+-- ===========================================================================
+-- Expense receipt uploads for fleet expenses / expenses admin UI.
+-- Safe to re-run.
+
+ALTER TABLE expenses
+  ADD COLUMN IF NOT EXISTS receipt_url text,
+  ADD COLUMN IF NOT EXISTS receipt_filename text,
+  ADD COLUMN IF NOT EXISTS receipt_uploaded_at timestamptz,
+  ADD COLUMN IF NOT EXISTS receipt_size integer,
+  ADD COLUMN IF NOT EXISTS receipt_mime_type text;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_name = 'fleet_expenses'
+  ) THEN
+    EXECUTE $sql$
+      ALTER TABLE fleet_expenses
+        ADD COLUMN IF NOT EXISTS receipt_url text,
+        ADD COLUMN IF NOT EXISTS receipt_filename text,
+        ADD COLUMN IF NOT EXISTS receipt_uploaded_at timestamptz,
+        ADD COLUMN IF NOT EXISTS receipt_size integer,
+        ADD COLUMN IF NOT EXISTS receipt_mime_type text
+    $sql$;
+  END IF;
+END $$;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'expense-receipts',
+  'expense-receipts',
+  false,
+  10485760,
+  ARRAY['image/jpeg','image/png','image/webp','application/pdf']
+)
+ON CONFLICT (id) DO UPDATE
+  SET public = false,
+      file_size_limit = 10485760,
+      allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','application/pdf'];
+
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "expense-receipts: service write" ON storage.objects;
+
+CREATE POLICY "expense-receipts: service write"
+  ON storage.objects FOR ALL
+  TO service_role
+  USING     (bucket_id = 'expense-receipts')
+  WITH CHECK (bucket_id = 'expense-receipts');
+
+
+-- ===========================================================================
+-- 0148_customer_ledger_phase_a.sql
+-- ===========================================================================
+-- Migration 0148: Customer ledger — Phase A foundation
+--
+-- PHASE A: Additive schema only. Zero production behavior changes.
+--
+-- What this migration does:
+--   1. Extends `customers` with identity-normalization and migration-tracking columns.
+--   2. Creates `customer_ledger`            — append-only financial ledger per customer.
+--   3. Creates `customer_migration_log`     — audit trail for every customer-link decision.
+--   4. Creates `customer_identity_conflicts`— review queue for ambiguous identity matches.
+--   5. Creates `ledger_reconciliation_mismatches` — drift log between ledger and legacy.
+--   6. Creates `ledger_idempotency_log`     — duplicate-write prevention audit.
+--   7. Creates `ledger_rollback_events`     — rollback / replay operation audit.
+--   8. Seeds `customer_ledger_mode = 'shadow'` in system_settings.
+--
+-- Guardrails enforced:
+--   • No existing table is altered destructively (all ADD COLUMN IF NOT EXISTS).
+--   • No existing view, function, trigger, or RPC is modified.
+--   • No Stripe runtime paths are touched.
+--   • No enforcement behavior changes — new tables are dormant data structures.
+--   • All new tables use append-only + idempotency patterns from day one.
+--
+-- Safe to re-run: every DDL statement is guarded with IF NOT EXISTS / OR REPLACE.
+
+-- ── 1. Extend `customers` with identity-normalization columns ─────────────────
+--
+-- normalized_phone  : E.164-like digits-only string (e.g. '+13105551234').
+--                     Populated during Phase B backfill; null until then.
+-- normalized_email  : Lower-cased, trimmed email (email is already normalised
+--                     by migration 0057, so this mirrors that value for
+--                     cross-table consistency without a join).
+-- stripe_customer_id: Canonical Stripe cus_xxx for this customer entity.
+--                     Bookings store their own stripe_customer_id; this column
+--                     will hold the single canonical ID after Phase B linking.
+-- ledger_migration_status: Lifecycle state for the Phase B backfill process.
+--                     pending   → not yet evaluated
+--                     migrated  → deterministically linked, ledger populated
+--                     conflict  → ambiguous match, routed to identity_conflicts
+--                     skipped   → no bookings / nothing to migrate
+-- ledger_migrated_at: Timestamp when migration_status was last set to 'migrated'.
+
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS normalized_phone        text,
+  ADD COLUMN IF NOT EXISTS normalized_email        text,
+  ADD COLUMN IF NOT EXISTS stripe_customer_id      text,
+  ADD COLUMN IF NOT EXISTS ledger_migration_status text NOT NULL DEFAULT 'pending'
+    CHECK (ledger_migration_status IN ('pending','migrated','conflict','skipped')),
+  ADD COLUMN IF NOT EXISTS ledger_migrated_at      timestamptz;
+
+-- Index: deterministic phone match (Phase B linking)
+CREATE INDEX IF NOT EXISTS customers_normalized_phone_idx
+  ON customers (normalized_phone)
+  WHERE normalized_phone IS NOT NULL;
+
+-- Index: deterministic email match (Phase B linking)
+CREATE INDEX IF NOT EXISTS customers_normalized_email_idx
+  ON customers (normalized_email)
+  WHERE normalized_email IS NOT NULL;
+
+-- Index: Stripe customer ID match (Phase B linking)
+CREATE UNIQUE INDEX IF NOT EXISTS customers_stripe_customer_id_idx
+  ON customers (stripe_customer_id)
+  WHERE stripe_customer_id IS NOT NULL;
+
+-- Index: migration backfill cursor
+CREATE INDEX IF NOT EXISTS customers_ledger_migration_status_idx
+  ON customers (ledger_migration_status);
+
+-- ── 2. `customer_ledger` — append-only financial ledger ───────────────────────
+--
+-- Each row is a single immutable financial event for a customer.
+-- Debits (charges, fees) have direction='debit',  amount_cents > 0.
+-- Credits (payments, refunds, waivers) have direction='credit', amount_cents > 0.
+-- The net balance is SUM(debit) − SUM(credit).
+--
+-- The UNIQUE constraint on (source_type, source_id) is the idempotency gate:
+-- any duplicate write resolves to a conflict at the DB layer rather than a
+-- phantom row.  All write helpers must use ON CONFLICT DO NOTHING.
+
+CREATE TABLE IF NOT EXISTS customer_ledger (
+  id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id      uuid        NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  booking_ref      text,                   -- bookings.booking_ref; nullable (customer-level entries)
+  transaction_type text        NOT NULL
+    CHECK (transaction_type IN (
+      'rental_charge',
+      'extension_charge',
+      'late_fee',
+      'ticket_charge',
+      'manual_charge',
+      'stripe_payment',
+      'stripe_refund',
+      'admin_waiver',
+      'balance_payment',
+      'payment_plan_installment'
+    )),
+  direction        text        NOT NULL CHECK (direction IN ('debit','credit')),
+  amount_cents     integer     NOT NULL CHECK (amount_cents >= 0),
+  source_type      text        NOT NULL,   -- matches transaction_type for most entries
+  source_id        text        NOT NULL,   -- idempotency key (pi_id, charge_id, etc.)
+  description      text,
+  metadata         jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  recorded_by      text,                   -- 'stripe_webhook' | 'admin' | 'backfill' | 'system'
+
+  -- Idempotency constraint — the sole mechanism preventing duplicate entries.
+  CONSTRAINT customer_ledger_source_unique UNIQUE (source_type, source_id)
+);
+
+-- Indexes for balance queries and audit lookups
+CREATE INDEX IF NOT EXISTS customer_ledger_customer_id_idx
+  ON customer_ledger (customer_id);
+
+CREATE INDEX IF NOT EXISTS customer_ledger_booking_ref_idx
+  ON customer_ledger (booking_ref)
+  WHERE booking_ref IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS customer_ledger_created_at_idx
+  ON customer_ledger (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS customer_ledger_source_type_idx
+  ON customer_ledger (source_type);
+
+-- ── 3. `customer_migration_log` — backfill audit trail ───────────────────────
+--
+-- One row per customer-link decision made during Phase B backfill.
+-- confidence_tier values:
+--   exact_stripe_id  → booking.stripe_customer_id === customers.stripe_customer_id
+--   exact_email      → booking.customer_email    === customers.email (normalised)
+--   exact_phone      → booking.customer_phone    === customers.normalized_phone
+--   ambiguous        → fell through all deterministic tiers; routed to conflict queue
+-- action:
+--   linked           → booking linked to this customer record
+--   conflict_created → entry written to customer_identity_conflicts
+--   skipped          → no match possible / nothing to do
+
+CREATE TABLE IF NOT EXISTS customer_migration_log (
+  id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id      uuid        REFERENCES customers(id) ON DELETE SET NULL,
+  booking_ref      text,
+  confidence_tier  text        NOT NULL
+    CHECK (confidence_tier IN (
+      'exact_stripe_id',
+      'exact_email',
+      'exact_phone',
+      'ambiguous'
+    )),
+  action           text        NOT NULL
+    CHECK (action IN ('linked','conflict_created','skipped')),
+  match_details    jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  migrated_by      text,       -- 'backfill_script' | 'admin_manual'
+  migrated_at      timestamptz NOT NULL DEFAULT now(),
+  notes            text
+);
+
+CREATE INDEX IF NOT EXISTS customer_migration_log_customer_id_idx
+  ON customer_migration_log (customer_id)
+  WHERE customer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS customer_migration_log_booking_ref_idx
+  ON customer_migration_log (booking_ref)
+  WHERE booking_ref IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS customer_migration_log_confidence_tier_idx
+  ON customer_migration_log (confidence_tier);
+
+CREATE INDEX IF NOT EXISTS customer_migration_log_action_idx
+  ON customer_migration_log (action);
+
+-- ── 4. `customer_identity_conflicts` — manual review queue ───────────────────
+--
+-- Populated only when confidence_tier = 'ambiguous'.
+-- Nothing auto-merges from this table.  An admin must set status='resolved'
+-- with a chosen customer_id before any ledger linking occurs.
+-- status values:
+--   pending   → awaiting admin review
+--   resolved  → admin chose a canonical customer_id
+--   dismissed → admin determined no valid match; booking remains unlinked
+
+CREATE TABLE IF NOT EXISTS customer_identity_conflicts (
+  id                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_ref           text        NOT NULL,
+  candidate_customer_ids jsonb      NOT NULL DEFAULT '[]'::jsonb,
+  conflict_reason       text        NOT NULL,
+  raw_booking_data      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  status                text        NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','resolved','dismissed')),
+  resolved_customer_id  uuid        REFERENCES customers(id) ON DELETE SET NULL,
+  resolved_by           text,
+  resolved_at           timestamptz,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS customer_identity_conflicts_booking_ref_idx
+  ON customer_identity_conflicts (booking_ref);
+
+CREATE INDEX IF NOT EXISTS customer_identity_conflicts_status_idx
+  ON customer_identity_conflicts (status);
+
+-- Auto-update updated_at
+CREATE OR REPLACE FUNCTION _set_customer_identity_conflicts_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS customer_identity_conflicts_updated_at
+  ON customer_identity_conflicts;
+
+CREATE TRIGGER customer_identity_conflicts_updated_at
+  BEFORE UPDATE ON customer_identity_conflicts
+  FOR EACH ROW EXECUTE FUNCTION _set_customer_identity_conflicts_updated_at();
+
+-- ── 5. `ledger_reconciliation_mismatches` — drift audit ──────────────────────
+--
+-- Populated by the reconciliation cron / shadow-validation step.
+-- Each row records one instance where ledger-derived balance ≠ legacy balance.
+-- drift_cents = ledger_balance_cents − legacy_balance_cents.
+-- status:
+--   open        → unresolved mismatch
+--   explained   → mismatch understood (e.g. timing, pending entry)
+--   resolved    → ledger corrected or legacy corrected
+
+CREATE TABLE IF NOT EXISTS ledger_reconciliation_mismatches (
+  id                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id           uuid        REFERENCES customers(id) ON DELETE SET NULL,
+  booking_ref           text,
+  ledger_balance_cents  integer     NOT NULL,
+  legacy_balance_cents  integer     NOT NULL,
+  drift_cents           integer     NOT NULL
+    GENERATED ALWAYS AS (ledger_balance_cents - legacy_balance_cents) STORED,
+  drift_direction       text        NOT NULL
+    CHECK (drift_direction IN ('ledger_higher','ledger_lower','match')),
+  detected_at           timestamptz NOT NULL DEFAULT now(),
+  detection_run_id      text,       -- correlates rows from a single cron run
+  status                text        NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open','explained','resolved')),
+  explanation           text,
+  resolved_by           text,
+  resolved_at           timestamptz,
+  metadata              jsonb       NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS ledger_recon_mismatches_customer_id_idx
+  ON ledger_reconciliation_mismatches (customer_id)
+  WHERE customer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS ledger_recon_mismatches_status_idx
+  ON ledger_reconciliation_mismatches (status);
+
+CREATE INDEX IF NOT EXISTS ledger_recon_mismatches_detected_at_idx
+  ON ledger_reconciliation_mismatches (detected_at DESC);
+
+CREATE INDEX IF NOT EXISTS ledger_recon_mismatches_run_id_idx
+  ON ledger_reconciliation_mismatches (detection_run_id)
+  WHERE detection_run_id IS NOT NULL;
+
+-- ── 6. `ledger_idempotency_log` — duplicate-write prevention audit ────────────
+--
+-- Populated whenever a ledger write attempt is rejected by the
+-- (source_type, source_id) unique constraint (ON CONFLICT DO NOTHING path).
+-- This makes duplicate-write prevention visible rather than silent.
+
+CREATE TABLE IF NOT EXISTS ledger_idempotency_log (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_type  text        NOT NULL,
+  source_id    text        NOT NULL,
+  caller       text,       -- which API endpoint / cron attempted the write
+  booking_ref  text,
+  customer_id  uuid        REFERENCES customers(id) ON DELETE SET NULL,
+  attempted_at timestamptz NOT NULL DEFAULT now(),
+  metadata     jsonb       NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS ledger_idempotency_log_source_idx
+  ON ledger_idempotency_log (source_type, source_id);
+
+CREATE INDEX IF NOT EXISTS ledger_idempotency_log_attempted_at_idx
+  ON ledger_idempotency_log (attempted_at DESC);
+
+-- ── 7. `ledger_rollback_events` — rollback / replay audit ────────────────────
+--
+-- Records every time a ledger mode change or rollback/replay operation occurs.
+-- event_type:
+--   mode_change  → CUSTOMER_LEDGER_MODE setting changed
+--   rollback     → explicit rollback of ledger entries for a booking/customer
+--   replay       → explicit re-processing of source events into the ledger
+
+CREATE TABLE IF NOT EXISTS ledger_rollback_events (
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type   text        NOT NULL
+    CHECK (event_type IN ('mode_change','rollback','replay')),
+  previous_mode text,
+  new_mode      text,
+  scope_type   text,       -- 'global' | 'customer' | 'booking'
+  scope_id     text,       -- customer_id or booking_ref when scoped
+  initiated_by text        NOT NULL,
+  reason       text,
+  metadata     jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ledger_rollback_events_event_type_idx
+  ON ledger_rollback_events (event_type);
+
+CREATE INDEX IF NOT EXISTS ledger_rollback_events_created_at_idx
+  ON ledger_rollback_events (created_at DESC);
+
+-- ── 8. Seed `customer_ledger_mode` in system_settings ────────────────────────
+--
+-- Controls which balance/enforcement path is canonical.
+--   shadow   → ledger writes are dormant; legacy paths are sole authority (DEFAULT)
+--   parallel → both paths run; results compared; no enforcement from ledger
+--   warn     → ledger runs; mismatches generate admin alerts; no hard blocks
+--   review   → ledger mismatches route new bookings to admin review queue
+--   block    → ledger is canonical; non-zero balance blocks new bookings
+--
+-- Default is 'shadow' — no production behavior change until explicitly promoted.
+
+INSERT INTO system_settings (key, value, description, category)
+VALUES (
+  'customer_ledger_mode',
+  '"shadow"',
+  'Customer ledger enforcement mode. '
+    'shadow=dormant (legacy only), parallel=dual-run+compare, '
+    'warn=ledger alerts, review=admin queue routing, block=ledger canonical. '
+    'Do not advance past shadow until Phase D reconciliation thresholds are met.',
+  'ledger'
+)
+ON CONFLICT (key) DO NOTHING;
+
+
+-- ===========================================================================
+-- 0148_unified_renter_balance_ledger.sql
+-- ===========================================================================
+-- Migration 0148: Unified renter balance ledger (Phase 1 foundation)
+--
+-- Goal:
+--   Single append-only transaction ledger for all renter/booking debt events.
+--   Balances must be derived from transactions, never manually overwritten.
+
+CREATE TABLE IF NOT EXISTS renter_balance_ledger (
+  id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id                text NOT NULL,
+  customer_id               uuid REFERENCES customers(id) ON DELETE SET NULL,
+  transaction_type          text NOT NULL CHECK (
+    transaction_type IN (
+      'extension',
+      'late_fee',
+      'ticket',
+      'damage',
+      'repair',
+      'deductible',
+      'smoking',
+      'cleaning',
+      'towing',
+      'misc',
+      'payment',
+      'refund',
+      'waiver',
+      'adjustment'
+    )
+  ),
+  direction                 text NOT NULL CHECK (direction IN ('debit', 'credit')),
+  amount                    numeric(10,2) NOT NULL CHECK (amount > 0),
+  notes                     text,
+  source_type               text,
+  source_id                 text,
+  stripe_payment_intent_id  text,
+  related_charge_id         uuid REFERENCES charges(id) ON DELETE SET NULL,
+  related_ticket_id         uuid REFERENCES tickets(id) ON DELETE SET NULL,
+  metadata                  jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by                text NOT NULL DEFAULT 'system',
+  created_at                timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT renter_balance_ledger_source_pair_chk
+    CHECK (
+      (source_type IS NULL AND source_id IS NULL)
+      OR
+      (source_type IS NOT NULL AND source_id IS NOT NULL)
+    )
+);
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_booking_idx
+  ON renter_balance_ledger (booking_id);
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_customer_idx
+  ON renter_balance_ledger (customer_id);
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_created_at_idx
+  ON renter_balance_ledger (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_booking_created_idx
+  ON renter_balance_ledger (booking_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS renter_balance_ledger_source_unique_idx
+  ON renter_balance_ledger (source_type, source_id)
+  WHERE source_type IS NOT NULL AND source_id IS NOT NULL;
+
+COMMENT ON TABLE renter_balance_ledger IS
+  'Append-only renter/booking balance ledger. Outstanding balance is derived from entries, never manually overwritten.';
+
+COMMENT ON COLUMN renter_balance_ledger.direction IS
+  'debit increases amount owed by renter; credit decreases amount owed.';
+
+COMMENT ON COLUMN renter_balance_ledger.related_charge_id IS
+  'Optional source link; ON DELETE SET NULL intentionally preserves immutable ledger history if source rows are removed.';
+
+COMMENT ON COLUMN renter_balance_ledger.related_ticket_id IS
+  'Optional source link; ON DELETE SET NULL intentionally preserves immutable ledger history if source rows are removed.';
+
+CREATE OR REPLACE FUNCTION fn_prevent_renter_balance_ledger_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'renter_balance_ledger is append-only (% not allowed)', TG_OP;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_renter_balance_ledger_no_update ON renter_balance_ledger;
+DROP TRIGGER IF EXISTS trg_renter_balance_ledger_no_delete ON renter_balance_ledger;
+
+CREATE TRIGGER trg_renter_balance_ledger_no_update
+  BEFORE UPDATE ON renter_balance_ledger
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_prevent_renter_balance_ledger_mutation();
+
+CREATE TRIGGER trg_renter_balance_ledger_no_delete
+  BEFORE DELETE ON renter_balance_ledger
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_prevent_renter_balance_ledger_mutation();
+
+CREATE OR REPLACE VIEW renter_balance_ledger_summary AS
+WITH grouped AS (
+  SELECT
+    booking_id,
+    customer_id,
+    SUM(CASE WHEN direction = 'debit'  THEN amount ELSE 0 END) AS debit_total,
+    SUM(CASE WHEN direction = 'credit' THEN amount ELSE 0 END) AS credit_total,
+    COUNT(*)::bigint AS transaction_count,
+    MAX(created_at) AS last_transaction_at
+  FROM renter_balance_ledger
+  GROUP BY booking_id, customer_id
+)
+SELECT
+  booking_id,
+  customer_id,
+  ROUND(debit_total::numeric, 2) AS total_charges,
+  ROUND(credit_total::numeric, 2) AS total_credits,
+  ROUND((debit_total - credit_total)::numeric, 2) AS net_balance,
+  transaction_count,
+  last_transaction_at
+FROM grouped;
+
+
+-- ===========================================================================
+-- 0149_customer_identity_backfill.sql
+-- ===========================================================================
+-- Migration 0149: Customer identity backfill — Phase B supporting indexes
+--
+-- PHASE B: Additive index-only migration. Zero behavior changes.
+--
+-- Adds indexes on bookings and customers needed for efficient Phase B
+-- identity-matching queries. No new tables are created; Phase A (0148)
+-- already created all necessary tables.
+--
+-- Safe to re-run: every DDL is guarded with IF NOT EXISTS.
+
+-- ── 1. bookings — phone matching index ───────────────────────────────────────
+--
+-- Phase B matches bookings against customers via customer_phone.
+-- The column exists (added via earlier migrations) but has no general index.
+
+CREATE INDEX IF NOT EXISTS bookings_customer_phone_idx
+  ON bookings (customer_phone)
+  WHERE customer_phone IS NOT NULL;
+
+-- ── 2. bookings — identity backfill cursor index ─────────────────────────────
+--
+-- Allows the backfill to page through unlinked bookings efficiently using
+-- booking_ref as the stable sort key / resume cursor.
+
+CREATE INDEX IF NOT EXISTS bookings_identity_cursor_idx
+  ON bookings (booking_ref)
+  WHERE booking_ref IS NOT NULL;
+
+-- ── 3. customers — normalized phone lookup index ──────────────────────────────
+--
+-- Populated during Phase B normalize_customers pass. Used by exact_phone tier.
+-- Phase A (0148) already creates this index; this statement is a no-op if
+-- 0148 ran first but is idempotent either way.
+
+CREATE INDEX IF NOT EXISTS customers_normalized_phone_idx
+  ON customers (normalized_phone)
+  WHERE normalized_phone IS NOT NULL;
+
+-- ── 4. customers — normalized email lookup index ──────────────────────────────
+
+CREATE INDEX IF NOT EXISTS customers_normalized_email_idx
+  ON customers (normalized_email)
+  WHERE normalized_email IS NOT NULL;
+
+-- ── 5. customers — Stripe customer ID lookup ──────────────────────────────────
+
+CREATE UNIQUE INDEX IF NOT EXISTS customers_stripe_customer_id_idx
+  ON customers (stripe_customer_id)
+  WHERE stripe_customer_id IS NOT NULL;
+
+-- ── 6. customer_migration_log — idempotency guard index ───────────────────────
+--
+-- Allows the backfill to quickly check if a booking_ref has already been
+-- processed without a full table scan.
+
+CREATE UNIQUE INDEX IF NOT EXISTS customer_migration_log_booking_ref_action_idx
+  ON customer_migration_log (booking_ref, action)
+  WHERE booking_ref IS NOT NULL;
+
+
+-- ===========================================================================
+-- 0149_ledger_due_date.sql
+-- ===========================================================================
+-- Migration 0149: Add due_date to renter_balance_ledger (Phase 2 Add Charge)
+--
+-- Allows admins to record when a charge becomes due so renters can be
+-- reminded before the due date arrives (Phase 5 renter-facing flow).
+
+ALTER TABLE renter_balance_ledger
+  ADD COLUMN IF NOT EXISTS due_date date;
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_due_date_idx
+  ON renter_balance_ledger (due_date)
+  WHERE due_date IS NOT NULL;
+
+COMMENT ON COLUMN renter_balance_ledger.due_date IS
+  'Optional date when this charge is due. Used for renter reminders and overdue tracking (Phase 5+).';
+
+
+-- ===========================================================================
+-- 0150_ledger_stripe_pi_index.sql
+-- ===========================================================================
+-- Migration 0150: Ledger Phase 3 — stripe_payment_intent_id index
+--
+-- Adds a fast lookup index for payment-intent-based idempotency checks
+-- so duplicate webhook deliveries are resolved in a single indexed seek
+-- rather than a full-table scan.
+
+CREATE INDEX IF NOT EXISTS renter_balance_ledger_pi_idx
+  ON renter_balance_ledger (stripe_payment_intent_id)
+  WHERE stripe_payment_intent_id IS NOT NULL;
+
+COMMENT ON INDEX renter_balance_ledger_pi_idx IS
+  'Fast lookup by Stripe payment_intent_id for webhook idempotency checks (Phase 3).';
+
+
+-- ===========================================================================
+-- 0151_ledger_backfill_log.sql
+-- ===========================================================================
+-- Migration 0151: Ledger Backfill Log
+--
+-- Provides a resumable cursor and audit trail for the one-time ledger backfill
+-- job (api/ledger-backfill.js).  Each row records the outcome of replaying a
+-- single source event into the renter_balance_ledger table.
+--
+-- status values:
+--   ok      – transaction inserted (or already existed; idempotent)
+--   skip    – skipped (no ledger-eligible data, e.g. missing payment_intent_id)
+--   error   – insert attempt failed; error_message captures the reason
+
+CREATE TABLE IF NOT EXISTS ledger_backfill_log (
+  id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id          text        NOT NULL,
+  source_table    text        NOT NULL CHECK (source_table IN ('revenue_records', 'charges', 'tickets', 'waiver_events')),
+  source_id       text        NOT NULL,
+  booking_id      text,
+  status          text        NOT NULL CHECK (status IN ('ok', 'skip', 'error')),
+  ledger_tx_id    uuid        REFERENCES renter_balance_ledger(id) ON DELETE SET NULL,
+  error_message   text,
+  processed_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ledger_backfill_log_run_idx
+  ON ledger_backfill_log (run_id);
+
+CREATE INDEX IF NOT EXISTS ledger_backfill_log_source_idx
+  ON ledger_backfill_log (source_table, source_id);
+
+CREATE INDEX IF NOT EXISTS ledger_backfill_log_booking_idx
+  ON ledger_backfill_log (booking_id)
+  WHERE booking_id IS NOT NULL;
+
+-- Unique constraint so re-runs within the same run_id are idempotent.
+CREATE UNIQUE INDEX IF NOT EXISTS ledger_backfill_log_run_source_unique_idx
+  ON ledger_backfill_log (run_id, source_table, source_id);
+
+COMMENT ON TABLE ledger_backfill_log IS
+  'Audit trail and resumable cursor for ledger backfill runs (api/ledger-backfill.js). Each row represents one source event processed.';
+
+
+-- ===========================================================================
+-- 0152_ledger_reconcile_snapshots.sql
+-- ===========================================================================
+-- Migration 0152: Ledger Reconciliation Snapshots
+--
+-- Persists the output of each on-demand or nightly reconciliation run so that
+-- the platform has a long-term operational trust record.
+--
+-- Each snapshot captures:
+--   - aggregate KPIs (matched %, discrepancy total, unresolved count)
+--   - top-10 largest mismatches as JSONB for quick inspection
+--   - the full per-booking detail array as JSONB for drill-down
+--   - anomalies detected during the same run
+
+CREATE TABLE IF NOT EXISTS ledger_reconcile_snapshots (
+  id                  uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_at              timestamptz NOT NULL DEFAULT now(),
+  run_type            text        NOT NULL DEFAULT 'manual' CHECK (run_type IN ('manual', 'nightly')),
+  bookings_checked    integer     NOT NULL DEFAULT 0,
+  matched_count       integer     NOT NULL DEFAULT 0,
+  matched_pct         numeric(5,2),
+  unresolved_count    integer     NOT NULL DEFAULT 0,
+  discrepancy_total   numeric(12,2) NOT NULL DEFAULT 0,
+  largest_mismatches  jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  anomalies_count     integer     NOT NULL DEFAULT 0,
+  anomaly_types       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  anomaly_detail      jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  details_json        jsonb       NOT NULL DEFAULT '[]'::jsonb,
+  date_from           text,
+  date_to             text,
+  duration_ms         integer,
+  created_by          text        NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS ledger_reconcile_snapshots_run_at_idx
+  ON ledger_reconcile_snapshots (run_at DESC);
+
+CREATE INDEX IF NOT EXISTS ledger_reconcile_snapshots_run_type_idx
+  ON ledger_reconcile_snapshots (run_type);
+
+COMMENT ON TABLE ledger_reconcile_snapshots IS
+  'Persisted output of each reconciliation run (on-demand or nightly). Provides long-term operational trust records.';
+
+
+-- ===========================================================================
+-- 0153_payment_plans.sql
+-- ===========================================================================
+-- Migration 0153: Payment Plans + Installments
+--
+-- Supports multi-installment payment arrangements for renters with outstanding
+-- balances.  The ledger architecture makes each installment individually
+-- traceable — every installment row links back to its ledger_transaction_id,
+-- ensuring partial installment payments reconcile cleanly against ledger totals.
+--
+-- payment_plans.status:
+--   active      – plan is in progress
+--   completed   – all installments paid
+--   defaulted   – one or more installments failed and no recovery
+--   cancelled   – plan cancelled by admin
+--
+-- payment_plan_installments.status:
+--   pending     – not yet due or not yet attempted
+--   paid        – successfully charged
+--   failed      – charge attempt failed
+--   partial     – partial payment applied (remainder still owed)
+
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id                uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id        text          NOT NULL REFERENCES bookings(booking_ref) ON DELETE RESTRICT,
+  customer_email    text          NOT NULL,
+  total_amount      numeric(10,2) NOT NULL CHECK (total_amount > 0),
+  installments      integer       NOT NULL CHECK (installments BETWEEN 2 AND 24),
+  interval_days     integer       NOT NULL CHECK (interval_days BETWEEN 1 AND 90),
+  next_due_date     timestamptz,
+  status            text          NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active', 'completed', 'defaulted', 'cancelled')),
+  notes             text,
+  created_at        timestamptz   NOT NULL DEFAULT now(),
+  updated_at        timestamptz   NOT NULL DEFAULT now(),
+  created_by        text          NOT NULL DEFAULT 'admin'
+);
+
+CREATE TABLE IF NOT EXISTS payment_plan_installments (
+  id                    uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id               uuid          NOT NULL REFERENCES payment_plans(id) ON DELETE CASCADE,
+  installment_number    integer       NOT NULL,
+  amount                numeric(10,2) NOT NULL CHECK (amount > 0),
+  due_date              timestamptz   NOT NULL,
+  paid_at               timestamptz,
+  payment_intent_id     text,
+  ledger_transaction_id uuid          REFERENCES renter_balance_ledger(id) ON DELETE SET NULL,
+  status                text          NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'paid', 'failed', 'partial')),
+  failure_message       text,
+  created_at            timestamptz   NOT NULL DEFAULT now(),
+  updated_at            timestamptz   NOT NULL DEFAULT now(),
+  UNIQUE (plan_id, installment_number)
+);
+
+CREATE INDEX IF NOT EXISTS payment_plans_booking_idx
+  ON payment_plans (booking_id);
+
+CREATE INDEX IF NOT EXISTS payment_plans_customer_email_idx
+  ON payment_plans (customer_email);
+
+CREATE INDEX IF NOT EXISTS payment_plans_status_idx
+  ON payment_plans (status);
+
+CREATE INDEX IF NOT EXISTS payment_plan_installments_plan_idx
+  ON payment_plan_installments (plan_id);
+
+CREATE INDEX IF NOT EXISTS payment_plan_installments_due_date_idx
+  ON payment_plan_installments (due_date)
+  WHERE status = 'pending';
+
+CREATE INDEX IF NOT EXISTS payment_plan_installments_ledger_idx
+  ON payment_plan_installments (ledger_transaction_id)
+  WHERE ledger_transaction_id IS NOT NULL;
+
+-- Auto-update updated_at on payment_plans
+CREATE OR REPLACE FUNCTION fn_payment_plans_set_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_payment_plans_updated_at ON payment_plans;
+CREATE TRIGGER trg_payment_plans_updated_at
+  BEFORE UPDATE ON payment_plans
+  FOR EACH ROW EXECUTE FUNCTION fn_payment_plans_set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_payment_plan_installments_updated_at ON payment_plan_installments;
+CREATE TRIGGER trg_payment_plan_installments_updated_at
+  BEFORE UPDATE ON payment_plan_installments
+  FOR EACH ROW EXECUTE FUNCTION fn_payment_plans_set_updated_at();
+
+COMMENT ON TABLE payment_plans IS
+  'Multi-installment payment plans for renters with outstanding balances. Installments link to renter_balance_ledger via ledger_transaction_id.';
+
+COMMENT ON TABLE payment_plan_installments IS
+  'Individual installments within a payment plan. Each paid installment links to its ledger transaction for reconciliation.';

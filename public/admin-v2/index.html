@@ -250,6 +250,59 @@
     .badge-warning { background: #fffbeb; color: #b45309; }
     .badge-danger  { background: #fef2f2; color: #b91c1c; }
 
+    /* ── Applications / Review Queue ────────────────────────────────────────── */
+    .app-status-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .app-status-under_review  { background:#eff6ff; color:#1d4ed8; }
+    .app-status-needs_info    { background:#fffbeb; color:#b45309; }
+    .app-status-submitted     { background:#f9fafb; color:#4b5563; }
+    .app-status-approved      { background:#f0fdf4; color:#15803d; }
+    .app-status-rejected      { background:#fef2f2; color:#b91c1c; }
+    .app-status-withdrawn     { background:#faf5ff; color:#6d28d9; }
+    .app-status-expired       { background:#f9fafb; color:#9ca3af; }
+    .id-status-not_started    { background:#f9fafb; color:#6b7280; }
+    .id-status-requires_input { background:#fffbeb; color:#b45309; }
+    .id-status-processing     { background:#eff6ff; color:#1d4ed8; }
+    .id-status-verified       { background:#f0fdf4; color:#15803d; }
+    .id-status-failed         { background:#fef2f2; color:#b91c1c; }
+    .id-status-canceled       { background:#faf5ff; color:#6d28d9; }
+    .app-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+    .app-filter-bar input, .app-filter-bar select { padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--surface); color:var(--text); font-family:var(--font); }
+    .app-filter-bar input { min-width:220px; }
+    .app-filter-bar select { min-width:130px; }
+    .app-conflict-banner { background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:12px 16px; margin-bottom:14px; font-size:13px; color:#991b1b; display:none; }
+    .app-conflict-banner.visible { display:block; }
+    .app-presence-badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#d97706; font-weight:500; }
+    .app-detail-section { border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:14px; }
+    .app-detail-section-title { font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:10px; }
+    .app-detail-row { display:flex; gap:8px; padding:5px 0; font-size:13px; border-bottom:1px solid #f3f4f6; }
+    .app-detail-row:last-child { border-bottom:none; }
+    .app-detail-label { font-weight:600; color:var(--text-sub); min-width:150px; flex-shrink:0; }
+    .app-detail-value { color:var(--text); word-break:break-all; }
+    .app-history-item { display:flex; gap:10px; padding:8px 0; border-bottom:1px solid #f3f4f6; font-size:12px; }
+    .app-history-item:last-child { border-bottom:none; }
+    .app-history-action { font-weight:700; text-transform:capitalize; }
+    .app-history-meta { color:var(--text-sub); font-size:11px; margin-top:2px; }
+    .app-action-controls { padding-top:12px; }
+    .app-action-title { font-size:13px; font-weight:700; margin-bottom:10px; }
+    .app-action-btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+    .app-action-btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:2px solid var(--border); background:var(--surface); color:var(--text); transition:all 0.15s; font-family:var(--font); }
+    .app-action-btn.selected-approved  { background:#16a34a; color:#fff; border-color:#16a34a; }
+    .app-action-btn.selected-rejected  { background:#dc2626; color:#fff; border-color:#dc2626; }
+    .app-action-btn.selected-needs_info { background:#d97706; color:#fff; border-color:#d97706; }
+    .app-action-btn:hover:not(:disabled) { opacity:0.85; }
+    .app-action-btn:disabled { opacity:0.4; cursor:not-allowed; }
+    .app-notes-area { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:var(--font); resize:vertical; min-height:70px; color:var(--text); background:var(--surface); box-sizing:border-box; }
+    .app-checkr-placeholder { background:#f9fafb; border:1px dashed var(--border); border-radius:8px; padding:20px; text-align:center; color:var(--text-sub); font-size:13px; }
+    .app-pagination { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin-top:12px; font-size:13px; }
+    .app-pagination button { padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:12px; font-family:var(--font); color:var(--text); }
+    .app-pagination button:disabled { opacity:0.4; cursor:not-allowed; }
+    .app-queue-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+    @media (max-width:768px) {
+      .app-queue-kpis { grid-template-columns:repeat(2,1fr); }
+      .app-filter-bar input { min-width:140px; }
+      .app-detail-label { min-width:110px; }
+    }
+
     /* ── Vehicles Grid ──────────────────────────────────────────── */
     .vehicles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .vehicle-card {
@@ -1049,6 +1102,15 @@
     </nav>
 
     <nav class="nav-section">
+      <div class="nav-section-label">Applicants</div>
+      <a class="nav-item" data-page="applications" href="#" onclick="navigate('applications');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        Applications
+        <span class="nav-badge" id="apps-review-badge" style="display:none">0</span>
+      </a>
+    </nav>
+
+    <nav class="nav-section">
       <div class="nav-section-label">Finance</div>
       <a class="nav-item" data-page="expenses" href="#" onclick="navigate('expenses');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
@@ -1069,11 +1131,6 @@
       <a class="nav-item" data-page="customers" href="#" onclick="navigate('customers');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
-      </a>
-      <a class="nav-item" data-page="applications" href="#" onclick="navigate('applications');return false;">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        Applications
-        <span class="nav-badge" id="applications-badge" style="display:none">0</span>
       </a>
       <a class="nav-item" data-page="protection-plans" href="#" onclick="navigate('protection-plans');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1114,6 +1171,14 @@
       <a class="nav-item" data-page="payment-plans" href="#" onclick="navigate('payment-plans');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
         Payment Plans
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Communication</div>
+      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        SMS Automation
       </a>
     </nav>
 
@@ -2302,51 +2367,6 @@
         </div><!-- /ai-layout -->
       </div>
 
-      <!-- APPLICATIONS REVIEW PAGE -->
-      <div class="page" id="page-applications">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-          <div>
-            <div style="font-size:15px;font-weight:700;">Applications Review Queue</div>
-            <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Approve, reject, or request info for identity-verified applicants.</div>
-          </div>
-          <button class="btn btn-secondary btn-sm" aria-label="Refresh applications review queue" onclick="loadReviewApplications()">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.5 9a9 9 0 0114.5-3.36L23 10M1 14l5 4.36A9 9 0 0020.5 15"/></svg>
-            Refresh
-          </button>
-        </div>
-
-        <div class="card">
-          <div id="applications-loading" class="loading"><div class="loading-spinner"></div><div>Loading applications…</div></div>
-          <div id="applications-table-wrap" style="display:none" class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Applicant</th>
-                  <th>Identity</th>
-                  <th>Application</th>
-                  <th>Submitted</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="applications-tbody"></tbody>
-            </table>
-          </div>
-          <div id="applications-empty" class="empty-state" style="display:none">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="9 12 12 15 15 9"/></svg>
-            <p>No applications currently need review.</p>
-          </div>
-        </div>
-
-        <div class="card" id="application-detail-card" style="display:none;margin-top:16px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
-            <div style="font-size:14px;font-weight:700;">Application Detail</div>
-            <button class="btn btn-secondary btn-sm" onclick="closeApplicationDetail()">Close</button>
-          </div>
-          <div id="application-detail-content" style="font-size:13px;"></div>
-          <div id="application-detail-history" style="margin-top:10px;"></div>
-        </div>
-      </div>
-
       <!-- TICKETS / VIOLATIONS PAGE -->
       <div class="page" id="page-tickets">
         <!-- Page header -->
@@ -2475,7 +2495,7 @@
             Enter a Booking ID above and click <strong>Load</strong> to view the balance ledger.
           </div>
         </div>
-      </div>
+      </div><!-- /page-balance-ledger -->
 
       <!-- ─── Reconciliation Report page ─────────────────────────────────── -->
       <div class="page" id="page-reconcile-report">
@@ -2500,6 +2520,7 @@
             <option value="matched">Matched</option>
           </select>
         </div>
+        <!-- KPI summary -->
         <div id="rc-kpi-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
           <div class="card" style="flex:1;min-width:140px;padding:16px 20px;">
             <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Checked</div>
@@ -2547,6 +2568,7 @@
             Refresh
           </button>
         </div>
+        <!-- Aging bucket KPIs -->
         <div id="ov-bucket-row" style="display:none;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
           <div class="card" style="flex:1;min-width:130px;padding:14px 18px;">
             <div style="font-size:11px;font-weight:600;color:var(--text-sub);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">Current (0–29 d)</div>
@@ -2634,6 +2656,7 @@
 
   <!-- Mobile Bottom Navigation -->
   <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mbn-item active" id="mbn-dashboard" onclick="navigate('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       <span>Home</span>
     </button>
@@ -2759,6 +2782,10 @@
 </div>
 
 <!-- ── Ticket Detail Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="ticket-detail-modal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-header">
+      <div>
         <div class="modal-title" id="td-title">Ticket Details</div>
         <div id="td-badge-wrap" style="margin-top:4px;"></div>
       </div>
@@ -3364,6 +3391,138 @@
   </div>
 </div>
 
+<!-- ── Applications Review Queue Page ─────────────────────────────────────── -->
+<div id="page-applications" class="page">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="flex:1;">
+      <h2 style="font-size:20px;font-weight:700;">Application Review Queue</h2>
+      <p style="font-size:13px;color:var(--text-sub);margin-top:2px;">Review and action renter applications awaiting manual decision.</p>
+    </div>
+    <button class="btn btn-secondary" onclick="loadAppQueue()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      Refresh
+    </button>
+  </div>
+
+  <!-- KPI grid -->
+  <div class="app-queue-kpis" id="apps-kpi-grid"></div>
+
+  <!-- Filter bar -->
+  <div class="app-filter-bar">
+    <input type="text" id="apps-search" placeholder="Search name, phone, email, ID…" oninput="appsSearchInput(this.value)">
+    <select id="apps-filter-status" onchange="appsFilterChange()">
+      <option value="">All Statuses</option>
+      <option value="under_review">Under Review</option>
+      <option value="needs_info">Needs Info</option>
+    </select>
+    <select id="apps-filter-identity" onchange="appsFilterChange()">
+      <option value="">All Identity</option>
+      <option value="not_started">Not Started</option>
+      <option value="requires_input">Requires Input</option>
+      <option value="processing">Processing</option>
+      <option value="verified">Verified</option>
+      <option value="failed">Failed</option>
+      <option value="canceled">Canceled</option>
+    </select>
+    <select id="apps-sort-field" onchange="appsFilterChange()">
+      <option value="submitted_at">Sort: Submitted</option>
+      <option value="updated_at">Sort: Updated</option>
+    </select>
+    <select id="apps-sort-dir" onchange="appsFilterChange()">
+      <option value="asc">Oldest First</option>
+      <option value="desc">Newest First</option>
+    </select>
+  </div>
+
+  <!-- Loading indicator -->
+  <div id="apps-loading" style="display:none;padding:40px;text-align:center;color:var(--text-sub);">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:24px;height:24px;vertical-align:middle;animation:spin 1s linear infinite;margin-right:8px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+    Loading applications…
+  </div>
+
+  <!-- Table -->
+  <div class="card" style="padding:0;">
+    <div id="apps-table-wrap" style="display:none;" class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Applicant</th>
+            <th>Contact</th>
+            <th>App ID</th>
+            <th>App Status</th>
+            <th>Identity</th>
+            <th>Submitted</th>
+            <th>Latest Activity</th>
+            <th>Checkr</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="apps-tbody"></tbody>
+      </table>
+    </div>
+    <div id="apps-empty" style="display:none;padding:48px;text-align:center;color:var(--text-sub);">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin-bottom:12px;opacity:0.3;"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px;">No applications in queue</div>
+      <div style="font-size:13px;">No applications match your current filters, or the queue is empty.</div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="app-pagination">
+    <button id="apps-prev-btn" onclick="appsPrevPage()" disabled>← Prev</button>
+    <span id="apps-page-info" style="color:var(--text-sub);">—</span>
+    <button id="apps-next-btn" onclick="appsNextPage()" disabled>Next →</button>
+  </div>
+</div>
+
+<!-- ── Application Detail Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="app-detail-modal">
+  <div class="modal" style="max-width:800px;width:100%;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-header" style="flex-shrink:0;">
+      <div style="flex:1;min-width:0;">
+        <div id="app-detail-title" style="font-size:17px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:6px;"></div>
+        <div id="app-detail-subtitle" style="font-size:11px;color:var(--text-sub);font-family:monospace;margin-top:2px;"></div>
+      </div>
+      <button onclick="closeModal('app-detail-modal')" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-sub);line-height:1;flex-shrink:0;">✕</button>
+    </div>
+
+    <!-- Conflict banner -->
+    <div id="app-detail-conflict-banner" class="app-conflict-banner" style="margin:0 20px 0;"></div>
+
+    <!-- Scrollable body -->
+    <div id="app-detail-body" style="flex:1;overflow-y:auto;padding:20px;">
+      <div style="padding:40px;text-align:center;color:var(--text-sub);">Loading…</div>
+    </div>
+
+    <!-- Footer: action controls -->
+    <div style="flex-shrink:0;border-top:1px solid var(--border);padding:14px 20px;background:var(--surface);">
+      <!-- Terminal state notice -->
+      <div id="app-detail-stale-notice" style="display:none;color:var(--text-sub);font-size:13px;font-style:italic;padding:8px 0;"></div>
+
+      <!-- Action section (hidden for terminal states) -->
+      <div id="app-action-section" class="app-action-controls">
+        <div class="app-action-title">Review Decision</div>
+        <div class="app-action-btn-row">
+          <button id="app-btn-approved"   class="app-action-btn" onclick="selectAppAction('approved')">✅ Approve</button>
+          <button id="app-btn-rejected"   class="app-action-btn" onclick="selectAppAction('rejected')">❌ Reject</button>
+          <button id="app-btn-needs_info" class="app-action-btn" onclick="selectAppAction('needs_info')">⚠️ Request More Info</button>
+        </div>
+        <div id="app-action-selected" style="font-size:12px;color:var(--text-sub);margin-bottom:8px;min-height:16px;"></div>
+        <label id="app-notes-label" style="display:block;font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:4px;">Reviewer notes (optional):</label>
+        <textarea id="app-action-notes" class="app-notes-area" placeholder="Add reviewer notes here…"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Reviewer:</label>
+          <input id="app-reviewer-name" type="text" value="Admin" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font);width:140px;">
+          <div style="flex:1;"></div>
+          <button class="btn btn-secondary btn-sm" onclick="refreshAppDetail()" title="Refresh to latest state">↺ Refresh</button>
+          <button class="btn btn-secondary" onclick="closeModal('app-detail-modal')">Cancel</button>
+          <button id="app-submit-btn" class="btn btn-primary" onclick="submitAppAction()" disabled>Submit Decision</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div id="toast-container"></div>
 
@@ -3720,8 +3879,6 @@ function logout() {
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
-  allReviewApplications = [];
-  selectedReviewApplicationId = null;
   fleetStatusData = {};
   aiClearHistory();
   aiTyping = false;
@@ -3781,29 +3938,6 @@ async function apiPost(path, body, signal = undefined) {
   return data;
 }
 
-async function apiGet(path, params = {}, signal = undefined) {
-  if (window.DEMO_MODE) throw new Error('Not available in demo mode');
-  const qp = new URLSearchParams();
-  Object.entries(params || {}).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') qp.set(k, String(v));
-  });
-  const url = API_BASE + path + (qp.toString() ? `?${qp.toString()}` : '');
-  const resp = await fetch(url, { method: 'GET', signal });
-  let data = null;
-  try { data = await resp.json(); } catch (err) {
-    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
-  }
-  if (resp.status === 401) {
-    handleUnauthorizedApiResponse();
-    throw new Error(data?.error || 'Unauthorized');
-  }
-  if (!data) {
-    throw new Error(`Server error (HTTP ${resp.status}).`);
-  }
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return data;
-}
-
 // ── Navigation ─────────────────────────────────────────────────────────────
 function navigate(page) {
   // Hide all pages
@@ -3826,7 +3960,6 @@ function navigate(page) {
     revenue:            'Revenue Tracker',
     analytics:          'Fleet Analytics',
     customers:          'Customer Management',
-    applications:       'Applications Review',
     'protection-plans': 'Protection Plans',
     'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
@@ -3834,6 +3967,7 @@ function navigate(page) {
     'ai':               'AI Assistant',
     'system-health':    'System Health',
     'tickets':          'Tickets / Violations',
+    'applications':     'Application Review Queue',
     'balance-ledger':   'Balance Ledger',
   };
 
@@ -3859,7 +3993,6 @@ function navigate(page) {
   else if (page === 'revenue') loadRevenue();
   else if (page === 'analytics') loadAnalytics();
   else if (page === 'customers') loadCustomers();
-  else if (page === 'applications') loadReviewApplications();
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'vehicle-pricing') loadVehiclePricing();
   else if (page === 'system-settings') loadSystemSettings();
@@ -3871,6 +4004,7 @@ function navigate(page) {
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
   else if (page === 'late-fees') loadLateFees();
   else if (page === 'tickets') loadTickets();
+  else if (page === 'applications') loadApplicationsPage();
   else if (page === 'balance-ledger') initBalanceLedgerPage();
   else if (page === 'reconcile-report') initReconcileReportPage();
   else if (page === 'overdue-balances') loadOverdueBalances();
@@ -3898,7 +4032,6 @@ function refreshCurrentPage() {
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
   else if (currentPage === 'customers') loadCustomers();
-  else if (currentPage === 'applications') loadReviewApplications();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'vehicle-pricing') loadVehiclePricing();
   else if (currentPage === 'system-settings') loadSystemSettings();
@@ -8775,7 +8908,7 @@ function loadSystemSettings() {
 
   Promise.all([
     apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' }),
-    fetch(`${API_BASE}/api/bouncie-auth?secret=${encodeURIComponent(adminSecret)}`)
+    fetch(`${API_BASE}/api/bouncie-auth`, { headers: { 'Authorization': 'Bearer ' + adminSecret } })
       .then((r) => r.json())
       .catch((err) => { showToast('Could not load Bouncie status: ' + err.message, 'error'); return null; }),
   ])
@@ -9720,8 +9853,8 @@ async function loadSmsLogs() {
   if (tableWrap) tableWrap.style.display = 'none';
 
   try {
-    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
-    const res  = await fetch(url);
+    const url = `${API_BASE}/api/sms-logs`;
+    const res  = await fetch(url, { headers: { 'Authorization': 'Bearer ' + adminSecret } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -9771,8 +9904,8 @@ async function loadSmsLogs() {
 async function clearSmsLogs() {
   if (!confirm('Clear all SMS delivery logs? This cannot be undone.')) return;
   try {
-    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
-    const res = await fetch(url, { method: 'DELETE' });
+    const url = `${API_BASE}/api/sms-logs`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminSecret } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -11174,292 +11307,6 @@ function dismissChecklist() {
   };
 })();
 
-// ── Applications Review Queue ────────────────────────────────────────────────
-let allReviewApplications = [];
-let selectedReviewApplicationId = null;
-
-function reviewAppStatusBadge(status) {
-  const map = {
-    under_review: 'badge-blue',
-    needs_info: 'badge-orange',
-    approved: 'badge-green',
-    rejected: 'badge-red',
-    submitted: 'badge-gray',
-  };
-  const labels = {
-    under_review: 'Under Review',
-    needs_info: 'Needs Info',
-    approved: 'Approved',
-    rejected: 'Rejected',
-    submitted: 'Submitted',
-  };
-  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status || '—')}</span>`;
-}
-
-function reviewIdentityStatusBadge(status) {
-  const map = {
-    verified: 'badge-green',
-    processing: 'badge-blue',
-    requires_input: 'badge-orange',
-    failed: 'badge-red',
-    canceled: 'badge-gray',
-    not_started: 'badge-gray',
-  };
-  const labels = {
-    verified: 'Verified',
-    processing: 'Processing',
-    requires_input: 'Requires Input',
-    failed: 'Failed',
-    canceled: 'Canceled',
-    not_started: 'Not Started',
-  };
-  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status || '—')}</span>`;
-}
-
-function formatAdminDateTime(value) {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('en-US', {
-    timeZone: 'America/Los_Angeles',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function createActionRequestId() {
-  try {
-    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
-  } catch (_) {}
-  try {
-    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
-      const bytes = new Uint8Array(16);
-      window.crypto.getRandomValues(bytes);
-      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-      return `rev_${hex}`;
-    }
-  } catch (_) {}
-  return `rev_${Date.now()}_${String(performance.now()).replace('.', '')}`;
-}
-
-function updateApplicationsBadge() {
-  const badge = document.getElementById('applications-badge');
-  if (!badge) return;
-  const count = allReviewApplications.length;
-  if (count > 0) {
-    badge.textContent = count;
-    badge.style.display = '';
-  } else {
-    badge.style.display = 'none';
-  }
-}
-
-async function loadReviewApplications() {
-  const loading = document.getElementById('applications-loading');
-  const wrap = document.getElementById('applications-table-wrap');
-  const empty = document.getElementById('applications-empty');
-  if (loading) loading.style.display = 'block';
-  if (wrap) wrap.style.display = 'none';
-  if (empty) empty.style.display = 'none';
-
-  try {
-    const data = await apiGet('/api/admin-review-queue', {
-      secret: adminSecret,
-      page: 1,
-      pageSize: 100,
-    });
-    allReviewApplications = Array.isArray(data.applications) ? data.applications : [];
-    if (loading) loading.style.display = 'none';
-    renderReviewApplicationsTable(allReviewApplications);
-    updateApplicationsBadge();
-    if (selectedReviewApplicationId) {
-      const stillPresent = allReviewApplications.some((a) => a.id === selectedReviewApplicationId);
-      if (stillPresent) viewReviewApplication(selectedReviewApplicationId);
-      else closeApplicationDetail();
-    }
-  } catch (err) {
-    if (loading) loading.style.display = 'none';
-    allReviewApplications = [];
-    renderReviewApplicationsTable([]);
-    updateApplicationsBadge();
-    showToast('Failed to load applications: ' + err.message, 'error');
-  }
-}
-
-function renderReviewApplicationsTable(apps) {
-  const wrap = document.getElementById('applications-table-wrap');
-  const empty = document.getElementById('applications-empty');
-  const tbody = document.getElementById('applications-tbody');
-  if (!tbody) return;
-
-  if (!apps.length) {
-    if (wrap) wrap.style.display = 'none';
-    if (empty) empty.style.display = 'block';
-    tbody.innerHTML = '';
-    return;
-  }
-
-  if (wrap) wrap.style.display = '';
-  if (empty) empty.style.display = 'none';
-
-  tbody.innerHTML = apps.map((a) => {
-    const appId = String(a.id || '');
-    const safeAppId = /^[a-z0-9][a-z0-9-]{7,}$/i.test(appId) ? appId : '';
-    const actionsDisabled = !safeAppId;
-    return `<tr>
-      <td>
-        <strong>${esc(a.name || 'Unknown')}</strong><br>
-        <span style="font-size:11px;color:var(--text-sub);">${esc(a.phone || '—')}</span><br>
-        <span style="font-size:11px;color:var(--text-sub);">${esc(a.email || '—')}</span>
-      </td>
-      <td>${reviewIdentityStatusBadge(a.identityStatus)}</td>
-      <td>${reviewAppStatusBadge(a.applicationStatus)}</td>
-      <td>${esc(formatAdminDateTime(a.submittedAt))}</td>
-      <td class="td-actions">
-        <button class="btn btn-secondary btn-sm review-view-btn" aria-label="View application details" data-application-id="${esc(safeAppId)}" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>View</button>
-        <button class="btn btn-success btn-sm review-action-btn" aria-label="Approve application" data-application-id="${esc(safeAppId)}" data-action="approved" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Approve</button>
-        <button class="btn btn-warning btn-sm review-action-btn" aria-label="Request more information" data-application-id="${esc(safeAppId)}" data-action="needs_info" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Needs Info</button>
-        <button class="btn btn-danger btn-sm review-action-btn" aria-label="Reject application" data-application-id="${esc(safeAppId)}" data-action="rejected" ${actionsDisabled ? 'disabled title="Invalid application id"' : ''}>Reject</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  tbody.querySelectorAll('.review-view-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const applicationId = btn.getAttribute('data-application-id') || '';
-      if (!applicationId) return;
-      viewReviewApplication(applicationId);
-    });
-  });
-  tbody.querySelectorAll('.review-action-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const applicationId = btn.getAttribute('data-application-id') || '';
-      const action = btn.getAttribute('data-action') || '';
-      if (!applicationId || !action) return;
-      submitReviewAction(applicationId, action, btn);
-    });
-  });
-}
-
-function closeApplicationDetail() {
-  selectedReviewApplicationId = null;
-  const card = document.getElementById('application-detail-card');
-  if (card) card.style.display = 'none';
-  const body = document.getElementById('application-detail-content');
-  const history = document.getElementById('application-detail-history');
-  if (body) body.innerHTML = '';
-  if (history) history.innerHTML = '';
-}
-
-async function viewReviewApplication(applicationId) {
-  selectedReviewApplicationId = applicationId;
-  const card = document.getElementById('application-detail-card');
-  const body = document.getElementById('application-detail-content');
-  const history = document.getElementById('application-detail-history');
-  if (card) card.style.display = '';
-  if (body) body.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Loading detail…</div></div>';
-  if (history) history.innerHTML = '';
-
-  try {
-    const d = await apiGet('/api/admin-review-detail', {
-      secret: adminSecret,
-      applicationId,
-    });
-
-    if (body) {
-      body.innerHTML = `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
-          <div><strong>Name:</strong> ${esc(d.name || '—')}</div>
-          <div><strong>Phone:</strong> ${esc(d.phone || '—')}</div>
-          <div><strong>Email:</strong> ${esc(d.email || '—')}</div>
-          <div><strong>Age:</strong> ${esc(d.age ?? '—')}</div>
-          <div><strong>Experience:</strong> ${esc(d.experience || '—')}</div>
-          <div><strong>Identity:</strong> ${reviewIdentityStatusBadge(d.identityStatus)}</div>
-          <div><strong>Status:</strong> ${reviewAppStatusBadge(d.applicationStatus)}</div>
-          <div><strong>Submitted:</strong> ${esc(formatAdminDateTime(d.submittedAt))}</div>
-          <div><strong>Last Reviewed By:</strong> ${esc(d.reviewedBy || '—')}</div>
-          <div><strong>Last Reviewed At:</strong> ${esc(formatAdminDateTime(d.reviewedAt))}</div>
-        </div>
-        ${d.needsInfoReason ? `<div style="margin-top:10px;"><strong>Needs Info Reason:</strong> ${esc(d.needsInfoReason)}</div>` : ''}
-        ${d.lastReviewerNotes ? `<div style="margin-top:6px;"><strong>Last Reviewer Notes:</strong> ${esc(d.lastReviewerNotes)}</div>` : ''}
-      `;
-    }
-
-    if (history) {
-      const entries = Array.isArray(d.reviewHistory) ? d.reviewHistory : [];
-      if (!entries.length) {
-        history.innerHTML = '<div style="margin-top:10px;color:var(--text-sub);font-style:italic;">No review history yet.</div>';
-      } else {
-        history.innerHTML = `
-          <div style="margin-top:12px;font-weight:700;">Review History</div>
-          <div style="margin-top:8px;">
-            ${entries.map((h) => `
-              <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;">
-                <div><strong>${esc(h.action || 'Action')}</strong> by ${esc(h.performedBy || 'admin')}</div>
-                <div style="color:var(--text-sub);">${esc(formatAdminDateTime(h.createdAt))}</div>
-                ${h.notes ? `<div style="margin-top:2px;">${esc(h.notes)}</div>` : ''}
-              </div>
-            `).join('')}
-          </div>
-        `;
-      }
-    }
-  } catch (err) {
-    if (body) body.innerHTML = `<div style="color:var(--danger);">Failed to load detail: ${esc(err.message)}</div>`;
-  }
-}
-
-async function submitReviewAction(applicationId, action, btn) {
-  const row = allReviewApplications.find((a) => a.id === applicationId);
-  if (!row) { showToast('Application not found. Refresh and try again.', 'error'); return; }
-
-  let notes = '';
-  if (action === 'needs_info') {
-    notes = prompt('What information is needed from the applicant?') || '';
-    if (!notes.trim()) { showToast('Please provide a reason for requesting additional information.', 'error'); return; }
-  } else {
-    const confirmed = confirm(`Are you sure you want to mark this application as ${action.replace('_', ' ')}?`);
-    if (!confirmed) return;
-    notes = prompt('Optional reviewer note (leave blank to skip):') || '';
-  }
-
-  const prevLabel = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-
-  try {
-    await apiPost('/api/review-application', {
-      secret: adminSecret,
-      applicationId,
-      action,
-      reviewedBy: 'admin-v2',
-      notes: notes.trim(),
-      expectedStatus: row.applicationStatus,
-      expectedReviewVersion: row.reviewVersion,
-      actionRequestId: createActionRequestId(),
-    });
-    showToast(`Application ${action.replace('_', ' ')}.`, 'success');
-    await loadReviewApplications();
-    if (selectedReviewApplicationId === applicationId) {
-      const stillPresent = allReviewApplications.some((a) => a.id === applicationId);
-      if (stillPresent) await viewReviewApplication(applicationId);
-      else closeApplicationDetail();
-    }
-  } catch (err) {
-    const msg = String(err.message || '');
-    if (msg.includes('STALE_REVIEW_ACTION') || msg.includes('stale')) {
-      showToast('This application changed in another tab. Queue was refreshed.', 'warning');
-      await loadReviewApplications();
-      return;
-    }
-    showToast('Failed to submit review action: ' + msg, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = prevLabel || 'Save'; }
-  }
-}
-
 // ── Tickets / Violations ────────────────────────────────────────────────────
 
 let allTickets = [];
@@ -12021,11 +11868,589 @@ async function deleteCurrentTicket() {
     showToast('Failed to delete ticket: ' + err.message, 'error');
   }
 }
+
+// ── Applications Review Queue ────────────────────────────────────────────────
+
+let appQueueData      = [];
+let appQueueTotal     = 0;
+let appQueuePage      = 1;
+const APP_QUEUE_SIZE  = 50;
+let appFilterStatus   = '';
+let appFilterIdentity = '';
+let appFilterSearch   = '';
+let appSortField      = 'submitted_at';
+let appSortDir        = 'asc';
+let appSelectedAction = '';
+let appViewingId      = null;
+let appViewingData    = null;
+let appActionInFlight = false;
+
+const APP_PRESENCE_KEY_PREFIX       = 'sly_app_presence_';
+const APP_PRESENCE_TTL_MS           = 45000;
+// Delay before auto-refreshing detail view after a 409 conflict — long enough
+// for the reviewer to read the conflict banner before the view reloads.
+const APP_CONFLICT_REFRESH_DELAY_MS = 1200;
+
+// GET helper for review endpoints — sends Authorization header, no secret in URL
+async function apiGet(path) {
+  if (window.DEMO_MODE) return {};
+  const resp = await fetch(API_BASE + path, {
+    headers: { 'Authorization': 'Bearer ' + adminSecret },
+  });
+  let data = null;
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
+  if (resp.status === 401) {
+    handleUnauthorizedApiResponse();
+    throw new Error(data?.error || 'Unauthorized');
+  }
+  if (!data) {
+    throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab.`);
+  }
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+// POST with structured 409 detection for review-application
+async function callReviewAction(payload) {
+  const resp = await fetch(API_BASE + '/api/review-application', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  let data;
+  try { data = await resp.json(); } catch {
+    throw new Error(`Server error (HTTP ${resp.status}).`);
+  }
+  if (resp.status === 409) {
+    const err = new Error(data.error || 'STALE_REVIEW_ACTION');
+    err.isStaleConflict = true;
+    err.conflictData    = data;
+    throw err;
+  }
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+function appStatusBadge(status) {
+  const labels = {
+    under_review: 'Under Review', needs_info: 'Needs Info', submitted: 'Submitted',
+    approved: 'Approved', rejected: 'Rejected', withdrawn: 'Withdrawn', expired: 'Expired',
+  };
+  return `<span class="app-status-badge app-status-${esc(status || '')}">${esc(labels[status] || status || '—')}</span>`;
+}
+
+function identityStatusBadge(status) {
+  const labels = {
+    not_started: 'Not Started', requires_input: 'Requires Input', processing: 'Processing',
+    verified: 'Verified', failed: 'Failed', canceled: 'Canceled',
+  };
+  return `<span class="app-status-badge id-status-${esc(status || 'not_started')}">${esc(labels[status] || status || '—')}</span>`;
+}
+
+function fmtRelativeTime(isoStr) {
+  if (!isoStr) return '—';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtDateTime(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+
+// ── Reviewer presence (non-blocking, localStorage) ────────────────────────────
+
+function setAppPresence(appId) {
+  try {
+    localStorage.setItem(
+      APP_PRESENCE_KEY_PREFIX + appId,
+      JSON.stringify({ reviewer: 'Admin', tabId: TAB_ID, ts: Date.now() }),
+    );
+  } catch (err) { console.warn('App presence tracking unavailable (setAppPresence):', err.message); }
+}
+
+function getAppPresence(appId) {
+  try {
+    const raw = localStorage.getItem(APP_PRESENCE_KEY_PREFIX + appId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.ts > APP_PRESENCE_TTL_MS) {
+      localStorage.removeItem(APP_PRESENCE_KEY_PREFIX + appId);
+      return null;
+    }
+    if (parsed.tabId === TAB_ID) return null; // own tab
+    return parsed;
+  } catch (err) { console.warn('App presence tracking unavailable (getAppPresence):', err.message); return null; }
+}
+
+function clearAppPresence(appId) {
+  try { localStorage.removeItem(APP_PRESENCE_KEY_PREFIX + appId); } catch (err) { console.warn('App presence tracking unavailable (clearAppPresence):', err.message); }
+}
+
+// ── Load queue from API ───────────────────────────────────────────────────────
+
+async function loadAppQueue() {
+  const loading = document.getElementById('apps-loading');
+  const wrap    = document.getElementById('apps-table-wrap');
+  const empty   = document.getElementById('apps-empty');
+  if (loading) loading.style.display = '';
+  if (wrap)    wrap.style.display    = 'none';
+  if (empty)   empty.style.display   = 'none';
+
+  try {
+    const params = new URLSearchParams({
+      page:     appQueuePage,
+      pageSize: APP_QUEUE_SIZE,
+    });
+    const data = await apiGet(`/api/admin-review-queue?${params}`);
+    if (!data.success) throw new Error(data.error || 'Failed to load queue.');
+    appQueueData  = data.applications || [];
+    appQueueTotal = data.total || 0;
+    updateAppsReviewBadge();
+    renderAppQueueKpis();
+    renderAppQueue();
+  } catch (err) {
+    if (loading) loading.style.display = 'none';
+    showToast('Failed to load applications queue: ' + err.message, 'error');
+  }
+}
+
+function updateAppsReviewBadge() {
+  const badge = document.getElementById('apps-review-badge');
+  if (!badge) return;
+  if (appQueueTotal > 0) {
+    badge.style.display = '';
+    badge.textContent   = appQueueTotal > 99 ? '99+' : String(appQueueTotal);
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderAppQueueKpis() {
+  const container = document.getElementById('apps-kpi-grid');
+  if (!container) return;
+  const underReview = appQueueData.filter((a) => a.applicationStatus === 'under_review').length;
+  const needsInfo   = appQueueData.filter((a) => a.applicationStatus === 'needs_info').length;
+  const verified    = appQueueData.filter((a) => a.identityStatus === 'verified').length;
+  const kpis = [
+    { label: 'In Queue (Total)',  value: appQueueTotal, icon: '#6366f1' },
+    { label: 'Under Review',      value: underReview,   icon: '#1d4ed8' },
+    { label: 'Needs Info',        value: needsInfo,     icon: '#b45309' },
+    { label: 'Identity Verified', value: verified,      icon: '#15803d' },
+  ];
+  container.innerHTML = kpis.map(({ label, value }) => `
+    <div class="kpi-card">
+      <div class="kpi-label">${esc(label)}</div>
+      <div class="kpi-value">${value}</div>
+      <div class="kpi-change">this page</div>
+    </div>
+  `).join('');
+}
+
+function applyAppQueueFilters() {
+  let filtered = appQueueData.slice();
+
+  if (appFilterSearch) {
+    const q = appFilterSearch.toLowerCase().replace(/\s+/g, '');
+    filtered = filtered.filter((a) => {
+      const n = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
+      return n(a.name).includes(q) || n(a.phone).includes(q) ||
+             n(a.email).includes(q) || n(a.id).startsWith(appFilterSearch.trim().toLowerCase());
+    });
+  }
+  if (appFilterStatus)   filtered = filtered.filter((a) => a.applicationStatus === appFilterStatus);
+  if (appFilterIdentity) filtered = filtered.filter((a) => a.identityStatus === appFilterIdentity);
+
+  const mult = appSortDir === 'asc' ? 1 : -1;
+  const key  = appSortField === 'updated_at' ? 'updatedAt' : 'submittedAt';
+  filtered.sort((a, b) => {
+    const va = a[key] || '', vb = b[key] || '';
+    return va < vb ? -mult : va > vb ? mult : 0;
+  });
+  return filtered;
+}
+
+function renderAppQueue() {
+  const loading = document.getElementById('apps-loading');
+  const wrap    = document.getElementById('apps-table-wrap');
+  const empty   = document.getElementById('apps-empty');
+  const tbody   = document.getElementById('apps-tbody');
+  const pagInfo = document.getElementById('apps-page-info');
+  if (loading) loading.style.display = 'none';
+
+  const filtered = applyAppQueueFilters();
+
+  if (!filtered.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    if (pagInfo) pagInfo.textContent = '—';
+    document.getElementById('apps-prev-btn').disabled = true;
+    document.getElementById('apps-next-btn').disabled = true;
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map((a) => {
+    const presence = getAppPresence(a.id);
+    const presenceHtml = presence
+      ? `<br><span class="app-presence-badge" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
+      : '';
+    const needsInfoHtml = a.needsInfoReason
+      ? ` <span title="${esc(a.needsInfoReason)}" style="cursor:help;">⚠️</span>`
+      : '';
+    const latestActivity = a.reviewedBy
+      ? `<span style="font-size:12px;">${esc(a.reviewedBy)}</span><br><span style="color:var(--text-sub);font-size:11px;">${fmtRelativeTime(a.reviewedAt)}</span>`
+      : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
+    return `<tr>
+      <td>
+        <strong style="font-size:13px;">${esc(a.name)}</strong>${needsInfoHtml}${presenceHtml}
+      </td>
+      <td style="font-size:12px;">${esc(a.phone)}<br><span style="color:var(--text-sub);">${esc(a.email || '—')}</span></td>
+      <td style="font-family:monospace;font-size:11px;color:var(--text-sub);" title="${esc(a.id)}">${esc(a.id.slice(0, 8))}…</td>
+      <td>${appStatusBadge(a.applicationStatus)}</td>
+      <td>${identityStatusBadge(a.identityStatus)}</td>
+      <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
+      <td>${latestActivity}</td>
+      <td><span style="color:var(--text-sub);font-size:11px;font-style:italic;">Pending</span></td>
+      <td class="td-actions"><button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">Review</button></td>
+    </tr>`;
+  }).join('');
+
+  if (pagInfo) {
+    const start = (appQueuePage - 1) * APP_QUEUE_SIZE + 1;
+    const end   = Math.min(appQueuePage * APP_QUEUE_SIZE, appQueueTotal);
+    pagInfo.textContent = `${start}–${end} of ${appQueueTotal}`;
+  }
+  document.getElementById('apps-prev-btn').disabled = appQueuePage <= 1;
+  document.getElementById('apps-next-btn').disabled = appQueuePage * APP_QUEUE_SIZE >= appQueueTotal;
+}
+
+function appsSearchInput(val) {
+  appFilterSearch = val;
+  renderAppQueue();
+}
+
+function appsFilterChange() {
+  appFilterStatus   = document.getElementById('apps-filter-status')?.value   || '';
+  appFilterIdentity = document.getElementById('apps-filter-identity')?.value || '';
+  appSortField      = document.getElementById('apps-sort-field')?.value      || 'submitted_at';
+  appSortDir        = document.getElementById('apps-sort-dir')?.value        || 'asc';
+  renderAppQueue();
+}
+
+function appsPrevPage() {
+  if (appQueuePage <= 1) return;
+  appQueuePage--;
+  loadAppQueue();
+}
+
+function appsNextPage() {
+  if (appQueuePage * APP_QUEUE_SIZE >= appQueueTotal) return;
+  appQueuePage++;
+  loadAppQueue();
+}
+
+// ── Open Application Detail ───────────────────────────────────────────────────
+
+async function openAppDetail(applicationId) {
+  appViewingId      = applicationId;
+  appViewingData    = null;
+  appSelectedAction = '';
+  appActionInFlight = false;
+
+  setAppPresence(applicationId);
+
+  // Reset modal
+  const conflictBanner = document.getElementById('app-detail-conflict-banner');
+  conflictBanner.classList.remove('visible');
+  conflictBanner.textContent = '';
+  document.getElementById('app-detail-body').innerHTML   = '<div style="padding:40px;text-align:center;color:var(--text-sub);">Loading…</div>';
+  document.getElementById('app-detail-title').innerHTML  = 'Loading…';
+  document.getElementById('app-detail-subtitle').textContent = '';
+  document.getElementById('app-action-selected').textContent = '';
+  document.getElementById('app-action-notes').value      = '';
+  document.getElementById('app-submit-btn').disabled     = true;
+  document.getElementById('app-submit-btn').textContent  = 'Submit Decision';
+  resetAppActionButtons();
+
+  openModal('app-detail-modal');
+
+  try {
+    const params = new URLSearchParams({ applicationId });
+    const data   = await apiGet(`/api/admin-review-detail?${params}`);
+    if (!data.success) throw new Error(data.error || 'Failed to load application.');
+    appViewingData = data;
+    renderAppDetail(data);
+  } catch (err) {
+    document.getElementById('app-detail-body').innerHTML =
+      `<div style="padding:24px;color:var(--danger);">Failed to load: ${esc(err.message)}</div>`;
+  }
+}
+
+function appDetailRow(label, valueHtml) {
+  return `<div class="app-detail-row">
+    <span class="app-detail-label">${esc(label)}</span>
+    <span class="app-detail-value">${valueHtml}</span>
+  </div>`;
+}
+
+function renderAppDetail(d) {
+  const actionable = d.applicationStatus === 'under_review' || d.applicationStatus === 'needs_info';
+
+  const presence = getAppPresence(d.applicationId);
+  const presenceHtml = presence
+    ? `<span class="app-presence-badge" style="font-size:11px;" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ~${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
+    : '';
+
+  document.getElementById('app-detail-title').innerHTML =
+    `${esc(d.name)} ${appStatusBadge(d.applicationStatus)} ${presenceHtml}`;
+  document.getElementById('app-detail-subtitle').textContent = `Application ID: ${d.applicationId}`;
+
+  let html = '';
+
+  // A. Applicant Details
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">👤 Applicant Details</div>
+    ${appDetailRow('Name', esc(d.name))}
+    ${appDetailRow('Phone', esc(d.phone))}
+    ${appDetailRow('Email', esc(d.email || '—'))}
+    ${appDetailRow('Age', d.age != null ? esc(String(d.age)) : '—')}
+    ${appDetailRow('Experience', esc(d.experience || '—'))}
+    ${appDetailRow('Has Insurance', d.hasInsurance != null ? (d.hasInsurance ? '✅ Yes' : '❌ No') : '—')}
+    ${appDetailRow('Protection Plan Pref', esc(d.protectionPlanPref || '—'))}
+    ${appDetailRow('License Uploaded', d.hasLicenseUpload ? '✅ Yes' : '❌ No')}
+    ${appDetailRow('Insurance Proof', d.hasInsuranceProof ? '✅ Yes' : '❌ No')}
+    ${d.licenseFileName  ? appDetailRow('License File',   `<code style="font-size:11px;">${esc(d.licenseFileName)}</code>`)  : ''}
+    ${d.insuranceFileName? appDetailRow('Insurance File', `<code style="font-size:11px;">${esc(d.insuranceFileName)}</code>`) : ''}
+  </div>`;
+
+  // B. Application Answers (vehicle preferences)
+  if (Array.isArray(d.apps) && d.apps.length) {
+    html += `<div class="app-detail-section">
+      <div class="app-detail-section-title">📋 Vehicle Preferences</div>
+      ${d.apps.map((v, i) => appDetailRow(`Vehicle ${i + 1}`, esc(String(v)))).join('')}
+    </div>`;
+  }
+
+  // C. Stripe Identity Verification
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">🪪 Stripe Identity Verification</div>
+    ${appDetailRow('Identity Status', identityStatusBadge(d.identityStatus))}
+    ${appDetailRow('Stripe Session ID', d.identitySessionId ? `<code style="font-size:11px;">${esc(d.identitySessionId)}</code>` : '—')}
+    ${appDetailRow('Verified At', esc(fmtDateTime(d.identityVerifiedAt)))}
+  </div>`;
+
+  // D. Current Review State
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">🔍 Review State</div>
+    ${appDetailRow('Application Status', appStatusBadge(d.applicationStatus))}
+    ${appDetailRow('Precheck Decision', esc(d.precheckDecision || '—'))}
+    ${appDetailRow('Review Version', esc(String(d.reviewVersion)))}
+    ${appDetailRow('Reviewed By', esc(d.reviewedBy || '—'))}
+    ${appDetailRow('Reviewed At', esc(fmtDateTime(d.reviewedAt)))}
+    ${appDetailRow('Needs Info Reason', esc(d.needsInfoReason || '—'))}
+    ${appDetailRow('Last Reviewer Notes', esc(d.lastReviewerNotes || '—'))}
+    ${appDetailRow('Submitted At', esc(fmtDateTime(d.submittedAt)))}
+    ${appDetailRow('Last Updated', esc(fmtDateTime(d.updatedAt)))}
+  </div>`;
+
+  // E. Audit / Review History
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">📜 Review History (${(d.reviewHistory || []).length} events)</div>`;
+  if (d.reviewHistory && d.reviewHistory.length) {
+    html += d.reviewHistory.map((h) => `
+      <div class="app-history-item">
+        <div style="flex:1;">
+          <div class="app-history-action">${esc(h.action)}</div>
+          <div class="app-history-meta">${esc(h.performedBy || '—')} &middot; ${esc(fmtDateTime(h.createdAt))}</div>
+          ${h.notes ? `<div style="font-size:12px;color:var(--text);margin-top:2px;">${esc(h.notes)}</div>` : ''}
+          <div class="app-history-meta" style="margin-top:2px;">
+            <span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;">${esc(h.previousStatus)}</span>
+            → <span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;">${esc(h.newStatus)}</span>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    html += '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No review actions yet.</div>';
+  }
+  html += '</div>';
+
+  // F. Checkr Placeholder
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">🔎 Background Check (Checkr)</div>
+    <div class="app-checkr-placeholder">
+      Background check integration is not yet active.<br>
+      <span style="font-size:11px;margin-top:4px;display:block;">This section will display Checkr report status and results in a future phase.</span>
+    </div>
+  </div>`;
+
+  document.getElementById('app-detail-body').innerHTML = html;
+
+  // Show/hide action section
+  const actionSection = document.getElementById('app-action-section');
+  const staleNotice   = document.getElementById('app-detail-stale-notice');
+  if (actionable) {
+    actionSection.style.display = '';
+    staleNotice.style.display   = 'none';
+  } else {
+    actionSection.style.display = 'none';
+    staleNotice.style.display   = '';
+    staleNotice.textContent     =
+      `This application is in a terminal state (${d.applicationStatus}) and cannot be actioned.`;
+  }
+}
+
+// ── Review Action Controls ────────────────────────────────────────────────────
+
+function selectAppAction(action) {
+  appSelectedAction = action;
+  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+    const btn = document.getElementById(`app-btn-${a}`);
+    if (!btn) return;
+    btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
+    if (a === action) btn.classList.add(`selected-${action}`);
+  });
+  const labels = { approved: '✅ Approve', rejected: '❌ Reject', needs_info: '⚠️ Request More Info' };
+  document.getElementById('app-action-selected').textContent = labels[action] ? `Selected: ${labels[action]}` : '';
+  const notesLabel = document.getElementById('app-notes-label');
+  if (notesLabel) notesLabel.textContent = action === 'needs_info'
+    ? 'Reason for more information (required):'
+    : 'Reviewer notes (optional):';
+  document.getElementById('app-submit-btn').disabled = false;
+}
+
+function resetAppActionButtons() {
+  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+    const btn = document.getElementById(`app-btn-${a}`);
+    if (!btn) return;
+    btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
+    btn.disabled = false;
+  });
+  appSelectedAction = '';
+  const sel = document.getElementById('app-action-selected');
+  if (sel) sel.textContent = '';
+}
+
+async function submitAppAction() {
+  if (!appViewingData || !appSelectedAction) { showToast('Please select a decision first.', 'error'); return; }
+  if (appActionInFlight) return;
+
+  const notes      = document.getElementById('app-action-notes')?.value.trim()    || '';
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim()   || 'Admin';
+
+  if (appSelectedAction === 'needs_info' && !notes) {
+    showToast('Please provide a reason for requesting more information.', 'error');
+    document.getElementById('app-action-notes').focus();
+    return;
+  }
+
+  appActionInFlight = true;
+  const submitBtn   = document.getElementById('app-submit-btn');
+  const conflictBanner = document.getElementById('app-detail-conflict-banner');
+  const actionLabels  = { approved: 'Approving…', rejected: 'Rejecting…', needs_info: 'Sending Request…' };
+  submitBtn.disabled  = true;
+  submitBtn.textContent = actionLabels[appSelectedAction] || 'Submitting…';
+  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+    const btn = document.getElementById(`app-btn-${a}`);
+    if (btn) btn.disabled = true;
+  });
+  conflictBanner.classList.remove('visible');
+  conflictBanner.textContent = '';
+
+  try {
+    const data = await callReviewAction({
+      secret:                adminSecret,
+      applicationId:         appViewingData.applicationId,
+      action:                appSelectedAction,
+      reviewedBy,
+      notes,
+      expectedStatus:        appViewingData.applicationStatus,
+      expectedReviewVersion: appViewingData.reviewVersion,
+      actionRequestId:       generateUUID(),
+    });
+
+    clearAppPresence(appViewingData.applicationId);
+
+    if (data.idempotent) {
+      showToast('This decision was already recorded (idempotent replay).', 'warning');
+    } else {
+      const successLabels = {
+        approved:   '✅ Application approved.',
+        rejected:   '❌ Application rejected.',
+        needs_info: '⚠️ More information requested.',
+      };
+      showToast(successLabels[appSelectedAction] || 'Decision recorded.', 'success');
+    }
+
+    closeModal('app-detail-modal');
+    appQueuePage = 1;
+    await loadAppQueue();
+
+  } catch (err) {
+    appActionInFlight = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Decision';
+    ['approved', 'rejected', 'needs_info'].forEach((a) => {
+      const btn = document.getElementById(`app-btn-${a}`);
+      if (btn) btn.disabled = false;
+    });
+
+    if (err.isStaleConflict) {
+      conflictBanner.innerHTML =
+        '<strong>⚠️ Concurrency conflict:</strong> Another reviewer has already updated this application. ' +
+        'The view is refreshing with the current state — please review the updated information before deciding.';
+      conflictBanner.classList.add('visible');
+      // Auto-refresh detail after short delay so reviewer sees the conflict message first
+      setTimeout(() => refreshAppDetail(), APP_CONFLICT_REFRESH_DELAY_MS);
+    } else {
+      showToast('Action failed: ' + err.message, 'error');
+    }
+  } finally {
+    appActionInFlight = false;
+  }
+}
+
+async function refreshAppDetail() {
+  if (!appViewingId) return;
+  try {
+    const params = new URLSearchParams({ applicationId: appViewingId });
+    const data   = await apiGet(`/api/admin-review-detail?${params}`);
+    if (!data.success) throw new Error(data.error || 'Failed to refresh.');
+    appViewingData = data;
+    resetAppActionButtons();
+    document.getElementById('app-action-notes').value = '';
+    document.getElementById('app-submit-btn').disabled = true;
+    document.getElementById('app-submit-btn').textContent = 'Submit Decision';
+    renderAppDetail(data);
+    // Also refresh queue silently in background
+    loadAppQueue();
+  } catch (err) {
+    showToast('Failed to refresh application: ' + err.message, 'error');
+  }
+}
+
 // ── Balance Ledger Page ────────────────────────────────────────────────────
 
 let currentLedgerBookingId = '';
 
 function initBalanceLedgerPage() {
+  // Pre-fill booking ID from URL hash if present (e.g. #balance-ledger:BK-1029)
   const hash = window.location.hash || '';
   const m = hash.match(/balance-ledger:([^&]+)/);
   if (m) {
@@ -12107,6 +12532,7 @@ function renderBalanceHistory(transactions) {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
+  // Compute running balance (oldest-first, then display newest-first)
   const sorted = [...transactions].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   let running = 0;
   const withBalance = sorted.map((row) => {
@@ -12177,6 +12603,7 @@ async function saveCharge() {
 
   if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
 
+  // Generate idempotency key for this submission
   const chargeRequestId = 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
   try {
@@ -12195,8 +12622,10 @@ async function saveCharge() {
     closeModal('add-charge-modal');
     showToast(data.duplicate ? 'Charge already recorded.' : 'Charge added to ledger.', 'success');
 
+    // Refresh ledger view if the booking matches what is currently loaded
     if (bookingId === currentLedgerBookingId) loadBalanceLedger();
     else {
+      // Navigate to ledger page for the charged booking
       currentLedgerBookingId = bookingId;
       const el = document.getElementById('bl-booking-search');
       if (el) el.value = bookingId;
@@ -12210,9 +12639,26 @@ async function saveCharge() {
   }
 }
 
+
+
+async function loadApplicationsPage() {
+  appQueuePage      = 1;
+  appFilterStatus   = '';
+  appFilterIdentity = '';
+  appFilterSearch   = '';
+  const fStatus   = document.getElementById('apps-filter-status');
+  const fIdentity = document.getElementById('apps-filter-identity');
+  const fSearch   = document.getElementById('apps-search');
+  if (fStatus)   fStatus.value   = '';
+  if (fIdentity) fIdentity.value = '';
+  if (fSearch)   fSearch.value   = '';
+  await loadAppQueue();
+}
+
 // ── Reconciliation Report ──────────────────────────────────────────────────────
 
 function initReconcileReportPage() {
+  // Reset to placeholder state when navigating to the page.
   const placeholder = document.getElementById('rc-placeholder');
   const tableWrap   = document.getElementById('rc-table-wrap');
   if (placeholder) placeholder.style.display = '';
@@ -12245,6 +12691,7 @@ async function runReconcileReport() {
       save_snapshot: true,
     });
 
+    // KPIs
     if (kpiRow) {
       document.getElementById('rc-kpi-checked').textContent    = data.bookings_checked ?? '—';
       document.getElementById('rc-kpi-pct').textContent        = data.matched_pct != null ? data.matched_pct + '%' : '—';
@@ -12253,6 +12700,7 @@ async function runReconcileReport() {
       kpiRow.style.display = 'flex';
     }
 
+    // Table
     if (tbody) {
       tbody.innerHTML = '';
       if (!data.results || data.results.length === 0) {
@@ -12305,6 +12753,7 @@ async function loadOverdueBalances() {
       limit: 200,
     });
 
+    // Bucket KPIs
     if (bucketRow && data.bucket_totals) {
       const bt = data.bucket_totals;
       document.getElementById('ov-bucket-current').textContent = `${bt.current?.count || 0} · $${(bt.current?.amount || 0).toFixed(2)}`;
@@ -12314,6 +12763,7 @@ async function loadOverdueBalances() {
       bucketRow.style.display = 'flex';
     }
 
+    // Update nav badge
     const badge = document.getElementById('overdue-badge');
     if (badge) {
       const count = data.total_overdue || 0;
@@ -12449,3 +12899,8 @@ async function cancelPaymentPlan(planId) {
     showToast('Failed to cancel plan: ' + err.message, 'error');
   }
 }
+</script>
+
+<script src="voice-assistant.js"></script>
+</body>
+</html>

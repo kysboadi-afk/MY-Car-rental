@@ -8908,7 +8908,7 @@ function loadSystemSettings() {
 
   Promise.all([
     apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' }),
-    fetch(`${API_BASE}/api/bouncie-auth?secret=${encodeURIComponent(adminSecret)}`)
+    fetch(`${API_BASE}/api/bouncie-auth`, { headers: { 'Authorization': 'Bearer ' + adminSecret } })
       .then((r) => r.json())
       .catch((err) => { showToast('Could not load Bouncie status: ' + err.message, 'error'); return null; }),
   ])
@@ -9853,8 +9853,8 @@ async function loadSmsLogs() {
   if (tableWrap) tableWrap.style.display = 'none';
 
   try {
-    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
-    const res  = await fetch(url);
+    const url = `${API_BASE}/api/sms-logs`;
+    const res  = await fetch(url, { headers: { 'Authorization': 'Bearer ' + adminSecret } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -9904,8 +9904,8 @@ async function loadSmsLogs() {
 async function clearSmsLogs() {
   if (!confirm('Clear all SMS delivery logs? This cannot be undone.')) return;
   try {
-    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
-    const res = await fetch(url, { method: 'DELETE' });
+    const url = `${API_BASE}/api/sms-logs`;
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminSecret } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -11891,10 +11891,12 @@ const APP_PRESENCE_TTL_MS           = 45000;
 // for the reviewer to read the conflict banner before the view reloads.
 const APP_CONFLICT_REFRESH_DELAY_MS = 1200;
 
-// GET helper for review endpoints that take secret as query param
+// GET helper for review endpoints — sends Authorization header, no secret in URL
 async function apiGet(path) {
   if (window.DEMO_MODE) return {};
-  const resp = await fetch(API_BASE + path);
+  const resp = await fetch(API_BASE + path, {
+    headers: { 'Authorization': 'Bearer ' + adminSecret },
+  });
   let data = null;
   try { data = await resp.json(); } catch (err) {
     console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
@@ -12012,7 +12014,6 @@ async function loadAppQueue() {
 
   try {
     const params = new URLSearchParams({
-      secret:   adminSecret,
       page:     appQueuePage,
       pageSize: APP_QUEUE_SIZE,
     });
@@ -12191,7 +12192,7 @@ async function openAppDetail(applicationId) {
   openModal('app-detail-modal');
 
   try {
-    const params = new URLSearchParams({ secret: adminSecret, applicationId });
+    const params = new URLSearchParams({ applicationId });
     const data   = await apiGet(`/api/admin-review-detail?${params}`);
     if (!data.success) throw new Error(data.error || 'Failed to load application.');
     appViewingData = data;
@@ -12428,7 +12429,7 @@ async function submitAppAction() {
 async function refreshAppDetail() {
   if (!appViewingId) return;
   try {
-    const params = new URLSearchParams({ secret: adminSecret, applicationId: appViewingId });
+    const params = new URLSearchParams({ applicationId: appViewingId });
     const data   = await apiGet(`/api/admin-review-detail?${params}`);
     if (!data.success) throw new Error(data.error || 'Failed to refresh.');
     appViewingData = data;
