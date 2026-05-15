@@ -307,12 +307,14 @@ test("returns 401 for wrong secret", async () => {
   assert.equal(res._status, 401);
 });
 
-test("accepts Authorization bearer secret when body secret is missing", async () => {
+test("accepts Authorization bearer token when body secret is omitted", async () => {
   resetStore(); resetCalls();
   const res = makeRes();
+  const body = createPayload();
+  delete body.secret;
   await handler(
     makeReq(
-      createPayload({ secret: undefined }),
+      body,
       "https://www.slytrans.com",
       { authorization: "Bearer test-admin-secret" }
     ),
