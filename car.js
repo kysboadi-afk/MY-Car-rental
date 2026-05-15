@@ -70,25 +70,83 @@ function clearPayError() {
 }
 
 async function storeBookingDocsOrThrow(payload) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch(API_BASE + "/api/store-booking-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (res.ok && data && data.ok === true && data.stored === true) {
+        return;
+      }
+      const err = new Error((data && data.error) || `Document upload failed (HTTP ${res.status}).`);
+      err.status = res.status;
+      err.responsePayload = data;
+      throw err;
+    } catch (err) {
+      console.warn("storeBookingDocsOrThrow attempt failed:", {
+        attempt,
+        maxAttempts,
+        bookingId: payload && payload.bookingId,
+        error: err && err.message ? err.message : String(err),
+        status: err && err.status ? err.status : null,
+        responsePayload: err && err.responsePayload ? err.responsePayload : null,
+        userAgent: navigator.userAgent,
+      });
+      if (attempt >= maxAttempts) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+function shouldBlockPaymentForDocFailure(error) {
+  const status = error && typeof error.status === "number" ? error.status : 0;
+  return status === 400 || status === 413;
+}
+
+function reportNonBlockingDocFailure(error) {
+  console.warn("Proceeding without pre-payment document persistence; success-page fallback will be used.", {
+    error: error && error.message ? error.message : String(error),
+    status: error && error.status ? error.status : null,
+  });
+}
+
+async function encodeUploadFile(file, label) {
+  if (!file) {
+    return { base64: null, fileName: null, mimeType: null };
+  }
   try {
-    const res = await fetch(API_BASE + "/api/store-booking-docs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result.split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
-    let data = null;
-    try { data = await res.json(); } catch (_) {}
-    if (!res.ok) {
-      throw new Error((data && data.error) || `Document upload failed (HTTP ${res.status}).`);
-    }
-    if (!data || data.ok !== true || data.stored !== true) {
-      throw new Error((data && data.error) || "Could not securely store your ID documents.");
-    }
-  } finally {
-    clearTimeout(timeoutId);
+    return {
+      base64,
+      fileName: file.name,
+      mimeType: file.type || "",
+    };
+  } catch (err) {
+    console.error(label + " encoding error:", {
+      error: err && err.message ? err.message : String(err),
+      fileName: file.name,
+      mimeType: file.type || "",
+      fileSize: file.size,
+      userAgent: navigator.userAgent,
+    });
+    throw err;
   }
 }
 
@@ -2076,16 +2134,11 @@ stripeBtn.addEventListener("click", async () => {
   let idMimeType = null;
   if (uploadedFile) {
     try {
-      idBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(uploadedFile);
-      });
-      idFileName = uploadedFile.name;
-      idMimeType = uploadedFile.type;
+      const encodedFrontId = await encodeUploadFile(uploadedFile, "ID front");
+      idBase64 = encodedFrontId.base64;
+      idFileName = encodedFrontId.fileName;
+      idMimeType = encodedFrontId.mimeType;
     } catch (err) {
-      console.error("ID encoding error:", err);
       stripeBtn.disabled = false;
       stripeBtn.textContent = window.slyI18n.t("booking.payNow");
       const reserveBtn = document.getElementById("reserveBtn");
@@ -2102,16 +2155,11 @@ stripeBtn.addEventListener("click", async () => {
   let idBackMimeType = null;
   if (uploadedFileBack) {
     try {
-      idBackBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(uploadedFileBack);
-      });
-      idBackFileName = uploadedFileBack.name;
-      idBackMimeType = uploadedFileBack.type;
+      const encodedBackId = await encodeUploadFile(uploadedFileBack, "ID back");
+      idBackBase64 = encodedBackId.base64;
+      idBackFileName = encodedBackId.fileName;
+      idBackMimeType = encodedBackId.mimeType;
     } catch (err) {
-      console.error("ID back encoding error:", err);
       stripeBtn.disabled = false;
       stripeBtn.textContent = window.slyI18n.t("booking.payNow");
       const reserveBtn = document.getElementById("reserveBtn");
@@ -2128,14 +2176,10 @@ stripeBtn.addEventListener("click", async () => {
   let insuranceMimeType = null;
   if (uploadedInsurance) {
     try {
-      insuranceBase64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(uploadedInsurance);
-      });
-      insuranceFileName = uploadedInsurance.name;
-      insuranceMimeType = uploadedInsurance.type;
+      const encodedInsurance = await encodeUploadFile(uploadedInsurance, "Insurance");
+      insuranceBase64 = encodedInsurance.base64;
+      insuranceFileName = encodedInsurance.fileName;
+      insuranceMimeType = encodedInsurance.mimeType;
     } catch (err) {
       console.error("Insurance encoding error:", err);
     }
@@ -2324,10 +2368,13 @@ stripeBtn.addEventListener("click", async () => {
             });
           } catch (e) {
             console.warn("Could not upload booking docs:", e);
-            const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
-            showPayError(msg);
-            ev.complete("fail");
-            return;
+            if (shouldBlockPaymentForDocFailure(e)) {
+              const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
+              showPayError(msg);
+              ev.complete("fail");
+              return;
+            }
+            reportNonBlockingDocFailure(e);
           }
         }
 
@@ -2467,9 +2514,9 @@ stripeBtn.addEventListener("click", async () => {
       // Upload booking docs server-side so the Stripe webhook can send the
       // owner the full email (agreement PDF + ID + insurance) reliably,
       // even if the customer's browser does not reach success.html.
-      if (pendingBookingId) {
-        try {
-          await storeBookingDocsOrThrow({
+        if (pendingBookingId) {
+          try {
+            await storeBookingDocsOrThrow({
             bookingId: pendingBookingId,
             signature: agreementSignature || null,
             idBase64: idBase64 || null,
@@ -2481,18 +2528,21 @@ stripeBtn.addEventListener("click", async () => {
             insuranceBase64: insuranceBase64 || null,
             insuranceFileName: insuranceFileName || null,
             insuranceMimeType: insuranceMimeType || null,
-            insuranceCoverageChoice,
-          });
-        } catch (docsErr) {
-          console.warn("store-booking-docs upload failed:", docsErr);
-          showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
-          if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
-          submitBtn.disabled = false;
-          submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
-          paymentSubmitting = false;
-          return;
+              insuranceCoverageChoice,
+            });
+          } catch (docsErr) {
+            console.warn("store-booking-docs upload failed:", docsErr);
+            if (shouldBlockPaymentForDocFailure(docsErr)) {
+              showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+              if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
+              submitBtn.disabled = false;
+              submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+              paymentSubmitting = false;
+              return;
+            }
+            reportNonBlockingDocFailure(docsErr);
+          }
         }
-      }
 
       paymentFormSubmitted = true;
       const { error } = await stripe.confirmPayment({

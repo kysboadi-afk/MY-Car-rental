@@ -18,6 +18,15 @@
 // }
 // Returns: { ok: true, stored: boolean }
 
+import {
+  buildUploadDiagnostics,
+  estimateBase64Bytes,
+  hasBase64Payload,
+  normalizeBase64Payload,
+  normalizeDocumentMimeType,
+  retrySupabaseOperation,
+  summarizeSupabaseError,
+} from "./_document-upload.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
 // Allow large bodies (ID front + back + insurance doc can be several MB base64-encoded).
@@ -32,20 +41,6 @@ export const config = {
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total across docs
-
-function estimateBase64Bytes(base64Value) {
-  if (!base64Value || typeof base64Value !== "string") return 0;
-  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
-  if (!normalized) return 0;
-  const padding = normalized.endsWith("==") ? 2 : (normalized.endsWith("=") ? 1 : 0);
-  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
-}
-
-function hasBase64Payload(base64Value) {
-  if (!base64Value || typeof base64Value !== "string") return false;
-  const normalized = base64Value.replace(/\s+/g, "").replace(/^data:.*;base64,/, "");
-  return normalized.length > 0;
-}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -86,9 +81,9 @@ export default async function handler(req, res) {
   }
 
   const docs = [
-    { key: "idFront", base64: idBase64, fileName: idFileName },
-    { key: "idBack", base64: idBackBase64, fileName: idBackFileName },
-    { key: "insurance", base64: insuranceBase64, fileName: insuranceFileName },
+    { key: "idFront", base64: idBase64, fileName: trimmedIdFileName, mimeType: idMimeType },
+    { key: "idBack", base64: idBackBase64, fileName: trimmedIdBackFileName, mimeType: idBackMimeType },
+    { key: "insurance", base64: insuranceBase64, fileName: insuranceFileName, mimeType: insuranceMimeType },
   ];
   let totalBytes = 0;
   for (const doc of docs) {
@@ -109,41 +104,71 @@ export default async function handler(req, res) {
     });
   }
 
+  const normalizedDocs = {
+    idBase64: normalizeBase64Payload(idBase64) || null,
+    idFileName: trimmedIdFileName || null,
+    idMimeType: normalizeDocumentMimeType(idMimeType, trimmedIdFileName, "application/octet-stream"),
+    idBackBase64: normalizeBase64Payload(idBackBase64) || null,
+    idBackFileName: trimmedIdBackFileName || null,
+    idBackMimeType: normalizeDocumentMimeType(idBackMimeType, trimmedIdBackFileName, "application/octet-stream"),
+    insuranceBase64: normalizeBase64Payload(insuranceBase64) || null,
+    insuranceFileName: typeof insuranceFileName === "string" ? insuranceFileName.trim() || null : null,
+    insuranceMimeType: normalizeDocumentMimeType(insuranceMimeType, insuranceFileName, "application/octet-stream"),
+  };
+
+  const diagnostics = buildUploadDiagnostics(req, [
+    { field: "idFront", fileName: normalizedDocs.idFileName, mimeType: normalizedDocs.idMimeType, base64: normalizedDocs.idBase64 },
+    { field: "idBack", fileName: normalizedDocs.idBackFileName, mimeType: normalizedDocs.idBackMimeType, base64: normalizedDocs.idBackBase64 },
+    { field: "insurance", fileName: normalizedDocs.insuranceFileName, mimeType: normalizedDocs.insuranceMimeType, base64: normalizedDocs.insuranceBase64 },
+  ]);
+
   const sb = getSupabaseAdmin();
   if (!sb) {
-    console.warn("store-booking-docs: Supabase not configured — docs not stored");
+    console.error("store-booking-docs: Supabase not configured — docs not stored", diagnostics);
     return res.status(503).json({ ok: false, stored: false, error: "Document storage service is not configured. Please contact support." });
   }
 
   try {
-    const { error } = await sb.from("pending_booking_docs").upsert(
+    const { error } = await retrySupabaseOperation(() => sb.from("pending_booking_docs").upsert(
       {
         booking_id:               bookingId.trim(),
         signature:                signature || null,
-        id_base64:                idBase64 || null,
-        id_filename:              idFileName || null,
-        id_mimetype:              idMimeType || null,
-        id_back_base64:           idBackBase64 || null,
-        id_back_filename:         idBackFileName || null,
-        id_back_mimetype:         idBackMimeType || null,
-        insurance_base64:         insuranceBase64 || null,
-        insurance_filename:       insuranceFileName || null,
-        insurance_mimetype:       insuranceMimeType || null,
+        id_base64:                normalizedDocs.idBase64,
+        id_filename:              normalizedDocs.idFileName,
+        id_mimetype:              normalizedDocs.idMimeType,
+        id_back_base64:           normalizedDocs.idBackBase64,
+        id_back_filename:         normalizedDocs.idBackFileName,
+        id_back_mimetype:         normalizedDocs.idBackMimeType,
+        insurance_base64:         normalizedDocs.insuranceBase64,
+        insurance_filename:       normalizedDocs.insuranceFileName,
+        insurance_mimetype:       normalizedDocs.insuranceMimeType,
         insurance_coverage_choice: insuranceCoverageChoice || null,
         email_sent:               false,
       },
       { onConflict: "booking_id" }
-    );
+    ), { attempts: 3, baseDelayMs: 300, label: "store-booking-docs" });
 
     if (error) {
-      console.error("store-booking-docs: Supabase upsert error:", error.message);
+      console.error("store-booking-docs: Supabase upsert error:", {
+        bookingId: bookingId.trim(),
+        error: summarizeSupabaseError(error),
+        diagnostics,
+      });
       return res.status(503).json({ ok: false, stored: false, error: "Could not store booking documents. Please try again." });
     }
 
-    console.log(`store-booking-docs: stored docs for booking ${bookingId.trim()}`);
+    console.log("store-booking-docs: stored docs", {
+      bookingId: bookingId.trim(),
+      totalBytes,
+      diagnostics,
+    });
     return res.status(200).json({ ok: true, stored: true });
   } catch (err) {
-    console.error("store-booking-docs: unexpected error:", err.message);
+    console.error("store-booking-docs: unexpected error:", {
+      bookingId: bookingId.trim(),
+      error: summarizeSupabaseError(err),
+      diagnostics,
+    });
     return res.status(500).json({ ok: false, stored: false, error: "Unexpected document storage error. Please try again." });
   }
 }

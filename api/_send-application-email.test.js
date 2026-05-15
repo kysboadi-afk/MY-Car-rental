@@ -177,6 +177,19 @@ test("attaches license file when base64 data is provided", async () => {
   assert.equal(sentMails[0].attachments[0].contentType, "image/jpeg");
 });
 
+test("infers attachment MIME type from filename when mobile browsers omit it", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", {
+    ...VALID_BODY,
+    licenseFileName: "license.HEIC",
+    licenseMimeType: "",
+  }), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMails[0].attachments[0].filename, "license.HEIC");
+  assert.equal(sentMails[0].attachments[0].contentType, "image/heic");
+});
+
 test("sends without attachment when license fields are omitted", async () => {
   sentMails.length = 0;
   const res = makeRes();

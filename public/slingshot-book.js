@@ -59,26 +59,56 @@ function clearPayError() {
 }
 
 async function storeBookingDocsOrThrow(payload) {
-  var controller = new AbortController();
-  var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
-  try {
-    var res = await fetch(API_BASE + "/api/store-booking-docs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    var data = null;
-    try { data = await res.json(); } catch (_) {}
-    if (!res.ok) {
-      throw new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
+  var maxAttempts = 3;
+  for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+    try {
+      var res = await fetch(API_BASE + "/api/store-booking-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      var data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (res.ok && data && data.ok === true && data.stored === true) {
+        return;
+      }
+      var err = new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
+      err.status = res.status;
+      err.responsePayload = data;
+      throw err;
+    } catch (err) {
+      console.warn("storeBookingDocsOrThrow attempt failed:", {
+        attempt: attempt,
+        maxAttempts: maxAttempts,
+        bookingId: payload && payload.bookingId,
+        error: err && err.message ? err.message : String(err),
+        status: err && err.status ? err.status : null,
+        responsePayload: err && err.responsePayload ? err.responsePayload : null,
+        userAgent: navigator.userAgent,
+      });
+      if (attempt >= maxAttempts) {
+        throw err;
+      }
+      await new Promise(function(resolve) { setTimeout(resolve, attempt * 400); });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    if (!data || data.ok !== true || data.stored !== true) {
-      throw new Error((data && data.error) || "Could not securely store your ID documents.");
-    }
-  } finally {
-    clearTimeout(timeoutId);
   }
+}
+
+function shouldBlockPaymentForDocFailure(error) {
+  var status = error && typeof error.status === "number" ? error.status : 0;
+  return status === 400 || status === 413;
+}
+
+function reportNonBlockingDocFailure(error) {
+  console.warn("Proceeding without pre-payment document persistence; success-page fallback will be used.", {
+    error: error && error.message ? error.message : String(error),
+    status: error && error.status ? error.status : null,
+  });
 }
 
 /**
@@ -456,6 +486,29 @@ function encodeFile(file) {
   });
 }
 
+async function encodeUploadFile(file, label) {
+  if (!file) {
+    return { base64: null, fileName: null, mimeType: null };
+  }
+  try {
+    var base64 = await encodeFile(file);
+    return {
+      base64: base64,
+      fileName: file.name,
+      mimeType: file.type || "",
+    };
+  } catch (err) {
+    console.error(label + " encoding error:", {
+      error: err && err.message ? err.message : String(err),
+      fileName: file.name,
+      mimeType: file.type || "",
+      fileSize: file.size,
+      userAgent: navigator.userAgent,
+    });
+    throw err;
+  }
+}
+
 // =====================================================================
 // REGULAR BOOKING FLOW
 // =====================================================================
@@ -491,12 +544,14 @@ async function launchSlingshotPayment() {
 
   try {
     // Encode ID files
-    var idBase64      = await encodeFile(uploadedFileFront);
-    var idBackBase64  = await encodeFile(uploadedFileBack);
-    var idFileName    = uploadedFileFront.name;
-    var idMimeType    = uploadedFileFront.type;
-    var idBackFileName = uploadedFileBack.name;
-    var idBackMimeType = uploadedFileBack.type;
+    var encodedFrontId = await encodeUploadFile(uploadedFileFront, "Slingshot ID front");
+    var encodedBackId = await encodeUploadFile(uploadedFileBack, "Slingshot ID back");
+    var idBase64      = encodedFrontId.base64;
+    var idBackBase64  = encodedBackId.base64;
+    var idFileName    = encodedFrontId.fileName;
+    var idMimeType    = encodedFrontId.mimeType;
+    var idBackFileName = encodedBackId.fileName;
+    var idBackMimeType = encodedBackId.mimeType;
 
     // Call create-slingshot-booking
     var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
@@ -609,8 +664,12 @@ async function launchSlingshotPayment() {
         });
       } catch (docsErr) {
         console.warn("slingshot-book: could not upload docs:", docsErr);
-        showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
-        return;
+        if (shouldBlockPaymentForDocFailure(docsErr)) {
+          showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+          if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
+          return;
+        }
+        reportNonBlockingDocFailure(docsErr);
       }
     }
 

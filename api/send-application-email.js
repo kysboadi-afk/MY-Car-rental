@@ -18,6 +18,7 @@ import { upsertContact } from "./_contacts.js";
 import { insertRenterApplication, patchRenterApplicationById } from "./_renter-applications.js";
 import { sendSubmittedApplicationNotifications } from "./_application-notifications.js";
 import { normalizePhone } from "./_bookings.js";
+import { buildUploadDiagnostics, decodeBase64Document, summarizeSupabaseError } from "./_document-upload.js";
 
 // Allow large bodies — base64-encoded ID photos from mobile cameras can be
 // 10 MB+ after encoding; 30 MB matches the store-booking-docs.js limit.
@@ -28,6 +29,7 @@ export const config = {
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // ~10 MB decoded — guard against oversized payloads
 const MAX_LICENSE_B64_LEN = 14_000_000;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 function normalizeApplicationId(value) {
   if (typeof value !== "string") return null;
@@ -87,29 +89,62 @@ export default async function handler(req, res) {
       .json({ error: "Missing required fields: name, phone, experience." });
   }
 
+  const uploadDiagnostics = buildUploadDiagnostics(req, [
+    { field: "license", fileName: licenseFileName, mimeType: licenseMimeType, base64: licenseBase64 },
+    { field: "insurance", fileName: insuranceFileName, mimeType: insuranceMimeType, base64: insuranceBase64 },
+  ]);
+
   // Build attachment if a license image/PDF was provided
   const attachments = [];
-  if (licenseBase64 && licenseFileName && licenseMimeType) {
+  if (licenseBase64 && licenseFileName) {
     if (licenseBase64.length > MAX_LICENSE_B64_LEN) {
       return res.status(400).json({ error: "License file is too large." });
     }
-    attachments.push({
-      filename: licenseFileName,
-      content: Buffer.from(licenseBase64, "base64"),
-      contentType: licenseMimeType,
-    });
+    try {
+      const decodedLicense = decodeBase64Document({
+        base64Data: licenseBase64,
+        mimeType: licenseMimeType,
+        fileName: licenseFileName,
+        maxBytes: MAX_ATTACHMENT_BYTES,
+      });
+      attachments.push({
+        filename: decodedLicense.fileName,
+        content: decodedLicense.buffer,
+        contentType: decodedLicense.mimeType,
+      });
+    } catch (err) {
+      console.error("send-application-email: rejected license upload", {
+        error: err.message,
+        diagnostics: uploadDiagnostics,
+      });
+      return res.status(400).json({ error: err.message || "License upload is invalid." });
+    }
   }
 
   // Attach insurance proof if provided
-  if (insuranceBase64 && insuranceFileName && insuranceMimeType) {
+  if (insuranceBase64 && insuranceFileName) {
     if (insuranceBase64.length > MAX_LICENSE_B64_LEN) {
       return res.status(400).json({ error: "Insurance file is too large." });
     }
-    attachments.push({
-      filename: insuranceFileName,
-      content: Buffer.from(insuranceBase64, "base64"),
-      contentType: insuranceMimeType,
-    });
+    try {
+      const decodedInsurance = decodeBase64Document({
+        base64Data: insuranceBase64,
+        mimeType: insuranceMimeType,
+        fileName: insuranceFileName,
+        maxBytes: MAX_ATTACHMENT_BYTES,
+      });
+      attachments.push({
+        filename: decodedInsurance.fileName,
+        content: decodedInsurance.buffer,
+        contentType: decodedInsurance.mimeType,
+      });
+    } catch (err) {
+      console.error("send-application-email: rejected insurance upload", {
+        error: err.message,
+        diagnostics: uploadDiagnostics,
+      });
+      return res.status(400).json({ error: err.message || "Insurance upload is invalid." });
+    }
   }
 
   const hasLicense = attachments.length > 0;
@@ -172,7 +207,10 @@ export default async function handler(req, res) {
       }
     }
   } catch (persistErr) {
-    console.warn("send-application-email: renter application persistence error:", persistErr.message || persistErr);
+    console.warn("send-application-email: renter application persistence error:", {
+      error: summarizeSupabaseError(persistErr),
+      diagnostics: uploadDiagnostics,
+    });
   }
 
   try {
@@ -215,7 +253,10 @@ export default async function handler(req, res) {
       identityStatus: applicationRecord?.identity_status || "not_started",
     });
   } catch (err) {
-    console.error("Application email failed:", err);
+    console.error("Application email failed:", {
+      error: summarizeSupabaseError(err),
+      diagnostics: uploadDiagnostics,
+    });
     return res.status(500).json({ error: "Failed to send application email." });
   }
 }
