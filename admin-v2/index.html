@@ -9815,7 +9815,8 @@ function renderSystemHealth(data) {
       ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
           ${(c.items || []).map((item) => {
              const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
-             const canOpenBooking = /^bk-/i.test(String(item.id || '').trim());
+             const _healthItemId = String(item.id || '').trim();
+             const canOpenBooking = /^bk-/i.test(_healthItemId) || /^[0-9a-f-]{8,}$/i.test(_healthItemId);
              const isMissedCriticalSms = checkKey === 'smsDeliveryHealth' && String(item.info || '').startsWith(MISSED_CRITICAL_PREFIX);
              const parsedMissedCritical = isMissedCriticalSms ? parseMissedCriticalSmsInfo(item.info || '') : null;
              return `
