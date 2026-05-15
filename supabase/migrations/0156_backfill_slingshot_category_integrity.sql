@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS slingshot_category_backfill_audit (
   corrected_at       timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE INDEX IF NOT EXISTS slingshot_category_backfill_audit_corrected_at_idx
+  ON slingshot_category_backfill_audit (corrected_at DESC);
+
 WITH candidates AS (
   SELECT
     v.vehicle_id,
