@@ -13050,9 +13050,9 @@ async function loadPaymentPlans() {
               <td>${plan.next_due_date ? esc(plan.next_due_date.slice(0, 10)) : '—'}</td>
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary btn-sm" onclick="editPaymentPlan(${JSON.stringify(plan.id || '')})">Edit</button>
-                  ${plan.status === 'active' ? `<button class="btn btn-secondary btn-sm" onclick="cancelPaymentPlan(${JSON.stringify(plan.id || '')})">Cancel</button>` : ''}
-                  <button class="btn btn-danger btn-sm" onclick="deletePaymentPlan(${JSON.stringify(plan.id || '')})">Delete</button>
+                  <button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="editPaymentPlan(this.dataset.planId)">Edit</button>
+                  ${plan.status === 'active' ? `<button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="cancelPaymentPlan(this.dataset.planId)">Cancel</button>` : ''}
+                  <button class="btn btn-danger btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="deletePaymentPlan(this.dataset.planId)">Delete</button>
                 </div>
               </td>
             </tr>
