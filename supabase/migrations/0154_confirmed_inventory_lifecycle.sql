@@ -18,7 +18,7 @@ BEGIN
   -- Only confirmed reservation / occupancy states may create blocked_dates rows.
   -- This keeps pending checkout attempts from affecting public availability.
   IF NEW.pickup_date IS NOT NULL AND NEW.return_date IS NOT NULL
-     AND NEW.status IN ('reserved', 'booked_paid', 'approved', 'active', 'active_rental', 'overdue') THEN
+     AND NEW.status IN ('reserved', 'booked_paid', 'active_rental', 'approved', 'active', 'overdue') THEN
     BEGIN
       IF NEW.booking_ref IS NULL THEN
         RAISE EXCEPTION

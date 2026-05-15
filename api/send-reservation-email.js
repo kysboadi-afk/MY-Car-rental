@@ -516,7 +516,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-function roundCurrencyAmount(value) {
+function roundToDollarAmount(value) {
   const parsed = parseFloat(value);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
 }
@@ -535,9 +535,9 @@ function buildBookingRecord(fields, paymentLink = "") {
     pickup, pickupTime, returnDate, returnTime,
     total, fullRentalCost, paymentIntentId,
   } = fields;
-  const amountPaid = roundCurrencyAmount(total);
-  const totalPrice = fullRentalCost ? roundCurrencyAmount(fullRentalCost) : amountPaid;
-  const isConfirmedPartialReservation = totalPrice > amountPaid;
+  const amountPaid = roundToDollarAmount(total);
+  const totalPrice = fullRentalCost ? roundToDollarAmount(fullRentalCost) : amountPaid;
+  const hasBalanceDue = totalPrice > amountPaid;
   return {
     bookingId,
     vehicleId,
@@ -550,7 +550,7 @@ function buildBookingRecord(fields, paymentLink = "") {
     returnDate:      returnDate || "",
     returnTime:      returnTime || "",
     location:        resolvePickupLocation({ vehicleId, vehicleName: car }),
-    status:          isConfirmedPartialReservation ? "reserved" : "booked_paid",
+    status:          hasBalanceDue ? "reserved" : "booked_paid",
     amountPaid,
     totalPrice,
     paymentIntentId: paymentIntentId || "",

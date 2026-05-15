@@ -455,8 +455,9 @@ function cancelPendingBooking(useBeacon) {
   const body = JSON.stringify({ bookingId: bookingIdToCancel });
   if (useBeacon && navigator.sendBeacon) {
     const blob = new Blob([body], { type: "application/json" });
-    navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
-    return;
+    const queued = navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
+    if (queued) return;
+    console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
   }
   fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
     method: "POST",
