@@ -649,20 +649,42 @@ async function launchSlingshotPayment() {
       // Mark payment as submitted so the pagehide handler does NOT cancel the
       // pending booking — Stripe is about to redirect to success.html on success.
       paymentFormSubmitted = true;
+      try {
+        var submitResult = await elements.submit();
+        if (submitResult && submitResult.error) {
+          paymentFormSubmitted = false;
+          if (msgEl) msgEl.textContent = submitResult.error.message || "Please complete your payment details and try again.";
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
+          submitting = false;
+          return;
+        }
 
-      var result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
-          receipt_email: email,
-        },
-      });
+        var result = await stripe.confirmPayment({
+          elements,
+          confirmParams: {
+            return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
+            receipt_email: email,
+          },
+        });
 
-      if (result.error) {
-        // Payment failed or was cancelled — allow the user to try again or cancel.
+        if (result.error) {
+          // Payment failed or was cancelled — allow the user to try again or cancel.
+          paymentFormSubmitted = false;
+          await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
+          if (msgEl) msgEl.textContent = result.error.message;
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
+          submitting = false;
+        }
+      } catch (err) {
         paymentFormSubmitted = false;
-        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
-        if (msgEl) msgEl.textContent = result.error.message;
+        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_exception", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
+        if (msgEl) {
+          msgEl.textContent = err && err.message
+            ? err.message
+            : "Payment could not be submitted. Please try again.";
+        }
         submitBtn.disabled = false;
         submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
         submitting = false;
