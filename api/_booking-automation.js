@@ -25,6 +25,7 @@ import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { buildDateTimeLA, isoDateInLA } from "./_time.js";
 import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
+import { toDbBookingStatus } from "./_booking-status.js";
 
 // Hours the car is unavailable after a return before a new pickup can start.
 // Must match BOOKING_BUFFER_HOURS in _availability.js.
@@ -628,15 +629,6 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
   }
 }
 
-// ── Status mapping: old bookings.json values → new bookings table enum ────────
-const BOOKING_STATUS_MAP = {
-  reserved_unpaid:  "pending",
-  booked_paid:      "booked_paid",
-  active_rental:    "active_rental",
-  completed_rental: "completed_rental",
-  cancelled_rental: "cancelled_rental",
-};
-
 /**
  * Converts a pickup/return time string in "H:MM AM/PM" format to "HH:MM:SS"
  * PostgreSQL time format.  Returns null for unparseable input.
@@ -702,7 +694,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
       if (custErr) throw new Error(`customer phone lookup failed: ${custErr.message}`);
       customerId = cust?.id ?? null;
     }
-    const status = BOOKING_STATUS_MAP[booking.status] || booking.status || "pending";
+    const status = toDbBookingStatus(booking.status || "pending_checkout");
     const amountPaid  = Number(booking.amountPaid  || 0);
     // Prefer an explicit totalPrice field if provided; fall back to amountPaid so
     // that existing bookings.json records (which only store amountPaid) still sync

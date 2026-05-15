@@ -22,25 +22,13 @@ import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
-};
-const DB_TO_APP_STATUS = {
-  pending:              "reserved_unpaid",
-  reserved:             "reserved_unpaid",
-  pending_verification: "reserved_unpaid",
-  approved:             "booked_paid",
-  booked_paid:          "booked_paid",
-  active:               "active_rental",
-  active_rental:        "active_rental",
-  completed:            "completed_rental",
-  completed_rental:     "completed_rental",
-  cancelled:            "cancelled_rental",
-  cancelled_rental:     "cancelled_rental",
 };
 const DEFAULT_RETURN_TIME = "10:00";
 
@@ -150,7 +138,7 @@ export default async function handler(req, res) {
             vehicleId:   uiVehicleId(r.vehicle_id),
             vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
             name:        r.customers?.name || "",
-            status:      DB_TO_APP_STATUS[r.status] || r.status,
+            status:      toAppBookingStatus(r.status),
             pickupDate:  r.pickup_date  || "",
             returnDate:  r.return_date  || "",
             returnTime:  r.return_time  || "",
@@ -285,6 +273,7 @@ export default async function handler(req, res) {
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
     let activeBookings    = 0;
     let pendingApprovals  = 0;
+    let incompleteCheckouts = 0;
     let overdueCount      = 0;
     let returnsTodayCount = 0;
     let pickupsTodayCount = 0;
@@ -295,6 +284,10 @@ export default async function handler(req, res) {
         // A completed_rental whose return date is in the past would otherwise be
         // incorrectly counted as overdue (now >= returnDateTime is true for any
         // past booking).  Only the revenue fallback loop below needs completed_rental.
+        continue;
+      }
+      if (isIncompleteCheckoutAppStatus(booking.status)) {
+        incompleteCheckouts++;
         continue;
       }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
@@ -573,7 +566,7 @@ export default async function handler(req, res) {
     }
 
     for (const booking of allBookings) {
-      if (booking.status !== "cancelled_rental" && booking.pickupDate) {
+      if (!isIncompleteCheckoutAppStatus(booking.status) && booking.status !== "cancelled_rental" && booking.pickupDate) {
         const pickup = new Date(booking.pickupDate);
         if (pickup >= now && pickup <= in7d) {
           alerts.push({
@@ -585,10 +578,17 @@ export default async function handler(req, res) {
       }
     }
 
+    if (incompleteCheckouts > 0) {
+      alerts.unshift({
+        type:    "warning",
+        message: `${incompleteCheckouts} incomplete checkout attempt${incompleteCheckouts > 1 ? "s" : ""} need review`,
+      });
+    }
+
     if (pendingApprovals > 0) {
       alerts.unshift({
         type:    "action",
-        message: `${pendingApprovals} booking${pendingApprovals > 1 ? "s" : ""} pending approval`,
+        message: `${pendingApprovals} unpaid reservation${pendingApprovals > 1 ? "s" : ""} pending approval`,
       });
     }
 
@@ -660,7 +660,7 @@ export default async function handler(req, res) {
         vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
         pickupDate:  r.pickup_date  || "",
         returnDate:  r.return_date  || "",
-        status:      DB_TO_APP_STATUS[r.status] || r.status,
+        status:      toAppBookingStatus(r.status),
         amountPaid:  r.booking_ref && rrRecentMap[r.booking_ref] != null
           ? rrRecentMap[r.booking_ref]
           : Number(r.deposit_paid || 0),
@@ -716,6 +716,7 @@ export default async function handler(req, res) {
           reconciledCount,
           activeBookings,
           availableVehicles,
+          incompleteCheckouts,
           pendingApprovals,
           overdueCount,
           returnsTodayCount,

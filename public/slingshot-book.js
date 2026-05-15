@@ -59,51 +59,96 @@ function clearPayError() {
 }
 
 async function storeBookingDocsOrThrow(payload) {
-  var controller = new AbortController();
-  var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
-  try {
-    var res = await fetch(API_BASE + "/api/store-booking-docs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    var data = null;
-    try { data = await res.json(); } catch (_) {}
-    if (!res.ok) {
-      throw new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
+  var maxAttempts = 3;
+  for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    var controller = new AbortController();
+    var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
+    try {
+      var res = await fetch(API_BASE + "/api/store-booking-docs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      var data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (res.ok && data && data.ok === true && data.stored === true) {
+        return;
+      }
+      var err = new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
+      err.status = res.status;
+      err.responsePayload = data;
+      throw err;
+    } catch (err) {
+      console.warn("storeBookingDocsOrThrow attempt failed:", {
+        attempt: attempt,
+        maxAttempts: maxAttempts,
+        bookingId: payload && payload.bookingId,
+        error: err && err.message ? err.message : String(err),
+        status: err && err.status ? err.status : null,
+        responsePayload: err && err.responsePayload ? err.responsePayload : null,
+        userAgent: navigator.userAgent,
+      });
+      if (attempt >= maxAttempts) {
+        throw err;
+      }
+      await new Promise(function(resolve) { setTimeout(resolve, attempt * 400); });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    if (!data || data.ok !== true || data.stored !== true) {
-      throw new Error((data && data.error) || "Could not securely store your ID documents.");
-    }
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
 /**
- * Cancel the current pending booking (if any) via the public API.
+ * Only validation-size failures block checkout immediately.
+ * Other failures remain recoverable via the success-page/IndexedDB fallback.
+ */
+function shouldBlockPaymentForDocFailure(error) {
+  var status = error && typeof error.status === "number" ? error.status : 0;
+  return status === 400 || status === 413;
+}
+
+function reportNonBlockingDocFailure(error) {
+  console.warn("Proceeding without pre-payment document persistence; success-page fallback will be used.", {
+    error: error && error.message ? error.message : String(error),
+    status: error && error.status ? error.status : null,
+  });
+}
+
+/**
+ * Transition the current pending booking (if any) via the public API.
  * Safe to call multiple times — idempotent on the server.
  * Uses sendBeacon when available (page-unload safe), otherwise fetch.
  * @param {boolean} [useBeacon] - true to use sendBeacon (for pagehide)
  */
-function cancelPendingBooking(useBeacon) {
+async function updatePendingBookingLifecycle(targetStatus, reason, options) {
   if (!pendingBookingId) return;
   var bookingIdToCancel = pendingBookingId;
-  pendingBookingId = null; // clear immediately to prevent double-cancel
+  var useBeacon = !!(options && options.useBeacon);
+  var source = options && options.source ? options.source : "slingshot_booking";
+  var shouldClearLocal = !(options && options.preservePendingBookingId);
   var url  = API_BASE + "/api/cancel-pending-booking";
-  var body = JSON.stringify({ bookingId: bookingIdToCancel });
+  var body = JSON.stringify({ bookingId: bookingIdToCancel, targetStatus: targetStatus, reason: reason, source: source });
   if (useBeacon && navigator.sendBeacon) {
     var blob = new Blob([body], { type: "application/json" });
-    navigator.sendBeacon(url, blob);
-  } else {
-    fetch(url, {
+    if (navigator.sendBeacon(url, blob)) {
+      if (shouldClearLocal) pendingBookingId = null;
+      return true;
+    }
+    console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
+  }
+  try {
+    var fallbackRes = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body,
-    }).catch(function(e) {
-      console.warn("cancel-pending-booking fetch error:", e);
     });
+    if (!fallbackRes.ok) throw new Error("HTTP " + fallbackRes.status);
+    if (shouldClearLocal) pendingBookingId = null;
+    return true;
+  } catch (fallbackErr) {
+    console.warn("cancel-pending-booking fetch error:", fallbackErr);
+    return false;
   }
 }
 
@@ -112,7 +157,7 @@ function cancelPendingBooking(useBeacon) {
 // a successful Stripe redirect to success.html does NOT trigger a cancel.
 window.addEventListener("pagehide", function() {
   if (pendingBookingId && !paymentFormSubmitted) {
-    cancelPendingBooking(true);
+    updatePendingBookingLifecycle("abandoned_checkout", "pagehide_before_payment", { useBeacon: true, source: "pagehide" });
   }
 });
 
@@ -456,6 +501,29 @@ function encodeFile(file) {
   });
 }
 
+async function encodeUploadFile(file, label) {
+  if (!file) {
+    return { base64: null, fileName: null, mimeType: null };
+  }
+  try {
+    var base64 = await encodeFile(file);
+    return {
+      base64: base64,
+      fileName: file.name,
+      mimeType: file.type || "",
+    };
+  } catch (err) {
+    console.error(label + " encoding error:", {
+      error: err && err.message ? err.message : String(err),
+      fileName: file.name,
+      mimeType: file.type || "",
+      fileSize: file.size,
+      userAgent: navigator.userAgent,
+    });
+    throw err;
+  }
+}
+
 // =====================================================================
 // REGULAR BOOKING FLOW
 // =====================================================================
@@ -491,12 +559,14 @@ async function launchSlingshotPayment() {
 
   try {
     // Encode ID files
-    var idBase64      = await encodeFile(uploadedFileFront);
-    var idBackBase64  = await encodeFile(uploadedFileBack);
-    var idFileName    = uploadedFileFront.name;
-    var idMimeType    = uploadedFileFront.type;
-    var idBackFileName = uploadedFileBack.name;
-    var idBackMimeType = uploadedFileBack.type;
+    var encodedFrontId = await encodeUploadFile(uploadedFileFront, "Slingshot ID front");
+    var encodedBackId = await encodeUploadFile(uploadedFileBack, "Slingshot ID back");
+    var idBase64      = encodedFrontId.base64;
+    var idBackBase64  = encodedBackId.base64;
+    var idFileName    = encodedFrontId.fileName;
+    var idMimeType    = encodedFrontId.mimeType;
+    var idBackFileName = encodedBackId.fileName;
+    var idBackMimeType = encodedBackId.mimeType;
 
     // Call create-slingshot-booking
     var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
@@ -609,8 +679,13 @@ async function launchSlingshotPayment() {
         });
       } catch (docsErr) {
         console.warn("slingshot-book: could not upload docs:", docsErr);
-        showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
-        return;
+        if (shouldBlockPaymentForDocFailure(docsErr)) {
+          await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "slingshot_doc_upload", preservePendingBookingId: true });
+          showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+          if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
+          return;
+        }
+        reportNonBlockingDocFailure(docsErr);
       }
     }
 
@@ -680,6 +755,7 @@ async function launchSlingshotPayment() {
       if (result.error) {
         // Payment failed or was cancelled — allow the user to try again or cancel.
         paymentFormSubmitted = false;
+        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
         if (msgEl) msgEl.textContent = result.error.message;
         submitBtn.disabled = false;
         submitBtn.innerHTML = "Pay Deposit $" + chargedToday.toFixed(2) + " Now 🔒";
@@ -697,7 +773,7 @@ async function launchSlingshotPayment() {
       if (bookingSection) bookingSection.style.display = "";
       if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
       // Cancel the pre-written pending booking so it no longer appears in admin.
-      cancelPendingBooking(false);
+      updatePendingBookingLifecycle("abandoned_checkout", "cancel_button_before_payment", { source: "cancel_payment_button" });
     }, { once: true });
 
   } catch (err) {

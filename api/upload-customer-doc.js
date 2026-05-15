@@ -15,6 +15,13 @@
 // Returns: { success: true, url: string }
 
 import { randomBytes } from "crypto";
+import {
+  buildUploadDiagnostics,
+  decodeBase64Document,
+  isAllowedDocumentMimeType,
+  summarizeSupabaseError,
+  uploadWithBucketRecovery,
+} from "./_document-upload.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -26,16 +33,6 @@ export const config = {
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const BUCKET           = "customer-documents";
 const MAX_SIZE_BYTES   = 8 * 1024 * 1024; // 8 MB
-const ALLOWED_MIMETYPES = [
-  "image/jpeg", "image/png", "image/webp", "image/gif",
-  "application/pdf",
-];
-
-// Returns true for any image/* MIME type or application/pdf.
-function isAllowedMimeType(mime) {
-  return mime.startsWith("image/") || mime === "application/pdf";
-}
-
 const DOC_TYPE_COLUMN = {
   license_front: { url: "license_front_url", at: "license_uploaded_at" },
   license_back:  { url: "license_back_url",  at: "license_uploaded_at" },
@@ -70,20 +67,36 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "imageData (base64) is required" });
   }
 
-  const mime = (mimeType || "image/jpeg").toLowerCase();
-  if (!isAllowedMimeType(mime)) {
-    return res.status(400).json({ error: "Only image files and PDFs are accepted." });
+  const diagnostics = buildUploadDiagnostics(req, [
+    { field: docType, fileName, mimeType, base64: imageData },
+  ]);
+
+  let decodedDoc;
+  try {
+    decodedDoc = decodeBase64Document({
+      base64Data: imageData,
+      mimeType,
+      fileName,
+      maxBytes: MAX_SIZE_BYTES,
+    });
+  } catch (err) {
+    console.error("upload-customer-doc: rejected upload", {
+      customerId,
+      docType,
+      error: err.message,
+      diagnostics,
+    });
+    return res.status(400).json({ error: err.message || "Invalid document upload." });
   }
 
-  const base64Data = imageData.replace(/^data:[^;]+;base64,/, "");
-  let buffer;
-  try {
-    buffer = Buffer.from(base64Data, "base64");
-  } catch {
-    return res.status(400).json({ error: "Invalid base64 data" });
-  }
-  if (buffer.length > MAX_SIZE_BYTES) {
-    return res.status(400).json({ error: `File too large. Maximum size is ${MAX_SIZE_BYTES / 1024 / 1024} MB.` });
+  if (!isAllowedDocumentMimeType(decodedDoc.mimeType)) {
+    console.error("upload-customer-doc: rejected MIME type", {
+      customerId,
+      docType,
+      mimeType: decodedDoc.mimeType,
+      diagnostics,
+    });
+    return res.status(400).json({ error: "Only image files and PDFs are accepted." });
   }
 
   const sb = getSupabaseAdmin();
@@ -93,16 +106,24 @@ export default async function handler(req, res) {
 
   try {
     // Build file path: customer-documents/<customerId>/<docType>-<random>.<ext>
-    const extMap = { "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "image/heif": "heif", "image/avif": "avif", "image/bmp": "bmp", "image/tiff": "tiff", "application/pdf": "pdf" };
-    const ext = extMap[mime] || (mime.startsWith("image/") ? mime.split("/")[1].replace(/[^a-z0-9]/g, "").slice(0, 10) || "img" : "bin");
-    const filePath = `${customerId}/${docType}-${Date.now()}-${randomBytes(4).toString("hex")}.${ext}`;
+    const filePath = `${customerId}/${docType}-${Date.now()}-${randomBytes(4).toString("hex")}.${decodedDoc.extension}`;
 
-    const { error: uploadErr } = await sb.storage
-      .from(BUCKET)
-      .upload(filePath, buffer, { contentType: mime, upsert: true });
+    const { error: uploadErr } = await uploadWithBucketRecovery(
+      sb,
+      BUCKET,
+      filePath,
+      decodedDoc.buffer,
+      { contentType: decodedDoc.mimeType, upsert: true },
+      { public: true, fileSizeLimit: String(MAX_SIZE_BYTES) }
+    );
 
     if (uploadErr) {
-      console.error("upload-customer-doc: upload error:", uploadErr);
+      console.error("upload-customer-doc: upload error:", {
+        customerId,
+        docType,
+        error: summarizeSupabaseError(uploadErr),
+        diagnostics,
+      });
       return res.status(500).json({ error: `Upload failed: ${uploadErr.message}` });
     }
 
@@ -117,14 +138,24 @@ export default async function handler(req, res) {
       .eq("id", customerId);
 
     if (updateErr) {
-      console.error("upload-customer-doc: customer update error:", updateErr);
+      console.error("upload-customer-doc: customer update error:", {
+        customerId,
+        docType,
+        error: summarizeSupabaseError(updateErr),
+        diagnostics,
+      });
       // Still return the URL — the file was uploaded successfully
       return res.status(200).json({ success: true, url, customerUpdated: false });
     }
 
     return res.status(200).json({ success: true, url, customerUpdated: true });
   } catch (err) {
-    console.error("upload-customer-doc error:", err);
+    console.error("upload-customer-doc error:", {
+      customerId,
+      docType,
+      error: summarizeSupabaseError(err),
+      diagnostics,
+    });
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

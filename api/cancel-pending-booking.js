@@ -16,8 +16,10 @@
 //          or did not exist — idempotent by design).
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_TARGET_STATUSES = new Set(["abandoned_checkout", "upload_failed", "payment_failed"]);
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -30,9 +32,21 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   let bookingId;
+  let targetStatus = "abandoned_checkout";
+  let reason = "client_cleanup";
+  let source = "client";
   try {
     const body = req.body || {};
     bookingId = typeof body.bookingId === "string" ? body.bookingId.trim() : "";
+    if (typeof body.targetStatus === "string" && ALLOWED_TARGET_STATUSES.has(body.targetStatus.trim())) {
+      targetStatus = body.targetStatus.trim();
+    }
+    if (typeof body.reason === "string" && body.reason.trim()) {
+      reason = body.reason.trim().slice(0, 120);
+    }
+    if (typeof body.source === "string" && body.source.trim()) {
+      source = body.source.trim().slice(0, 80);
+    }
   } catch {
     return res.status(400).json({ error: "Invalid request body." });
   }
@@ -49,22 +63,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Only cancel if the booking is still in the pre-payment state.
-    // The double filter (status=pending + payment_status≠paid) prevents
+    // Only transition if the booking is still in the pre-payment checkout state.
+    // The double filter (pending/pending_checkout + payment_status≠paid) prevents
     // this endpoint from ever touching a paid or confirmed booking.
-    const { error: updateErr } = await sb
+    const { data: updatedRows, error: updateErr } = await sb
       .from("bookings")
-      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .update({ status: toDbBookingStatus(targetStatus), updated_at: new Date().toISOString() })
       .eq("booking_ref", bookingId)
-      .eq("status", "pending")
-      .neq("payment_status", "paid");
+      .in("status", Array.from(CHECKOUT_PENDING_PREPAY_DB_STATUSES))
+      .neq("payment_status", "paid")
+      .select("booking_ref, vehicle_id, status, payment_intent_id");
 
     if (updateErr) {
       console.error("[CANCEL_PENDING_BOOKING] update error:", updateErr.message);
       return res.status(500).json({ ok: false, error: "Failed to cancel booking." });
     }
 
-    console.log("[CANCEL_PENDING_BOOKING]", { bookingId });
+    console.log("[CHECKOUT_CLEANUP]", {
+      bookingId,
+      toStatus: targetStatus,
+      reason,
+      source,
+      affectedRows: (updatedRows || []).length,
+      releasedTemporaryHold: (updatedRows || []).length > 0,
+    });
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("[CANCEL_PENDING_BOOKING] unexpected error:", err.message);

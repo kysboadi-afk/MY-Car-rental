@@ -14,6 +14,13 @@
 //   delete → { success: true }
 
 import { randomBytes } from "crypto";
+import {
+  buildUploadDiagnostics,
+  decodeBase64Document,
+  isAllowedDocumentMimeType,
+  summarizeSupabaseError,
+  uploadWithBucketRecovery,
+} from "./_document-upload.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -29,16 +36,6 @@ const PENDING_FRONT_ID = "pending-front";
 const PENDING_BACK_ID  = "pending-back";
 const MAX_SIZE_BYTES   = 15 * 1024 * 1024; // 15 MB
 const VALID_TYPES      = ["agreement", "insurance", "other", "id_copy"];
-const ALLOWED_MIMETYPES = [
-  "image/jpeg", "image/png", "image/webp", "image/gif",
-  "application/pdf",
-];
-
-// Returns true for any image/* MIME type or application/pdf.
-function isAllowedMimeType(mime) {
-  return mime.startsWith("image/") || mime === "application/pdf";
-}
-
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -68,13 +65,13 @@ export default async function handler(req, res) {
   try {
     switch (action) {
       case "list":   return await actionList(sb, body, res);
-      case "add":    return await actionAdd(sb, body, res);
+      case "add":    return await actionAdd(sb, body, res, req);
       case "delete": return await actionDelete(sb, body, res);
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
     }
   } catch (err) {
-    console.error("booking-documents error:", err);
+    console.error("booking-documents error:", summarizeSupabaseError(err));
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
@@ -161,7 +158,7 @@ async function actionList(sb, body, res) {
 
 // ── ADD ───────────────────────────────────────────────────────────────────────
 
-async function actionAdd(sb, body, res) {
+async function actionAdd(sb, body, res, req) {
   const { bookingId, docType = "other", fileData, mimeType, fileName } = body;
 
   if (!bookingId || typeof bookingId !== "string") {
@@ -174,35 +171,59 @@ async function actionAdd(sb, body, res) {
     return res.status(400).json({ error: "fileData (base64) is required" });
   }
 
-  const mime = (mimeType || "application/pdf").toLowerCase();
-  if (!isAllowedMimeType(mime)) {
+  const diagnostics = buildUploadDiagnostics(req, [
+    { field: docType, fileName, mimeType, base64: fileData },
+  ]);
+
+  let decodedDoc;
+  try {
+    decodedDoc = decodeBase64Document({
+      base64Data: fileData,
+      mimeType,
+      fileName,
+      maxBytes: MAX_SIZE_BYTES,
+    });
+  } catch (err) {
+    console.error("booking-documents: rejected upload", {
+      bookingId,
+      docType,
+      error: err.message,
+      diagnostics,
+    });
+    return res.status(400).json({ error: err.message || "Invalid document upload." });
+  }
+
+  if (!isAllowedDocumentMimeType(decodedDoc.mimeType)) {
+    console.error("booking-documents: rejected MIME type", {
+      bookingId,
+      docType,
+      mimeType: decodedDoc.mimeType,
+      diagnostics,
+    });
     return res.status(400).json({ error: "Only image files and PDFs are accepted." });
   }
 
-  const base64Data = fileData.replace(/^data:[^;]+;base64,/, "");
-  let buffer;
-  try {
-    buffer = Buffer.from(base64Data, "base64");
-  } catch {
-    return res.status(400).json({ error: "Invalid base64 data" });
-  }
-  if (buffer.length > MAX_SIZE_BYTES) {
-    return res.status(400).json({ error: `File too large. Maximum size is ${MAX_SIZE_BYTES / 1024 / 1024} MB.` });
-  }
-
-  const extMap = { "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "image/heif": "heif", "image/avif": "avif", "image/bmp": "bmp", "image/tiff": "tiff", "application/pdf": "pdf" };
-  const ext = extMap[mime] || (mime.startsWith("image/") ? mime.split("/")[1].replace(/[^a-z0-9]/g, "").slice(0, 10) || "img" : "bin");
   const safeName = fileName
     ? String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
-    : `${docType}.${ext}`;
-  const filePath = `${bookingId}/${docType}-${Date.now()}-${randomBytes(4).toString("hex")}.${ext}`;
+    : `${docType}.${decodedDoc.extension}`;
+  const filePath = `${bookingId}/${docType}-${Date.now()}-${randomBytes(4).toString("hex")}.${decodedDoc.extension}`;
 
-  const { error: uploadErr } = await sb.storage
-    .from(BUCKET)
-    .upload(filePath, buffer, { contentType: mime, upsert: false });
+  const { error: uploadErr } = await uploadWithBucketRecovery(
+    sb,
+    BUCKET,
+    filePath,
+    decodedDoc.buffer,
+    { contentType: decodedDoc.mimeType, upsert: false },
+    { public: true, fileSizeLimit: String(MAX_SIZE_BYTES) }
+  );
 
   if (uploadErr) {
-    console.error("booking-documents: upload error:", uploadErr);
+    console.error("booking-documents: upload error:", {
+      bookingId,
+      docType,
+      error: summarizeSupabaseError(uploadErr),
+      diagnostics,
+    });
     return res.status(500).json({ error: `Upload failed: ${uploadErr.message}` });
   }
 
@@ -216,7 +237,7 @@ async function actionAdd(sb, body, res) {
       type:       docType,
       file_url:   fileUrl,
       file_name:  safeName,
-      mime_type:  mime,
+      mime_type:  decodedDoc.mimeType,
     })
     .select()
     .single();

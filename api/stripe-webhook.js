@@ -51,6 +51,7 @@ import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
 import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
+import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1892,24 +1893,35 @@ function isInitialBookingPayment(paymentType) {
 }
 
 /**
- * Cancel a pending or reserved_unpaid booking by booking_ref.
- * Only updates rows that are still in an unpaid state so that a successful
- * retry (which sets status to booked_paid) is never overwritten.
+ * Transition a pending checkout booking by booking_ref.
+ * Only updates rows that are still in an unpaid pre-payment state so that a
+ * successful retry (which sets status to booked_paid/reserved) is never overwritten.
  *
  * @param {object} sb           - Supabase admin client
  * @param {string} bookingRef   - booking_ref value (e.g. "bk-abc123")
  * @param {string} logPrefix    - prefix for log messages (e.g. "[PAYMENT_FAILED]")
+ * @param {string} targetStatus - lifecycle state to write (payment_failed, abandoned_checkout, etc.)
+ * @param {string} reason       - cleanup reason for structured logs
  */
-async function cancelPendingBooking(sb, bookingRef, logPrefix) {
-  const { error: cancelErr } = await sb
+async function transitionCheckoutBooking(sb, bookingRef, logPrefix, targetStatus, reason) {
+  const { data: updatedRows, error: cancelErr } = await sb
     .from("bookings")
-    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .update({ status: toDbBookingStatus(targetStatus), updated_at: new Date().toISOString() })
     .eq("booking_ref", bookingRef)
-    .in("status", ["pending", "reserved_unpaid"]);
+    .in("status", Array.from(CHECKOUT_PENDING_PREPAY_DB_STATUSES))
+    .neq("payment_status", "paid")
+    .select("booking_ref, vehicle_id, status");
   if (cancelErr) {
     console.warn(`${logPrefix} booking cancel update failed (non-fatal):`, cancelErr.message);
   } else {
-    console.log(`${logPrefix} pending booking cancelled`, { bookingRef });
+    console.log("[CHECKOUT_CLEANUP]", {
+      bookingRef,
+      toStatus: targetStatus,
+      reason,
+      source: logPrefix,
+      affectedRows: (updatedRows || []).length,
+      releasedTemporaryHold: (updatedRows || []).length > 0,
+    });
   }
 }
 
@@ -3898,7 +3910,7 @@ export default async function handler(req, res) {
           const nowIso = new Date().toISOString();
 
           if (isInitialBooking) {
-            await cancelPendingBooking(sbFail, bookingRef, "[PAYMENT_FAILED]");
+            await transitionCheckoutBooking(sbFail, bookingRef, "[PAYMENT_FAILED]", "payment_failed", "stripe_payment_intent_failed");
           } else if (amountDue > 0) {
             // Post-rental payment failure — set balance_due for retry reminders.
             const { error: failErr } = await sbFail
@@ -3959,7 +3971,7 @@ export default async function handler(req, res) {
       try {
         const sbCancel = getSupabaseAdmin();
         if (sbCancel) {
-          await cancelPendingBooking(sbCancel, bookingRef, "[PAYMENT_CANCELED]");
+          await transitionCheckoutBooking(sbCancel, bookingRef, "[PAYMENT_CANCELED]", "abandoned_checkout", "stripe_payment_intent_canceled");
         }
       } catch (cancelCatchErr) {
         console.warn("[PAYMENT_CANCELED] booking cancel threw (non-fatal):", cancelCatchErr.message);

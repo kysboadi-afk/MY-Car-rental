@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeDocumentMimeType } from "./_document-upload.js";
 
 function cleanText(value, maxLen = 5000) {
   if (value == null) return null;
@@ -59,6 +60,10 @@ export function mapApplicationRecord(payload = {}) {
   const normalizedPrecheck = cleanText(payload.precheckDecision || payload.decision, 20);
   const identityStatus = cleanText(payload.identityStatus, 30);
   const applicationStatus = cleanText(payload.applicationStatus, 30);
+  const licenseFileName = cleanText(payload.licenseFileName, 255);
+  const insuranceFileName = cleanText(payload.insuranceFileName, 255);
+  const licenseMimeType = normalizeDocumentMimeType(cleanText(payload.licenseMimeType, 120), licenseFileName, "");
+  const insuranceMimeType = normalizeDocumentMimeType(cleanText(payload.insuranceMimeType, 120), insuranceFileName, "");
 
   return {
     name: cleanText(payload.name, 200) || "",
@@ -71,12 +76,12 @@ export function mapApplicationRecord(payload = {}) {
     agree_sms_consent: !!payload.agreeSmsConsent,
     has_insurance: hasInsurance === "yes" || hasInsurance === "no" ? hasInsurance : null,
     protection_plan_pref: ["basic", "standard", "premium", "none"].includes(protectionPlanPref) ? protectionPlanPref : null,
-    license_file_name: cleanText(payload.licenseFileName, 255),
-    license_mime_type: cleanText(payload.licenseMimeType, 120),
-    insurance_file_name: cleanText(payload.insuranceFileName, 255),
-    insurance_mime_type: cleanText(payload.insuranceMimeType, 120),
-    has_license_upload: !!(payload.licenseBase64 && payload.licenseFileName && payload.licenseMimeType),
-    has_insurance_proof: !!(payload.insuranceBase64 && payload.insuranceFileName && payload.insuranceMimeType),
+    license_file_name: licenseFileName,
+    license_mime_type: licenseMimeType || null,
+    insurance_file_name: insuranceFileName,
+    insurance_mime_type: insuranceMimeType || null,
+    has_license_upload: !!(payload.licenseBase64 && licenseFileName && licenseMimeType),
+    has_insurance_proof: !!(payload.insuranceBase64 && insuranceFileName && insuranceMimeType),
     precheck_decision: ["approved", "review", "declined"].includes(normalizedPrecheck) ? normalizedPrecheck : null,
     application_status: APPLICATION_STATUSES.includes(applicationStatus)
       ? applicationStatus

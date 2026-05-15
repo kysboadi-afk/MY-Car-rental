@@ -73,6 +73,7 @@ import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { DEFAULT_RETURN_TIME, formatTime12h, laHour, isoDateInLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { toAppBookingStatus, toDbBookingStatus } from "./_booking-status.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
@@ -1665,7 +1666,7 @@ export async function loadBookingsFromSupabase(sb) {
 
     const ACTIVE_STATUSES = [
       // Modern app-layer values
-      "pending", "booked_paid", "active_rental", "overdue",
+      "booked_paid", "active_rental", "overdue",
       // Legacy values that the availability system treats as "vehicle occupied"
       "active",           // pre-migration-0064 equivalent of active_rental
       "approved",         // pre-migration-0066 equivalent of booked_paid
@@ -1732,25 +1733,6 @@ export async function loadBookingsFromSupabase(sb) {
       return {};
     }
 
-    // Supabase status → legacy status used by process* functions
-    const REVERSE_STATUS = {
-      // Modern app-layer values (direct pass-through / already correct)
-      pending:              "reserved_unpaid",
-      booked_paid:          "booked_paid",
-      active:               "active_rental",
-      active_rental:        "active_rental",
-      overdue:              "overdue",
-      completed:            "completed_rental",
-      completed_rental:     "completed_rental",
-      cancelled_rental:     "cancelled_rental",
-      // Legacy / reservation-deposit values — align with ACTIVE_BOOKING_STATUSES
-      // in _availability.js and v2-availability.js so cron behaviour matches
-      // availability checks.
-      approved:             "booked_paid",       // pre-0066 equivalent of booked_paid
-      reserved:             "reserved_unpaid",   // partial-payment reservation (migration 0066)
-      pending_verification: "reserved_unpaid",   // verification step (migration 0066)
-    };
-
     // Group by vehicle_id
     const allBookings = {};
     for (const row of allRows) {
@@ -1770,7 +1752,7 @@ export async function loadBookingsFromSupabase(sb) {
         pickupTime:     row.pickup_time  ? String(row.pickup_time).substring(0, 5) : "",
         returnDate:     row.return_date  ? String(row.return_date).split("T")[0]  : "",
         returnTime:     row.return_time  ? String(row.return_time).substring(0, 5) : "",
-        status:         REVERSE_STATUS[row.status] || row.status || "reserved_unpaid",
+        status:         toAppBookingStatus(row.status),
         completedAt:    row.completed_at || null,
         updatedAt:      row.updated_at   || row.created_at || null,
         extensionCount: row.extension_count || 0,
@@ -2812,13 +2794,13 @@ async function processBalanceDue(allBookings, now, sentMarks) {
 }
 
 /**
- * Cancel stale pending bookings created via the Stripe payment flow that were
+ * Expire stale pending checkout bookings created via the Stripe payment flow that were
  * never paid.  This is a safety net for abandoned checkout sessions where the
  * customer loaded the payment form but never entered card details (so no Stripe
  * webhook event ever fires to clean up the pending row).
  *
  * Only targets bookings that:
- *   • status = "pending" (pre-payment state set by create-payment-intent.js)
+ *   • status = "pending_checkout" (or legacy "pending")
  *   • payment_intent_id starts with "pi_" (created via Stripe; not manual)
  *   • created_at is older than STALE_PENDING_HOURS hours ago
  *
@@ -2834,7 +2816,7 @@ async function cancelStalePendingBookings(sb) {
     const { data: staleRows, error: queryErr } = await sb
       .from("bookings")
       .select("booking_ref")
-      .eq("status", "pending")
+      .in("status", ["pending", "pending_checkout"])
       .like("payment_intent_id", "pi_%")
       .not("booking_ref", "is", null)
       .lt("created_at", cutoff);
@@ -2851,14 +2833,21 @@ async function cancelStalePendingBookings(sb) {
 
     const { error: updateErr } = await sb
       .from("bookings")
-      .update({ status: "cancelled", updated_at: new Date().toISOString() })
+      .update({ status: toDbBookingStatus("abandoned_checkout"), updated_at: new Date().toISOString() })
       .in("booking_ref", refs)
-      .eq("status", "pending"); // re-filter to avoid race-condition overwrites
+      .in("status", ["pending", "pending_checkout"]); // re-filter to avoid race-condition overwrites
 
     if (updateErr) {
       console.warn("scheduled-reminders cancelStalePendingBookings: cancel update failed (non-fatal):", updateErr.message);
     } else {
-      console.log(`[STALE_PENDING_CLEANUP] cancelled ${refs.length} stale pending booking(s):`, refs);
+      console.log("[CHECKOUT_CLEANUP]", {
+        reason: "stale_pending_checkout_expired",
+        toStatus: "abandoned_checkout",
+        source: "scheduled-reminders",
+        affectedRows: refs.length,
+        bookingRefs: refs,
+        releasedTemporaryHold: refs.length > 0,
+      });
     }
   } catch (err) {
     console.warn("scheduled-reminders cancelStalePendingBookings: unexpected error (non-fatal):", err.message);
