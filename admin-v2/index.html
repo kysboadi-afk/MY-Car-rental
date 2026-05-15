@@ -2438,6 +2438,10 @@
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Charge
           </button>
+          <button class="btn btn-secondary btn-sm" id="bl-create-plan-btn" style="display:none;" onclick="openCreatePlanFromLedger()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+            Create Payment Plan
+          </button>
         </div>
         <!-- Booking ID search -->
         <div class="filters-row" style="margin-bottom:12px;">
@@ -12557,6 +12561,7 @@ async function refreshAppDetail() {
 // ── Balance Ledger Page ────────────────────────────────────────────────────
 
 let currentLedgerBookingId = '';
+let currentLedgerRemainingBalance = 0;
 const _ledgerRowCache = new Map(); // id → row object, populated by renderBalanceHistory
 
 function initBalanceLedgerPage() {
@@ -12611,6 +12616,10 @@ function renderBalanceSummary(summary) {
   document.getElementById('bl-total-paid').textContent    = fmt(summary.total_paid);
   document.getElementById('bl-total-waived').textContent  = fmt(summary.total_waived);
   document.getElementById('bl-remaining').textContent     = fmt(summary.remaining_balance);
+  currentLedgerRemainingBalance = Number(summary.remaining_balance || 0);
+  // Show/hide the "Create Payment Plan" button based on whether there's a balance owed
+  const ppBtn = document.getElementById('bl-create-plan-btn');
+  if (ppBtn) ppBtn.style.display = currentLedgerRemainingBalance > 0 ? '' : 'none';
   row.style.display = 'flex';
 }
 
@@ -13056,12 +13065,19 @@ async function loadPaymentPlans() {
   }
 }
 
-function openCreatePlanModal() {
-  const booking = prompt('Booking ID for the payment plan:');
+function openCreatePlanFromLedger() {
+  if (!currentLedgerBookingId) { showToast('Load a booking ledger first.', 'error'); return; }
+  if (currentLedgerRemainingBalance <= 0) { showToast('No outstanding balance to create a plan for.', 'error'); return; }
+  openCreatePlanModal(currentLedgerBookingId, currentLedgerRemainingBalance);
+}
+
+function openCreatePlanModal(prefillBookingId, prefillTotal) {
+  const booking = prompt('Booking ID for the payment plan:', prefillBookingId || '');
   if (!booking) return;
   const email = prompt('Customer email:');
   if (!email) return;
-  const total = parseFloat(prompt('Total amount ($):') || '0');
+  const defaultTotal = prefillTotal != null ? prefillTotal.toFixed(2) : '0';
+  const total = parseFloat(prompt('Total amount ($):', defaultTotal) || '0');
   if (!total || total <= 0) { showToast('Invalid amount.', 'error'); return; }
   const inst = parseInt(prompt('Number of installments (2–24):') || '0', 10);
   if (!inst || inst < 2 || inst > 24) { showToast('Installments must be 2–24.', 'error'); return; }
