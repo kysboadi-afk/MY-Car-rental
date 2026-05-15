@@ -11371,27 +11371,11 @@ COMMENT ON COLUMN renter_balance_ledger.related_charge_id IS
 COMMENT ON COLUMN renter_balance_ledger.related_ticket_id IS
   'Optional source link; ON DELETE SET NULL intentionally preserves immutable ledger history if source rows are removed.';
 
-CREATE OR REPLACE FUNCTION fn_prevent_renter_balance_ledger_mutation()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RAISE EXCEPTION 'renter_balance_ledger is append-only (% not allowed)', TG_OP;
-END;
-$$;
-
+-- 0155_ledger_allow_admin_mutations: append-only triggers removed so that
+-- admin Delete and Edit actions on the Balance Ledger page function correctly.
 DROP TRIGGER IF EXISTS trg_renter_balance_ledger_no_update ON renter_balance_ledger;
 DROP TRIGGER IF EXISTS trg_renter_balance_ledger_no_delete ON renter_balance_ledger;
-
-CREATE TRIGGER trg_renter_balance_ledger_no_update
-  BEFORE UPDATE ON renter_balance_ledger
-  FOR EACH ROW
-  EXECUTE FUNCTION fn_prevent_renter_balance_ledger_mutation();
-
-CREATE TRIGGER trg_renter_balance_ledger_no_delete
-  BEFORE DELETE ON renter_balance_ledger
-  FOR EACH ROW
-  EXECUTE FUNCTION fn_prevent_renter_balance_ledger_mutation();
+DROP FUNCTION IF EXISTS fn_prevent_renter_balance_ledger_mutation();
 
 CREATE OR REPLACE VIEW renter_balance_ledger_summary AS
 WITH grouped AS (
