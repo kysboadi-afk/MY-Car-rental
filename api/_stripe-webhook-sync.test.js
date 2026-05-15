@@ -569,6 +569,10 @@ test("webhook reservation_deposit: creates reservation_deposit revenue and syncs
   assert.ok(bookingSync, "reservation_deposit must sync booking state");
   assert.equal(bookingSync.status, "reserved");
   assert.equal(bookingSync.paymentStatus, "partial");
+  assert.ok(
+    automationCalls.blocked.some((b) => b.vehicleId === "camry" && b.reason === "booking"),
+    "reservation_deposit must create blocked_dates after payment confirmation"
+  );
 });
 
 test("webhook balance_payment: PREFLIGHT — autoUpsertBooking called after status update", async () => {

@@ -206,6 +206,25 @@ function makeSupabaseClient({ rows = [], error = null } = {}) {
   };
 }
 
+function makeSupabaseClientWithCapturedStatuses({ rows = [], error = null, capture = [] } = {}) {
+  return {
+    from() {
+      return {
+        select() { return this; },
+        eq()     { return this; },
+        in(_col, values) {
+          capture.push({ type: "status_filter", values: Array.isArray(values) ? [...values] : values });
+          return this;
+        },
+        lte()    { return this; },
+        gte()    { return this; },
+        limit()  { return this; },
+        async then(resolve) { return resolve({ data: rows, error }); },
+      };
+    },
+  };
+}
+
 test("isDatesAndTimesAvailable: returns true when Supabase not configured (fail open)", async () => {
   supabaseMock.client = null;
   const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
@@ -229,6 +248,24 @@ test("isDatesAndTimesAvailable: camry blocked when Supabase returns overlapping 
   try {
     const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
     assert.equal(result, false);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAndTimesAvailable: confirmed status filter includes reserved but excludes pending", async () => {
+  const captured = [];
+  supabaseMock.client = makeSupabaseClientWithCapturedStatuses({ rows: [], capture: captured });
+  try {
+    await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    const statusFilter = captured.find((entry) =>
+      entry.type === "status_filter" &&
+      Array.isArray(entry.values) &&
+      entry.values.length > 2
+    )?.values;
+    assert.ok(statusFilter, "booking status filter should be captured");
+    assert.ok(statusFilter.includes("reserved"), "reserved must be treated as a confirmed blocking state");
+    assert.ok(!statusFilter.includes("pending"), "pending must not be treated as a blocking state");
   } finally {
     supabaseMock.client = null;
   }

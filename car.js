@@ -33,6 +33,7 @@ const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
 const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
 const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per document
 const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total for front/back/insurance
+const CANCEL_PENDING_BOOKING_ENDPOINT = API_BASE + "/api/cancel-pending-booking";
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -441,9 +442,37 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Payment mode for the current payment attempt: 'deposit' | 'full'.
 // Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
 let _pendingPaymentMode = null;
+let pendingBookingId = null;
+let paymentFormSubmitted = false;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
+
+function cancelPendingBooking(useBeacon) {
+  if (!pendingBookingId) return;
+  const bookingIdToCancel = pendingBookingId;
+  pendingBookingId = null;
+  const body = JSON.stringify({ bookingId: bookingIdToCancel });
+  if (useBeacon && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    const queued = navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
+    if (queued) return;
+    console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
+  }
+  fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  }).catch(function (err) {
+    console.warn("cancel-pending-booking fetch error:", err);
+  });
+}
+
+window.addEventListener("pagehide", function () {
+  if (pendingBookingId && !paymentFormSubmitted) {
+    cancelPendingBooking(true);
+  }
+});
 
 
 // ----- Name Field Validation & Auto-correction -----
@@ -2145,7 +2174,8 @@ stripeBtn.addEventListener("click", async () => {
       throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
     }
 
-    const { clientSecret, publishableKey, bookingId: pendingBookingId } = data;
+    const { clientSecret, publishableKey, bookingId } = data;
+    pendingBookingId = typeof bookingId === "string" ? bookingId : null;
     if (!clientSecret) {
       throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
     }
@@ -2297,6 +2327,7 @@ stripeBtn.addEventListener("click", async () => {
           }
         }
 
+        paymentFormSubmitted = true;
         const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
           clientSecret,
           { payment_method: ev.paymentMethod.id },
@@ -2304,6 +2335,7 @@ stripeBtn.addEventListener("click", async () => {
         );
 
         if (confirmError) {
+          paymentFormSubmitted = false;
           ev.complete("fail");
           sessionStorage.setItem("slyRidesBooking", JSON.stringify({
             ...prBookingPayload,
@@ -2319,6 +2351,7 @@ stripeBtn.addEventListener("click", async () => {
               payment_method: ev.paymentMethod.id,
             });
             if (actionError) {
+              paymentFormSubmitted = false;
               sessionStorage.setItem("slyRidesBooking", JSON.stringify({
                 ...prBookingPayload,
                 paymentFailed: true,
@@ -2457,6 +2490,7 @@ stripeBtn.addEventListener("click", async () => {
         }
       }
 
+      paymentFormSubmitted = true;
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -2472,6 +2506,7 @@ stripeBtn.addEventListener("click", async () => {
       });
 
       if (error) {
+        paymentFormSubmitted = false;
         // Keep booking data in sessionStorage with paymentFailed:true so the form
         // can be pre-filled automatically when the renter returns to try again.
         sessionStorage.setItem("slyRidesBooking", JSON.stringify({
@@ -2491,6 +2526,7 @@ stripeBtn.addEventListener("click", async () => {
 
     document.getElementById("cancel-payment").addEventListener("click", () => {
       paymentSubmitting = false; // reset in case cancelled mid-processing
+      paymentFormSubmitted = false;
       document.getElementById("submit-payment").removeEventListener("click", submitHandler);
       paymentElement.unmount();
       if (prButton) {
@@ -2505,6 +2541,7 @@ stripeBtn.addEventListener("click", async () => {
       const _reserveBtnCancel = document.getElementById("reserveBtn");
       if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
       _pendingPaymentMode = null;
+      cancelPendingBooking(false);
       updatePayBtn();
     }, { once: true });
 
