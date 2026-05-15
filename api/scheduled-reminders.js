@@ -872,7 +872,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         }
       }
 
-      // Extension education ~30 minutes after confirmation.
+      // Extension education starts ~30 minutes after confirmation.
       // Suppress if the renter already has one or more extensions.
       if (booking.smsSentAt?.booking_confirmed) {
         const confirmedAt = new Date(booking.smsSentAt.booking_confirmed);
@@ -880,12 +880,15 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         if (
           Number.isFinite(minsSinceConfirmed) &&
           minsSinceConfirmed >= 30 &&
-          minsSinceConfirmed < 90 &&
+          // Keep delivery resilient to delayed cron ticks/outages while still
+          // targeting an initial send around the 30-minute mark.
+          minsSinceConfirmed < 12 * 60 &&
           (booking.extensionCount || 0) <= 0 &&
           !alreadySent(booking, "extension_education") &&
           !(await isSmsLogged(id, "extension_education"))
         ) {
-          // Anti-burst guard to avoid stacking educational sends too tightly.
+          // Anti-burst guard (20 min): extension education is low urgency and
+          // should not stack immediately after another transactional SMS.
           if (!(await hasRecentSmsWithin(sb, id, 20))) {
             const sent = await safeSend(booking.phone, render(EXTENSION_EDUCATION, v), {
               booking_ref: id,
@@ -915,6 +918,8 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
           !alreadySent(booking, "payment_education") &&
           !(await isSmsLogged(id, "payment_education"))
         ) {
+          // Anti-burst guard (30 min): this message is informational and should
+          // wait for a quiet period after overnight operational messaging.
           if (!(await hasRecentSmsWithin(sb, id, 30))) {
             const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
               ...v,

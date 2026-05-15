@@ -50,6 +50,9 @@ export async function logSmsToSupabase(bookingId, templateKey, returnDateAtSend 
 export async function sendDedupedSms({ bookingId, templateKey, phone, body, returnDateAtSend, metadata }) {
   const normalizedPhone = normalizePhone(phone || "");
   if (!normalizedPhone || !body) return false;
+  if (!bookingId) {
+    console.warn(`_sms-log: sendDedupedSms called without bookingId for template "${templateKey}"`);
+  }
   const sb = getSupabaseAdmin();
   const logDelivery = async ({ status, error = null, provider_id = null }) => {
     if (!sb) return;

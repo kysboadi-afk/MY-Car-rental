@@ -162,6 +162,15 @@ function hasSucceededPaymentForNotifications(paymentIntent) {
   return status === "succeeded" && Number.isFinite(receivedCents) && receivedCents > 0;
 }
 
+function shouldSendOnboardingSms(pickupDate, returnDate) {
+  const pickup = String(pickupDate || "").trim();
+  const ret = String(returnDate || "").trim();
+  // Suppress onboarding for same-day rentals to avoid noisy messaging on trips
+  // that may start and complete within a single day.
+  if (pickup && ret && pickup === ret) return false;
+  return true;
+}
+
 /**
  * Determines the booking status for a Stripe payment based on payment_type.
  * Deposit-only payment types leave the booking in "reserved_unpaid" since
@@ -2603,7 +2612,7 @@ export default async function handler(req, res) {
       // Renter SMS — includes balance payment link
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-          await sendDedupedSms({
+          const depositSmsSent = await sendDedupedSms({
             bookingId: resolvedBookingId || bookingRef || paymentIntent.id,
             templateKey: "reservation_deposit_confirmed",
             phone: bookingForSync.phone,
@@ -2614,6 +2623,9 @@ export default async function handler(req, res) {
               payment_link:      balanceLink,
             }),
           });
+          if (!depositSmsSent) {
+            console.log("stripe-webhook: reservation_deposit_confirmed SMS skipped (dedup)");
+          }
         }
       } catch (smsErr) {
         console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
@@ -3120,7 +3132,7 @@ export default async function handler(req, res) {
                 }),
               }),
             });
-            if (bookingConfirmedSent && preContact.pickupDate !== preContact.returnDate) {
+            if (bookingConfirmedSent && shouldSendOnboardingSms(preContact.pickupDate, preContact.returnDate)) {
               await sendDedupedSms({
                 bookingId: bookingRef || originalPiId || paymentIntent.id,
                 templateKey: "booking_onboarding",
@@ -3638,7 +3650,7 @@ export default async function handler(req, res) {
               }),
             }),
           });
-          if (bookingConfirmedSent && sl_pickup_date !== sl_return_date) {
+          if (bookingConfirmedSent && shouldSendOnboardingSms(sl_pickup_date, sl_return_date)) {
             await sendDedupedSms({
               bookingId: sl_booking_id || paymentIntent.id,
               templateKey: "booking_onboarding",
@@ -3758,7 +3770,7 @@ export default async function handler(req, res) {
               }),
             }),
           });
-          if (bookingConfirmedSent && _notifyMeta.pickup_date !== _notifyMeta.return_date) {
+          if (bookingConfirmedSent && shouldSendOnboardingSms(_notifyMeta.pickup_date, _notifyMeta.return_date)) {
             await sendDedupedSms({
               bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
               templateKey: "booking_onboarding",

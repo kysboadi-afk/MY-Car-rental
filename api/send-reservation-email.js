@@ -1212,7 +1212,7 @@ export default async function handler(req, res) {
     // This comment replaces the old save block to make the ordering clear.
 
     // ── Booking confirmation SMS ──────────────────────────────────────────────
-      if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
       // Send confirmation only for fully-paid bookings (not deposit-only reservations)
       try {
         const bookingConfirmedSent = await sendDedupedSms({
