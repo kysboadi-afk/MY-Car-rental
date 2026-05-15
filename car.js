@@ -33,6 +33,7 @@ const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
 const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
 const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per document
 const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total for front/back/insurance
+const CANCEL_PENDING_BOOKING_ENDPOINT = API_BASE + "/api/cancel-pending-booking";
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -451,14 +452,13 @@ function cancelPendingBooking(useBeacon) {
   if (!pendingBookingId) return;
   const bookingIdToCancel = pendingBookingId;
   pendingBookingId = null;
-  const url = API_BASE + "/api/cancel-pending-booking";
   const body = JSON.stringify({ bookingId: bookingIdToCancel });
   if (useBeacon && navigator.sendBeacon) {
     const blob = new Blob([body], { type: "application/json" });
-    navigator.sendBeacon(url, blob);
+    navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
     return;
   }
-  fetch(url, {
+  fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,

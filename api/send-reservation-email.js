@@ -516,6 +516,11 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+function roundCurrencyAmount(value) {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+}
+
 /**
  * Build the core booking record for persistBooking() from request body fields.
  * Shared between the SMTP-missing early fallback and the normal confirmation flow.
@@ -530,10 +535,8 @@ function buildBookingRecord(fields, paymentLink = "") {
     pickup, pickupTime, returnDate, returnTime,
     total, fullRentalCost, paymentIntentId,
   } = fields;
-  const amountPaid = total ? Math.round(parseFloat(total) * 100) / 100 : 0;
-  const totalPrice = fullRentalCost
-    ? Math.round(parseFloat(fullRentalCost) * 100) / 100
-    : amountPaid;
+  const amountPaid = roundCurrencyAmount(total);
+  const totalPrice = fullRentalCost ? roundCurrencyAmount(fullRentalCost) : amountPaid;
   const isConfirmedPartialReservation = totalPrice > amountPaid;
   return {
     bookingId,

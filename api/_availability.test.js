@@ -213,7 +213,7 @@ function makeSupabaseClientWithCapturedStatuses({ rows = [], error = null, captu
         select() { return this; },
         eq()     { return this; },
         in(_col, values) {
-          capture.push(Array.isArray(values) ? [...values] : values);
+          capture.push({ type: "status_filter", values: Array.isArray(values) ? [...values] : values });
           return this;
         },
         lte()    { return this; },
@@ -258,7 +258,11 @@ test("isDatesAndTimesAvailable: confirmed status filter includes reserved but ex
   supabaseMock.client = makeSupabaseClientWithCapturedStatuses({ rows: [], capture: captured });
   try {
     await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
-    const statusFilter = captured.find((vals) => Array.isArray(vals) && vals.includes("booked_paid"));
+    const statusFilter = captured.find((entry) =>
+      entry.type === "status_filter" &&
+      Array.isArray(entry.values) &&
+      entry.values.length > 2
+    )?.values;
     assert.ok(statusFilter, "booking status filter should be captured");
     assert.ok(statusFilter.includes("reserved"), "reserved must be treated as a confirmed blocking state");
     assert.ok(!statusFilter.includes("pending"), "pending must not be treated as a blocking state");
