@@ -187,9 +187,12 @@ export default async function handler(req, res) {
       console.warn("[SLINGSHOT_BOOKING] Balance check failed (non-fatal):", balanceErr.message);
     }
 
-    // ── Compute total amount (no tax on slingshots) ───────────────────────────
-    // Total = package price + $500 refundable security deposit.
+    // ── Compute reservation pricing (no tax on slingshots) ────────────────────
+    // Full rental total = package price + refundable security deposit.
+    // Charge only the deposit today so the renter can reserve the slot.
     const totalAmount = pkg.price + SLINGSHOT_DEPOSIT;
+    const reservationDeposit = SLINGSHOT_DEPOSIT;
+    const balanceAtPickup = Math.max(0, totalAmount - reservationDeposit);
 
     // ── Find or create Stripe Customer ────────────────────────────────────────
     let stripeCustomerId;
@@ -259,12 +262,12 @@ export default async function handler(req, res) {
 
     // ── Create Stripe PaymentIntent ───────────────────────────────────────────
     const paymentIntentParams = {
-      amount:   Math.round(totalAmount * 100), // Stripe expects whole cents
+      amount:   Math.round(reservationDeposit * 100), // Stripe expects whole cents
       currency: "usd",
       customer: stripeCustomerId,
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} – ${pkg.label}`,
+      description: `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit – ${pkg.label}`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },
@@ -289,8 +292,10 @@ export default async function handler(req, res) {
         return_date:        returnDate,
         pickup_time:        formatTime12h(normalizedPickupTime),
         return_time:        formatTime12h(returnTime),
-        payment_type:       "full_payment",
+        payment_type:       "reservation_deposit",
+        deposit_refundable: "true",
         full_rental_amount: totalAmount.toFixed(2),
+        balance_at_pickup:  balanceAtPickup.toFixed(2),
       },
     };
 
