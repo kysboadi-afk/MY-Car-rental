@@ -3967,6 +3967,7 @@ async function apiPost(path, body, signal = undefined) {
   const url = API_BASE + path;
   const authHeaders = { 'Content-Type': 'application/json' };
   const isAbsoluteApiBase = /^https?:\/\//i.test(API_BASE);
+  const isAuthFallbackSafePath = path === '/api/v2-dashboard';
   if (adminSecret) authHeaders.Authorization = 'Bearer ' + adminSecret;
   const requestBody = JSON.stringify(body);
   const doPost = (headers) => fetch(url, {
@@ -3983,7 +3984,11 @@ async function apiPost(path, body, signal = undefined) {
     // Authorization. In that CORS-only failure mode, retry once without Authorization.
     // Cross-origin preflight failures surface to fetch as TypeError (browser wording varies).
     const corsLikeFetchFailure = err?.name === 'TypeError';
-    const shouldRetryWithoutAuth = !!adminSecret && isAbsoluteApiBase && corsLikeFetchFailure;
+    const shouldRetryWithoutAuth = !!adminSecret
+      && !!body?.secret
+      && isAbsoluteApiBase
+      && isAuthFallbackSafePath
+      && corsLikeFetchFailure;
     if (!shouldRetryWithoutAuth) throw err;
     resp = await doPost({ 'Content-Type': 'application/json' });
   }
