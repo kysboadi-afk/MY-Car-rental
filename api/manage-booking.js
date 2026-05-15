@@ -245,29 +245,38 @@ export default async function handler(req, res) {
     const lookupEmail = identifier.includes("@") ? identifier.toLowerCase() : "";
     const lookupPhone = normalizeLookupPhone(identifier);
     const lookupBookingRef = normalizeLookupBookingRef(identifier);
-    const baseVerifyQuery = () => sb
+    const VERIFY_SELECT_COLS = "booking_ref, vehicle_id, customer_email, customer_phone, renter_phone, metadata, created_at";
+    const VERIFY_SELECT_FALLBACK_COLS = "booking_ref, vehicle_id, customer_email, customer_phone, created_at";
+    const baseVerifyQuery = (selectCols) => sb
       .from("bookings")
-      .select("*")
+      .select(selectCols)
       .in("status", MANAGE_ELIGIBLE_STATUSES)
       .order("created_at", { ascending: false })
       .limit(100);
+    const runVerifyLookup = async (applyFilter) => {
+      let result = await applyFilter(baseVerifyQuery(VERIFY_SELECT_COLS));
+      if (result.error?.code === "42703") {
+        result = await applyFilter(baseVerifyQuery(VERIFY_SELECT_FALLBACK_COLS));
+      }
+      return result;
+    };
 
     let candidates = [];
     let lookupErr = null;
     if (lookupEmail) {
-      const result = await baseVerifyQuery().ilike("customer_email", lookupEmail);
+      const result = await runVerifyLookup((q) => q.ilike("customer_email", lookupEmail));
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else if (lookupBookingRef) {
       // Check booking ref BEFORE phone: booking refs like "bk-3bcf479ac6ec" contain
       // digits which would make lookupPhone truthy, causing the wrong branch to run.
-      const result = await baseVerifyQuery().eq("booking_ref", lookupBookingRef);
+      const result = await runVerifyLookup((q) => q.eq("booking_ref", lookupBookingRef));
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else if (lookupPhone) {
       // Fetch all eligible bookings and normalize in JS — stored phones may have
       // formatting chars (parens, dashes, spaces) that break a substring ilike match.
-      const result = await baseVerifyQuery();
+      const result = await runVerifyLookup((q) => q);
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else {
