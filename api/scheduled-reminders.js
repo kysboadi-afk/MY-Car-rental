@@ -596,7 +596,7 @@ function buildVehicleExtendLink(booking) {
   return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(vehicleId)}&extend=1`;
 }
 
-function resolveBookingPaymentOrExtendLink(booking) {
+function getBookingPaymentLinkWithFallback(booking) {
   return booking?.paymentLink || booking?.balancePaymentLink || buildVehicleExtendLink(booking);
 }
 
@@ -616,7 +616,7 @@ function vars(booking) {
     buffered_time: booking.returnTime ? (formatTime(bufferedReturnDt) || "") : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
-    payment_link:  resolveBookingPaymentOrExtendLink(booking),
+    payment_link:  getBookingPaymentLinkWithFallback(booking),
     extend_link:   buildVehicleExtendLink(booking),
   };
 }
@@ -910,7 +910,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
           manage_link: buildVehicleExtendLink(booking),
-          payment_link: resolveBookingPaymentOrExtendLink(booking),
+          payment_link: getBookingPaymentLinkWithFallback(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
@@ -969,7 +969,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
           if (!(await hasRecentSmsWithin(sb, id, 30))) {
             const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
               ...v,
-              payment_link: resolveBookingPaymentOrExtendLink(booking),
+              payment_link: getBookingPaymentLinkWithFallback(booking),
             }), {
               booking_ref: id,
               vehicle_id: vehicleId,
@@ -1015,7 +1015,7 @@ export async function processOnboardingCatchup(allBookings, now, sentMarks) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
           manage_link: buildVehicleExtendLink(booking),
-          payment_link: resolveBookingPaymentOrExtendLink(booking),
+          payment_link: getBookingPaymentLinkWithFallback(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
@@ -1060,7 +1060,7 @@ export async function processOnboardingCatchup(allBookings, now, sentMarks) {
         if (!(await hasRecentSmsWithin(sb, id, 30))) {
           const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
             ...v,
-            payment_link: resolveBookingPaymentOrExtendLink(booking),
+            payment_link: getBookingPaymentLinkWithFallback(booking),
           }), {
             booking_ref: id,
             vehicle_id: vehicleId,
