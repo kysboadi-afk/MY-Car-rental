@@ -3965,9 +3965,11 @@ function handleUnauthorizedApiResponse() {
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
+  const headers = { 'Content-Type': 'application/json' };
+  if (adminSecret) headers.Authorization = 'Bearer ' + adminSecret;
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
     signal,
   });
