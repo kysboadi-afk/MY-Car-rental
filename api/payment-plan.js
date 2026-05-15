@@ -12,7 +12,9 @@
 //   create  — { secret, action:"create", booking_id, customer_email, total_amount, installments, interval_days, notes?, start_date? }
 //   get     — { secret, action:"get", plan_id? | booking_id? }
 //   list    — { secret, action:"list", status?, limit?, offset? }
+//   update  — { secret, action:"update", plan_id, customer_email?, total_amount?, installments?, interval_days?, notes?, next_due_date? }
 //   cancel  — { secret, action:"cancel", plan_id, reason? }
+//   delete  — { secret, action:"delete", plan_id }
 //   pay_installment — { secret, action:"pay_installment", plan_id, installment_number, payment_intent_id, amount_paid }
 //
 // Installment traceability:
@@ -57,8 +59,12 @@ export default async function handler(req, res) {
         return await handleGet(sb, body, res);
       case "list":
         return await handleList(sb, body, res);
+      case "update":
+        return await handleUpdate(sb, body, res);
       case "cancel":
         return await handleCancel(sb, body, res);
+      case "delete":
+        return await handleDelete(sb, body, res);
       case "pay_installment":
         return await handlePayInstallment(sb, body, res);
       default:
@@ -71,6 +77,41 @@ export default async function handler(req, res) {
 }
 
 // ── Create ─────────────────────────────────────────────────────────────────────
+
+function roundMoney(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function formatDateKey(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+function buildInstallmentRows(planId, totalAmount, installmentCount, intervalDays, startAt) {
+  const totalAmt = roundMoney(totalAmount);
+  const numInstallments = Number(installmentCount);
+  const numInterval = Number(intervalDays);
+  const baseInstallment = Math.floor((totalAmt / numInstallments) * 100) / 100;
+  const remainder = roundMoney(totalAmt - baseInstallment * numInstallments);
+  const rows = [];
+
+  for (let i = 0; i < numInstallments; i++) {
+    const dueDate = new Date(startAt.getTime() + i * numInterval * 24 * 60 * 60 * 1000);
+    const amount = i === numInstallments - 1
+      ? roundMoney(baseInstallment + remainder)
+      : baseInstallment;
+    rows.push({
+      plan_id: planId,
+      installment_number: i + 1,
+      amount,
+      due_date: dueDate.toISOString(),
+    });
+  }
+
+  return rows;
+}
 
 async function handleCreate(sb, body, res) {
   const { booking_id, customer_email, total_amount, installments, interval_days, notes, start_date } = body;
@@ -87,10 +128,7 @@ async function handleCreate(sb, body, res) {
     throw new Error("interval_days must be an integer between 1 and 90");
   }
 
-  const totalAmt = Math.round(Number(total_amount) * 100) / 100;
-  const baseInstallment = Math.floor((totalAmt / numInstallments) * 100) / 100;
-  const remainder = Math.round((totalAmt - baseInstallment * numInstallments) * 100) / 100;
-
+  const totalAmt = roundMoney(total_amount);
   const startAt = start_date ? new Date(start_date) : new Date();
 
   // Create plan.
@@ -111,20 +149,7 @@ async function handleCreate(sb, body, res) {
   if (planErr) throw new Error(`Could not create payment plan: ${planErr.message}`);
 
   // Create installment rows.
-  const installmentRows = [];
-  for (let i = 0; i < numInstallments; i++) {
-    const dueDate = new Date(startAt.getTime() + i * numInterval * 24 * 60 * 60 * 1000);
-    // Last installment gets the remainder to ensure total adds up exactly.
-    const amount = i === numInstallments - 1
-      ? Math.round((baseInstallment + remainder) * 100) / 100
-      : baseInstallment;
-    installmentRows.push({
-      plan_id: plan.id,
-      installment_number: i + 1,
-      amount,
-      due_date: dueDate.toISOString(),
-    });
-  }
+  const installmentRows = buildInstallmentRows(plan.id, totalAmt, numInstallments, numInterval, startAt);
 
   const { error: instErr } = await sb
     .from("payment_plan_installments")
@@ -187,6 +212,136 @@ async function handleList(sb, body, res) {
 
 // ── Cancel ─────────────────────────────────────────────────────────────────────
 
+async function handleUpdate(sb, body, res) {
+  const { plan_id } = body;
+  if (!plan_id) throw new Error("plan_id is required");
+  if (body.booking_id != null) throw new Error("booking_id cannot be changed");
+
+  const { data: plan, error: planErr } = await sb
+    .from("payment_plans")
+    .select("*")
+    .eq("id", plan_id)
+    .maybeSingle();
+  if (planErr) throw new Error(`Could not fetch payment plan: ${planErr.message}`);
+  if (!plan) throw new Error("Payment plan not found");
+
+  const { data: installments, error: installmentsErr } = await sb
+    .from("payment_plan_installments")
+    .select("*")
+    .eq("plan_id", plan_id)
+    .order("installment_number", { ascending: true });
+  if (installmentsErr) throw new Error(`Could not fetch installments: ${installmentsErr.message}`);
+
+  const updates = {};
+
+  if (body.customer_email !== undefined) {
+    const email = String(body.customer_email || "").trim().toLowerCase();
+    if (!email) throw new Error("customer_email is required");
+    updates.customer_email = email;
+  }
+
+  if (body.notes !== undefined) {
+    updates.notes = body.notes ? String(body.notes).trim().slice(0, 2000) : null;
+  }
+
+  let scheduleStartAt = plan.next_due_date ? new Date(plan.next_due_date) : new Date();
+  let structuralChange = false;
+
+  if (body.total_amount !== undefined) {
+    const totalAmt = roundMoney(body.total_amount);
+    if (!totalAmt || totalAmt <= 0) throw new Error("total_amount must be a positive number");
+    updates.total_amount = totalAmt;
+    structuralChange = structuralChange || totalAmt !== roundMoney(plan.total_amount);
+  }
+
+  if (body.installments !== undefined) {
+    const numInstallments = Number(body.installments);
+    if (!Number.isInteger(numInstallments) || numInstallments < 2 || numInstallments > 24) {
+      throw new Error("installments must be an integer between 2 and 24");
+    }
+    updates.installments = numInstallments;
+    structuralChange = structuralChange || numInstallments !== Number(plan.installments);
+  }
+
+  if (body.interval_days !== undefined) {
+    const numInterval = Number(body.interval_days);
+    if (!Number.isInteger(numInterval) || numInterval < 1 || numInterval > 90) {
+      throw new Error("interval_days must be an integer between 1 and 90");
+    }
+    updates.interval_days = numInterval;
+    structuralChange = structuralChange || numInterval !== Number(plan.interval_days);
+  }
+
+  if (body.next_due_date !== undefined) {
+    const nextDueDate = new Date(body.next_due_date);
+    if (Number.isNaN(nextDueDate.getTime())) throw new Error("next_due_date must be a valid date");
+    scheduleStartAt = nextDueDate;
+    updates.next_due_date = nextDueDate.toISOString();
+    structuralChange = structuralChange || formatDateKey(plan.next_due_date) !== formatDateKey(nextDueDate);
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.status(200).json({ ok: true, message: "No changes applied.", plan, installments: installments || [] });
+  }
+
+  if (structuralChange) {
+    const hasRecordedPayments = (installments || []).some((installment) => (
+      installment.status === "paid"
+      || installment.status === "partial"
+      || installment.payment_intent_id
+      || installment.ledger_transaction_id
+    ));
+    if (hasRecordedPayments) {
+      throw new Error("Cannot change the payment schedule after installment payments have been recorded");
+    }
+    if (plan.status !== "active") {
+      throw new Error("Only active payment plans can have their schedule changed");
+    }
+  }
+
+  const { data: updatedPlan, error: updateErr } = await sb
+    .from("payment_plans")
+    .update(updates)
+    .eq("id", plan_id)
+    .select("*")
+    .single();
+  if (updateErr) throw new Error(`Could not update payment plan: ${updateErr.message}`);
+
+  if (structuralChange) {
+    const { error: deleteInstallmentsErr } = await sb
+      .from("payment_plan_installments")
+      .delete()
+      .eq("plan_id", plan_id);
+    if (deleteInstallmentsErr) throw new Error(`Could not reset installments: ${deleteInstallmentsErr.message}`);
+
+    const scheduleRows = buildInstallmentRows(
+      plan_id,
+      updates.total_amount ?? plan.total_amount,
+      updates.installments ?? plan.installments,
+      updates.interval_days ?? plan.interval_days,
+      scheduleStartAt,
+    );
+    const { error: insertInstallmentsErr } = await sb
+      .from("payment_plan_installments")
+      .insert(scheduleRows);
+    if (insertInstallmentsErr) throw new Error(`Could not recreate installments: ${insertInstallmentsErr.message}`);
+  }
+
+  const { data: refreshedInstallments, error: refreshedInstallmentsErr } = await sb
+    .from("payment_plan_installments")
+    .select("*")
+    .eq("plan_id", plan_id)
+    .order("installment_number", { ascending: true });
+  if (refreshedInstallmentsErr) throw new Error(`Could not fetch updated installments: ${refreshedInstallmentsErr.message}`);
+
+  return res.status(200).json({
+    ok: true,
+    message: "Payment plan updated.",
+    plan: updatedPlan,
+    installments: refreshedInstallments || [],
+  });
+}
+
 async function handleCancel(sb, body, res) {
   const { plan_id, reason } = body;
   if (!plan_id) throw new Error("plan_id is required");
@@ -200,6 +355,43 @@ async function handleCancel(sb, body, res) {
   if (error) throw new Error(`Could not cancel payment plan: ${error.message}`);
 
   return res.status(200).json({ ok: true, message: "Payment plan cancelled.", plan: updated });
+}
+
+async function handleDelete(sb, body, res) {
+  const { plan_id } = body;
+  if (!plan_id) throw new Error("plan_id is required");
+
+  const { data: plan, error: planErr } = await sb
+    .from("payment_plans")
+    .select("id")
+    .eq("id", plan_id)
+    .maybeSingle();
+  if (planErr) throw new Error(`Could not fetch payment plan: ${planErr.message}`);
+  if (!plan) throw new Error("Payment plan not found");
+
+  const { data: installments, error: installmentsErr } = await sb
+    .from("payment_plan_installments")
+    .select("status,payment_intent_id,ledger_transaction_id")
+    .eq("plan_id", plan_id);
+  if (installmentsErr) throw new Error(`Could not inspect installments: ${installmentsErr.message}`);
+
+  const hasRecordedPayments = (installments || []).some((installment) => (
+    installment.status === "paid"
+    || installment.status === "partial"
+    || installment.payment_intent_id
+    || installment.ledger_transaction_id
+  ));
+  if (hasRecordedPayments) {
+    throw new Error("Cannot delete a payment plan with recorded installment payments");
+  }
+
+  const { error: deleteErr } = await sb
+    .from("payment_plans")
+    .delete()
+    .eq("id", plan_id);
+  if (deleteErr) throw new Error(`Could not delete payment plan: ${deleteErr.message}`);
+
+  return res.status(200).json({ ok: true, message: "Payment plan deleted." });
 }
 
 // ── Pay installment ────────────────────────────────────────────────────────────
