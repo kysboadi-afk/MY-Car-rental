@@ -12497,6 +12497,7 @@ async function refreshAppDetail() {
 // ── Balance Ledger Page ────────────────────────────────────────────────────
 
 let currentLedgerBookingId = '';
+const _ledgerRowCache = new Map(); // id → row object, populated by renderBalanceHistory
 
 function initBalanceLedgerPage() {
   // Pre-fill booking ID from URL hash if present (e.g. #balance-ledger:BK-1029)
@@ -12586,6 +12587,10 @@ function renderBalanceHistory(transactions) {
     _running: Number(row.running_balance || row.remaining_balance || 0),
   }));
 
+  // Populate the row cache so event handlers can safely retrieve full row data.
+  _ledgerRowCache.clear();
+  withBalance.forEach((row) => { if (row.id) _ledgerRowCache.set(String(row.id), row); });
+
   tbody.innerHTML = withBalance.map((row) => {
     const date    = row.created_at
       ? new Date(row.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
@@ -12601,7 +12606,7 @@ function renderBalanceHistory(transactions) {
     const dueDate = row.due_date
       ? new Date(row.due_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
       : '<span style="color:var(--text-sub);">—</span>';
-    const rowJson = esc(JSON.stringify(row));
+    const safeId = esc(String(row.id || ''));
     return `<tr>
       <td style="white-space:nowrap;">${date}</td>
       <td><span style="background:${typeColor}22;color:${typeColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${esc(typeLabel)}</span></td>
@@ -12612,11 +12617,25 @@ function renderBalanceHistory(transactions) {
       <td style="font-size:12px;color:var(--text-sub);">${esc(row.created_by || 'system')}</td>
       <td style="white-space:nowrap;">${dueDate}</td>
       <td style="white-space:nowrap;">
-        <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-main);margin-right:4px;" onclick='openEditLedgerModal(${rowJson})' title="Edit entry">✏️ Edit</button>
-        <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;" onclick="deleteLedgerEntry(${JSON.stringify(row.id)},${JSON.stringify(row.transaction_type)},${JSON.stringify(Number(row.amount||0).toFixed(2))})" title="Delete entry">🗑 Delete</button>
+        <button class="btn btn-sm bl-edit-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-main);margin-right:4px;" title="Edit entry">✏️ Edit</button>
+        <button class="btn btn-sm bl-delete-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;" title="Delete entry">🗑 Delete</button>
       </td>
     </tr>`;
   }).join('');
+
+  // Attach event listeners after render — avoids any inline JS injection risk.
+  tbody.querySelectorAll('.bl-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = _ledgerRowCache.get(btn.dataset.lid);
+      if (row) openEditLedgerModal(row);
+    });
+  });
+  tbody.querySelectorAll('.bl-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = _ledgerRowCache.get(btn.dataset.lid);
+      if (row) deleteLedgerEntry(row.id, row.transaction_type, Number(row.amount || 0).toFixed(2));
+    });
+  });
 }
 
 // ── Add Charge Modal ─────────────────────────────────────────────────────────
