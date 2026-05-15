@@ -73,7 +73,7 @@ function normalizeAllocationScope(value) {
   const out = normalizeOptionalString(value, { max: 20 });
   if (!out) return null;
   if (!["global", "targeted"].includes(out)) {
-    throw new Error('allocation_scope must be "global" or "targeted"');
+    throw new Error("allocation_scope must be \"global\" or \"targeted\"");
   }
   return out;
 }
@@ -135,7 +135,7 @@ export function normalizeLedgerTransactionInput(input = {}) {
     throw new Error(`target_transaction_type must be one of: ${LEDGER_TRANSACTION_TYPES.join(", ")}`);
   }
   if (allocationScope === "targeted" && !targetTransactionType && !targetLedgerTransactionId) {
-    throw new Error("targeted allocation requires target_transaction_type or target_ledger_transaction_id");
+    throw new Error("targeted allocation requires targetTransactionType or targetLedgerTransactionId");
   }
   if ((targetTransactionType || targetLedgerTransactionId) && !allocationScope) {
     metadata = { ...metadata, allocation_scope: "targeted" };
