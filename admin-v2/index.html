@@ -3878,12 +3878,12 @@ document.getElementById('auth-btn').addEventListener('click', signIn);
 function signIn() {
   const pw = document.getElementById('auth-password').value.trim();
   if (!pw) { showAuthError('Please enter a password.'); return; }
-  adminSecret = pw;
   document.getElementById('auth-btn').textContent = 'Signing in…';
   document.getElementById('auth-btn').disabled = true;
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
+  apiPost('/api/v2-dashboard', { secret: pw, scope: 'car' })
     .then((data) => {
+      adminSecret = pw;
       dashboardData = data;
       closeAllModals();
       document.getElementById('auth-screen').style.display = 'none';
