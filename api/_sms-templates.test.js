@@ -395,10 +395,10 @@ test("TEMPLATES map contains all expected keys", () => {
   const expectedKeys = [
     "application_received", "application_approved", "application_denied",
     "waitlist_joined", "waitlist_approved", "waitlist_booking_reminder", "waitlist_declined",
-    "booking_confirmed",
+    "booking_confirmed", "booking_onboarding", "extension_education", "payment_education",
     "unpaid_reminder_24h", "unpaid_reminder_2h", "unpaid_reminder_final",
     "pickup_reminder_24h", "pickup_reminder_2h", "pickup_reminder_30min",
-    "active_rental_mid", "active_rental_1h_before_end", "active_rental_15min_before_end",
+    "active_rental_mid", "active_rental_1h_before_end", "active_rental_15min_before_end", "return_expectations",
     "extend_unavailable", "extend_limited", "extend_options_economy",
     "extend_flexible_prompt", "extend_invalid_input",
     "extend_selected", "extend_selected_upsell",

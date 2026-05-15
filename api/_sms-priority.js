@@ -60,7 +60,11 @@ export const SMS_PRIORITY = {
   active_rental_1h_before_end:     PRIORITY.STANDARD,   // extension invitation
   active_rental_mid:               PRIORITY.STANDARD,   // same-day reminder (7–8 h before return)
   return_reminder_24h:             PRIORITY.STANDARD,   // 24h before return reminder
+  return_expectations:             PRIORITY.STANDARD,   // 24h expectations reminder
   pickup_24h:                      PRIORITY.STANDARD,   // pickup reminder
+  booking_onboarding:              PRIORITY.STANDARD,   // immediate onboarding
+  extension_education:             PRIORITY.STANDARD,   // post-confirmation extension education
+  payment_education:               PRIORITY.STANDARD,   // next-morning payment education
   unpaid_2h:                       PRIORITY.STANDARD,   // unpaid payment reminder
   unpaid_final:                    PRIORITY.STANDARD,   // final unpaid reminder
   maint_oil_warn:                  PRIORITY.STANDARD,   // oil due soon (80–100%)

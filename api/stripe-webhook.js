@@ -32,7 +32,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, BOOKING_ONBOARDING, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, autoReleaseBlockedDateOnReturn, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -2603,15 +2603,17 @@ export default async function handler(req, res) {
       // Renter SMS — includes balance payment link
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-          await sendSms(
-            normalizePhone(bookingForSync.phone),
-            render(RESERVATION_DEPOSIT_CONFIRMED, {
+          await sendDedupedSms({
+            bookingId: resolvedBookingId || bookingRef || paymentIntent.id,
+            templateKey: "reservation_deposit_confirmed",
+            phone: bookingForSync.phone,
+            body: render(RESERVATION_DEPOSIT_CONFIRMED, {
               customer_name:     sanitizeSmsValue(bookingForSync.name || ""),
               vehicle:           sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle"),
               remaining_balance: remainingBalance.toFixed(2),
               payment_link:      balanceLink,
-            })
-          );
+            }),
+          });
         }
       } catch (smsErr) {
         console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
@@ -3100,7 +3102,7 @@ export default async function handler(req, res) {
         // Renter SMS — booking confirmed
         if (preContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
-            await sendDedupedSms({
+            const bookingConfirmedSent = await sendDedupedSms({
               bookingId: bookingRef || originalPiId || paymentIntent.id,
               templateKey: "booking_confirmed",
               phone: preContact.phone,
@@ -3118,6 +3120,17 @@ export default async function handler(req, res) {
                 }),
               }),
             });
+            if (bookingConfirmedSent && preContact.pickupDate !== preContact.returnDate) {
+              await sendDedupedSms({
+                bookingId: bookingRef || originalPiId || paymentIntent.id,
+                templateKey: "booking_onboarding",
+                phone: preContact.phone,
+                body: render(BOOKING_ONBOARDING, {
+                  customer_name: sanitizeSmsValue(preContact.name || ""),
+                  manage_link: "https://www.slytrans.com/manage-booking.html",
+                }),
+              });
+            }
           } catch (smsErr) {
             console.error("stripe-webhook: balance_paid SMS error (non-fatal):", smsErr.message);
           }
@@ -3607,7 +3620,7 @@ export default async function handler(req, res) {
       // ── Step 3: Renter SMS confirmation ───────────────────────────────────
       if (sl_renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          await sendDedupedSms({
+          const bookingConfirmedSent = await sendDedupedSms({
             bookingId: sl_booking_id || paymentIntent.id,
             templateKey: "booking_confirmed",
             phone: sl_renter_phone,
@@ -3625,6 +3638,17 @@ export default async function handler(req, res) {
               }),
             }),
           });
+          if (bookingConfirmedSent && sl_pickup_date !== sl_return_date) {
+            await sendDedupedSms({
+              bookingId: sl_booking_id || paymentIntent.id,
+              templateKey: "booking_onboarding",
+              phone: sl_renter_phone,
+              body: render(BOOKING_ONBOARDING, {
+                customer_name: sanitizeSmsValue(sl_renter_name || ""),
+                manage_link: "https://www.slytrans.com/manage-booking.html",
+              }),
+            });
+          }
         } catch (slRenterSmsErr) {
           console.error("stripe-webhook: [SLINGSHOT] renter SMS error (non-fatal):", slRenterSmsErr.message);
         }
@@ -3716,7 +3740,7 @@ export default async function handler(req, res) {
       // Renter SMS — booking confirmation to the customer
       if (_notifyMeta.renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          await sendDedupedSms({
+          const bookingConfirmedSent = await sendDedupedSms({
             bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
             templateKey: "booking_confirmed",
             phone: _notifyMeta.renter_phone,
@@ -3734,6 +3758,17 @@ export default async function handler(req, res) {
               }),
             }),
           });
+          if (bookingConfirmedSent && _notifyMeta.pickup_date !== _notifyMeta.return_date) {
+            await sendDedupedSms({
+              bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
+              templateKey: "booking_onboarding",
+              phone: _notifyMeta.renter_phone,
+              body: render(BOOKING_ONBOARDING, {
+                customer_name: sanitizeSmsValue(_notifyMeta.renter_name || ""),
+                manage_link: "https://www.slytrans.com/manage-booking.html",
+              }),
+            });
+          }
         } catch (renterSmsErr) {
           console.error("stripe-webhook: renter booking SMS error (non-fatal):", renterSmsErr.message);
         }

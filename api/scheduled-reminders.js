@@ -43,7 +43,11 @@ import {
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
+  BOOKING_ONBOARDING,
+  EXTENSION_EDUCATION,
+  PAYMENT_EDUCATION,
   RETURN_REMINDER_24H,
+  RETURN_EXPECTATIONS,
   ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
   LATE_GRACE_STARTED,
@@ -766,10 +770,37 @@ function normalizeRenterContactInfo(booking) {
   };
 }
 
+function isoDateAtTimezone(date, tz = BUSINESS_TZ) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-CA", { timeZone: tz });
+}
+
+function dateDiffDaysIso(a, b) {
+  if (!a || !b) return NaN;
+  const aDate = new Date(`${a}T00:00:00Z`);
+  const bDate = new Date(`${b}T00:00:00Z`);
+  if (isNaN(aDate.getTime()) || isNaN(bDate.getTime())) return NaN;
+  return Math.floor((bDate.getTime() - aDate.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+async function hasRecentSmsWithin(sb, bookingId, minutes) {
+  if (!sb || !bookingId || !Number.isFinite(minutes) || minutes <= 0) return false;
+  const recentRows = await fetchRecentSmsLogs(sb, bookingId);
+  if (!Array.isArray(recentRows) || recentRows.length === 0) return false;
+  const latestMs = Math.max(
+    ...recentRows
+      .map((r) => new Date(r.sent_at).getTime())
+      .filter((ms) => Number.isFinite(ms))
+  );
+  if (!Number.isFinite(latestMs)) return false;
+  return (Date.now() - latestMs) < minutes * 60 * 1000;
+}
+
 /**
  * Process all booked_paid bookings — send pre-pickup reminders.
  */
 export async function processPaidBookings(allBookings, now, sentMarks) {
+  const sb = getSupabaseAdmin();
   const activeRenterPhones = new Set();
   const activeRenterEmails = new Set();
 
@@ -820,6 +851,85 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         }
       } else if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60) {
         console.log(`[SMS_SKIP] ${id} pickup_24h: already sent`);
+      }
+
+      // Booking onboarding (near-immediate catch-up path if webhook missed it)
+      // Suppress for same-day rentals to avoid onboarding on near-complete trips.
+      if (
+        booking.smsSentAt?.booking_confirmed &&
+        booking.pickupDate !== booking.returnDate &&
+        !alreadySent(booking, "booking_onboarding") &&
+        !(await isSmsLogged(id, "booking_onboarding"))
+      ) {
+        const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
+          ...v,
+          manage_link: "https://www.slytrans.com/manage-booking.html",
+          payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+        }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
+          await logSmsToSupabase(id, "booking_onboarding");
+        }
+      }
+
+      // Extension education ~30 minutes after confirmation.
+      // Suppress if the renter already has one or more extensions.
+      if (booking.smsSentAt?.booking_confirmed) {
+        const confirmedAt = new Date(booking.smsSentAt.booking_confirmed);
+        const minsSinceConfirmed = (now.getTime() - confirmedAt.getTime()) / 60000;
+        if (
+          Number.isFinite(minsSinceConfirmed) &&
+          minsSinceConfirmed >= 30 &&
+          minsSinceConfirmed < 90 &&
+          (booking.extensionCount || 0) <= 0 &&
+          !alreadySent(booking, "extension_education") &&
+          !(await isSmsLogged(id, "extension_education"))
+        ) {
+          // Anti-burst guard to avoid stacking educational sends too tightly.
+          if (!(await hasRecentSmsWithin(sb, id, 20))) {
+            const sent = await safeSend(booking.phone, render(EXTENSION_EDUCATION, v), {
+              booking_ref: id,
+              vehicle_id: vehicleId,
+              message_type: "extension_education",
+            });
+            if (sent) {
+              sentMarks.push({ vehicleId, id, key: "extension_education" });
+              await logSmsToSupabase(id, "extension_education");
+            }
+          }
+        }
+      }
+
+      // Payment education next morning after booking confirmation.
+      // Suppress for prepaid rentals (no remaining balance).
+      if (booking.smsSentAt?.booking_confirmed) {
+        const confirmedAt = new Date(booking.smsSentAt.booking_confirmed);
+        const confirmedIsoLA = isoDateAtTimezone(confirmedAt);
+        const nowIsoLA = isoDateAtTimezone(now);
+        const currentLaHour = laHour();
+        const isNextMorning = dateDiffDaysIso(confirmedIsoLA, nowIsoLA) === 1 && currentLaHour >= 8 && currentLaHour < 12;
+        const isPrepaidRental = Number(booking.remainingBalance || 0) <= 0;
+        if (
+          isNextMorning &&
+          !isPrepaidRental &&
+          !alreadySent(booking, "payment_education") &&
+          !(await isSmsLogged(id, "payment_education"))
+        ) {
+          if (!(await hasRecentSmsWithin(sb, id, 30))) {
+            const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
+              ...v,
+              payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+            }), {
+              booking_ref: id,
+              vehicle_id: vehicleId,
+              message_type: "payment_education",
+            });
+            if (sent) {
+              sentMarks.push({ vehicleId, id, key: "payment_education" });
+              await logSmsToSupabase(id, "payment_education");
+            }
+          }
+        }
       }
     }
   }
@@ -1261,35 +1371,35 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !criticalOnly &&
         !sentThisBooking &&
         wndReturn24h &&
-        !alreadySent(booking, "return_reminder_24h") &&
-        !(await isSmsLogged(id, "return_reminder_24h", returnDateStr))
+        !alreadySent(booking, "return_expectations") &&
+        !(await isSmsLogged(id, "return_expectations", returnDateStr))
       ) {
         const recentRows = await fetchRecentSmsLogs(sb, id);
         const scoringCtx = buildSmsContext(
-          "return_reminder_24h",
+          "return_expectations",
           recentRows,
           { minutesToReturn: minutesUntilReturn, daysSincePickup }
         );
-        const { score, breakdown } = computeSmsScoreWithBreakdown("return_reminder_24h", scoringCtx);
+        const { score, breakdown } = computeSmsScoreWithBreakdown("return_expectations", scoringCtx);
         const effectiveThreshold   = computeEffectiveThreshold(scoringCtx);
         console.log(
-          `[SMS_SCORE] ${id} return_reminder_24h:` +
+          `[SMS_SCORE] ${id} return_expectations:` +
           ` score=${score} threshold=${effectiveThreshold}` +
           ` breakdown=${JSON.stringify(breakdown)}`
         );
         if (score <= effectiveThreshold) {
-          console.log(`[SMS_SKIP] ${id} return_reminder_24h: score ${score} ≤ ${effectiveThreshold}`);
+          console.log(`[SMS_SKIP] ${id} return_expectations: score ${score} ≤ ${effectiveThreshold}`);
         } else {
-          logSmsTrigger(id, returnIso, nowIso, "return_reminder_24h");
-          const sent = await safeSend(booking.phone, render(RETURN_REMINDER_24H, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "return_reminder_24h" });
+          logSmsTrigger(id, returnIso, nowIso, "return_expectations");
+          const sent = await safeSend(booking.phone, render(RETURN_EXPECTATIONS, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "return_expectations" });
           if (sent) {
             sentThisBooking = true;
-            sentMarks.push({ vehicleId, id, key: "return_reminder_24h" });
-            await logSmsToSupabase(id, "return_reminder_24h", returnDateStr, { score, breakdown });
+            sentMarks.push({ vehicleId, id, key: "return_expectations" });
+            await logSmsToSupabase(id, "return_expectations", returnDateStr, { score, breakdown });
           }
         }
       } else if (wndReturn24h) {
-        console.log(`[SMS_SKIP] ${id} return_reminder_24h: already sent (dedup)`);
+        console.log(`[SMS_SKIP] ${id} return_expectations: already sent (dedup)`);
       }
 
       // Per-run dedup: if any SMS was sent for this booking, mark the phone so
@@ -1403,13 +1513,13 @@ export async function loadBookingsFromSupabase(sb) {
     const SELECT_COLS =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
-      "payment_intent_id, completed_at, extension_count, " +
+      "payment_intent_id, completed_at, extension_count, remaining_balance, " +
       "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, updated_at, created_at";
 
     const SELECT_COLS_FALLBACK =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
-      "payment_intent_id, completed_at, extension_count, " +
+      "payment_intent_id, completed_at, extension_count, remaining_balance, " +
       "late_fee_status, late_fee_amount, updated_at, created_at";
 
     const ACTIVE_STATUSES = [
@@ -1523,6 +1633,7 @@ export async function loadBookingsFromSupabase(sb) {
         completedAt:    row.completed_at || null,
         updatedAt:      row.updated_at   || row.created_at || null,
         extensionCount: row.extension_count || 0,
+        remainingBalance: Number(row.remaining_balance || 0),
         lateFeeApplied: row.late_fee_status === "approved" ? (row.late_fee_amount || undefined) : undefined,
         lateFeeStatus:  row.late_fee_status || null,
         balanceDue:     Number(row.balance_due || 0),

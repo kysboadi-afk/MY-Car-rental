@@ -149,6 +149,7 @@ mock.module("./_sms-templates.js", {
     render:           (t, v) => t.replace(/\{(\w+)\}/g, (_, k) => v[k] || ""),
     DEFAULT_LOCATION: "Los Angeles, CA",
     BOOKING_CONFIRMED: "Your {vehicle} is confirmed, {customer_name}.",
+    BOOKING_ONBOARDING: "Welcome to SLY RIDES, {customer_name}.",
     UNPAID_REMINDER_24H: "",
     UNPAID_REMINDER_2H:  "",
     UNPAID_REMINDER_FINAL: "",
@@ -613,7 +614,10 @@ test("lifecycle: repeated booked_paid updates do not resend booking confirmation
 
   assert.equal(approveRes._status, 200);
   assert.equal(editRes._status, 200);
-  assert.equal(smsCalls.length, 1, "booking_confirmed SMS must only send once per booking");
+  const bookingConfirmedSmsCount = smsCalls.filter((s) => String(s.body || "").includes("is confirmed")).length;
+  const onboardingSmsCount = smsCalls.filter((s) => String(s.body || "").includes("Welcome to SLY RIDES")).length;
+  assert.equal(bookingConfirmedSmsCount, 1, "booking_confirmed SMS must only send once per booking");
+  assert.equal(onboardingSmsCount, 1, "booking_onboarding SMS must only send once per booking");
 });
 
 test("lifecycle: activate booking (booked_paid → active_rental) syncs to Supabase", async () => {
