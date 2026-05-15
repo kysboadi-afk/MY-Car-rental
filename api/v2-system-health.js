@@ -1163,7 +1163,8 @@ async function checkTicketChargeHealth(sb) {
 // Check 11 — Renter document coverage missing
 // Surfaces paid/active bookings where required renter verification artifacts are
 // missing based on the booking flow:
-//   • Car flow: valid if either (front+back ID pair) OR (insurance-only doc).
+//   • Car flow: valid if either (front+back ID pair) OR (insurance-only doc)
+//               OR Stripe Identity session is present.
 //   • Slingshot flow: valid when Stripe Identity session is present.
 //
 // Only bookings with statuses where manual action is still possible are checked.
@@ -1302,7 +1303,7 @@ async function checkRenterIdDocuments(sb, scope = null) {
           missing.push("Stripe Identity verification session");
         }
       } else {
-        const hasValidCarCoverage = hasPendingPair || hasBookingDocPair || hasInsuranceOnlyCoverage;
+        const hasValidCarCoverage = hasPendingPair || hasBookingDocPair || hasInsuranceOnlyCoverage || hasIdentitySession;
         if (!hasValidCarCoverage) {
           if (idCopyCount > 0) {
             missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
@@ -1354,7 +1355,7 @@ async function checkRenterIdDocuments(sb, scope = null) {
       "warning",
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter verification artifacts.`,
       allItems,
-      "Cars require either front+back ID documents or an insurance-only submission; slingshot bookings require Stripe Identity verification. For flagged bookings, collect/verify the missing artifact before pickup.",
+      "Cars require either front+back ID documents, an insurance-only submission, or a Stripe Identity verification session; slingshot bookings require Stripe Identity verification. For flagged bookings, collect/verify the missing artifact before pickup.",
       true,
     );
   } catch (err) {
