@@ -24,6 +24,9 @@ export const config = {
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const BUCKET           = "booking-documents";
+const UUID_RE          = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PENDING_FRONT_ID = "pending-front";
+const PENDING_BACK_ID  = "pending-back";
 const MAX_SIZE_BYTES   = 15 * 1024 * 1024; // 15 MB
 const VALID_TYPES      = ["agreement", "insurance", "other", "id_copy"];
 const ALLOWED_MIMETYPES = [
@@ -84,7 +87,71 @@ async function actionList(sb, body, res) {
     .order("uploaded_at", { ascending: true });
 
   if (error) throw error;
-  return res.status(200).json({ success: true, docs: data || [] });
+
+  const docs = data || [];
+  const idDocCount = docs.filter((d) => d.type === "id_copy").length;
+
+  // If fewer than 2 id_copy docs are in booking_documents, also check
+  // pending_booking_docs for IDs the renter uploaded during checkout.
+  // pending_booking_docs uses the booking_ref (bk-xxx) as its key, so we
+  // first resolve that from the bookings table when a UUID was supplied.
+  if (idDocCount < 2) {
+    try {
+      let bookingRef = bookingId;
+      // If bookingId looks like a UUID, look up the booking_ref.
+      if (UUID_RE.test(bookingId)) {
+        const { data: bookingRow } = await sb
+          .from("bookings")
+          .select("booking_ref")
+          .eq("id", bookingId)
+          .maybeSingle();
+        if (bookingRow?.booking_ref) bookingRef = bookingRow.booking_ref;
+      }
+
+      const { data: pendingRow } = await sb
+        .from("pending_booking_docs")
+        .select(
+          "id_base64, id_filename, id_mimetype, id_back_base64, id_back_filename, id_back_mimetype, created_at"
+        )
+        .eq("booking_id", bookingRef)
+        .maybeSingle();
+
+      if (pendingRow) {
+        if (pendingRow.id_base64 && pendingRow.id_filename) {
+          docs.push({
+            id: PENDING_FRONT_ID,
+            booking_id: bookingId,
+            type: "id_copy",
+            file_url: "",
+            file_name: pendingRow.id_filename,
+            mime_type: pendingRow.id_mimetype || "image/jpeg",
+            uploaded_at: pendingRow.created_at,
+            source: "renter_upload",
+          });
+        }
+        if (pendingRow.id_back_base64 && pendingRow.id_back_filename) {
+          docs.push({
+            id: PENDING_BACK_ID,
+            booking_id: bookingId,
+            type: "id_copy",
+            file_url: "",
+            file_name: pendingRow.id_back_filename,
+            mime_type: pendingRow.id_back_mimetype || "image/jpeg",
+            uploaded_at: pendingRow.created_at,
+            source: "renter_upload",
+          });
+        }
+      }
+    } catch (pendingErr) {
+      // Non-fatal: log and return whatever we already have.
+      console.warn(
+        "booking-documents list: could not check pending_booking_docs:",
+        pendingErr.message
+      );
+    }
+  }
+
+  return res.status(200).json({ success: true, docs });
 }
 
 // ── ADD ───────────────────────────────────────────────────────────────────────
