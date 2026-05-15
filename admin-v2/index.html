@@ -2478,6 +2478,7 @@
                   <th>Notes</th>
                   <th>Created By</th>
                   <th>Due Date</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="bl-tbody"></tbody>
@@ -2777,6 +2778,54 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('add-charge-modal')">Cancel</button>
       <button class="btn btn-primary" id="ac-submit-btn" onclick="saveCharge()">Add Charge</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Ledger Entry Modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="edit-ledger-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">Edit Ledger Entry</div>
+      <button class="modal-close" onclick="closeModal('edit-ledger-modal')">✕</button>
+    </div>
+    <input type="hidden" id="el-id">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-select" id="el-type">
+          <option value="damage">Damage</option>
+          <option value="repair">Repair</option>
+          <option value="deductible">Deductible</option>
+          <option value="smoking">Smoking Fee</option>
+          <option value="cleaning">Cleaning Fee</option>
+          <option value="towing">Towing</option>
+          <option value="late_fee">Late Fee</option>
+          <option value="ticket">Ticket / Violation</option>
+          <option value="extension">Extension</option>
+          <option value="payment">Payment</option>
+          <option value="refund">Refund</option>
+          <option value="waiver">Waiver</option>
+          <option value="adjustment">Adjustment</option>
+          <option value="misc">Miscellaneous</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="el-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due Date (optional)</label>
+        <input type="date" class="form-input" id="el-due-date">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="el-notes" placeholder="Describe the charge…" style="min-height:64px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('edit-ledger-modal')">Cancel</button>
+      <button class="btn btn-primary" id="el-submit-btn" onclick="saveEditLedger()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -12448,6 +12497,7 @@ async function refreshAppDetail() {
 // ── Balance Ledger Page ────────────────────────────────────────────────────
 
 let currentLedgerBookingId = '';
+const _ledgerRowCache = new Map(); // id → row object, populated by renderBalanceHistory
 
 function initBalanceLedgerPage() {
   // Pre-fill booking ID from URL hash if present (e.g. #balance-ledger:BK-1029)
@@ -12537,6 +12587,10 @@ function renderBalanceHistory(transactions) {
     _running: Number(row.running_balance || row.remaining_balance || 0),
   }));
 
+  // Populate the row cache so event handlers can safely retrieve full row data.
+  _ledgerRowCache.clear();
+  withBalance.forEach((row) => { if (row.id) _ledgerRowCache.set(String(row.id), row); });
+
   tbody.innerHTML = withBalance.map((row) => {
     const date    = row.created_at
       ? new Date(row.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
@@ -12552,6 +12606,7 @@ function renderBalanceHistory(transactions) {
     const dueDate = row.due_date
       ? new Date(row.due_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
       : '<span style="color:var(--text-sub);">—</span>';
+    const safeId = esc(String(row.id || ''));
     return `<tr>
       <td style="white-space:nowrap;">${date}</td>
       <td><span style="background:${typeColor}22;color:${typeColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${esc(typeLabel)}</span></td>
@@ -12561,8 +12616,26 @@ function renderBalanceHistory(transactions) {
       <td style="max-width:220px;word-break:break-word;">${notes}</td>
       <td style="font-size:12px;color:var(--text-sub);">${esc(row.created_by || 'system')}</td>
       <td style="white-space:nowrap;">${dueDate}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-sm bl-edit-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-main);margin-right:4px;" title="Edit entry">✏️ Edit</button>
+        <button class="btn btn-sm bl-delete-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;" title="Delete entry">🗑 Delete</button>
+      </td>
     </tr>`;
   }).join('');
+
+  // Attach event listeners after render — avoids any inline JS injection risk.
+  tbody.querySelectorAll('.bl-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = _ledgerRowCache.get(btn.dataset.lid);
+      if (row) openEditLedgerModal(row);
+    });
+  });
+  tbody.querySelectorAll('.bl-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const row = _ledgerRowCache.get(btn.dataset.lid);
+      if (row) deleteLedgerEntry(row.id, row.transaction_type, Number(row.amount || 0).toFixed(2));
+    });
+  });
 }
 
 // ── Add Charge Modal ─────────────────────────────────────────────────────────
@@ -12634,7 +12707,71 @@ async function saveCharge() {
   }
 }
 
+// ── Edit / Delete Ledger Entry ────────────────────────────────────────────────
 
+function openEditLedgerModal(row) {
+  const idEl     = document.getElementById('el-id');
+  const typeEl   = document.getElementById('el-type');
+  const amtEl    = document.getElementById('el-amount');
+  const notesEl  = document.getElementById('el-notes');
+  const dueDateEl = document.getElementById('el-due-date');
+  if (idEl)      idEl.value      = row.id || '';
+  if (typeEl)    typeEl.value    = row.transaction_type || '';
+  if (amtEl)     amtEl.value     = Number(row.amount || 0).toFixed(2);
+  if (notesEl)   notesEl.value   = row.notes || '';
+  if (dueDateEl) dueDateEl.value = row.due_date ? row.due_date.slice(0, 10) : '';
+  openModal('edit-ledger-modal');
+}
+
+async function saveEditLedger() {
+  const btn      = document.getElementById('el-submit-btn');
+  const id       = document.getElementById('el-id')?.value.trim();
+  const typeVal  = document.getElementById('el-type')?.value;
+  const amountVal = document.getElementById('el-amount')?.value;
+  const notes    = document.getElementById('el-notes')?.value.trim() || '';
+  const dueDate  = document.getElementById('el-due-date')?.value || '';
+
+  if (!id)        { showToast('Ledger entry ID missing.', 'error'); return; }
+  if (!typeVal)   { showToast('Please select a category.', 'error'); return; }
+  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
+    showToast('Please enter a valid amount.', 'error'); return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+  try {
+    await apiPost('/api/renter-balance-ledger', {
+      secret: adminSecret,
+      action: 'update_transaction',
+      id,
+      transaction_type: typeVal,
+      amount: Number(amountVal),
+      notes: notes || null,
+      due_date: dueDate || null,
+    });
+    closeModal('edit-ledger-modal');
+    showToast('Ledger entry updated.', 'success');
+    if (currentLedgerBookingId) loadBalanceLedger();
+  } catch (err) {
+    showToast('Failed to update entry: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+  }
+}
+
+async function deleteLedgerEntry(id, typeLabel, amount) {
+  if (!confirm(`Delete this ${typeLabel} entry of $${amount}? This cannot be undone.`)) return;
+  try {
+    await apiPost('/api/renter-balance-ledger', {
+      secret: adminSecret,
+      action: 'delete_transaction',
+      id,
+    });
+    showToast('Ledger entry deleted.', 'success');
+    if (currentLedgerBookingId) loadBalanceLedger();
+  } catch (err) {
+    showToast('Failed to delete entry: ' + err.message, 'error');
+  }
+}
 
 async function loadApplicationsPage() {
   appQueuePage      = 1;

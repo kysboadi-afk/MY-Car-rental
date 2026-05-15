@@ -14,6 +14,8 @@ import {
   listLedgerTransactions,
   addLedgerCharge,
   annotateLedgerTransactions,
+  deleteLedgerTransaction,
+  updateLedgerTransaction,
 } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -117,6 +119,31 @@ export default async function handler(req, res) {
           success: true,
           message: "Ledger transaction recorded.",
           transaction,
+        });
+      }
+      case "delete_transaction": {
+        const result = await deleteLedgerTransaction(sb, {
+          id: body.id,
+        });
+        return res.status(200).json({
+          success: true,
+          message: "Ledger entry deleted.",
+          transaction: result.transaction,
+        });
+      }
+      case "update_transaction": {
+        const result = await updateLedgerTransaction(sb, {
+          id: body.id,
+          transactionType: body.transaction_type,
+          amount: body.amount,
+          notes: body.notes,
+          dueDate: body.due_date,
+        });
+        return res.status(200).json({
+          success: true,
+          changed: result.changed,
+          message: result.changed ? "Ledger entry updated." : "No changes made.",
+          transaction: result.transaction,
         });
       }
       default:
