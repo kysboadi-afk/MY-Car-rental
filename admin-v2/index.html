@@ -3962,6 +3962,34 @@ function handleUnauthorizedApiResponse() {
   showAuthError('Session expired. Please sign in again.');
 }
 
+let authRecheckPromise = null;
+
+async function shouldForceLogoutAfterUnauthorized(path) {
+  if (window.DEMO_MODE) return false;
+  if (!adminSecret) return true;
+  if (path === '/api/v2-dashboard') return true;
+  if (authRecheckPromise) return authRecheckPromise;
+
+  authRecheckPromise = (async () => {
+    try {
+      const resp = await fetch(API_BASE + '/api/v2-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: adminSecret, scope: 'car' }),
+      });
+      if (resp.status === 401) return true;
+      return false;
+    } catch {
+      // Network/CORS errors should not force-log users out.
+      return false;
+    } finally {
+      authRecheckPromise = null;
+    }
+  })();
+
+  return authRecheckPromise;
+}
+
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
@@ -3997,7 +4025,7 @@ async function apiPost(path, body, signal = undefined) {
     console.warn('apiPost: failed to parse JSON response (non-fatal):', err?.message || err);
   }
   if (resp.status === 401) {
-    handleUnauthorizedApiResponse();
+    if (await shouldForceLogoutAfterUnauthorized(path)) handleUnauthorizedApiResponse();
     throw new Error(data?.error || 'Unauthorized');
   }
   if (!data) {
@@ -11972,7 +12000,7 @@ async function apiGet(path) {
     console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
   }
   if (resp.status === 401) {
-    handleUnauthorizedApiResponse();
+    if (await shouldForceLogoutAfterUnauthorized(path)) handleUnauthorizedApiResponse();
     throw new Error(data?.error || 'Unauthorized');
   }
   if (!data) {
