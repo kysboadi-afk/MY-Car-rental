@@ -65,6 +65,7 @@ import { runAvailabilitySyncFix }                   from "./system-health-fix-av
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 
@@ -90,6 +91,17 @@ function escHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function normalizeScope(scope) {
+  const normalized = String(scope || "").trim().toLowerCase();
+  return VALID_SCOPES.has(normalized) ? normalized : null;
+}
+
+function isSlingshotBooking(booking = {}) {
+  const category = String(booking.category || "").trim().toLowerCase();
+  const vehicleId = String(booking.vehicle_id || "").trim().toLowerCase();
+  return category === "slingshot" || vehicleId.includes("slingshot");
 }
 
 // ── Individual checks ──────────────────────────────────────────────────────
@@ -1148,11 +1160,11 @@ async function checkTicketChargeHealth(sb) {
   }
 }
 
-// Check 11 — Renter ID documents missing
-// Surfaces paid/active bookings whose pending_booking_docs row is absent or
-// has no ID front/back stored.  This catches two scenarios:
-//   A) The renter did not upload their driver's licence during checkout.
-//   B) store-booking-docs failed silently and the docs were never persisted.
+// Check 11 — Renter document coverage missing
+// Surfaces paid/active bookings where required renter verification artifacts are
+// missing based on the booking flow:
+//   • Car flow: valid if either (front+back ID pair) OR (insurance-only doc).
+//   • Slingshot flow: valid when Stripe Identity session is present.
 //
 // Only bookings with statuses where manual action is still possible are checked.
 // Completed/cancelled bookings are excluded.  Bookings older than 90 days are
@@ -1164,7 +1176,7 @@ async function checkTicketChargeHealth(sb) {
 // Linked with the previous task that ensures:
 //   • Owner attachment priority = ID front → ID back → agreement → insurance
 //   • email_sent is only marked when required docs were actually attached
-async function checkRenterIdDocuments(sb) {
+async function checkRenterIdDocuments(sb, scope = null) {
   try {
     // Paid/active statuses where manual ID collection is still possible.
     const PAID_ACTIVE_STATUSES = [
@@ -1177,19 +1189,25 @@ async function checkRenterIdDocuments(sb) {
 
     const { data: paidBookings, error: bErr } = await sb
       .from("bookings")
-      .select("id, booking_ref, status, vehicle_id, pickup_date, customer_name")
+      .select("id, booking_ref, status, vehicle_id, pickup_date, customer_name, category, identity_session_id")
       .in("status", PAID_ACTIVE_STATUSES)
       .gte("created_at", cutoff90Days)
       .limit(300);
 
     if (bErr) {
       console.error("[v2-system-health] renterIdDocuments query error:", bErr.message);
-      return check("Renter ID Documents", "error", "Could not query bookings: " + bErr.message);
+      return check("Renter Verification Coverage", "error", "Could not query bookings: " + bErr.message);
     }
 
-    const bookings = paidBookings || [];
+    const normalizedScope = normalizeScope(scope);
+    const bookings = (paidBookings || []).filter((b) => {
+      if (!normalizedScope) return true;
+      const isSlingshot = isSlingshotBooking(b);
+      if (normalizedScope === "slingshot") return isSlingshot;
+      return !isSlingshot; // "car" / "cars"
+    });
     if (bookings.length === 0) {
-      return check("Renter ID Documents", "ok", "No active/upcoming bookings to check.");
+      return check("Renter Verification Coverage", "ok", "No active/upcoming bookings to check.");
     }
 
     const refs = bookings.map((b) => b.booking_ref).filter(Boolean);
@@ -1197,12 +1215,15 @@ async function checkRenterIdDocuments(sb) {
     // Fetch pending_booking_docs for these bookings.
     const { data: docsRows, error: dErr } = await sb
       .from("pending_booking_docs")
-      .select("booking_id, id_base64, id_back_base64, id_filename, id_back_filename")
+      .select(
+        "booking_id, id_base64, id_back_base64, id_filename, id_back_filename, " +
+        "insurance_base64, insurance_filename, insurance_coverage_choice"
+      )
       .in("booking_id", refs);
 
     if (dErr) {
       console.error("[v2-system-health] renterIdDocuments docs query error:", dErr.message);
-      return check("Renter ID Documents", "error", "Could not query pending_booking_docs: " + dErr.message);
+      return check("Renter Verification Coverage", "error", "Could not query pending_booking_docs: " + dErr.message);
     }
 
     const normalizeBookingKey = (value) => (value == null ? "" : String(value).trim());
@@ -1219,14 +1240,14 @@ async function checkRenterIdDocuments(sb) {
     const { data: bookingDocRows, error: bdErr } = bookingDocKeys.length
       ? await sb
           .from("booking_documents")
-          .select("booking_id")
-          .eq("type", "id_copy")
+          .select("booking_id, type")
+          .in("type", ["id_copy", "insurance"])
           .in("booking_id", bookingDocKeys)
       : { data: [], error: null };
 
     if (bdErr) {
       console.error("[v2-system-health] renterIdDocuments booking_documents query error:", bdErr.message);
-      return check("Renter ID Documents", "error", "Could not query booking_documents: " + bdErr.message);
+      return check("Renter Verification Coverage", "error", "Could not query booking_documents: " + bdErr.message);
     }
 
     // Index docs by normalized booking_id.
@@ -1238,10 +1259,16 @@ async function checkRenterIdDocuments(sb) {
     }
 
     const idCopyCountByBooking = new Map();
+    const insuranceDocCountByBooking = new Map();
     for (const d of bookingDocRows || []) {
       const key = normalizeBookingKey(d?.booking_id);
       if (!key) continue;
-      idCopyCountByBooking.set(key, (idCopyCountByBooking.get(key) || 0) + 1);
+      const type = String(d?.type || "").trim().toLowerCase();
+      if (type === "id_copy") {
+        idCopyCountByBooking.set(key, (idCopyCountByBooking.get(key) || 0) + 1);
+      } else if (type === "insurance") {
+        insuranceDocCountByBooking.set(key, (insuranceDocCountByBooking.get(key) || 0) + 1);
+      }
     }
 
     // Aggregate per booking: which IDs are missing?
@@ -1255,22 +1282,46 @@ async function checkRenterIdDocuments(sb) {
       const bookingIdKey = normalizeBookingKey(b.id);
       const doc = docsByBooking.get(bookingRefKey) || null;
       const idCopyCount = idCopyCountByBooking.get(bookingIdKey) || 0;
-      const hasPendingFront = !!doc?.id_base64;
-      const hasPendingBack = !!doc?.id_back_base64;
+      const insuranceDocCount = insuranceDocCountByBooking.get(bookingIdKey) || 0;
+      const hasPendingFront = !!doc?.id_base64 || !!doc?.id_filename;
+      const hasPendingBack = !!doc?.id_back_base64 || !!doc?.id_back_filename;
       const hasPendingPair = hasPendingFront && hasPendingBack;
       const hasBookingDocPair = idCopyCount >= 2;
+      const hasPendingInsurance = !!doc?.insurance_base64 || !!doc?.insurance_filename;
+      const hasBookingDocInsurance = insuranceDocCount >= 1;
+      const hasInsuranceCoverageChoice = String(doc?.insurance_coverage_choice || "").toLowerCase() === "yes";
+      const hasInsuranceOnlyCoverage = hasInsuranceCoverageChoice && (hasPendingInsurance || hasBookingDocInsurance);
+      const isSlingshot = isSlingshotBooking(b);
+      const hasIdentitySession = !!String(b.identity_session_id || "").trim();
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
-      if (!hasPendingPair && !hasBookingDocPair) {
-        if (idCopyCount > 0) {
-          missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
-        } else if (!doc) {
-          missing.push("ID front", "ID back");
+      if (isSlingshot) {
+        if (!hasIdentitySession) {
+          missing.push("Stripe Identity verification session");
+        }
+      } else {
+        const hasValidCarCoverage = hasPendingPair || hasBookingDocPair || hasInsuranceOnlyCoverage;
+        if (!hasValidCarCoverage) {
+          if (idCopyCount > 0) {
+            missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
+          } else if (!doc) {
+            missing.push("ID front + ID back or insurance document");
+          } else if (hasPendingFront !== hasPendingBack) {
+            if (!hasPendingFront) missing.push("ID front");
+            if (!hasPendingBack) missing.push("ID back");
+          } else if (hasInsuranceCoverageChoice && !hasPendingInsurance && !hasBookingDocInsurance) {
+            missing.push("insurance document");
+          } else {
+            missing.push("ID front + ID back or insurance document");
+          }
         } else {
-          if (!hasPendingFront) missing.push("ID front");
-          if (!hasPendingBack) missing.push("ID back");
+          // If ID uploads were attempted, enforce front/back pairing as data integrity.
+          if (hasPendingFront !== hasPendingBack) {
+            if (!hasPendingFront) missing.push("ID front");
+            if (!hasPendingBack) missing.push("ID back");
+          }
         }
       }
 
@@ -1281,9 +1332,9 @@ async function checkRenterIdDocuments(sb) {
 
     if (affectedMap.size === 0) {
       return check(
-        "Renter ID Documents",
+        "Renter Verification Coverage",
         "ok",
-        `All ${bookings.length} active/upcoming booking${bookings.length !== 1 ? "s" : ""} have ID documents on file.`,
+        `All ${bookings.length} active/upcoming booking${bookings.length !== 1 ? "s" : ""} have required renter verification artifacts on file.`,
       );
     }
 
@@ -1294,25 +1345,25 @@ async function checkRenterIdDocuments(sb) {
 
     const totalAffected = affectedMap.size;
     console.error(
-      `[v2-system-health] renterIdDocuments: ${totalAffected} booking(s) missing renter ID docs:`,
+      `[v2-system-health] renterIdDocuments: ${totalAffected} booking(s) missing renter verification artifacts:`,
       [...affectedMap.keys()],
     );
 
     return check(
-      "Renter ID Documents",
+      "Renter Verification Coverage",
       "warning",
-      `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter driver's licence document${totalAffected !== 1 ? "s" : ""}.`,
+      `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter verification artifacts.`,
       allItems,
-      "Renter ID documents are captured automatically during checkout. For flagged bookings, contact the renter and collect front/back ID uploads before pickup.",
+      "Cars require either front+back ID documents or an insurance-only submission; slingshot bookings require Stripe Identity verification. For flagged bookings, collect/verify the missing artifact before pickup.",
       true,
     );
   } catch (err) {
     console.error("[v2-system-health] renterIdDocuments exception:", err);
-    return check("Renter ID Documents", "error", "Unexpected error: " + err.message);
+    return check("Renter Verification Coverage", "error", "Unexpected error: " + err.message);
   }
 }
 
-async function runAllChecks(sb) {
+async function runAllChecks(sb, scope = null) {
   const checks    = {};
   const checkedAt = new Date().toISOString();
 
@@ -1327,7 +1378,7 @@ async function runAllChecks(sb) {
     checkSmsDeliveryHealth(sb)        .then((r) => { checks.smsDeliveryHealth        = r; }),
     checkAvailabilitySync(sb)         .then((r) => { checks.availabilitySyncHealth   = r; }),
     checkTicketChargeHealth(sb)       .then((r) => { checks.ticketChargeHealth        = r; }),
-    checkRenterIdDocuments(sb)        .then((r) => { checks.renterIdDocuments         = r; }),
+    checkRenterIdDocuments(sb, scope) .then((r) => { checks.renterIdDocuments         = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);
@@ -1992,12 +2043,15 @@ export default async function handler(req, res) {
     req.method === "GET" ||
     (cronSecret && authHeader === `Bearer ${cronSecret}`);
 
+  let requestScope = null;
+
   if (!isCronCall) {
     // Admin-panel POST path
     if (!isAdminConfigured()) {
       return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
     }
-    const { secret, action } = req.body || {};
+    const { secret, action, scope } = req.body || {};
+    requestScope = normalizeScope(scope);
     if (!isAdminAuthorized(secret)) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -2025,7 +2079,7 @@ export default async function handler(req, res) {
   }
 
   // ── Run all checks ─────────────────────────────────────────────────────────
-  const { checks, overallStatus, checkedAt } = await runAllChecks(sb);
+  const { checks, overallStatus, checkedAt } = await runAllChecks(sb, requestScope);
 
   // ── Cron mode extras: auto-repair + alert ──────────────────────────────────
   if (isCronCall) {
