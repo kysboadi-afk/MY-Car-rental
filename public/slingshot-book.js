@@ -650,6 +650,16 @@ async function launchSlingshotPayment() {
       // pending booking — Stripe is about to redirect to success.html on success.
       paymentFormSubmitted = true;
       try {
+        var submitResult = await elements.submit();
+        if (submitResult && submitResult.error) {
+          paymentFormSubmitted = false;
+          if (msgEl) msgEl.textContent = submitResult.error.message || "Please complete your payment details and try again.";
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
+          submitting = false;
+          return;
+        }
+
         var result = await stripe.confirmPayment({
           elements,
           confirmParams: {
