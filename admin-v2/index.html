@@ -3966,13 +3966,27 @@ async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
   const headers = { 'Content-Type': 'application/json' };
+  const isAbsoluteApiBase = /^https?:\/\//i.test(API_BASE);
   if (adminSecret) headers.Authorization = 'Bearer ' + adminSecret;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  });
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    // Some endpoints allow only Content-Type in CORS preflight; retry once
+    // without Authorization when calling an absolute (cross-origin) API base.
+    if (!(adminSecret && isAbsoluteApiBase)) throw err;
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    });
+  }
   let data = null;
   try { data = await resp.json(); } catch (err) {
     console.warn('apiPost: failed to parse JSON response (non-fatal):', err?.message || err);
