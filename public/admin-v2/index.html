@@ -3965,27 +3965,26 @@ function handleUnauthorizedApiResponse() {
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
-  const headers = { 'Content-Type': 'application/json' };
+  const authHeaders = { 'Content-Type': 'application/json' };
   const isAbsoluteApiBase = /^https?:\/\//i.test(API_BASE);
-  if (adminSecret) headers.Authorization = 'Bearer ' + adminSecret;
+  if (adminSecret) authHeaders.Authorization = 'Bearer ' + adminSecret;
+  const requestBody = JSON.stringify(body);
+  const doPost = (headers) => fetch(url, {
+    method: 'POST',
+    headers,
+    body: requestBody,
+    signal,
+  });
   let resp;
   try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
+    resp = await doPost(authHeaders);
   } catch (err) {
-    // Some endpoints allow only Content-Type in CORS preflight; retry once
-    // without Authorization when calling an absolute (cross-origin) API base.
-    if (!(adminSecret && isAbsoluteApiBase)) throw err;
-    resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal,
-    });
+    // Cross-origin preflight can fail when an endpoint allows Content-Type but not
+    // Authorization. In that CORS-only failure mode, retry once without Authorization.
+    const msg = String(err?.message || '').toLowerCase();
+    const corsLikeFetchFailure = err?.name === 'TypeError' && (msg.includes('failed to fetch') || msg.includes('networkerror'));
+    if (!(adminSecret && isAbsoluteApiBase && corsLikeFetchFailure)) throw err;
+    resp = await doPost({ 'Content-Type': 'application/json' });
   }
   let data = null;
   try { data = await resp.json(); } catch (err) {
