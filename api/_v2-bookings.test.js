@@ -35,8 +35,8 @@ function makeRes() {
   };
 }
 
-function makeReq(body, origin = "https://www.slytrans.com") {
-  return { method: "POST", headers: { origin }, body };
+function makeReq(body, origin = "https://www.slytrans.com", extraHeaders = {}) {
+  return { method: "POST", headers: { origin, ...extraHeaders }, body };
 }
 
 // ─── Shared mutable state ─────────────────────────────────────────────────────
@@ -305,6 +305,21 @@ test("returns 401 for wrong secret", async () => {
   const res = makeRes();
   await handler(makeReq({ secret: "bad", action: "create" }), res);
   assert.equal(res._status, 401);
+});
+
+test("accepts Authorization bearer secret when body secret is missing", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(
+    makeReq(
+      createPayload({ secret: undefined }),
+      "https://www.slytrans.com",
+      { authorization: "Bearer test-admin-secret" }
+    ),
+    res
+  );
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
 });
 
 test("returns 405 for GET requests", async () => {

@@ -29,7 +29,7 @@ import nodemailer from "nodemailer";
 import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import {
   autoCreateRevenueRecord,
@@ -162,9 +162,10 @@ export default async function handler(req, res) {
   }
 
   const body   = req.body || {};
-  const { secret, action } = body;
+  const { action } = body;
+  const adminSecret = extractAdminSecret(req);
 
-  if (!isAdminAuthorized(secret)) {
+  if (!isAdminAuthorized(adminSecret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
