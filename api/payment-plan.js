@@ -215,7 +215,7 @@ async function handleList(sb, body, res) {
 async function handleUpdate(sb, body, res) {
   const { plan_id } = body;
   if (!plan_id) throw new Error("plan_id is required");
-  if (body.booking_id != null) throw new Error("booking_id cannot be changed");
+  if (body.booking_id != null) throw new Error("booking_id is immutable for existing payment plans");
 
   const { data: plan, error: planErr } = await sb
     .from("payment_plans")
