@@ -13,6 +13,7 @@ import {
   insertLedgerTransaction,
   listLedgerTransactions,
   addLedgerCharge,
+  annotateLedgerTransactions,
 } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -57,12 +58,16 @@ export default async function handler(req, res) {
         const limit = body.limit ?? 100;
         const offset = body.offset ?? 0;
         const transactions = await listLedgerTransactions(sb, { bookingId, customerId, limit, offset });
+        const sortedAsc = [...transactions].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        const annotated = annotateLedgerTransactions(sortedAsc).transactions.reverse();
         return res.status(200).json({
           success: true,
           booking_id: bookingId || null,
           customer_id: customerId || null,
-          count: transactions.length,
-          transactions,
+          count: annotated.length,
+          transactions: annotated,
         });
       }
       case "add_charge": {
@@ -74,6 +79,11 @@ export default async function handler(req, res) {
           notes: body.notes,
           dueDate: body.due_date,
           chargeRequestId: body.charge_request_id,
+          relatedChargeId: body.related_charge_id,
+          relatedTicketId: body.related_ticket_id,
+          allocationScope: body.allocation_scope,
+          targetTransactionType: body.target_transaction_type,
+          targetLedgerTransactionId: body.target_ledger_transaction_id,
           metadata: body.metadata,
           createdBy: body.created_by || "admin",
         });
@@ -97,6 +107,9 @@ export default async function handler(req, res) {
           stripePaymentIntentId: body.stripe_payment_intent_id,
           relatedChargeId: body.related_charge_id,
           relatedTicketId: body.related_ticket_id,
+          allocationScope: body.allocation_scope,
+          targetTransactionType: body.target_transaction_type,
+          targetLedgerTransactionId: body.target_ledger_transaction_id,
           metadata: body.metadata,
           createdBy: body.created_by || "admin",
         });

@@ -21,14 +21,14 @@
 //
 // CSV headers:
 //   date, booking_ref, transaction_type, direction, amount, running_balance,
-//   source_type, source_id, notes, created_by
+//   allocation_scope, allocation_targets, source_type, source_id, notes, created_by
 //
-// Running balance: computed left-to-right in ascending created_at order.
-//   debits  → increase balance
-//   credits → decrease balance
+// Running balance is allocation-aware and reflects outstanding balance after
+// each entry rather than blindly netting unrelated credits against all charges.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
+import { annotateLedgerTransactions } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_ROWS = 10000;
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
   try {
     let q = sb
       .from("renter_balance_ledger")
-      .select("id, booking_id, transaction_type, direction, amount, source_type, source_id, notes, created_by, created_at, metadata, due_date")
+      .select("id, booking_id, transaction_type, direction, amount, source_type, source_id, notes, created_by, created_at, metadata, due_date, related_charge_id, related_ticket_id")
       .order("created_at", { ascending: true })
       .limit(MAX_ROWS);
 
@@ -96,24 +96,17 @@ export default async function handler(req, res) {
     if (error) throw new Error(`Ledger export query failed: ${error.message}`);
 
     const txList = rows || [];
-
-    // Compute running balance.
-    let runningBalanceCents = 0;
-    const enriched = txList.map((row) => {
-      const amountCents = Math.round(Number(row.amount || 0) * 100);
-      if (row.direction === "debit") {
-        runningBalanceCents += amountCents;
-      } else {
-        runningBalanceCents -= amountCents;
-      }
-      const running = Math.round(runningBalanceCents) / 100;
+    const annotatedRows = annotateLedgerTransactions(txList).transactions;
+    const enriched = annotatedRows.map((row) => {
       return {
         date: row.created_at ? row.created_at.slice(0, 10) : "",
         booking_ref: row.booking_id,
         transaction_type: row.transaction_type,
         direction: row.direction,
         amount: Number(row.amount),
-        ...(includeRunningBalance ? { running_balance: running } : {}),
+        ...(includeRunningBalance ? { running_balance: Number(row.running_balance || 0) } : {}),
+        allocation_scope: row.allocation_scope || "",
+        allocation_targets: Array.isArray(row.allocation_targets) ? row.allocation_targets.join("|") : "",
         source_type: row.source_type || "",
         source_id: row.source_id || "",
         due_date: row.due_date || "",
@@ -137,7 +130,7 @@ export default async function handler(req, res) {
     const headers = [
       "date", "booking_ref", "transaction_type", "direction", "amount",
       ...(includeRunningBalance ? ["running_balance"] : []),
-      "source_type", "source_id", "due_date", "notes", "created_by", "id",
+      "allocation_scope", "allocation_targets", "source_type", "source_id", "due_date", "notes", "created_by", "id",
     ];
     const csvLines = [headers.join(",")];
     for (const row of enriched) {

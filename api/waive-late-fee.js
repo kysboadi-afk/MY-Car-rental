@@ -295,6 +295,8 @@ export default async function handler(req, res) {
         waiverKey,
         amount:     lateFeeWaivedAmount,
         notes:      `Late fee waiver (${effectiveWaiverType}): ${trimmedReason} — applied by ${adminLabel}`,
+        allocationScope: "targeted",
+        targetTransactionType: "late_fee",
         created_by: adminLabel,
       });
       console.log("[LEDGER_LATE_FEE_WAIVER]", {
@@ -315,6 +317,7 @@ export default async function handler(req, res) {
         waiverKey,
         amount:     rentalBalanceWaivedAmount,
         notes:      `Rental balance waiver (${effectiveWaiverType}): ${trimmedReason} — applied by ${adminLabel}`,
+        allocationScope: "global",
         created_by: adminLabel,
       });
       console.log("[LEDGER_RENTAL_BALANCE_WAIVER]", {

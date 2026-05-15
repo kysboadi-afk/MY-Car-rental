@@ -69,6 +69,15 @@ function parsePositiveAmount(value, field = "amount") {
   return toCents(parsed) / 100;
 }
 
+function normalizeAllocationScope(value) {
+  const out = normalizeOptionalString(value, { max: 20 });
+  if (!out) return null;
+  if (!["global", "targeted"].includes(out)) {
+    throw new Error('allocation_scope must be "global" or "targeted"');
+  }
+  return out;
+}
+
 function normalizeOptionalString(value, { max = 2000 } = {}) {
   if (value === undefined || value === null) return null;
   const out = String(value).trim();
@@ -111,6 +120,34 @@ export function normalizeLedgerTransactionInput(input = {}) {
       throw new Error("metadata must be an object");
     }
     metadata = input.metadata;
+  }
+
+  const allocationScope = normalizeAllocationScope(input.allocationScope || input.allocation_scope);
+  const targetTransactionType = normalizeOptionalString(
+    input.targetTransactionType || input.target_transaction_type,
+    { max: 50 }
+  );
+  const targetLedgerTransactionId = normalizeOptionalString(
+    input.targetLedgerTransactionId || input.target_ledger_transaction_id,
+    { max: 80 }
+  );
+  if (targetTransactionType && !LEDGER_TRANSACTION_TYPES.includes(targetTransactionType)) {
+    throw new Error(`target_transaction_type must be one of: ${LEDGER_TRANSACTION_TYPES.join(", ")}`);
+  }
+  if (allocationScope === "targeted" && !targetTransactionType && !targetLedgerTransactionId) {
+    throw new Error("targeted allocation requires target_transaction_type or target_ledger_transaction_id");
+  }
+  if ((targetTransactionType || targetLedgerTransactionId) && !allocationScope) {
+    metadata = { ...metadata, allocation_scope: "targeted" };
+  }
+  if (allocationScope) {
+    metadata = { ...metadata, allocation_scope: allocationScope };
+  }
+  if (targetTransactionType) {
+    metadata = { ...metadata, target_transaction_type: targetTransactionType };
+  }
+  if (targetLedgerTransactionId) {
+    metadata = { ...metadata, target_ledger_transaction_id: targetLedgerTransactionId };
   }
 
   const sourceType = normalizeOptionalString(input.sourceType || input.source_type, { max: 100 });
@@ -180,6 +217,176 @@ export function computeLedgerSummary(transactions = []) {
   };
 }
 
+function sortLedgerTransactionsAsc(transactions = []) {
+  return [...transactions].sort((a, b) => {
+    const timeA = a?.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b?.created_at ? new Date(b.created_at).getTime() : 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  });
+}
+
+function buildDebitAllocationAliases(row = {}) {
+  const aliases = [];
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+    ? row.metadata
+    : {};
+
+  const relatedChargeId = normalizeOptionalString(row.related_charge_id, { max: 80 });
+  const relatedTicketId = normalizeOptionalString(row.related_ticket_id, { max: 80 });
+  const transactionType = normalizeOptionalString(row.transaction_type, { max: 50 });
+  const targetLedgerTransactionId = normalizeOptionalString(metadata.target_ledger_transaction_id, { max: 80 });
+
+  if (targetLedgerTransactionId) aliases.push(`ledger:${targetLedgerTransactionId}`);
+  if (relatedChargeId) aliases.push(`charge:${relatedChargeId}`);
+  if (relatedTicketId) aliases.push(`ticket:${relatedTicketId}`);
+  if (transactionType) aliases.push(`type:${transactionType}`);
+
+  return [...new Set(aliases)];
+}
+
+function buildCreditAllocationTargets(row = {}) {
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+    ? row.metadata
+    : {};
+
+  const allocationScope = normalizeOptionalString(metadata.allocation_scope, { max: 20 }) || null;
+  const targetLedgerTransactionId = normalizeOptionalString(metadata.target_ledger_transaction_id, { max: 80 });
+  const relatedChargeId = normalizeOptionalString(row.related_charge_id, { max: 80 });
+  const relatedTicketId = normalizeOptionalString(row.related_ticket_id, { max: 80 });
+  const targetTransactionType = normalizeOptionalString(metadata.target_transaction_type, { max: 50 });
+
+  const targets = [];
+  if (targetLedgerTransactionId) targets.push(`ledger:${targetLedgerTransactionId}`);
+  if (relatedChargeId) targets.push(`charge:${relatedChargeId}`);
+  if (relatedTicketId) targets.push(`ticket:${relatedTicketId}`);
+  if (targetTransactionType) targets.push(`type:${targetTransactionType}`);
+
+  if (targets.length > 0) {
+    return {
+      scope: "targeted",
+      targets: [...new Set(targets)],
+      label: targets.join(","),
+    };
+  }
+
+  return {
+    scope: allocationScope === "targeted" ? "targeted" : "global",
+    targets: [],
+    label: allocationScope === "targeted" ? "targeted" : "global",
+  };
+}
+
+function allocationTargetsMatch(targets = [], aliases = []) {
+  if (!targets.length || !aliases.length) return false;
+  const aliasSet = new Set(aliases);
+  return targets.some((target) => aliasSet.has(target));
+}
+
+export function annotateLedgerTransactions(transactions = []) {
+  const ordered = sortLedgerTransactionsAsc(transactions);
+  const openDebits = [];
+  const targetedCredits = [];
+  let globalCreditCarryCents = 0;
+  let outstandingCents = 0;
+
+  const applyToOpenDebits = (amountCents, targets = null) => {
+    let remaining = amountCents;
+    for (const debit of openDebits) {
+      if (remaining <= 0) break;
+      if (debit.remainingCents <= 0) continue;
+      if (targets && !allocationTargetsMatch(targets, debit.aliases)) continue;
+      const applied = Math.min(debit.remainingCents, remaining);
+      debit.remainingCents -= applied;
+      remaining -= applied;
+      outstandingCents -= applied;
+    }
+    return remaining;
+  };
+
+  const consumeMatchingTargetedCredits = (amountCents, aliases = []) => {
+    let remaining = amountCents;
+    for (const credit of targetedCredits) {
+      if (remaining <= 0) break;
+      if (credit.remainingCents <= 0) continue;
+      if (!allocationTargetsMatch(credit.targets, aliases)) continue;
+      const applied = Math.min(credit.remainingCents, remaining);
+      credit.remainingCents -= applied;
+      remaining -= applied;
+    }
+    return remaining;
+  };
+
+  const annotated = ordered.map((row) => {
+    const amountCents = toCents(Number(row.amount) || 0);
+    const direction = row.direction === "credit" ? "credit" : "debit";
+    const aliases = buildDebitAllocationAliases(row);
+    const allocation = buildCreditAllocationTargets(row);
+
+    if (amountCents > 0) {
+      if (direction === "debit") {
+        let remainingDebit = consumeMatchingTargetedCredits(amountCents, aliases);
+        if (remainingDebit > 0 && globalCreditCarryCents > 0) {
+          const applied = Math.min(globalCreditCarryCents, remainingDebit);
+          globalCreditCarryCents -= applied;
+          remainingDebit -= applied;
+        }
+        if (remainingDebit > 0) {
+          openDebits.push({
+            id: row.id || null,
+            aliases,
+            remainingCents: remainingDebit,
+          });
+          outstandingCents += remainingDebit;
+        }
+      } else if (allocation.scope === "targeted" && allocation.targets.length > 0) {
+        const remainder = applyToOpenDebits(amountCents, allocation.targets);
+        if (remainder > 0) {
+          targetedCredits.push({
+            targets: allocation.targets,
+            label: allocation.label,
+            remainingCents: remainder,
+          });
+        }
+      } else {
+        const remainder = applyToOpenDebits(amountCents);
+        if (remainder > 0) {
+          globalCreditCarryCents += remainder;
+        }
+      }
+    }
+
+    const targetedCreditBalanceCents = targetedCredits.reduce((sum, credit) => sum + Math.max(0, credit.remainingCents), 0);
+    const creditBalanceCents = globalCreditCarryCents + targetedCreditBalanceCents;
+    const remainingBalance = roundMoney(outstandingCents / 100);
+    const creditBalance = roundMoney(creditBalanceCents / 100);
+
+    return {
+      ...row,
+      allocation_scope: direction === "credit" ? allocation.scope : "debit",
+      allocation_targets: direction === "credit" ? allocation.targets : aliases,
+      running_balance: remainingBalance,
+      remaining_balance: remainingBalance,
+      credit_balance: creditBalance,
+      net_balance: roundMoney(remainingBalance - creditBalance),
+    };
+  });
+
+  const finalOutstanding = roundMoney(outstandingCents / 100);
+  const finalCreditBalance = roundMoney(
+    (globalCreditCarryCents + targetedCredits.reduce((sum, credit) => sum + Math.max(0, credit.remainingCents), 0)) / 100
+  );
+
+  return {
+    transactions: annotated,
+    summary: {
+      remaining_balance: finalOutstanding,
+      credit_balance: finalCreditBalance,
+      net_balance: roundMoney(finalOutstanding - finalCreditBalance),
+    },
+  };
+}
+
 export async function insertLedgerTransaction(sb, input) {
   const payload = normalizeLedgerTransactionInput(input);
   if (input.due_date) {
@@ -235,6 +442,11 @@ export async function addLedgerCharge(sb, input = {}) {
     notes: input.notes,
     source_type: "manual_charge",
     source_id: chargeRequestId,
+    related_charge_id: input.relatedChargeId || input.related_charge_id,
+    related_ticket_id: input.relatedTicketId || input.related_ticket_id,
+    allocation_scope: input.allocationScope || input.allocation_scope,
+    target_transaction_type: input.targetTransactionType || input.target_transaction_type,
+    target_ledger_transaction_id: input.targetLedgerTransactionId || input.target_ledger_transaction_id,
     metadata: input.metadata || {},
     created_by: normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "admin",
   });
@@ -315,6 +527,11 @@ export async function addLedgerPayment(sb, input = {}) {
     source_type:              "stripe_payment",
     source_id:                piId,
     stripe_payment_intent_id: piId,
+    related_charge_id:        input.relatedChargeId || input.related_charge_id,
+    related_ticket_id:        input.relatedTicketId || input.related_ticket_id,
+    allocation_scope:         input.allocationScope || input.allocation_scope,
+    target_transaction_type:  input.targetTransactionType || input.target_transaction_type,
+    target_ledger_transaction_id: input.targetLedgerTransactionId || input.target_ledger_transaction_id,
     metadata:                 input.metadata || {},
     created_by:               normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "system",
   });
@@ -370,6 +587,11 @@ export async function addLedgerRefund(sb, input = {}) {
     stripe_payment_intent_id: normalizeOptionalString(
       input.stripePaymentIntentId || input.stripe_payment_intent_id, { max: 255 }
     ),
+    related_charge_id:        input.relatedChargeId || input.related_charge_id,
+    related_ticket_id:        input.relatedTicketId || input.related_ticket_id,
+    allocation_scope:         input.allocationScope || input.allocation_scope,
+    target_transaction_type:  input.targetTransactionType || input.target_transaction_type,
+    target_ledger_transaction_id: input.targetLedgerTransactionId || input.target_ledger_transaction_id,
     metadata:                 input.metadata || {},
     created_by:               normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "system",
   });
@@ -419,6 +641,11 @@ export async function addLedgerWaiver(sb, input = {}) {
     notes:       input.notes,
     source_type: "admin_waiver",
     source_id:   waiverKey,
+    related_charge_id: input.relatedChargeId || input.related_charge_id,
+    related_ticket_id: input.relatedTicketId || input.related_ticket_id,
+    allocation_scope: input.allocationScope || input.allocation_scope,
+    target_transaction_type: input.targetTransactionType || input.target_transaction_type,
+    target_ledger_transaction_id: input.targetLedgerTransactionId || input.target_ledger_transaction_id,
     metadata:    input.metadata || {},
     created_by:  normalizeOptionalString(input.createdBy || input.created_by, { max: 120 }) || "admin",
   });
@@ -482,15 +709,40 @@ export async function getLedgerOverdueBookings(sb, { cutoffDays = 0, agingBucket
   // Unique booking IDs with any overdue entry.
   const overdueBookingIds = [...new Set((dueRows || []).map((r) => r.booking_id))];
 
-  // Step 2: compute per-booking net balances from the summary view.
-  const { data: summaryRows, error: sumErr } = await sb
-    .from("renter_balance_ledger_summary")
-    .select("booking_id, customer_id, total_charges, total_credits, net_balance")
-    .in("booking_id", overdueBookingIds);
-  if (sumErr) throw new Error(`getLedgerOverdueBookings summary query failed: ${sumErr.message}`);
+  const { data: ledgerRows, error: ledgerErr } = await sb
+    .from("renter_balance_ledger")
+    .select("id, booking_id, customer_id, transaction_type, direction, amount, created_at, related_charge_id, related_ticket_id, metadata")
+    .in("booking_id", overdueBookingIds)
+    .order("created_at", { ascending: true });
+  if (ledgerErr) throw new Error(`getLedgerOverdueBookings ledger query failed: ${ledgerErr.message}`);
 
-  // Only include bookings with net balance > 0.
-  const overdueWithBalance = (summaryRows || []).filter((r) => Number(r.net_balance || 0) > 0);
+  const bookingSummaries = {};
+  for (const row of ledgerRows || []) {
+    const bookingId = row.booking_id;
+    if (!bookingSummaries[bookingId]) {
+      bookingSummaries[bookingId] = { rows: [], customer_id: row.customer_id || null };
+    }
+    bookingSummaries[bookingId].rows.push(row);
+    if (!bookingSummaries[bookingId].customer_id && row.customer_id) {
+      bookingSummaries[bookingId].customer_id = row.customer_id;
+    }
+  }
+
+  const overdueWithBalance = overdueBookingIds
+    .map((bookingId) => {
+      const rows = bookingSummaries[bookingId]?.rows || [];
+      const raw = computeLedgerSummary(rows);
+      const allocation = annotateLedgerTransactions(rows).summary;
+      return {
+        booking_id: bookingId,
+        customer_id: bookingSummaries[bookingId]?.customer_id || null,
+        total_charges: raw.total_charges,
+        total_credits: raw.total_credits,
+        net_balance: allocation.net_balance,
+        remaining_balance: allocation.remaining_balance,
+      };
+    })
+    .filter((row) => Number(row.remaining_balance || 0) > 0);
   if (overdueWithBalance.length === 0) return [];
 
   const finalBookingIds = overdueWithBalance.map((r) => r.booking_id);
@@ -539,6 +791,7 @@ export async function getLedgerOverdueBookings(sb, { cutoffDays = 0, agingBucket
         customer_name: bk.customer_name || null,
         vehicle_id: bk.vehicle_id || null,
         net_balance: roundMoney(Number(row.net_balance || 0)),
+        remaining_balance: roundMoney(Number(row.remaining_balance || 0)),
         total_charges: roundMoney(Number(row.total_charges || 0)),
         total_credits: roundMoney(Number(row.total_credits || 0)),
         earliest_due_date: earliestDue || null,
@@ -556,51 +809,32 @@ export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {
     throw new Error("booking_id or customer_id is required");
   }
 
-  let summaryQuery = sb
-    .from("renter_balance_ledger_summary")
-    .select("total_charges,total_credits,net_balance,transaction_count");
-  let typedTotalsQuery = sb
+  let ledgerQuery = sb
     .from("renter_balance_ledger")
-    .select("transaction_type,direction,amount")
-    .in("transaction_type", ["payment", "waiver", "refund"]);
+    .select("id,booking_id,customer_id,transaction_type,direction,amount,created_at,related_charge_id,related_ticket_id,metadata");
 
   if (bookingRef) {
-    summaryQuery = summaryQuery.eq("booking_id", bookingRef);
-    typedTotalsQuery = typedTotalsQuery.eq("booking_id", bookingRef);
+    ledgerQuery = ledgerQuery.eq("booking_id", bookingRef);
   }
   if (customerRef) {
-    summaryQuery = summaryQuery.eq("customer_id", customerRef);
-    typedTotalsQuery = typedTotalsQuery.eq("customer_id", customerRef);
+    ledgerQuery = ledgerQuery.eq("customer_id", customerRef);
   }
 
-  const [{ data: summaryRows, error: summaryErr }, { data: typedRows, error: typedErr }] = await Promise.all([
-    summaryQuery,
-    typedTotalsQuery,
-  ]);
-  if (summaryErr) throw new Error(`Could not load ledger summary: ${summaryErr.message}`);
-  if (typedErr) throw new Error(`Could not load ledger typed totals: ${typedErr.message}`);
+  const { data: rows, error } = await ledgerQuery.order("created_at", { ascending: true });
+  if (error) throw new Error(`Could not load ledger summary: ${error.message}`);
 
-  const base = (summaryRows || []).reduce((acc, row) => {
-    acc.total_charges += Number(row.total_charges || 0);
-    acc.total_credits += Number(row.total_credits || 0);
-    acc.net_balance += Number(row.net_balance || 0);
-    acc.transaction_count += Number(row.transaction_count || 0);
-    return acc;
-  }, { total_charges: 0, total_credits: 0, net_balance: 0, transaction_count: 0 });
-
-  const typed = computeLedgerSummary(typedRows || []);
-  const remainingBalance = roundMoney(Math.max(0, base.net_balance));
-  const creditBalance = base.net_balance < 0 ? roundMoney(Math.abs(base.net_balance)) : 0;
+  const raw = computeLedgerSummary(rows || []);
+  const allocation = annotateLedgerTransactions(rows || []).summary;
 
   return {
-    total_charges: roundMoney(base.total_charges),
-    total_credits: roundMoney(base.total_credits),
-    total_paid: typed.total_paid,
-    total_waived: typed.total_waived,
-    total_refunds: typed.total_refunds,
-    net_balance: roundMoney(base.net_balance),
-    remaining_balance: remainingBalance,
-    credit_balance: creditBalance,
-    transaction_count: base.transaction_count,
+    total_charges: raw.total_charges,
+    total_credits: raw.total_credits,
+    total_paid: raw.total_paid,
+    total_waived: raw.total_waived,
+    total_refunds: raw.total_refunds,
+    net_balance: allocation.net_balance,
+    remaining_balance: allocation.remaining_balance,
+    credit_balance: allocation.credit_balance,
+    transaction_count: raw.transaction_count,
   };
 }

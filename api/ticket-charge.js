@@ -291,6 +291,9 @@ async function actionCharge(sb, ticketId, isRetry, res) {
           bookingId:       ticket.booking_ref,
           paymentIntentId: stripePI.id,
           amount:          totalAmount,
+          relatedTicketId: ticket.id,
+          allocationScope: "targeted",
+          targetTransactionType: "ticket",
           notes:           `Violation ticket #${ticket.ticket_number} payment — $${totalAmount.toFixed(2)}`,
           created_by:      "system",
         });

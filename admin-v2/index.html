@@ -12532,15 +12532,10 @@ function renderBalanceHistory(transactions) {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
-  // Compute running balance (oldest-first, then display newest-first)
-  const sorted = [...transactions].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  let running = 0;
-  const withBalance = sorted.map((row) => {
-    const amt = Number(row.amount || 0);
-    if (row.direction === 'debit')  running += amt;
-    else                             running -= amt;
-    return { ...row, _running: Math.max(0, running) };
-  }).reverse();
+  const withBalance = [...transactions].map((row) => ({
+    ...row,
+    _running: Number(row.running_balance || row.remaining_balance || 0),
+  }));
 
   tbody.innerHTML = withBalance.map((row) => {
     const date    = row.created_at
