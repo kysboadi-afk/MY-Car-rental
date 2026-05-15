@@ -6018,10 +6018,10 @@ async function loadBookingIdDocs(bookingDbId) {
       slots.forEach(({ inputId, label }) => {
         html += `<div style="margin-top:6px;">
           <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">
-            Upload ${label} — JPEG / PNG / WebP / PDF, max 15 MB
+            Upload ${label} — any photo or image / PDF, max 15 MB
           </label>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="file" id="${inputId}" accept="image/jpeg,image/png,image/webp,application/pdf"
+            <input type="file" id="${inputId}" accept="image/*,application/pdf"
               style="font-size:12px;flex:1;min-width:0;">
             <button class="btn btn-primary btn-sm"
               onclick="adminUploadIdDoc('${esc(bookingDbId)}', '${inputId}', this)">
@@ -6045,9 +6045,11 @@ async function adminUploadIdDoc(bookingDbId, inputId, btn) {
   const file   = input && input.files && input.files[0];
   if (!file) { if (msgEl) msgEl.textContent = 'Please select a file first.'; return; }
 
-  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    if (msgEl) msgEl.textContent = 'Only JPEG, PNG, WebP, or PDF files are accepted.';
+  const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+  const validType = file.type.startsWith('image/') || file.type === 'application/pdf'
+    || (file.type === '' && allowedExts.test(file.name));
+  if (!validType) {
+    if (msgEl) msgEl.textContent = 'Please upload a photo or image (JPG, PNG, HEIC, WebP, etc.) or a PDF.';
     return;
   }
   const MAX_BYTES = 15 * 1024 * 1024;

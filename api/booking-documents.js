@@ -34,6 +34,11 @@ const ALLOWED_MIMETYPES = [
   "application/pdf",
 ];
 
+// Returns true for any image/* MIME type or application/pdf.
+function isAllowedMimeType(mime) {
+  return mime.startsWith("image/") || mime === "application/pdf";
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -170,8 +175,8 @@ async function actionAdd(sb, body, res) {
   }
 
   const mime = (mimeType || "application/pdf").toLowerCase();
-  if (!ALLOWED_MIMETYPES.includes(mime)) {
-    return res.status(400).json({ error: `mimeType must be one of: ${ALLOWED_MIMETYPES.join(", ")}` });
+  if (!isAllowedMimeType(mime)) {
+    return res.status(400).json({ error: "Only image files and PDFs are accepted." });
   }
 
   const base64Data = fileData.replace(/^data:[^;]+;base64,/, "");
@@ -185,8 +190,8 @@ async function actionAdd(sb, body, res) {
     return res.status(400).json({ error: `File too large. Maximum size is ${MAX_SIZE_BYTES / 1024 / 1024} MB.` });
   }
 
-  const extMap = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
-  const ext = extMap[mime] || "bin";
+  const extMap = { "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "image/heif": "heif", "image/avif": "avif", "image/bmp": "bmp", "image/tiff": "tiff", "application/pdf": "pdf" };
+  const ext = extMap[mime] || (mime.startsWith("image/") ? mime.split("/")[1].replace(/[^a-z0-9]/g, "").slice(0, 10) || "img" : "bin");
   const safeName = fileName
     ? String(fileName).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
     : `${docType}.${ext}`;

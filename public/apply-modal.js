@@ -10,9 +10,9 @@
 
   const API_BASE   = "https://sly-rides.vercel.app";
   const STORAGE_KEY = "slyApplicant";
-  // Vercel's request body limit is 4.5 MB. Base64 encoding adds ~33% overhead,
-  // so we cap each raw file at 3 MB to leave room for both files + JSON envelope.
-  const MAX_FILE_BYTES = 3 * 1024 * 1024; // 3 MB
+  // Base64 encoding adds ~33% overhead. 8 MB raw ≈ 10.7 MB base64, which fits
+  // within the API's 30 MB body limit even when both files are uploaded together.
+  const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB
 
   const overlay    = document.getElementById("applyModal");
   const closeBtn   = document.getElementById("applyModalClose");
@@ -80,17 +80,18 @@
 
     if (!file) return;
 
-    const allowed = ["image/jpeg", "image/png", "application/pdf", "image/heic", "image/heif", "image/webp"];
-    const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-    if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
-      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted.");
+    const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+    const validLicenseType = file.type.startsWith('image/') || file.type === 'application/pdf'
+      || (file.type === '' && allowedExts.test(file.name));
+    if (!validLicenseType) {
+      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Please upload a photo or image of your license (JPG, PNG, HEIC, WebP, etc.) or a PDF.");
       licenseInfo.style.color = "#f44336";
       this.value = "";
       return;
     }
 
     if (file.size > MAX_FILE_BYTES) {
-      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File is too large. Please upload an image under 3 MB.");
+      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File is too large. Please upload an image under 8 MB.");
       licenseInfo.style.color = "#f44336";
       this.value = "";
       return;
@@ -151,15 +152,16 @@
       if (insFileInfo) { insFileInfo.textContent = ""; insFileInfo.style.color = ""; }
 
       if (!file) return;
-      const allowed = ["image/jpeg", "image/png", "application/pdf", "image/heic", "image/heif", "image/webp"];
-      const allowedExts = /\.(jpe?g|png|pdf|heic|heif|webp)$/i;
-      if (!allowed.includes(file.type) && !(file.type === '' && allowedExts.test(file.name))) {
-        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, PDF, HEIC, or WebP files are accepted."); insFileInfo.style.color = "#f44336"; }
+      const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
+      const validInsType = file.type.startsWith('image/') || file.type === 'application/pdf'
+        || (file.type === '' && allowedExts.test(file.name));
+      if (!validInsType) {
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Please upload a photo or image of your insurance card (JPG, PNG, HEIC, WebP, etc.) or a PDF."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
       }
       if (file.size > MAX_FILE_BYTES) {
-        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File is too large. Please upload an image under 3 MB."); insFileInfo.style.color = "#f44336"; }
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File is too large. Please upload an image under 8 MB."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
       }
