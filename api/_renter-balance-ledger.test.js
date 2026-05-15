@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  annotateLedgerTransactions,
   computeLedgerSummary,
   normalizeLedgerTransactionInput,
   resolveTransactionDirection,
@@ -52,6 +53,18 @@ test("normalizeLedgerTransactionInput: normalizes a valid payload", () => {
   assert.equal(out.amount, 42.2);
   assert.equal(out.notes, "partial payment");
   assert.deepEqual(out.metadata, { channel: "stripe" });
+});
+
+test("normalizeLedgerTransactionInput: stores allocation metadata for targeted entries", () => {
+  const out = normalizeLedgerTransactionInput({
+    booking_id: "BK-100",
+    transaction_type: "waiver",
+    amount: 25,
+    allocation_scope: "targeted",
+    target_transaction_type: "late_fee",
+  });
+  assert.equal(out.metadata.allocation_scope, "targeted");
+  assert.equal(out.metadata.target_transaction_type, "late_fee");
 });
 
 test("computeLedgerSummary: derives charges, credits, and remaining balance", () => {
@@ -381,4 +394,56 @@ test("computeLedgerSummary: partial payment leaves correct remaining balance", (
   assert.equal(summary.total_paid, 100);
   assert.equal(summary.remaining_balance, 200);
   assert.equal(summary.net_balance, 200);
+});
+
+test("annotateLedgerTransactions: targeted waiver does not reduce unrelated repair balance", () => {
+  const result = annotateLedgerTransactions([
+    { id: "repair-1", created_at: "2026-01-01T10:00:00Z", transaction_type: "repair", direction: "debit", amount: 800, metadata: {} },
+    {
+      id: "waiver-1",
+      created_at: "2026-01-01T11:00:00Z",
+      transaction_type: "waiver",
+      direction: "credit",
+      amount: 25,
+      metadata: { allocation_scope: "targeted", target_transaction_type: "late_fee" },
+    },
+  ]);
+
+  assert.equal(result.summary.remaining_balance, 800);
+  assert.equal(result.summary.credit_balance, 25);
+  assert.equal(result.summary.net_balance, 775);
+  assert.equal(result.transactions.at(-1).running_balance, 800);
+});
+
+test("annotateLedgerTransactions: targeted payment applies only to matching ticket balance", () => {
+  const result = annotateLedgerTransactions([
+    { id: "repair-1", created_at: "2026-01-01T10:00:00Z", transaction_type: "repair", direction: "debit", amount: 800, metadata: {} },
+    { id: "ticket-1", created_at: "2026-01-01T10:30:00Z", transaction_type: "ticket", direction: "debit", amount: 120, metadata: {} },
+    {
+      id: "payment-1",
+      created_at: "2026-01-01T11:00:00Z",
+      transaction_type: "payment",
+      direction: "credit",
+      amount: 120,
+      related_ticket_id: "ticket-abc",
+      metadata: { allocation_scope: "targeted", target_transaction_type: "ticket" },
+    },
+  ]);
+
+  assert.equal(result.summary.remaining_balance, 800);
+  assert.equal(result.summary.credit_balance, 0);
+  assert.equal(result.summary.net_balance, 800);
+  assert.equal(result.transactions.at(-1).running_balance, 800);
+});
+
+test("annotateLedgerTransactions: global payment still pools across open balances", () => {
+  const result = annotateLedgerTransactions([
+    { id: "repair-1", created_at: "2026-01-01T10:00:00Z", transaction_type: "repair", direction: "debit", amount: 800, metadata: {} },
+    { id: "ticket-1", created_at: "2026-01-01T10:30:00Z", transaction_type: "ticket", direction: "debit", amount: 120, metadata: {} },
+    { id: "payment-1", created_at: "2026-01-01T11:00:00Z", transaction_type: "payment", direction: "credit", amount: 100, metadata: { allocation_scope: "global" } },
+  ]);
+
+  assert.equal(result.summary.remaining_balance, 820);
+  assert.equal(result.summary.credit_balance, 0);
+  assert.equal(result.summary.net_balance, 820);
 });

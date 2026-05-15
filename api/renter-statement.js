@@ -16,7 +16,7 @@
 // how each entry affected their outstanding balance.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getLedgerSummary, listLedgerTransactions } from "./_renter-balance-ledger.js";
+import { annotateLedgerTransactions, getLedgerSummary, listLedgerTransactions } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -57,32 +57,22 @@ export default async function handler(req, res) {
       listLedgerTransactions(sb, { bookingId: bookingRef, limit: 500, offset: 0 }),
     ]);
 
-    // Sort ascending by created_at for statement presentation.
     const transactions = [...rawTransactions].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     );
-
-    // Attach running_balance to each row.
-    let runningCents = 0;
-    const statementRows = transactions.map((tx) => {
-      const amtCents = Math.round(Number(tx.amount || 0) * 100);
-      if (tx.direction === "debit") {
-        runningCents += amtCents;
-      } else {
-        runningCents -= amtCents;
-      }
-      return {
-        date: tx.created_at ? tx.created_at.slice(0, 10) : null,
-        transaction_type: tx.transaction_type,
-        direction: tx.direction,
-        amount: Number(tx.amount),
-        running_balance: Math.round(runningCents) / 100,
-        notes: tx.notes || null,
-        due_date: tx.due_date || null,
-        source_type: tx.source_type || null,
-        id: tx.id,
-      };
-    });
+    const statementRows = annotateLedgerTransactions(transactions).transactions.map((tx) => ({
+      date: tx.created_at ? tx.created_at.slice(0, 10) : null,
+      transaction_type: tx.transaction_type,
+      direction: tx.direction,
+      amount: Number(tx.amount),
+      running_balance: Number(tx.running_balance || 0),
+      notes: tx.notes || null,
+      due_date: tx.due_date || null,
+      source_type: tx.source_type || null,
+      allocation_scope: tx.allocation_scope || null,
+      allocation_targets: tx.allocation_targets || [],
+      id: tx.id,
+    }));
 
     return res.status(200).json({
       ok: true,
