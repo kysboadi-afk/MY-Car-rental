@@ -803,6 +803,87 @@ export async function getLedgerOverdueBookings(sb, { cutoffDays = 0, agingBucket
     .sort((a, b) => (b.days_overdue || 0) - (a.days_overdue || 0));
 }
 
+// deleteLedgerTransaction: hard-delete a single ledger row by its UUID id.
+// Admin-only — caller must already be authorized.
+export async function deleteLedgerTransaction(sb, { id } = {}) {
+  const rowId = normalizeOptionalString(id, { max: 80 });
+  if (!rowId) throw new Error("id is required for deleteLedgerTransaction");
+
+  // Fetch first so we can return the deleted row for confirmation.
+  const { data: existing, error: fetchErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("id", rowId)
+    .maybeSingle();
+  if (fetchErr) throw new Error(`Could not find ledger entry: ${fetchErr.message}`);
+  if (!existing) throw new Error("Ledger entry not found");
+
+  const { error } = await sb
+    .from("renter_balance_ledger")
+    .delete()
+    .eq("id", rowId);
+  if (error) throw new Error(`Could not delete ledger entry: ${error.message}`);
+
+  return { deleted: true, transaction: existing };
+}
+
+// updateLedgerTransaction: patch mutable fields (amount, notes, due_date,
+// transaction_type) on a manual_charge ledger row.
+// System-generated rows (stripe_payment, stripe_refund, admin_waiver) are
+// protected and cannot be edited via this path.
+export async function updateLedgerTransaction(sb, { id, transactionType, amount, notes, dueDate } = {}) {
+  const rowId = normalizeOptionalString(id, { max: 80 });
+  if (!rowId) throw new Error("id is required for updateLedgerTransaction");
+
+  // Fetch first.
+  const { data: existing, error: fetchErr } = await sb
+    .from("renter_balance_ledger")
+    .select("*")
+    .eq("id", rowId)
+    .maybeSingle();
+  if (fetchErr) throw new Error(`Could not find ledger entry: ${fetchErr.message}`);
+  if (!existing) throw new Error("Ledger entry not found");
+
+  const patch = {};
+
+  if (transactionType !== undefined && transactionType !== null) {
+    const t = normalizeOptionalString(transactionType, { max: 50 });
+    if (!LEDGER_TRANSACTION_TYPES.includes(t)) {
+      throw new Error(`Invalid transaction_type: ${t}`);
+    }
+    patch.transaction_type = t;
+    // Keep direction consistent with the new type.
+    const dir = DEFAULT_DIRECTION_BY_TYPE[t];
+    if (dir) patch.direction = dir;
+  }
+
+  if (amount !== undefined && amount !== null) {
+    patch.amount = parsePositiveAmount(amount);
+  }
+
+  if (notes !== undefined) {
+    patch.notes = normalizeOptionalString(notes, { max: 2000 }) || null;
+  }
+
+  if (dueDate !== undefined) {
+    patch.due_date = normalizeOptionalString(dueDate, { max: 10 }) || null;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { transaction: existing, changed: false };
+  }
+
+  const { data, error } = await sb
+    .from("renter_balance_ledger")
+    .update(patch)
+    .eq("id", rowId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`Could not update ledger entry: ${error.message}`);
+
+  return { transaction: data, changed: true };
+}
+
 export async function getLedgerSummary(sb, { bookingId, customerId } = {}) {
   const bookingRef = normalizeOptionalString(bookingId, { max: 200 });
   const customerRef = normalizeOptionalString(customerId, { max: 80 });
