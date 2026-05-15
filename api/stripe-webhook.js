@@ -52,6 +52,7 @@ import { sendDedupedSms } from "./_sms-log.js";
 import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
 import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
 import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
+import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -690,10 +691,10 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       renter_phone:              persistPayload.phone || null,
     };
 
-    const { data: preWriteData, error: preWriteError } = await sbPre
-      .from("bookings")
-      .upsert(preWriteRecord, { onConflict: "booking_ref" })
-      .select("booking_ref");
+    const { data: preWriteData, error: preWriteError, attemptedRow } = await upsertBookingPrewrite(sbPre, preWriteRecord, {
+      select: "booking_ref",
+      context: "STRIPE_WEBHOOK_PREWRITE",
+    });
 
     if (preWriteError) {
       throw new Error(
@@ -709,6 +710,9 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       console.log(
         `stripe-webhook: Supabase pre-write succeeded for PI ${paymentIntent.id} bookingId=${persistPayload.bookingId}`
       );
+      if (attemptedRow && !Object.prototype.hasOwnProperty.call(attemptedRow, "category")) {
+        console.warn(`stripe-webhook: booking ${persistPayload.bookingId} saved without category due to legacy schema compatibility mode`);
+      }
     }
   }
 

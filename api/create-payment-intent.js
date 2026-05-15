@@ -14,6 +14,7 @@ import { isDatesAndTimesAvailable, isVehicleAvailable } from "./_availability.js
 import { getVehicleById } from "./_vehicles.js";
 import { normalizeClockTime, formatTime12h } from "./_time.js";
 import { toDbBookingStatus } from "./_booking-status.js";
+import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -298,9 +299,9 @@ export default async function handler(req, res) {
       renter_phone:      trimmedPhone || null,
     };
 
-    const { error: preWriteErr } = await sb
-      .from("bookings")
-      .upsert(preWriteRow, { onConflict: "booking_ref" });
+    const { error: preWriteErr, attemptedRow } = await upsertBookingPrewrite(sb, preWriteRow, {
+      context: "BOOKING_PREWRITE",
+    });
 
     if (preWriteErr) {
       console.error("[BOOKING_PREWRITE_FAILED]", {
@@ -308,6 +309,7 @@ export default async function handler(req, res) {
         vehicleId: normalizedVehicleId,
         pickup,
         returnDate,
+        attemptedStatus: attemptedRow?.status,
         error: preWriteErr.message,
         code:  preWriteErr.code,
       });
@@ -319,6 +321,7 @@ export default async function handler(req, res) {
       vehicleId: normalizedVehicleId,
       pickup,
       returnDate,
+      status: attemptedRow?.status || preWriteRow.status,
     });
 
     const paymentIntentParams = {
