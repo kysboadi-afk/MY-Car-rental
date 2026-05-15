@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isDatesAndTimesAvailable, isVehicleAvailable } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
 import { normalizeClockTime, formatTime12h } from "./_time.js";
+import { toDbBookingStatus } from "./_booking-status.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -285,7 +286,7 @@ export default async function handler(req, res) {
       return_date:       returnDate,
       pickup_time:       trimmedPickupTime  || null,
       return_time:       derivedReturnTime  || null,
-      status:            "pending",          // PI not yet created; updated to reserved/booked_paid on payment_intent.succeeded
+      status:            toDbBookingStatus("pending_checkout"), // PI not yet created; updated to reserved/booked_paid on payment_intent.succeeded
       total_price:       afterTaxFullRental, // always the full rental cost
       deposit_paid:      0,
       remaining_balance: afterTaxFullRental,
@@ -396,11 +397,17 @@ export default async function handler(req, res) {
       try {
         await sb
           .from("bookings")
-          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .update({ status: toDbBookingStatus("payment_failed"), updated_at: new Date().toISOString() })
           .eq("booking_ref", bookingId);
-        console.log("[BOOKING_PREWRITE_CANCELLED]", { bookingId, reason: "PI creation failed" });
+        console.log("[CHECKOUT_CLEANUP]", {
+          bookingId,
+          fromStatus: "pending_checkout",
+          toStatus: "payment_failed",
+          reason: "payment_intent_create_failed",
+          releasedTemporaryHold: true,
+        });
       } catch (cancelErr) {
-        console.error("[BOOKING_PREWRITE_CANCEL_FAILED]", { bookingId, error: cancelErr.message });
+        console.error("[CHECKOUT_CLEANUP_FAILED]", { bookingId, reason: "payment_intent_create_failed", error: cancelErr.message });
       }
       return res.status(500).json({ error: "Payment initialization failed. Please try again." });
     }

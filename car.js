@@ -506,29 +506,42 @@ let paymentFormSubmitted = false;
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
 
-function cancelPendingBooking(useBeacon) {
+async function updatePendingBookingLifecycle(targetStatus, reason, options = {}) {
   if (!pendingBookingId) return;
   const bookingIdToCancel = pendingBookingId;
-  pendingBookingId = null;
-  const body = JSON.stringify({ bookingId: bookingIdToCancel });
+  const useBeacon = !!options.useBeacon;
+  const source = options.source || "car_booking";
+  const shouldClearLocal = !options.preservePendingBookingId;
+  const body = JSON.stringify({ bookingId: bookingIdToCancel, targetStatus, reason, source });
   if (useBeacon && navigator.sendBeacon) {
     const blob = new Blob([body], { type: "application/json" });
     const queued = navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
-    if (queued) return;
+    if (queued) {
+      if (shouldClearLocal) pendingBookingId = null;
+      return true;
+    }
     console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
   }
-  fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  }).catch(function (err) {
+  try {
+    const res = await fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    if (shouldClearLocal) pendingBookingId = null;
+    return true;
+  } catch (err) {
     console.warn("cancel-pending-booking fetch error:", err);
-  });
+    return false;
+  }
 }
 
 window.addEventListener("pagehide", function () {
   if (pendingBookingId && !paymentFormSubmitted) {
-    cancelPendingBooking(true);
+    updatePendingBookingLifecycle("abandoned_checkout", "pagehide_before_payment", { useBeacon: true, source: "pagehide" });
   }
 });
 
@@ -2370,6 +2383,7 @@ stripeBtn.addEventListener("click", async () => {
             console.warn("Could not upload booking docs:", e);
             if (shouldBlockPaymentForDocFailure(e)) {
               const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
+              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_request_button", preservePendingBookingId: true });
               showPayError(msg);
               ev.complete("fail");
               return;
@@ -2387,6 +2401,7 @@ stripeBtn.addEventListener("click", async () => {
 
         if (confirmError) {
           paymentFormSubmitted = false;
+          await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_payment_error", { source: "car_payment_request_button", preservePendingBookingId: true });
           ev.complete("fail");
           sessionStorage.setItem("slyRidesBooking", JSON.stringify({
             ...prBookingPayload,
@@ -2403,6 +2418,7 @@ stripeBtn.addEventListener("click", async () => {
             });
             if (actionError) {
               paymentFormSubmitted = false;
+              await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_action_error", { source: "car_payment_request_button", preservePendingBookingId: true });
               sessionStorage.setItem("slyRidesBooking", JSON.stringify({
                 ...prBookingPayload,
                 paymentFailed: true,
@@ -2533,6 +2549,7 @@ stripeBtn.addEventListener("click", async () => {
           } catch (docsErr) {
             console.warn("store-booking-docs upload failed:", docsErr);
             if (shouldBlockPaymentForDocFailure(docsErr)) {
+              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_element", preservePendingBookingId: true });
               showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
               if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
               submitBtn.disabled = false;
@@ -2561,6 +2578,7 @@ stripeBtn.addEventListener("click", async () => {
 
       if (error) {
         paymentFormSubmitted = false;
+        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "car_payment_element", preservePendingBookingId: true });
         // Keep booking data in sessionStorage with paymentFailed:true so the form
         // can be pre-filled automatically when the renter returns to try again.
         sessionStorage.setItem("slyRidesBooking", JSON.stringify({
@@ -2595,7 +2613,7 @@ stripeBtn.addEventListener("click", async () => {
       const _reserveBtnCancel = document.getElementById("reserveBtn");
       if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
       _pendingPaymentMode = null;
-      cancelPendingBooking(false);
+      updatePendingBookingLifecycle("abandoned_checkout", "cancel_button_before_payment", { source: "cancel_payment_button" });
       updatePayBtn();
     }, { once: true });
 

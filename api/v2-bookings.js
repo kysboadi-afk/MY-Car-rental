@@ -31,6 +31,7 @@ import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { APP_TO_DB_STATUS, toAppBookingStatus } from "./_booking-status.js";
 import {
   autoCreateRevenueRecord,
   autoUpsertCustomer,
@@ -65,33 +66,6 @@ const VEHICLE_NAMES    = {
 // to database-level status values (used in the Supabase bookings table).
 // Migration 0081 expands the DB constraint to include all modern values so
 // every status here is directly accepted by Supabase without a constraint error.
-const APP_TO_DB_STATUS = {
-  reserved_unpaid:  "pending",
-  booked_paid:      "booked_paid",
-  active_rental:    "active_rental",
-  overdue:          "overdue",
-  completed_rental: "completed_rental",
-  cancelled_rental: "cancelled_rental",
-};
-// Separate reverse mapping: explicitly covers ALL status values the DB may
-// contain (including legacy values written before migration 0081).
-const DB_TO_APP_STATUS = {
-  // Modern values — identity pass-through
-  pending:              "reserved_unpaid",
-  reserved:             "reserved_unpaid",
-  pending_verification: "reserved_unpaid",
-  booked_paid:          "booked_paid",
-  active_rental:        "active_rental",
-  overdue:              "overdue",
-  completed_rental:     "completed_rental",
-  cancelled_rental:     "cancelled_rental",
-  // Legacy values (may exist on older rows pre-0081)
-  approved:             "booked_paid",
-  active:               "active_rental",
-  completed:            "completed_rental",
-  cancelled:            "cancelled_rental",
-};
-
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 
@@ -330,7 +304,7 @@ export default async function handler(req, res) {
               returnDate:      r.return_date  || "",
               returnTime:      r.return_time  || "",
               location:        "",
-              status:          DB_TO_APP_STATUS[r.status] || r.status,
+              status:          toAppBookingStatus(r.status),
               amountPaid:      Number(r.deposit_paid      || 0),
               totalPrice,
               remaining:       Number(r.remaining_balance || 0),
@@ -471,7 +445,7 @@ export default async function handler(req, res) {
             pickupTime:      r.pickup_time  || "",
             returnDate:      r.return_date  || "",
             returnTime:      r.return_time  || "",
-            status:          DB_TO_APP_STATUS[r.status] || r.status,
+            status:          toAppBookingStatus(r.status),
             amountPaid:      Number(r.deposit_paid   || 0),
             totalPrice:      Number(r.total_price    || 0),
             remaining:       Number(r.remaining_balance || 0),
@@ -578,7 +552,7 @@ export default async function handler(req, res) {
       if (safeUpdates.status === "completed_rental") {
         let currentStatus = null;
         if (sbOnlyRow) {
-          currentStatus = DB_TO_APP_STATUS[sbOnlyRow.status] || null;
+          currentStatus = toAppBookingStatus(sbOnlyRow.status) || null;
         } else {
           const currentBooking = (checkData[vehicleId] || []).find(
             (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
@@ -610,7 +584,7 @@ export default async function handler(req, res) {
       if (safeUpdates.status === "cancelled_rental") {
         let currentStatusForCancel = null;
         if (sbOnlyRow) {
-          currentStatusForCancel = DB_TO_APP_STATUS[sbOnlyRow.status] || null;
+          currentStatusForCancel = toAppBookingStatus(sbOnlyRow.status) || null;
         } else {
           const currentBookingForCancel = (checkData[vehicleId] || []).find(
             (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
@@ -819,7 +793,7 @@ export default async function handler(req, res) {
                   phone:           freshRow.customer_phone || "",
                   email:           freshRow.customer_email || "",
                   ...safeUpdates,
-                  status:          DB_TO_APP_STATUS[freshRow.status] || freshRow.status || "",
+                  status:          toAppBookingStatus(freshRow.status),
                 };
               }
             } catch (refreshErr) {
@@ -1493,7 +1467,7 @@ export default async function handler(req, res) {
                 returnTime:      sbRow.return_time  || "",
                 amountPaid:      Number(sbRow.deposit_paid || 0),
                 totalPrice:      Number(sbRow.total_price  || 0),
-                status:          DB_TO_APP_STATUS[sbRow.status] || sbRow.status,
+                status:          toAppBookingStatus(sbRow.status),
                 paymentIntentId: sbRow.payment_intent_id || "",
                 notes:           sbRow.notes || "",
               };

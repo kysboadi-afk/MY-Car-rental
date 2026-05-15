@@ -27,6 +27,7 @@ import {
   autoCreateBlockedDate,
   parseTime12h,
 } from "./_booking-automation.js";
+import { toDbBookingStatus } from "./_booking-status.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 
@@ -94,14 +95,6 @@ async function runStep(traceId, stepName, fn, payload = null) {
   }
 }
 
-const BOOKING_STATUS_MAP = {
-  reserved_unpaid:  "pending",
-  booked_paid:      "booked_paid",
-  active_rental:    "active_rental",
-  completed_rental: "completed_rental",
-  cancelled_rental: "cancelled_rental",
-};
-
 function normalizeEmail(email) {
   if (!email || typeof email !== "string") return null;
   const value = email.trim().toLowerCase();
@@ -122,7 +115,7 @@ function buildAtomicPayload(booking) {
   const totalPrice = Number(booking.totalPrice || amountPaid);
   const remainingBalance = Math.max(0, totalPrice - amountPaid);
 
-  const resolvedStatus = BOOKING_STATUS_MAP[booking.status] || booking.status || "pending";
+  const resolvedStatus = toDbBookingStatus(booking.status || "pending_checkout");
 
   // Use the caller's explicit paymentStatus when provided (e.g. "partial" for
   // reservation_deposit); fall back to deriving it from amounts.  Then enforce

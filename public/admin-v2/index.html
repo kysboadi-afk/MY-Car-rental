@@ -1285,10 +1285,15 @@
             </div>
             <div id="action-required-content">
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:4px 0;">
+                <div class="action-req-tile" id="ar-incomplete" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='incomplete_checkout';applyBookingFilters()">
+                  <div class="ar-icon">🧾</div>
+                  <div class="ar-count" id="ar-incomplete-count">–</div>
+                  <div class="ar-label">Incomplete Checkouts</div>
+                </div>
                 <div class="action-req-tile" id="ar-pending" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='reserved_unpaid';applyBookingFilters()">
                   <div class="ar-icon">📋</div>
                   <div class="ar-count" id="ar-pending-count">–</div>
-                  <div class="ar-label">Pending Approvals</div>
+                  <div class="ar-label">Unpaid Reservations</div>
                 </div>
                 <div class="action-req-tile" id="ar-pickups" onclick="navigate('bookings')">
                   <div class="ar-icon">🔑</div>
@@ -1353,7 +1358,8 @@
           </select>
           <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
             <option value="">All Statuses</option>
-            <option value="reserved_unpaid">Pending / Unpaid</option>
+            <option value="incomplete_checkout">Incomplete Checkouts</option>
+            <option value="reserved_unpaid">Unpaid Reservations</option>
             <option value="booked_paid">Booked &amp; Paid</option>
             <option value="active_rental">Active Rental</option>
             <option value="overdue">Overdue</option>
@@ -5240,6 +5246,9 @@ function bookingRowColor(b, derived) {
   if (derived === 'extended')                             return 'background:#fffbeb;';
   if (b.status === 'active_rental')                       return 'background:#f0fdf4;';
   if (b.status === 'reserved_unpaid')                     return 'background:#fffbeb;';
+  if (b.status === 'pending_checkout')                    return 'background:#eff6ff;';
+  if (b.status === 'upload_failed' || b.status === 'payment_failed') return 'background:#fef2f2;';
+  if (b.status === 'abandoned_checkout')                  return 'background:#f8fafc;';
   if (b.amountNet != null && b.amountNet < 0)            return 'background:#fef2f2;';
   return '';
 }
@@ -5248,7 +5257,11 @@ function bookingRowColor(b, derived) {
 function bookingStatusBadge(b, derived) {
   if (!derived) derived = bookingDerivedStatus(b, new Date());
   const map = {
-    reserved_unpaid:   ['badge-orange', 'Pending'],
+    pending_checkout:  ['badge-blue',   'Checkout Pending'],
+    upload_failed:     ['badge-red',    'Upload Failed'],
+    payment_failed:    ['badge-red',    'Payment Failed'],
+    abandoned_checkout:['badge-gray',   'Checkout Abandoned'],
+    reserved_unpaid:   ['badge-orange', 'Unpaid Reservation'],
     booked_paid:       ['badge-green',  'Confirmed'],
     active_rental:     ['badge-blue',   'Active'],
     completed_rental:  ['badge-gray',   'Completed'],
@@ -5630,7 +5643,8 @@ function applyBookingFilters() {
       if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
       if (sFilter === 'extended'  && derived !== 'extended')  return false;
       if (sFilter === 'flagged'   && derived !== 'flagged')   return false;
-      if (!['overdue','extended','flagged'].includes(sFilter) && b.status !== sFilter) return false;
+      if (sFilter === 'incomplete_checkout' && !['pending_checkout','upload_failed','payment_failed','abandoned_checkout'].includes(b.status)) return false;
+      if (!['overdue','extended','flagged','incomplete_checkout'].includes(sFilter) && b.status !== sFilter) return false;
     }
     if (pmFilter && (b.paymentMethod || '').toLowerCase() !== pmFilter) return false;
     if (rFilter  && (b.custRiskFlag  || 'low') !== rFilter)  return false;
@@ -6474,18 +6488,19 @@ function loadRawBookings() {
       tableEl.style.display = '';
 
       const STATUS_LABELS = {
-        pending: 'Pending', approved: 'Approved', active: 'Active',
+        pending: 'Checkout Pending', pending_checkout: 'Checkout Pending', upload_failed: 'Upload Failed',
+        payment_failed: 'Payment Failed', abandoned_checkout: 'Checkout Abandoned', approved: 'Approved', active: 'Active',
         completed: 'Completed', cancelled: 'Cancelled',
-        reserved_unpaid: 'Reserved', booked_paid: 'Paid', active_rental: 'Active',
+        reserved_unpaid: 'Unpaid Reservation', booked_paid: 'Paid', active_rental: 'Active',
         completed_rental: 'Done', cancelled_rental: 'Cancelled',
       };
 
       document.getElementById('raw-bookings-tbody').innerHTML = rows.map((b) => {
         const statusLabel = STATUS_LABELS[b.status] || esc(b.status || '–');
         const statusColor = ['active','active_rental','approved','booked_paid'].includes(b.status) ? 'var(--success)'
-          : ['completed','completed_rental'].includes(b.status) ? 'var(--text-sub)'
-          : ['cancelled','cancelled_rental'].includes(b.status) ? 'var(--danger)'
-          : ['pending','reserved_unpaid'].includes(b.status) ? 'var(--warning)'
+          : ['completed','completed_rental','abandoned_checkout'].includes(b.status) ? 'var(--text-sub)'
+          : ['cancelled','cancelled_rental','upload_failed','payment_failed'].includes(b.status) ? 'var(--danger)'
+          : ['pending','pending_checkout','reserved_unpaid'].includes(b.status) ? 'var(--warning)'
           : 'var(--text)';
         return `<tr>
           <td style="font-family:monospace;font-size:11px;">${esc((b.bookingId || '').slice(0,12))}…</td>
@@ -7388,6 +7403,10 @@ function fmt12h(hhmm) {
 
 function statusBadge(status) {
   const map = {
+    pending_checkout:  'badge-blue',
+    upload_failed:     'badge-red',
+    payment_failed:    'badge-red',
+    abandoned_checkout:'badge-gray',
     reserved_unpaid:   'badge-orange',
     booked_paid:       'badge-green',
     active_rental:     'badge-blue',
@@ -7395,7 +7414,11 @@ function statusBadge(status) {
     cancelled_rental:  'badge-red',
   };
   const labels = {
-    reserved_unpaid:  'Pending',
+    pending_checkout: 'Checkout Pending',
+    upload_failed:    'Upload Failed',
+    payment_failed:   'Payment Failed',
+    abandoned_checkout:'Checkout Abandoned',
+    reserved_unpaid:  'Unpaid Reservation',
     booked_paid:      'Confirmed',
     active_rental:    'Active',
     completed_rental: 'Completed',
@@ -7509,6 +7532,7 @@ function renderActionRequired(data) {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
+  const incomplete = kpis.incompleteCheckouts != null ? kpis.incompleteCheckouts : bookings.filter((b) => ['pending_checkout','upload_failed','payment_failed','abandoned_checkout'].includes(b.status)).length;
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
   // returnsTodayCount, pickupsTodayCount, and overdueCount from server-side KPI cover ALL bookings
   // (not just recent 10) and use LA timezone — always prefer over client-side fallback.
@@ -7535,6 +7559,7 @@ function renderActionRequired(data) {
     }
   };
 
+  setTile('ar-incomplete', incomplete, true);
   setTile('ar-pending',  pending,  false);
   setTile('ar-pickups',  pickups,  false);
   setTile('ar-returns',  returns,  false);
