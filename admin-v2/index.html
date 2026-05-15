@@ -13049,7 +13049,11 @@ async function loadPaymentPlans() {
               <td><span style="color:${statusColor};font-weight:600;">${esc(plan.status || '—')}</span></td>
               <td>${plan.next_due_date ? esc(plan.next_due_date.slice(0, 10)) : '—'}</td>
               <td>
-                ${plan.status === 'active' ? `<button class="btn btn-danger btn-sm" onclick="cancelPaymentPlan('${esc(plan.id)}')">Cancel</button>` : ''}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="editPaymentPlan(this.dataset.planId)">Edit</button>
+                  ${plan.status === 'active' ? `<button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="cancelPaymentPlan(this.dataset.planId)">Cancel</button>` : ''}
+                  <button class="btn btn-danger btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="deletePaymentPlan(this.dataset.planId)">Delete</button>
+                </div>
               </td>
             </tr>
           `);
@@ -13097,6 +13101,60 @@ function openCreatePlanModal(prefillBookingId, prefillTotal) {
   }).catch((err) => showToast('Failed: ' + err.message, 'error'));
 }
 
+async function editPaymentPlan(planId) {
+  try {
+    const data = await apiPost('/api/payment-plan', { secret: adminSecret, action: 'get', plan_id: planId });
+    const plan = data?.plans?.[0];
+    if (!plan) throw new Error('Payment plan not found');
+
+    const emailInput = prompt('Customer email:', plan.customer_email || '');
+    if (emailInput === null) return;
+    const email = emailInput.trim();
+    if (!email) { showToast('Customer email is required.', 'error'); return; }
+
+    const totalInput = prompt('Total amount ($):', Number(plan.total_amount || 0).toFixed(2));
+    if (totalInput === null) return;
+    const total = parseFloat(totalInput);
+    if (!Number.isFinite(total) || total <= 0) { showToast('Invalid amount.', 'error'); return; }
+
+    const installmentsInput = prompt('Number of installments (2–24):', String(plan.installments || ''));
+    if (installmentsInput === null) return;
+    const installments = parseInt(installmentsInput, 10);
+    if (!Number.isInteger(installments) || installments < 2 || installments > 24) { showToast('Installments must be 2–24.', 'error'); return; }
+
+    const intervalInput = prompt('Days between installments (1–90):', String(plan.interval_days || '30'));
+    if (intervalInput === null) return;
+    const interval = parseInt(intervalInput, 10);
+    if (!Number.isInteger(interval) || interval < 1 || interval > 90) { showToast('Interval must be 1–90 days.', 'error'); return; }
+
+    const dueDateDefault = plan.next_due_date ? String(plan.next_due_date).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const nextDueInput = prompt('Next due date (YYYY-MM-DD):', dueDateDefault);
+    if (nextDueInput === null) return;
+    const nextDue = nextDueInput.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDue)) { showToast('Next due date must use YYYY-MM-DD.', 'error'); return; }
+
+    const notesInput = prompt('Notes (optional):', plan.notes || '');
+    if (notesInput === null) return;
+
+    await apiPost('/api/payment-plan', {
+      secret: adminSecret,
+      action: 'update',
+      plan_id: planId,
+      customer_email: email,
+      total_amount: total,
+      installments,
+      interval_days: interval,
+      next_due_date: nextDue,
+      notes: notesInput.trim() || null,
+    });
+
+    showToast('Payment plan updated.', 'success');
+    loadPaymentPlans();
+  } catch (err) {
+    showToast('Failed to update plan: ' + err.message, 'error');
+  }
+}
+
 async function cancelPaymentPlan(planId) {
   if (!confirm('Cancel this payment plan?')) return;
   try {
@@ -13105,6 +13163,17 @@ async function cancelPaymentPlan(planId) {
     loadPaymentPlans();
   } catch (err) {
     showToast('Failed to cancel plan: ' + err.message, 'error');
+  }
+}
+
+async function deletePaymentPlan(planId) {
+  if (!confirm('Delete this payment plan? This cannot be undone.')) return;
+  try {
+    await apiPost('/api/payment-plan', { secret: adminSecret, action: 'delete', plan_id: planId });
+    showToast('Payment plan deleted.', 'success');
+    loadPaymentPlans();
+  } catch (err) {
+    showToast('Failed to delete plan: ' + err.message, 'error');
   }
 }
 </script>
