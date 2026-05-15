@@ -6,7 +6,7 @@
 // POST /api/create-slingshot-booking
 // Body: {
 //   vehicleId, slingshotPackage, pickupDate, pickupTime,
-//   name, email, phone, identitySessionId,
+//   name, email, phone, paymentOption, identitySessionId,
 //   identityOnly, adminOverride, testMode
 // }
 // Returns: { clientSecret, publishableKey, bookingId, stripeCustomerId }
@@ -69,6 +69,7 @@ export default async function handler(req, res) {
       name,
       email,
       phone,
+      paymentOption,
       identitySessionId,
       identityOnly,
       adminOverride,
@@ -233,10 +234,14 @@ export default async function handler(req, res) {
 
     // ── Compute reservation pricing (no tax on slingshots) ────────────────────
     // Full rental total = package price + refundable security deposit.
-    // Charge only the deposit today so the renter can reserve the slot.
     const totalAmount = pkg.price + SLINGSHOT_DEPOSIT;
-    const reservationDeposit = SLINGSHOT_DEPOSIT;
-    const balanceAtPickup = Math.max(0, totalAmount - reservationDeposit);
+    const normalizedPaymentOption = String(paymentOption || "deposit").trim().toLowerCase();
+    if (normalizedPaymentOption !== "deposit" && normalizedPaymentOption !== "full") {
+      return res.status(400).json({ error: "Invalid payment option. Choose deposit or full payment." });
+    }
+    const chargeAmount = normalizedPaymentOption === "full" ? totalAmount : SLINGSHOT_DEPOSIT;
+    const balanceAtPickup = Math.max(0, totalAmount - chargeAmount);
+    const paymentType = normalizedPaymentOption === "full" ? "full_payment" : "reservation_deposit";
 
     // ── Find or create Stripe Customer ────────────────────────────────────────
     let stripeCustomerId;
@@ -309,12 +314,12 @@ export default async function handler(req, res) {
 
     // ── Create Stripe PaymentIntent ───────────────────────────────────────────
     const paymentIntentParams = {
-      amount:   Math.round(reservationDeposit * 100), // Stripe expects whole cents
+      amount:   Math.round(chargeAmount * 100), // Stripe expects whole cents
       currency: "usd",
       customer: stripeCustomerId,
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit – ${pkg.label}`,
+      description: `Sly Transportation Services LLC – ${vehicleData.name} ${normalizedPaymentOption === "full" ? "Full Payment" : "Reservation Deposit"} – ${pkg.label}`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },
@@ -340,7 +345,8 @@ export default async function handler(req, res) {
         return_date:        returnDate,
         pickup_time:        formatTime12h(normalizedPickupTime),
         return_time:        formatTime12h(returnTime),
-        payment_type:       "reservation_deposit",
+        payment_type:       paymentType,
+        payment_option:     normalizedPaymentOption,
         deposit_refundable: "true",
         full_rental_amount: totalAmount.toFixed(2),
         balance_at_pickup:  balanceAtPickup.toFixed(2),

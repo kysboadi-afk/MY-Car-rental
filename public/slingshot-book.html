@@ -175,6 +175,38 @@
       color: #888;
       margin-top: 6px;
     }
+    .payment-choice-box {
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .payment-choice-title {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #f3f3f3;
+    }
+    .payment-choice-options {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .payment-choice-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #ddd;
+      cursor: pointer;
+    }
+    .payment-choice-options input[type="radio"] {
+      accent-color: #ffb400;
+    }
+    .total-breakdown-row.balance-row {
+      color: #9ec6ff;
+    }
     /* Extension package picker */
     .ext-pkg-label {
       font-size: 15px;
@@ -268,6 +300,20 @@
       <div class="return-time-box" id="returnTimeBox">
         <p class="rt-label">Estimated return by (Los Angeles time):</p>
         <p class="rt-value" id="returnTimeDisplay">—</p>
+      </div>
+
+      <div class="payment-choice-box">
+        <p class="payment-choice-title">Payment Option</p>
+        <div class="payment-choice-options">
+          <label>
+            <input type="radio" name="slPaymentOption" value="deposit" checked>
+            Pay refundable deposit now ($500)
+          </label>
+          <label>
+            <input type="radio" name="slPaymentOption" value="full">
+            Pay full amount now
+          </label>
+        </div>
       </div>
 
       <!-- Contact info -->
@@ -393,13 +439,17 @@
           <span>Total charged today</span>
           <span>$<span id="totalAmountDisplay">0</span></span>
         </div>
+        <div class="total-breakdown-row balance-row" id="remainingBalanceRow">
+          <span>Remaining balance at pickup</span>
+          <span>$<span id="remainingBalanceDisplay">0</span></span>
+        </div>
       </div>
 
       <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
 
       <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Reserve Now — Pay $500 Deposit</button>
       <p class="sl-book-urgency">Limited availability — weekends sell out fast</p>
-      <p class="deposit-notice">Pay $500 refundable deposit now to reserve — returned after inspection</p>
+      <p class="deposit-notice" id="paymentOptionNotice">Pay $500 refundable deposit now to reserve — returned after inspection</p>
       <label class="agree" style="margin-top:8px">
         <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
         <span>I have read and signed the Rental Agreement &amp; Terms</span>
