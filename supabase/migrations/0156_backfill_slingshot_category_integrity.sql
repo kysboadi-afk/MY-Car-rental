@@ -59,6 +59,6 @@ WHERE v.vehicle_id IN (SELECT vehicle_id FROM audit_upsert);
 -- SELECT vehicle_id, data->>'vehicle_name' AS vehicle_name, data->>'type' AS type, data->>'category' AS category
 -- FROM vehicles
 -- WHERE vehicle_id ILIKE 'slingshot%'
---    OR lower(COALESCE(data->>'type','')) = 'slingshot'
+--    OR lower(COALESCE(data->>'type', '')) = 'slingshot'
 --    OR lower(COALESCE(data->>'vehicle_name','')) LIKE '%slingshot%'
 -- ORDER BY vehicle_id;

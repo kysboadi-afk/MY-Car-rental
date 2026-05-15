@@ -76,12 +76,12 @@ function enforceSlingshotCategoryInvariant({ existingData = null, updates = null
   const updatesType = next.type || "";
   const updatesName = next.vehicle_name || existingName;
 
-  const existingLooksSlingshot =
+  const existingLooksLikeSlingshot =
     deriveCategory(existingData?.category || "", existingType, vehicleId, existingName) === "slingshot";
-  const updateLooksSlingshot =
+  const updatesLookLikeSlingshot =
     deriveCategory(next.category || "", updatesType, vehicleId, updatesName) === "slingshot";
 
-  if (isSlingshotScope(scope) || existingLooksSlingshot || updateLooksSlingshot) {
+  if (isSlingshotScope(scope) || existingLooksLikeSlingshot || updatesLookLikeSlingshot) {
     next.category = "slingshot";
   }
   return next;
