@@ -1,7 +1,6 @@
 // apply-modal.js
 // Handles the "Apply Now" modal on index.html:
 //   - Opens/closes the modal
-//   - Validates the driver's license upload (type + size)
 //   - Submits the application to the Vercel API
 //   - Stores applicant name & phone in localStorage so car.html can pre-fill them
 //   - Redirects to thank-you.html?from=apply on success
@@ -10,19 +9,13 @@
 
   const API_BASE   = "https://sly-rides.vercel.app";
   const STORAGE_KEY = "slyApplicant";
-  // Base64 encoding adds ~33% overhead. 8 MB raw ≈ 10.7 MB base64, which fits
-  // within the API's 30 MB body limit even when both files are uploaded together.
-  const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB
 
   const overlay    = document.getElementById("applyModal");
   const closeBtn   = document.getElementById("applyModalClose");
   const form       = document.getElementById("applyForm");
   const submitBtn  = document.getElementById("applySubmitBtn");
   const statusEl   = document.getElementById("applyStatus");
-  const licenseInput = document.getElementById("applyLicense");
-  const licenseInfo  = document.getElementById("applyLicenseInfo");
 
-  let licenseFile = null;
   let applyInsuranceFile = null;
 
   // i18n helper
@@ -68,38 +61,6 @@
   // Close on Escape key
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && overlay.style.display === "flex") closeModal();
-  });
-
-  // ─── License file validation ──────────────────────────────────────────────────
-
-  licenseInput.addEventListener("change", function () {
-    const file = this.files[0];
-    licenseFile = null;
-    licenseInfo.textContent = "";
-    licenseInfo.style.color = "";
-
-    if (!file) return;
-
-    const allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
-    const validLicenseType = file.type.startsWith('image/') || file.type === 'application/pdf'
-      || (file.type === '' && allowedExts.test(file.name));
-    if (!validLicenseType) {
-      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Please upload a photo or image of your license (JPG, PNG, HEIC, WebP, etc.) or a PDF.");
-      licenseInfo.style.color = "#f44336";
-      this.value = "";
-      return;
-    }
-
-    if (file.size > MAX_FILE_BYTES) {
-      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File is too large. Please upload an image under 8 MB.");
-      licenseInfo.style.color = "#f44336";
-      this.value = "";
-      return;
-    }
-
-    licenseFile = file;
-    licenseInfo.textContent = "\u2713 " + file.name;
-    licenseInfo.style.color = "#4caf50";
   });
 
   // ─── Insurance & Protection Plan wiring ──────────────────────────────────────
@@ -160,7 +121,7 @@
         this.value = "";
         return;
       }
-      if (file.size > MAX_FILE_BYTES) {
+      if (file.size > 8 * 1024 * 1024) {
         if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File is too large. Please upload an image under 8 MB."); insFileInfo.style.color = "#f44336"; }
         this.value = "";
         return;
@@ -234,12 +195,6 @@
       return;
     }
 
-    if (!licenseFile) {
-      statusEl.textContent = mt("applyModal.uploadLicenseReq", "Please upload a copy of your driver\u2019s license.");
-      statusEl.className = "apply-status error";
-      return;
-    }
-
     submitBtn.disabled = true;
     statusEl.textContent = mt("applyModal.submitting", "Submitting your application\u2026");
     statusEl.className = "apply-status sending";
@@ -261,8 +216,6 @@
             agreeSmsConsent,
             hasInsurance,
             protectionPlanPref,
-            licenseFileName: licenseFile ? licenseFile.name : null,
-            licenseMimeType: licenseFile ? licenseFile.type : null,
             insuranceFileName: applyInsuranceFile ? applyInsuranceFile.name : null,
             insuranceMimeType: applyInsuranceFile ? applyInsuranceFile.type : null,
           }),
@@ -274,17 +227,6 @@
       } catch (_) {
         // Backward-compatible fallback: continue with legacy apply email endpoint
       }
-
-      // Encode license image as base64 for JSON transport
-      const licenseBase64 = await new Promise(function (resolve, reject) {
-        const reader = new FileReader();
-        reader.onload = function () {
-          // result is "data:<mime>;base64,<data>" — strip the prefix
-          resolve(reader.result.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(licenseFile);
-      });
 
       // Encode insurance proof if provided
       let insuranceBase64 = null;
@@ -310,9 +252,6 @@
           apps,
           agreeTerms,
           agreeSmsConsent,
-          licenseFileName: licenseFile.name,
-          licenseMimeType: licenseFile.type,
-          licenseBase64,
           hasInsurance,
           insuranceBase64,
           insuranceFileName: applyInsuranceFile ? applyInsuranceFile.name : null,
