@@ -665,6 +665,13 @@ async function launchSlingshotPayment() {
           confirmParams: {
             return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
             receipt_email: email,
+            payment_method_data: {
+              billing_details: {
+                name: name,
+                email: email,
+                phone: phone,
+              },
+            },
           },
         });
 
