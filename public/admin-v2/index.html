@@ -3982,10 +3982,10 @@ async function apiPost(path, body, signal = undefined) {
     // Cross-origin preflight can fail when an endpoint allows Content-Type but not
     // Authorization. In that CORS-only failure mode, retry once without Authorization.
     // Browser wording differs for CORS-preflight failures:
-    // Chrome typically "Failed to fetch"; Firefox often "NetworkError".
+    // Chrome typically "Failed to fetch"; Firefox often "NetworkError" (checked case-insensitively).
     const msg = String(err?.message || '').toLowerCase();
     const corsLikeFetchFailure = err?.name === 'TypeError' && (msg.includes('failed to fetch') || msg.includes('networkerror'));
-    if (!(adminSecret && isAbsoluteApiBase && corsLikeFetchFailure)) throw err;
+    if (!adminSecret || !isAbsoluteApiBase || !corsLikeFetchFailure) throw err;
     resp = await doPost({ 'Content-Type': 'application/json' });
   }
   let data = null;
