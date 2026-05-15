@@ -6,8 +6,8 @@
 // POST /api/create-slingshot-booking
 // Body: {
 //   vehicleId, slingshotPackage, pickupDate, pickupTime,
-//   name, email, phone, idFileName, idBackFileName,
-//   adminOverride, testMode
+//   name, email, phone, identitySessionId,
+//   identityOnly, adminOverride, testMode
 // }
 // Returns: { clientSecret, publishableKey, bookingId, stripeCustomerId }
 
@@ -30,6 +30,14 @@ import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://www.slytrans.com/slingshot-book.html";
+
+function buildSlingshotIdentityReturnUrl(vehicleId) {
+  const url = new URL(DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL);
+  if (vehicleId) url.searchParams.set("vehicle", vehicleId);
+  url.searchParams.set("identity", "return");
+  return url.toString();
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -61,8 +69,8 @@ export default async function handler(req, res) {
       name,
       email,
       phone,
-      idFileName,
-      idBackFileName,
+      identitySessionId,
+      identityOnly,
       adminOverride,
       testMode,
     } = req.body || {};
@@ -78,6 +86,48 @@ export default async function handler(req, res) {
     }
     if (vehicleData.type !== "slingshot") {
       return res.status(400).json({ error: "This booking endpoint is only for slingshot vehicles." });
+    }
+
+    // ── Validate contact info ─────────────────────────────────────────────────
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "A valid email address is required." });
+    }
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Full name is required." });
+    }
+    const trimmedName  = name.trim();
+    const trimmedPhone = phone && typeof phone === "string" ? phone.trim() : "";
+    if (!trimmedPhone) {
+      return res.status(400).json({ error: "Phone number is required." });
+    }
+
+    // ── Stripe Identity session creation (step 1) ────────────────────────────
+    if (identityOnly === true) {
+      const verificationSession = await stripe.identity.verificationSessions.create({
+        type: "document",
+        metadata: {
+          booking_type: "slingshot",
+          vehicle_id: vehicleId,
+          renter_email: email,
+          renter_phone: trimmedPhone,
+          renter_name: trimmedName,
+        },
+        options: {
+          document: {
+            require_live_capture: true,
+            require_matching_selfie: true,
+          },
+        },
+        return_url: buildSlingshotIdentityReturnUrl(vehicleId),
+      });
+
+      return res.status(200).json({
+        success: true,
+        identityStatus: "requires_input",
+        verificationSessionId: verificationSession.id,
+        identityClientSecret: verificationSession.client_secret,
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      });
     }
 
     // ── Validate package ──────────────────────────────────────────────────────
@@ -124,27 +174,19 @@ export default async function handler(req, res) {
     const { date: returnDate, time: returnTime } = splitDatetimeLA(returnDatetimeLA);
     const { date: pickupDateLA } = splitDatetimeLA(pickupDatetimeLA);
 
-    // ── Validate contact info ─────────────────────────────────────────────────
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ error: "A valid email address is required." });
+    // ── Stripe Identity validation (step 2) ──────────────────────────────────
+    const trimmedIdentitySessionId = typeof identitySessionId === "string" ? identitySessionId.trim() : "";
+    if (!trimmedIdentitySessionId) {
+      return res.status(400).json({ error: "Identity verification is required before reserving a slingshot." });
     }
-    if (!name || typeof name !== "string" || !name.trim()) {
-      return res.status(400).json({ error: "Full name is required." });
+    let verifiedIdentitySession;
+    try {
+      verifiedIdentitySession = await stripe.identity.verificationSessions.retrieve(trimmedIdentitySessionId);
+    } catch (identityErr) {
+      return res.status(400).json({ error: "Could not verify your identity session. Please try again." });
     }
-    const trimmedName  = name.trim();
-    const trimmedPhone = phone && typeof phone === "string" ? phone.trim() : "";
-    if (!trimmedPhone) {
-      return res.status(400).json({ error: "Phone number is required." });
-    }
-
-    // ── ID upload validation ──────────────────────────────────────────────────
-    const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
-    if (!trimmedIdFileName) {
-      return res.status(400).json({ error: "A government-issued ID (front) is required for all bookings." });
-    }
-    const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
-    if (!trimmedIdBackFileName) {
-      return res.status(400).json({ error: "The back of your Driver's License / ID is required." });
+    if (String(verifiedIdentitySession?.status || "").toLowerCase() !== "verified") {
+      return res.status(400).json({ error: "Identity verification is incomplete. Please complete verification and try again." });
     }
 
     // ── Availability check ────────────────────────────────────────────────────
@@ -293,6 +335,7 @@ export default async function handler(req, res) {
         package_hours:      String(pkg.hours),
         package_price:      String(pkg.price),
         deposit_amount:     String(SLINGSHOT_DEPOSIT),
+        identity_session_id: trimmedIdentitySessionId,
         pickup_date:        pickupDateLA,
         return_date:        returnDate,
         pickup_time:        formatTime12h(normalizedPickupTime),

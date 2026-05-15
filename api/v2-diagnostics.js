@@ -14,6 +14,7 @@
 //     SUPABASE_URL:             "ok" | "missing",
 //     SUPABASE_SERVICE_ROLE_KEY:"ok" | "missing",
 //     STRIPE_SECRET_KEY:        "ok" | "missing",
+//     STRIPE_PUBLISHABLE_KEY:   "ok" | "missing",
 //     SMTP_HOST:                "ok" | "missing",
 //     TEXTMAGIC_USERNAME:       "ok" | "missing",
 //     OPENAI_API_KEY:           "ok" | "missing" | "not required",
@@ -83,6 +84,9 @@ const REQUIRED_TABLES = [
   "sms_template_overrides",
   "bookings",
   "blocked_dates",
+  "pending_booking_docs",
+  "booking_documents",
+  "charges",
 ];
 
 // Optional tables — present in the full schema but not strictly required for
@@ -149,6 +153,7 @@ export default async function handler(req, res) {
     SUPABASE_URL:              process.env.SUPABASE_URL              ? "ok" : "missing",
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? "ok" : "missing",
     STRIPE_SECRET_KEY:         process.env.STRIPE_SECRET_KEY         ? "ok" : "missing",
+    STRIPE_PUBLISHABLE_KEY:    process.env.STRIPE_PUBLISHABLE_KEY    ? "ok" : "missing",
     SMTP_HOST:                 process.env.SMTP_HOST                 ? "ok" : "missing",
     TEXTMAGIC_USERNAME:        process.env.TEXTMAGIC_USERNAME        ? "ok" : "missing",
     // Optional — only needed for the AI assistant feature.

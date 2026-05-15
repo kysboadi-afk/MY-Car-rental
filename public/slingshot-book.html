@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Book a Slingshot rental with Sly Transportation Services LLC. Choose your package, select a date and time, upload your ID and pay securely online.">
+  <meta name="description" content="Book a Slingshot rental with Sly Transportation Services LLC. Choose your package, verify your identity with Stripe, and pay securely online.">
   <title>Sly Transportation Services LLC | Book a Slingshot</title>
   <link rel="icon" href="images/slingshot-logo.png" type="image/png">
   <link rel="stylesheet" href="style.css">
@@ -291,22 +291,8 @@
         </p>
       </div>
 
-      <!-- ID upload -->
       <div class="id-upload-section">
-        <p class="id-note">A valid government-issued ID is required to confirm your rental.</p>
-        <label for="slIdUpload">📎 Front of Driver's License / ID <span class="required">*</span></label>
-        <input type="file" id="slIdUpload" accept="image/*,application/pdf">
-        <div id="slFileInfo">
-          <span class="file-name">No file selected</span>
-          <span class="file-size"></span>
-        </div>
-        <label for="slIdBackUpload" style="margin-top:12px;display:block">📎 Back of Driver's License / ID <span class="required">*</span></label>
-        <input type="file" id="slIdBackUpload" accept="image/*,application/pdf">
-        <div id="slFileInfoBack">
-          <span class="file-name">No file selected</span>
-          <span class="file-size"></span>
-        </div>
-        <p class="id-accepted">Accepted: Any photo or image (JPG, PNG, HEIC, WebP, etc.) or PDF</p>
+        <p class="id-note">Identity verification is completed securely with Stripe before payment. No ID upload is required on this page.</p>
       </div>
 
       <!-- Rental Agreement -->
@@ -418,7 +404,7 @@
         <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
         <span>I have read and signed the Rental Agreement &amp; Terms</span>
       </label>
-      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation.</p>
+      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation and Stripe identity verification.</p>
     </section>
 
     <!-- Stripe payment form (shown after booking creation, outside bookingSection) -->

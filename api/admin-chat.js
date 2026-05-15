@@ -646,9 +646,14 @@ The following jobs run automatically without any admin or AI action required:
 
 Before the customer confirms payment, the booking form stores their documents in Supabase (\`pending_booking_docs\` table):
 - **Digital signature** (signed rental agreement)
-- **Government-issued ID** (photo upload, base64)
-- **Insurance document** (photo/PDF upload, if provided)
+- **Government-issued ID** (optional, but front/back must be provided together if included)
+- **Insurance document** (required when renter selects personal insurance)
 - **Insurance coverage choice** (Option A: renter's own insurance / Option B: Damage Protection Plan)
+
+Validation rules:
+- Insurance-only submissions are valid when personal insurance is selected.
+- ID-only submissions are valid only when both front and back are present.
+- Slingshot reservations use Stripe Identity verification before payment intent creation.
 
 The Stripe webhook retrieves these documents from \`pending_booking_docs\` and attaches them to the **owner's booking confirmation email** — so the owner always receives a complete record with all documents even if the browser fails to call the email endpoint directly. Once the owner email is sent, \`email_sent\` is set to \`true\` so the email is never sent twice.
 

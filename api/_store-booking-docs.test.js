@@ -93,3 +93,22 @@ test("store-booking-docs rejects oversized combined uploads", async () => {
   assert.equal(res._status, 413);
   assert.equal(res._body.code, "DOC_FILE_TOO_LARGE");
 });
+
+test("store-booking-docs accepts insurance-only payloads", async () => {
+  const res = makeRes();
+
+  await handler(makeReq({
+    bookingId: "bk_789",
+    insuranceCoverageChoice: "yes",
+    insuranceBase64: Buffer.from("insurance").toString("base64"),
+    insuranceFileName: "insurance.pdf",
+    insuranceMimeType: "application/pdf",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.ok, true);
+  assert.equal(upsertCalls.length, 1);
+  assert.equal(upsertCalls[0].id_base64, null);
+  assert.equal(upsertCalls[0].id_back_base64, null);
+  assert.equal(upsertCalls[0].insurance_filename, "insurance.pdf");
+});

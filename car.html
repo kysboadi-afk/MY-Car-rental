@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Book your rental vehicle with SLY Transportation Services. Select dates, upload ID, sign the agreement and pay securely online.">
+  <meta name="description" content="Book your rental vehicle with SLY Transportation Services. Select dates, verify coverage details, sign the agreement and pay securely online.">
   <title>SLY Transportation Services | Book a Vehicle</title>
   <link rel="icon" href="images/logo.jpg" type="image/jpeg">
   <link rel="stylesheet" href="style.css">
@@ -121,20 +121,7 @@
     </div>
 
     <div class="id-upload-section">
-      <p class="id-note" data-i18n="booking.idNote">A valid government-issued ID is required to confirm your rental.</p>
-      <label for="idUpload"><span data-i18n="booking.uploadIdFront">📎 Front of Driver's License / ID</span> <span class="required">*</span></label>
-      <input type="file" id="idUpload" accept="image/*,application/pdf">
-      <div id="fileInfo">
-        <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
-        <span class="file-size"></span>
-      </div>
-      <label for="idBackUpload" style="margin-top:12px;display:block"><span data-i18n="booking.uploadIdBack">📎 Back of Driver's License / ID</span> <span class="required">*</span></label>
-      <input type="file" id="idBackUpload" accept="image/*,application/pdf">
-      <div id="fileInfoBack">
-        <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
-        <span class="file-size"></span>
-      </div>
-      <p class="id-accepted" data-i18n="booking.accepted">Accepted: Any photo or image (JPG, PNG, HEIC, WebP, etc.) or PDF</p>
+      <p class="id-note">Identity verification is completed securely through Stripe before booking. No ID upload is required here.</p>
     </div>
 
     <div class="id-upload-section insurance-coverage-section">
@@ -341,7 +328,7 @@
     <p class="total"><span data-i18n="booking.subtotalLabel">Subtotal:</span> $<span id="subtotal">0</span></p>
     <p class="total tax-line" id="taxLine" style="display:none"><span data-i18n="booking.salesTaxLabel">Sales Tax:</span> $<span id="tax">0.00</span></p>
     <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote" data-i18n="booking.taxNote">(+ applicable sales tax)</span></p>
-    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name, email, and phone number, upload the front and back of your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name, email, and phone number, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
     <!-- Inline payment error — shown instead of alert() so Chrome cannot suppress it -->
     <div id="payError" role="alert" style="display:none"></div>
     <!-- Reserve-deposit button — shown by car.js for all vehicles; allows renter to pay only a
