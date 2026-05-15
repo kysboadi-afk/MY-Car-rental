@@ -3965,14 +3965,33 @@ function handleUnauthorizedApiResponse() {
 async function apiPost(path, body, signal = undefined) {
   if (window.DEMO_MODE) return getDemoResponse(path, body);
   const url = API_BASE + path;
-  const headers = { 'Content-Type': 'application/json' };
-  if (adminSecret) headers.Authorization = 'Bearer ' + adminSecret;
-  const resp = await fetch(url, {
+  const authHeaders = { 'Content-Type': 'application/json' };
+  const isAbsoluteApiBase = /^https?:\/\//i.test(API_BASE);
+  const isAuthFallbackSafePath = path === '/api/v2-dashboard';
+  if (adminSecret) authHeaders.Authorization = 'Bearer ' + adminSecret;
+  const requestBody = JSON.stringify(body);
+  const doPost = (headers) => fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body),
+    body: requestBody,
     signal,
   });
+  let resp;
+  try {
+    resp = await doPost(authHeaders);
+  } catch (err) {
+    // Cross-origin preflight can fail when an endpoint allows Content-Type but not
+    // Authorization. In that CORS-only failure mode, retry once without Authorization.
+    // Cross-origin preflight failures surface to fetch as TypeError (browser wording varies).
+    const corsLikeFetchFailure = err?.name === 'TypeError';
+    const shouldRetryWithoutAuth = !!adminSecret
+      && !!body?.secret
+      && isAbsoluteApiBase
+      && isAuthFallbackSafePath
+      && corsLikeFetchFailure;
+    if (!shouldRetryWithoutAuth) throw err;
+    resp = await doPost({ 'Content-Type': 'application/json' });
+  }
   let data = null;
   try { data = await resp.json(); } catch (err) {
     console.warn('apiPost: failed to parse JSON response (non-fatal):', err?.message || err);
