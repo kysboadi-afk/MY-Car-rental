@@ -165,7 +165,7 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
   }
   const combinedBytes = (otherSelectedBytes || 0) + file.size;
   if (combinedBytes > MAX_TOTAL_DOC_FILE_BYTES) {
-    return `Combined document size is too large (${_formatDocSizeMB(combinedBytes)} MB). Maximum allowed is ${_formatDocSizeMB(MAX_TOTAL_DOC_FILE_BYTES)} MB across ID front, ID back, and insurance.`;
+    return `Combined document size is too large (${_formatDocSizeMB(combinedBytes)} MB). Maximum allowed is ${_formatDocSizeMB(MAX_TOTAL_DOC_FILE_BYTES)} MB across uploaded documents.`;
   }
   return null;
 }
@@ -704,6 +704,7 @@ function isValidName(val) {
 // ----- File Upload Handling -----
 function resetFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
+  if (!fileInfoEl) return;
   fileInfoEl.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   fileInfoEl.querySelector(".file-size").textContent = "";
   fileInfoEl.classList.remove("has-file");
@@ -711,6 +712,7 @@ function resetFileInfo() {
 
 function resetBackFileInfo() {
   const el = document.getElementById("fileInfoBack");
+  if (!el) return;
   el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   el.querySelector(".file-size").textContent = "";
   el.classList.remove("has-file");
@@ -724,7 +726,7 @@ function resetInsuranceFileInfo() {
 }
 
 function clearInsuranceFile() {
-  insuranceUpload.value = "";
+  if (insuranceUpload) insuranceUpload.value = "";
   uploadedInsurance = null;
   resetInsuranceFileInfo();
 }
@@ -773,7 +775,7 @@ function _syncProtectionTierRadio(tier) {
   });
 }());
 
-idUpload.addEventListener("change", function(e) {
+if (idUpload) idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -817,7 +819,7 @@ idUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-idBackUpload.addEventListener("change", function(e) {
+if (idBackUpload) idBackUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -858,7 +860,7 @@ idBackUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-insuranceUpload.addEventListener("change", function(e) {
+if (insuranceUpload) insuranceUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -1892,10 +1894,10 @@ window.addEventListener("pageshow", function(e) {
   pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
   pickupTime.value = "";
   returnTime.value = "";
-  idUpload.value = "";
+  if (idUpload) idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
-  idBackUpload.value = "";
+  if (idBackUpload) idBackUpload.value = "";
   uploadedFileBack = null;
   resetBackFileInfo();
   clearInsuranceFile();
@@ -1964,7 +1966,7 @@ function updatePayBtn() {
   //   "yes"  → requires an uploaded file (own insurance)
   //   "no"   → requires a valid tier selection (basic/standard/premium)
   const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
-  const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
+  const insuranceReady = (insuranceCoverageChoice === "yes" && (((insuranceUpload && insuranceUpload.files.length > 0) || uploadedInsurance !== null))) ||
                           (insuranceCoverageChoice === "no" && tierReady);
   const nameValid = isValidName(nameVal);
   const phoneVal = document.getElementById("phone").value.trim();
@@ -1973,7 +1975,7 @@ function updatePayBtn() {
   // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = pickup.value && hasTimeWindow;
-  const ready = datesReady && agreeCheckbox.checked && (!smsConsentCheck || smsConsentCheck.checked) && (idUpload.files.length > 0 || uploadedFile !== null) && (idBackUpload.files.length > 0 || uploadedFileBack !== null) && insuranceReady && nameValid && emailVal && phoneVal;
+  const ready = datesReady && agreeCheckbox.checked && (!smsConsentCheck || smsConsentCheck.checked) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
@@ -2131,12 +2133,8 @@ stripeBtn.addEventListener("click", async () => {
     });
   }
 
-  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
-  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
   if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
-    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, 0);
     if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
   }
 
@@ -2144,48 +2142,6 @@ stripeBtn.addEventListener("click", async () => {
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
   const _reserveBtnLoading = document.getElementById("reserveBtn");
   if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
-
-  // Pre-encode the ID file so it's ready when the user submits payment
-  let idBase64 = null;
-  let idFileName = null;
-  let idMimeType = null;
-  if (uploadedFile) {
-    try {
-      const encodedFrontId = await encodeUploadFile(uploadedFile, "ID front");
-      idBase64 = encodedFrontId.base64;
-      idFileName = encodedFrontId.fileName;
-      idMimeType = encodedFrontId.mimeType;
-    } catch (err) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      const reserveBtn = document.getElementById("reserveBtn");
-      if (reserveBtn) reserveBtn.disabled = false;
-      _pendingPaymentMode = null;
-      showPayError("Could not read your ID file. Please try re-uploading it and try again.");
-      return;
-    }
-  }
-
-  // Pre-encode the back of ID file
-  let idBackBase64 = null;
-  let idBackFileName = null;
-  let idBackMimeType = null;
-  if (uploadedFileBack) {
-    try {
-      const encodedBackId = await encodeUploadFile(uploadedFileBack, "ID back");
-      idBackBase64 = encodedBackId.base64;
-      idBackFileName = encodedBackId.fileName;
-      idBackMimeType = encodedBackId.mimeType;
-    } catch (err) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      const reserveBtn = document.getElementById("reserveBtn");
-      if (reserveBtn) reserveBtn.disabled = false;
-      _pendingPaymentMode = null;
-      showPayError("Could not read the back of your ID file. Please try re-uploading it and try again.");
-      return;
-    }
-  }
 
   // Pre-encode the insurance file
   let insuranceBase64 = null;
@@ -2221,9 +2177,6 @@ stripeBtn.addEventListener("click", async () => {
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
-        // Pass file names so the server can enforce upload requirements as a server-side gate.
-        idFileName: idFileName || null,
-        idBackFileName: idBackFileName || null,
         insuranceFileName: insuranceCoverageChoice === "yes" ? (insuranceFileName || null) : null,
         paymentMode,
         adminOverride: ADMIN_OVERRIDE,
@@ -2330,10 +2283,6 @@ stripeBtn.addEventListener("click", async () => {
           pricePerMonthly: carData.monthly || null,
           deposit: carData.deposit || 0,
           days: currentDayCount,
-          idFileName,
-          idMimeType,
-          idBackFileName,
-          idBackMimeType,
           insuranceFileName,
           insuranceMimeType,
           insuranceCoverageChoice,
@@ -2343,7 +2292,7 @@ stripeBtn.addEventListener("click", async () => {
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
 
-        if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
+        if (insuranceBase64 && insuranceFileName) {
           try {
             await new Promise((resolve) => {
               const idbReq = indexedDB.open("slyRidesDB", 1);
@@ -2352,7 +2301,7 @@ stripeBtn.addEventListener("click", async () => {
                 const db = e.target.result;
                 try {
                   const tx = db.transaction("files", "readwrite");
-                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+                  tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
                   tx.oncomplete = () => { db.close(); resolve(); };
                   tx.onerror = () => { db.close(); resolve(); };
                 } catch (idbErr) { db.close(); resolve(); }
@@ -2360,24 +2309,18 @@ stripeBtn.addEventListener("click", async () => {
               idbReq.onerror = () => resolve();
             });
           } catch (idbErr) {
-            console.warn("Could not save ID to IndexedDB:", idbErr);
+            console.warn("Could not save documents to IndexedDB:", idbErr);
           }
         }
 
         // Upload booking docs server-side so the Stripe webhook can send the
-        // owner the full email (agreement PDF + ID + insurance) reliably,
+        // owner the full email (agreement PDF + uploaded docs) reliably,
         // even if the customer's browser does not reach success.html.
-        if (pendingBookingId) {
+        if (pendingBookingId && insuranceCoverageChoice === "yes" && insuranceBase64 && insuranceFileName) {
           try {
             await storeBookingDocsOrThrow({
               bookingId: pendingBookingId,
               signature: agreementSignature || null,
-              idBase64: idBase64 || null,
-              idFileName: idFileName || null,
-              idMimeType: idMimeType || null,
-              idBackBase64: idBackBase64 || null,
-              idBackFileName: idBackFileName || null,
-              idBackMimeType: idBackMimeType || null,
               insuranceBase64: insuranceBase64 || null,
               insuranceFileName: insuranceFileName || null,
               insuranceMimeType: insuranceMimeType || null,
@@ -2386,7 +2329,7 @@ stripeBtn.addEventListener("click", async () => {
           } catch (e) {
             console.warn("Could not upload booking docs:", e);
             if (shouldBlockPaymentForDocFailure(e)) {
-              const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
+              const msg = "We could not securely save your uploaded documents. Please check your uploads and try again.";
               await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_request_button", preservePendingBookingId: true });
               showPayError(msg);
               ev.complete("fail");
@@ -2501,10 +2444,6 @@ stripeBtn.addEventListener("click", async () => {
         pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
-        idFileName,
-        idMimeType,
-        idBackFileName,
-        idBackMimeType,
         insuranceFileName,
         insuranceMimeType,
         insuranceCoverageChoice,
@@ -2512,18 +2451,18 @@ stripeBtn.addEventListener("click", async () => {
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         signature: agreementSignature || null,
       };
-      // Store booking metadata in sessionStorage and the large ID binary in
+      // Store booking metadata in sessionStorage and large document data in
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
+      if (insuranceBase64 && insuranceFileName) {
         const idbReq = indexedDB.open("slyRidesDB", 1);
         idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
         idbReq.onsuccess = e => {
           const db = e.target.result;
           try {
             const tx = db.transaction("files", "readwrite");
-            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+            tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
             tx.oncomplete = () => db.close();
             tx.onerror = () => db.close();
           } catch (idbErr) { db.close(); }
@@ -2532,19 +2471,13 @@ stripeBtn.addEventListener("click", async () => {
       }
 
       // Upload booking docs server-side so the Stripe webhook can send the
-      // owner the full email (agreement PDF + ID + insurance) reliably,
+      // owner the full email (agreement PDF + uploaded docs) reliably,
       // even if the customer's browser does not reach success.html.
-        if (pendingBookingId) {
+        if (pendingBookingId && insuranceCoverageChoice === "yes" && insuranceBase64 && insuranceFileName) {
           try {
             await storeBookingDocsOrThrow({
             bookingId: pendingBookingId,
             signature: agreementSignature || null,
-            idBase64: idBase64 || null,
-            idFileName: idFileName || null,
-            idMimeType: idMimeType || null,
-            idBackBase64: idBackBase64 || null,
-            idBackFileName: idBackFileName || null,
-            idBackMimeType: idBackMimeType || null,
             insuranceBase64: insuranceBase64 || null,
             insuranceFileName: insuranceFileName || null,
             insuranceMimeType: insuranceMimeType || null,
@@ -2554,7 +2487,7 @@ stripeBtn.addEventListener("click", async () => {
             console.warn("store-booking-docs upload failed:", docsErr);
             if (shouldBlockPaymentForDocFailure(docsErr)) {
               await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_element", preservePendingBookingId: true });
-              showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+              showPayError("We could not securely save your uploaded documents. Please check your uploads and try again.");
               if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
               submitBtn.disabled = false;
               submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;

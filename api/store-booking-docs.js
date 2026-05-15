@@ -11,8 +11,8 @@
 // POST /api/store-booking-docs
 // Body: {
 //   bookingId, signature,
-//   idBase64, idFileName, idMimeType,
-//   idBackBase64, idBackFileName, idBackMimeType,
+//   idBase64, idFileName, idMimeType,            // optional (must include both front/back together)
+//   idBackBase64, idBackFileName, idBackMimeType,// optional (must include both front/back together)
 //   insuranceBase64, insuranceFileName, insuranceMimeType,
 //   insuranceCoverageChoice
 // }
@@ -67,11 +67,10 @@ export default async function handler(req, res) {
 
   const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
   const trimmedIdBackFileName = typeof idBackFileName === "string" ? idBackFileName.trim() : "";
-  if (!trimmedIdFileName || !hasBase64Payload(idBase64)) {
-    return res.status(400).json({ error: "The front of your driver's license or ID is required." });
-  }
-  if (!trimmedIdBackFileName || !hasBase64Payload(idBackBase64)) {
-    return res.status(400).json({ error: "The back of your driver's license or ID is required." });
+  const hasIdFront = !!trimmedIdFileName && hasBase64Payload(idBase64);
+  const hasIdBack = !!trimmedIdBackFileName && hasBase64Payload(idBackBase64);
+  if (hasIdFront !== hasIdBack) {
+    return res.status(400).json({ error: "Please provide both front and back ID files, or omit both." });
   }
   if (insuranceCoverageChoice === "yes") {
     const trimmedInsuranceFileName = typeof insuranceFileName === "string" ? insuranceFileName.trim() : "";
@@ -79,12 +78,16 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Insurance file and payload are required when personal insurance is selected." });
     }
   }
+  if (!hasIdFront && !hasIdBack && insuranceCoverageChoice !== "yes") {
+    return res.status(400).json({ error: "No booking documents were provided." });
+  }
 
-  const docs = [
-    { key: "idFront", base64: idBase64, fileName: trimmedIdFileName, mimeType: idMimeType },
-    { key: "idBack", base64: idBackBase64, fileName: trimmedIdBackFileName, mimeType: idBackMimeType },
-    { key: "insurance", base64: insuranceBase64, fileName: insuranceFileName, mimeType: insuranceMimeType },
-  ];
+  const docs = [];
+  if (hasIdFront) docs.push({ key: "idFront", base64: idBase64, fileName: trimmedIdFileName, mimeType: idMimeType });
+  if (hasIdBack) docs.push({ key: "idBack", base64: idBackBase64, fileName: trimmedIdBackFileName, mimeType: idBackMimeType });
+  if (insuranceCoverageChoice === "yes") {
+    docs.push({ key: "insurance", base64: insuranceBase64, fileName: insuranceFileName, mimeType: insuranceMimeType });
+  }
   let totalBytes = 0;
   for (const doc of docs) {
     const bytes = estimateBase64Bytes(doc.base64);
@@ -105,15 +108,15 @@ export default async function handler(req, res) {
   }
 
   const normalizedDocs = {
-    idBase64: normalizeBase64Payload(idBase64) || null,
-    idFileName: trimmedIdFileName || null,
-    idMimeType: normalizeDocumentMimeType(idMimeType, trimmedIdFileName, "application/octet-stream"),
-    idBackBase64: normalizeBase64Payload(idBackBase64) || null,
-    idBackFileName: trimmedIdBackFileName || null,
-    idBackMimeType: normalizeDocumentMimeType(idBackMimeType, trimmedIdBackFileName, "application/octet-stream"),
-    insuranceBase64: normalizeBase64Payload(insuranceBase64) || null,
-    insuranceFileName: typeof insuranceFileName === "string" ? insuranceFileName.trim() || null : null,
-    insuranceMimeType: normalizeDocumentMimeType(insuranceMimeType, insuranceFileName, "application/octet-stream"),
+    idBase64: hasIdFront ? (normalizeBase64Payload(idBase64) || null) : null,
+    idFileName: hasIdFront ? (trimmedIdFileName || null) : null,
+    idMimeType: hasIdFront ? normalizeDocumentMimeType(idMimeType, trimmedIdFileName, "application/octet-stream") : null,
+    idBackBase64: hasIdBack ? (normalizeBase64Payload(idBackBase64) || null) : null,
+    idBackFileName: hasIdBack ? (trimmedIdBackFileName || null) : null,
+    idBackMimeType: hasIdBack ? normalizeDocumentMimeType(idBackMimeType, trimmedIdBackFileName, "application/octet-stream") : null,
+    insuranceBase64: insuranceCoverageChoice === "yes" ? (normalizeBase64Payload(insuranceBase64) || null) : null,
+    insuranceFileName: insuranceCoverageChoice === "yes" ? (typeof insuranceFileName === "string" ? insuranceFileName.trim() || null : null) : null,
+    insuranceMimeType: insuranceCoverageChoice === "yes" ? normalizeDocumentMimeType(insuranceMimeType, insuranceFileName, "application/octet-stream") : null,
   };
 
   const diagnostics = buildUploadDiagnostics(req, [

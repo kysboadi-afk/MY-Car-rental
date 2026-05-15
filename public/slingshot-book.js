@@ -1,7 +1,7 @@
 // slingshot-book.js
 // Booking page JavaScript for slingshot hourly-package rentals.
-// Handles: package selection, LA time slot generation, ID upload, Stripe
-// payment, and the "Extend Rental" flow (?extend=1).
+// Handles: package selection, Stripe Identity verification, Stripe payment,
+// and the "Extend Rental" flow (?extend=1).
 
 "use strict";
 
@@ -29,13 +29,12 @@ var isExtendMode = /^(true|1)$/i.test(pageParams.get("extend") || "");
 // ----- State -----
 var selectedPackage = null; // "2hr" | "3hr" | "6hr" | "24hr"
 var extSelectedPackage = null;
-var uploadedFileFront = null;
-var uploadedFileBack  = null;
 var pendingBookingId       = null;  // returned by create-slingshot-booking
 var paymentFormSubmitted   = false; // set to true once the Pay button is clicked
 var carData = null;                 // vehicle data from API
 var agreementSigned = false;        // true once renter signs the rental agreement
 var agreementSignature = "";        // typed name used as electronic signature
+var verifiedIdentitySessionId = null;
 
 // ----- Helpers -----
 function escHtml(str) {
@@ -56,63 +55,6 @@ function showPayError(msg) {
 function clearPayError() {
   var el = document.getElementById("payError");
   if (el) { el.textContent = ""; el.style.display = "none"; }
-}
-
-async function storeBookingDocsOrThrow(payload) {
-  var maxAttempts = 3;
-  for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    var controller = new AbortController();
-    var timeoutId = setTimeout(function() { controller.abort(); }, 15000);
-    try {
-      var res = await fetch(API_BASE + "/api/store-booking-docs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      var data = null;
-      try { data = await res.json(); } catch (_) {}
-      if (res.ok && data && data.ok === true && data.stored === true) {
-        return;
-      }
-      var err = new Error((data && data.error) || ("Document upload failed (HTTP " + res.status + ")."));
-      err.status = res.status;
-      err.responsePayload = data;
-      throw err;
-    } catch (err) {
-      console.warn("storeBookingDocsOrThrow attempt failed:", {
-        attempt: attempt,
-        maxAttempts: maxAttempts,
-        bookingId: payload && payload.bookingId,
-        error: err && err.message ? err.message : String(err),
-        status: err && err.status ? err.status : null,
-        responsePayload: err && err.responsePayload ? err.responsePayload : null,
-        userAgent: navigator.userAgent,
-      });
-      if (attempt >= maxAttempts) {
-        throw err;
-      }
-      await new Promise(function(resolve) { setTimeout(resolve, attempt * 400); });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-}
-
-/**
- * Only validation-size failures block checkout immediately.
- * Other failures remain recoverable via the success-page/IndexedDB fallback.
- */
-function shouldBlockPaymentForDocFailure(error) {
-  var status = error && typeof error.status === "number" ? error.status : 0;
-  return status === 400 || status === 413;
-}
-
-function reportNonBlockingDocFailure(error) {
-  console.warn("Proceeding without pre-payment document persistence; success-page fallback will be used.", {
-    error: error && error.message ? error.message : String(error),
-    status: error && error.status ? error.status : null,
-  });
 }
 
 /**
@@ -423,14 +365,12 @@ function updateBookBtn() {
   var nameOk   = !!(nameInput && nameInput.value.trim());
   var emailOk  = !!(emailInput && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim()));
   var phoneOk  = !!(phoneInput && phoneInput.value.trim().length >= 7);
-  var idFront  = !!uploadedFileFront;
-  var idBack   = !!uploadedFileBack;
   var agreeEl  = document.getElementById("slAgree");
   var agreeOk  = !!(agreeEl && agreeEl.checked);
   var smsEl    = document.getElementById("smsConsentCheck");
   var smsOk    = !smsEl || smsEl.checked;
 
-  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && idFront && idBack && agreeOk && smsOk;
+  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && agreeOk && smsOk;
   btn.disabled = !ready;
   if (hintEl) hintEl.style.display = ready ? "none" : "";
 }
@@ -448,85 +388,41 @@ function initPackagePicker(gridId, onSelect) {
   });
 }
 
-// ----- File upload handlers -----
-function initFileUpload(inputId, infoId, onFile) {
-  var input = document.getElementById(inputId);
-  var info  = document.getElementById(infoId);
-  if (!input) return;
-
-  input.addEventListener("change", function() {
-    var file = input.files && input.files[0];
-    if (!file) {
-      onFile(null);
-      if (info) {
-        info.querySelector(".file-name").textContent = "No file selected";
-        info.querySelector(".file-size").textContent = "";
-      }
-      return;
-    }
-    // Accept any image format (covers HEIC/HEIF from iPhone, WebP, JPEG, PNG, etc.)
-    // plus PDF. Fall back to extension check for browsers that report empty MIME types.
-    var allowedExts = /\.(jpe?g|jpg|png|pdf|heic|heif|webp|bmp|gif|tiff?|avif)$/i;
-    var validType = file.type.startsWith("image/") || file.type === "application/pdf"
-      || (file.type === "" && allowedExts.test(file.name));
-    if (!validType) {
-      alert("Please upload a photo or image of your ID (JPG, PNG, HEIC, WebP, etc.) or a PDF.");
-      input.value = "";
-      onFile(null);
-      if (info) {
-        info.querySelector(".file-name").textContent = "No file selected";
-        info.querySelector(".file-size").textContent = "";
-      }
-      updateBookBtn();
-      return;
-    }
-    onFile(file);
-    if (info) {
-      info.querySelector(".file-name").textContent = file.name;
-      var kb = (file.size / 1024).toFixed(1);
-      info.querySelector(".file-size").textContent = kb + " KB";
-    }
-    updateBookBtn();
-  });
-}
-
-// ----- Encode file to base64 -----
-function encodeFile(file) {
-  return new Promise(function(resolve, reject) {
-    if (!file) { resolve(null); return; }
-    var reader = new FileReader();
-    reader.onload = function(e) { resolve(e.target.result.split(",")[1]); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-async function encodeUploadFile(file, label) {
-  if (!file) {
-    return { base64: null, fileName: null, mimeType: null };
-  }
-  try {
-    var base64 = await encodeFile(file);
-    return {
-      base64: base64,
-      fileName: file.name,
-      mimeType: file.type || "",
-    };
-  } catch (err) {
-    console.error(label + " encoding error:", {
-      error: err && err.message ? err.message : String(err),
-      fileName: file.name,
-      mimeType: file.type || "",
-      fileSize: file.size,
-      userAgent: navigator.userAgent,
-    });
-    throw err;
-  }
-}
-
 // =====================================================================
 // REGULAR BOOKING FLOW
 // =====================================================================
+
+async function ensureSlingshotIdentityVerified(payload) {
+  if (verifiedIdentitySessionId) return verifiedIdentitySessionId;
+
+  var createResp = await fetch(API_BASE + "/api/create-slingshot-booking", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      vehicleId: payload.vehicleId,
+      name: payload.name,
+      email: payload.email,
+      phone: payload.phone,
+      identityOnly: true,
+    }),
+  });
+  var createData = await createResp.json();
+  if (!createResp.ok) {
+    throw new Error((createData && createData.error) || "Could not start identity verification.");
+  }
+  if (!createData.identityClientSecret || !createData.publishableKey || !createData.verificationSessionId) {
+    throw new Error("Identity verification setup is incomplete. Please try again.");
+  }
+
+  var stripe = Stripe(createData.publishableKey);
+  var verifyResult = await stripe.verifyIdentity(createData.identityClientSecret);
+  if (verifyResult && verifyResult.error) {
+    throw new Error(verifyResult.error.message || "Identity verification was not completed.");
+  }
+
+  verifiedIdentitySessionId = createData.verificationSessionId;
+  return verifiedIdentitySessionId;
+}
 
 async function launchSlingshotPayment() {
   clearPayError();
@@ -549,8 +445,6 @@ async function launchSlingshotPayment() {
   if (!name)  { showPayError("Full name is required."); return; }
   if (!email) { showPayError("Email address is required."); return; }
   if (!phone) { showPayError("Phone number is required."); return; }
-  if (!uploadedFileFront) { showPayError("Please upload the front of your ID."); return; }
-  if (!uploadedFileBack)  { showPayError("Please upload the back of your ID."); return; }
   if (!agreementSigned)   { showPayError("Please read and sign the Rental Agreement before booking."); return; }
   var agreeEl = document.getElementById("slAgree");
   if (!agreeEl || !agreeEl.checked) { showPayError("Please check the box to confirm you have signed the Rental Agreement."); return; }
@@ -558,15 +452,12 @@ async function launchSlingshotPayment() {
   if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Loading payment…"; }
 
   try {
-    // Encode ID files
-    var encodedFrontId = await encodeUploadFile(uploadedFileFront, "Slingshot ID front");
-    var encodedBackId = await encodeUploadFile(uploadedFileBack, "Slingshot ID back");
-    var idBase64      = encodedFrontId.base64;
-    var idBackBase64  = encodedBackId.base64;
-    var idFileName    = encodedFrontId.fileName;
-    var idMimeType    = encodedFrontId.mimeType;
-    var idBackFileName = encodedBackId.fileName;
-    var idBackMimeType = encodedBackId.mimeType;
+    var identitySessionId = await ensureSlingshotIdentityVerified({
+      vehicleId: vehicleId,
+      name: name,
+      email: email,
+      phone: phone,
+    });
 
     // Call create-slingshot-booking
     var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
@@ -580,8 +471,7 @@ async function launchSlingshotPayment() {
         name,
         email,
         phone,
-        idFileName,
-        idBackFileName,
+        identitySessionId,
       }),
     });
 
@@ -630,64 +520,11 @@ async function launchSlingshotPayment() {
       packageLabel:       pkg.label,
       packagePrice:       pkg.price,
       depositAmount:      SLINGSHOT_DEPOSIT,
-      idFileName,
-      idMimeType,
-      idBackFileName,
-      idBackMimeType,
+      identitySessionId:  identitySessionId || null,
       agreementSignature: agreementSignature || null,
     };
 
     sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
-
-    // Save ID files to IndexedDB for success.html attachment
-    if (idBase64 || idBackBase64) {
-      try {
-        await new Promise(function(resolve) {
-          var req = indexedDB.open("slyRidesDB", 1);
-          req.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
-          req.onsuccess = function(e) {
-            var db = e.target.result;
-            try {
-              var tx = db.transaction("files", "readwrite");
-              tx.objectStore("files").put(
-                { idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType },
-                "pendingId"
-              );
-              tx.oncomplete = function() { db.close(); resolve(); };
-              tx.onerror    = function() { db.close(); resolve(); };
-            } catch (idbErr) { db.close(); resolve(); }
-          };
-          req.onerror = function() { resolve(); };
-        });
-      } catch (idbErr) {
-        console.warn("slingshot-book: could not save ID to IndexedDB:", idbErr);
-      }
-    }
-
-    // Upload docs server-side (best-effort)
-    if (pendingBookingId) {
-      try {
-        await storeBookingDocsOrThrow({
-          bookingId:          pendingBookingId,
-          idBase64:           idBase64       || null,
-          idFileName:         idFileName     || null,
-          idMimeType:         idMimeType     || null,
-          idBackBase64:       idBackBase64   || null,
-          idBackFileName:     idBackFileName || null,
-          idBackMimeType:     idBackMimeType || null,
-          insuranceCoverageChoice: null,
-        });
-      } catch (docsErr) {
-        console.warn("slingshot-book: could not upload docs:", docsErr);
-        if (shouldBlockPaymentForDocFailure(docsErr)) {
-          await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "slingshot_doc_upload", preservePendingBookingId: true });
-          showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
-          if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
-          return;
-        }
-        reportNonBlockingDocFailure(docsErr);
-      }
-    }
 
     // Initialize Stripe and show payment form
     var stripe   = Stripe(publishableKey);
@@ -977,17 +814,10 @@ function initBookingForm() {
   // Contact inputs
   ["slName", "slEmail", "slPhone"].forEach(function(id) {
     var el = document.getElementById(id);
-    if (el) el.addEventListener("input", updateBookBtn);
-  });
-
-  // ID upload
-  initFileUpload("slIdUpload", "slFileInfo", function(file) {
-    uploadedFileFront = file;
-    updateBookBtn();
-  });
-  initFileUpload("slIdBackUpload", "slFileInfoBack", function(file) {
-    uploadedFileBack = file;
-    updateBookBtn();
+    if (el) el.addEventListener("input", function() {
+      verifiedIdentitySessionId = null;
+      updateBookBtn();
+    });
   });
 
   // Rental agreement signing
