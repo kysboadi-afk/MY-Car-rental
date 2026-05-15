@@ -1,4 +1,17 @@
 {
+  "slingshot": {
+    "vehicle_id": "slingshot",
+    "vehicle_name": "Slingshot R",
+    "type": "slingshot",
+    "category": "slingshot",
+    "vehicle_year": null,
+    "purchase_date": "",
+    "purchase_price": 0,
+    "status": "active",
+    "cover_image": "images/slingshot.jpg",
+    "gallery_images": ["images/slingshot-2.jpg"],
+    "scarcity_text": "🏎️ Limited availability — book now"
+  },
   "camry": {
     "vehicle_id": "camry",
     "vehicle_name": "Camry 2012",
