@@ -65,6 +65,28 @@ function deriveCategory(category, type, vehicleId, vehicleName) {
   return "car";
 }
 
+function isSlingshotScope(scope) {
+  return String(scope || "").toLowerCase().trim() === "slingshot";
+}
+
+function enforceSlingshotCategoryInvariant({ existingData = null, updates = null, vehicleId = "", scope = "" } = {}) {
+  const next = { ...(updates || {}) };
+  const existingType = existingData?.type || existingData?.vehicle_type || "";
+  const existingName = existingData?.vehicle_name || "";
+  const updatesType = next.type || "";
+  const updatesName = next.vehicle_name || existingName;
+
+  const existingLooksSlingshot =
+    deriveCategory(existingData?.category || "", existingType, vehicleId, existingName) === "slingshot";
+  const updateLooksSlingshot =
+    deriveCategory(next.category || "", updatesType, vehicleId, updatesName) === "slingshot";
+
+  if (isSlingshotScope(scope) || existingLooksSlingshot || updateLooksSlingshot) {
+    next.category = "slingshot";
+  }
+  return next;
+}
+
 // Normalize cover_image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
 // e.g. "../images/car2.jpg" → "/images/car2.jpg"
@@ -391,6 +413,12 @@ export default async function handler(req, res) {
         }
       }
 
+      let normalizedUpdates = enforceSlingshotCategoryInvariant({
+        updates: safeUpdates,
+        vehicleId,
+        scope: body.scope,
+      });
+
       if (supabase) {
         // Fetch existing row
         const { data: existing, error: fetchErr } = await supabase
@@ -400,8 +428,15 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (!fetchErr && existing) {
+          normalizedUpdates = enforceSlingshotCategoryInvariant({
+            existingData: existing.data || {},
+            updates: normalizedUpdates,
+            vehicleId,
+            scope: body.scope,
+          });
+
           // Separate column-level fields from JSONB fields
-          const { bouncie_device_id: newImei, ...jsonbUpdates } = safeUpdates;
+          const { bouncie_device_id: newImei, ...jsonbUpdates } = normalizedUpdates;
           const updatedData = { ...existing.data, ...jsonbUpdates };
 
           // Build the upsert payload — include bouncie_device_id column if provided
@@ -410,7 +445,7 @@ export default async function handler(req, res) {
             data:        updatedData,
             updated_at:  new Date().toISOString(),
           };
-          if (Object.prototype.hasOwnProperty.call(safeUpdates, "bouncie_device_id")) {
+          if (Object.prototype.hasOwnProperty.call(normalizedUpdates, "bouncie_device_id")) {
             upsertPayload.bouncie_device_id = newImei;
             // Automatically enable/disable tracking when IMEI is set/cleared
             upsertPayload.is_tracked = newImei !== null;
@@ -469,16 +504,22 @@ export default async function handler(req, res) {
       if (!ghVehicles[vehicleId]) {
         return res.status(404).json({ error: "Vehicle not found" });
       }
+      normalizedUpdates = enforceSlingshotCategoryInvariant({
+        existingData: ghVehicles[vehicleId] || {},
+        updates: normalizedUpdates,
+        vehicleId,
+        scope: body.scope,
+      });
       let updatedVehicle;
       await updateJsonFileWithRetry({
         load:    loadVehicles,
         apply:   (data) => {
           if (!data[vehicleId]) return;
-          data[vehicleId] = { ...data[vehicleId], ...safeUpdates };
+          data[vehicleId] = { ...data[vehicleId], ...normalizedUpdates };
           updatedVehicle = data[vehicleId];
         },
         save:    saveVehicles,
-        message: `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+        message: `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(normalizedUpdates))}`,
       });
       return res.status(200).json({ success: true, vehicle: updatedVehicle });
     }
@@ -505,7 +546,9 @@ export default async function handler(req, res) {
       if (rawCategory && !ALLOWED_CATEGORIES.includes(rawCategory)) {
         return res.status(400).json({ error: `category must be one of: ${ALLOWED_CATEGORIES.join(", ")}` });
       }
-      const vehicleCategory = rawCategory || deriveCategory("", vehicleType, vehicleId, vehicleName);
+      const vehicleCategory = isSlingshotScope(body.scope)
+        ? "slingshot"
+        : (rawCategory || deriveCategory("", vehicleType, vehicleId, vehicleName));
 
       const vehicleStatus = status || "active";
       if (!ALLOWED_STATUSES.includes(vehicleStatus)) {

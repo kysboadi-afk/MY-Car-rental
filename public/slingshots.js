@@ -191,7 +191,7 @@ async function loadSlingshotFleet() {
 
   try {
     const [vRes, pRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=slingshot"),
       fetch(API_BASE + "/api/public-pricing"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
@@ -200,9 +200,12 @@ async function loadSlingshotFleet() {
     console.warn("Could not load slingshot fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    v.type === "slingshot" && (!v.status || v.status === "active")
-  );
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+    const category = String(v.category || "").toLowerCase();
+    const type = String(v.type || "").toLowerCase();
+    const isSlingshot = category === "slingshot" || type === "slingshot";
+    return isSlingshot && (!v.status || v.status === "active");
+  });
 
   if (!active.length) {
     if (!grid.querySelector(".car-card")) {

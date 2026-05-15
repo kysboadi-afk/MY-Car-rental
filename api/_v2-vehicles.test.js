@@ -647,3 +647,128 @@ test("create: defaults type to economy and status to active when omitted", async
   assert.equal(insertedPayload.data.status, "active");
   setSecret(REAL_ADMIN_SECRET);
 });
+
+test("create: scope=slingshot forces category to slingshot", async () => {
+  setSecret("testSecret");
+  let insertedPayload = null;
+  const insertChain = {
+    select: () => insertChain,
+    single: () => Promise.resolve({
+      data: { data: { vehicle_id: "weekendride", vehicle_name: "Weekend Ride", type: "economy", category: "slingshot", status: "active" } },
+      error: null,
+    }),
+  };
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+      insert: (payload) => { insertedPayload = payload; return insertChain; },
+    }),
+  };
+
+  const req = makeReq({ body: {
+    secret: "testSecret",
+    action: "create",
+    scope: "slingshot",
+    vehicleId: "weekendride",
+    vehicleName: "Weekend Ride",
+    type: "economy",
+    status: "active",
+  }});
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 201);
+  assert.equal(insertedPayload.data.category, "slingshot");
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("update: preserves slingshot category and blocks downgrade to car", async () => {
+  setSecret("testSecret");
+  let upsertPayload = null;
+  const existingData = {
+    vehicle_id: "slingshot-red",
+    vehicle_name: "Slingshot Red",
+    type: "slingshot",
+    category: "slingshot",
+    status: "active",
+  };
+  const selectChain = {
+    select: () => selectChain,
+    eq: () => selectChain,
+    maybeSingle: () => Promise.resolve({ data: { data: existingData }, error: null }),
+  };
+  const upsertChain = {
+    select: () => upsertChain,
+    single: () => Promise.resolve({
+      data: { data: { ...existingData, category: "slingshot", type: "economy" }, bouncie_device_id: null },
+      error: null,
+    }),
+  };
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => selectChain,
+      eq: () => selectChain,
+      maybeSingle: () => selectChain.maybeSingle(),
+      upsert: (payload) => { upsertPayload = payload; return upsertChain; },
+    }),
+  };
+
+  const req = makeReq({ body: {
+    secret: "testSecret",
+    action: "update",
+    vehicleId: "slingshot-red",
+    updates: { type: "economy", category: "car" },
+  }});
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(upsertPayload.data.category, "slingshot");
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("update: scope=slingshot forces category to slingshot", async () => {
+  setSecret("testSecret");
+  let upsertPayload = null;
+  const existingData = {
+    vehicle_id: "weekendride",
+    vehicle_name: "Weekend Ride",
+    type: "economy",
+    category: "car",
+    status: "active",
+  };
+  const selectChain = {
+    select: () => selectChain,
+    eq: () => selectChain,
+    maybeSingle: () => Promise.resolve({ data: { data: existingData }, error: null }),
+  };
+  const upsertChain = {
+    select: () => upsertChain,
+    single: () => Promise.resolve({
+      data: { data: { ...existingData, category: "slingshot" }, bouncie_device_id: null },
+      error: null,
+    }),
+  };
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => selectChain,
+      eq: () => selectChain,
+      maybeSingle: () => selectChain.maybeSingle(),
+      upsert: (payload) => { upsertPayload = payload; return upsertChain; },
+    }),
+  };
+
+  const req = makeReq({ body: {
+    secret: "testSecret",
+    action: "update",
+    scope: "slingshot",
+    vehicleId: "weekendride",
+    updates: { type: "economy", category: "car" },
+  }});
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(upsertPayload.data.category, "slingshot");
+  setSecret(REAL_ADMIN_SECRET);
+});
