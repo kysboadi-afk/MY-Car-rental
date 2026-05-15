@@ -36,8 +36,10 @@ export async function upsertBookingPrewrite(sb, row, options = {}) {
   const context = options.context || "BOOKING_PREWRITE";
   const fallbacksApplied = [];
   let attemptedRow = { ...row };
+  let attempts = 0;
 
-  while (true) {
+  while (attempts < 3) {
+    attempts += 1;
     let query = sb.from("bookings").upsert(attemptedRow, { onConflict: "booking_ref" });
     if (select) query = query.select(select);
     const result = await query;
@@ -61,4 +63,11 @@ export async function upsertBookingPrewrite(sb, row, options = {}) {
 
     return { ...result, attemptedRow, fallbacksApplied };
   }
+
+  return {
+    data: null,
+    error: new Error(`${context} exhausted compatibility retries`),
+    attemptedRow,
+    fallbacksApplied,
+  };
 }

@@ -15,17 +15,11 @@ function makeSupabaseStub(steps) {
             calls.push({ payload: { ...payload }, options });
             const step = steps[calls.length - 1] || {};
             const response = step.response || { data: [{ booking_ref: payload.booking_ref }], error: null };
-            return {
-              then(resolve, reject) {
-                return Promise.resolve(response).then(resolve, reject);
-              },
-              catch(reject) {
-                return Promise.resolve(response).catch(reject);
-              },
-              select() {
-                return Promise.resolve(response);
-              },
+            const query = Promise.resolve(response);
+            query.select = function select() {
+              return Promise.resolve(response);
             };
+            return query;
           },
         };
       },
