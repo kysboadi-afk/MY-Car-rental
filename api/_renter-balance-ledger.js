@@ -690,19 +690,24 @@ export async function getLedgerRemainingBalance(sb, { bookingId } = {}) {
 //   current (0–29 d), 30-59, 60-89, 90+
 export async function getLedgerOverdueBookings(sb, { cutoffDays = 0, agingBuckets = true, limit = 200 } = {}) {
   const safeLimit = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  // Scan a wider due-date window than the response limit so recently added
+  // overdue entries are not dropped when there is a large historical backlog.
+  // Keep a hard cap to avoid unbounded scans.
+  const dueScanLimit = Math.min(Math.max(safeLimit * 50, 5000), 10000);
 
   // Step 1: find all booking_ids with any past-due ledger entry.
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - Math.max(0, Number(cutoffDays) || 0));
-  const cutoffIso = cutoffDate.toISOString();
+  cutoffDate.setUTCHours(0, 0, 0, 0);
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - Math.max(0, Number(cutoffDays) || 0));
+  const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
 
   const { data: dueRows, error: dueErr } = await sb
     .from("renter_balance_ledger")
     .select("booking_id, due_date")
     .not("due_date", "is", null)
-    .lt("due_date", cutoffIso)
+    .lt("due_date", cutoffDateStr)
     .order("due_date", { ascending: true })
-    .limit(safeLimit * 5);
+    .limit(dueScanLimit);
   if (dueErr) throw new Error(`getLedgerOverdueBookings due-date query failed: ${dueErr.message}`);
 
   if (!dueRows || dueRows.length === 0) return [];
