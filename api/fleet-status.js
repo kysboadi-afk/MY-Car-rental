@@ -32,10 +32,10 @@ const BUSINESS_TZ = "America/Los_Angeles";
 const BOOKING_BUFFER_HOURS = 2;
 
 // Active booking statuses that keep a vehicle blocked.
-// Only confirmed, paid bookings block dates — pending/unpaid bookings are
-// excluded so incomplete payment attempts do not prevent other customers
-// from booking the same dates.
-const ACTIVE_BOOKING_STATUSES = ["approved", "active", "booked_paid", "active_rental", "overdue"];
+// "reserved" is a confirmed deposit/partial-payment reservation and must block.
+// Pending/unpaid checkout rows are excluded so incomplete payment attempts do
+// not prevent other customers from booking the same dates publicly.
+const ACTIVE_BOOKING_STATUSES = ["reserved", "approved", "active", "booked_paid", "active_rental", "overdue"];
 
 
 function buildDefaultStatus() {

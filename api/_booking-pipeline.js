@@ -30,10 +30,11 @@ import {
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { normalizeFleetCategory, resolveBookingCategory } from "./_category.js";
 
-// Booking statuses that represent a confirmed, paid booking.
-// Only paid/active bookings should create blocked_dates entries —
-// pending/unpaid bookings must not block vehicle availability.
-const PAID_ACTIVE_STATUSES = new Set(["booked_paid", "active_rental", "approved", "active"]);
+// Booking statuses that represent a confirmed reservation or active occupancy.
+// Pending/unpaid checkout states must never create blocked_dates entries.
+// "reserved" is the confirmed deposit/partial-payment state and must block
+// inventory the same way a fully paid booking does.
+const CONFIRMED_BLOCKING_STATUSES = new Set(["reserved", "booked_paid", "active_rental", "approved", "active", "overdue"]);
 
 /**
  * Structured logger for the booking pipeline.
@@ -485,10 +486,10 @@ export async function persistBooking(opts) {
       }
     }
 
-    // Step D: blocked_dates entry — only for paid/active bookings.
+    // Step D: blocked_dates entry — only for confirmed reservation / occupancy states.
     // Pending/unpaid bookings must NOT block dates; only a confirmed payment
     // should prevent other customers from booking the same vehicle.
-    if (opts.pickupDate && opts.returnDate && PAID_ACTIVE_STATUSES.has(booking.status)) {
+    if (opts.pickupDate && opts.returnDate && CONFIRMED_BLOCKING_STATUSES.has(booking.status)) {
       const blockResult = await runStep(traceId, "create_blocked_date", () =>
         autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking", bookingId, opts.returnTime || null)
       );
