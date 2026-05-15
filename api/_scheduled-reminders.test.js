@@ -90,7 +90,11 @@ mock.module("./_sms-templates.js", {
     UNPAID_REMINDER_2H:              "",
     UNPAID_REMINDER_FINAL:           "",
     PICKUP_REMINDER_24H:             "",
+    BOOKING_ONBOARDING:              "",
+    EXTENSION_EDUCATION:             "",
+    PAYMENT_EDUCATION:               "",
     RETURN_REMINDER_24H:             "",
+    RETURN_EXPECTATIONS:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
     ACTIVE_RENTAL_MID:               "",
     LATE_GRACE_STARTED:              "",
@@ -163,6 +167,7 @@ const {
   processAutoCompletions,
   processActiveRentals,
   processPaidBookings,
+  processOnboardingCatchup,
   loadBookingsFromSupabase,
   processCompleted,
 } = await import("./scheduled-reminders.js");
@@ -541,6 +546,104 @@ test("processPaidBookings: skips pickup reminder when renter already has an over
 
   assert.equal(sentMarks.some((m) => m.key === "pickup_24h"), false);
   assert.equal(smsCalls.length, 0);
+});
+
+test("processOnboardingCatchup: sends onboarding and extension education for recent active booking", async () => {
+  reset();
+  const now = new Date("2026-03-21T10:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      bookingId: "bk-catchup-1",
+      status: "active_rental",
+      pickupDate: "2026-03-21",
+      returnDate: "2026-03-24",
+      remainingBalance: 125,
+      smsSentAt: { booking_confirmed: "2026-03-21T09:40:00-07:00" },
+      createdAt: "2026-03-21T09:40:00-07:00",
+    })],
+  };
+  const sentMarks = [];
+
+  await processOnboardingCatchup(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "booking_onboarding"), true);
+  assert.equal(sentMarks.some((m) => m.key === "extension_education"), true);
+  assert.equal(sentMarks.some((m) => m.key === "payment_education"), false);
+  assert.equal(smsCalls.length, 2);
+});
+
+test("processOnboardingCatchup: sends payment education day-after for non-prepaid booking", async () => {
+  reset();
+  const now = new Date("2026-03-22T07:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      bookingId: "bk-catchup-2",
+      status: "active_rental",
+      pickupDate: "2026-03-21",
+      returnDate: "2026-03-25",
+      remainingBalance: 90,
+      smsSentAt: {
+        booking_confirmed: "2026-03-21T08:00:00-07:00",
+        booking_onboarding: "2026-03-21T08:05:00-07:00",
+        extension_education: "2026-03-21T08:45:00-07:00",
+      },
+      createdAt: "2026-03-21T08:00:00-07:00",
+    })],
+  };
+  const sentMarks = [];
+
+  await processOnboardingCatchup(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "payment_education"), true);
+  assert.equal(smsCalls.length, 1);
+});
+
+test("processOnboardingCatchup: suppresses prepaid, ended, and stale-window bookings", async () => {
+  reset();
+  const now = new Date("2026-03-22T10:00:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({
+        bookingId: "bk-catchup-prepaid",
+        status: "active_rental",
+        pickupDate: "2026-03-21",
+        returnDate: "2026-03-25",
+        remainingBalance: 0,
+        smsSentAt: { booking_confirmed: "2026-03-21T08:00:00-07:00" },
+        createdAt: "2026-03-21T08:00:00-07:00",
+      }),
+      makeBooking({
+        bookingId: "bk-catchup-ended",
+        status: "overdue",
+        pickupDate: "2026-03-20",
+        returnDate: "2026-03-21",
+        returnTime: "8:00 AM",
+        remainingBalance: 120,
+        smsSentAt: { booking_confirmed: "2026-03-21T07:00:00-07:00" },
+        createdAt: "2026-03-21T07:00:00-07:00",
+      }),
+      makeBooking({
+        bookingId: "bk-catchup-stale",
+        status: "active_rental",
+        pickupDate: "2026-03-20",
+        returnDate: "2026-03-25",
+        remainingBalance: 120,
+        smsSentAt: { booking_confirmed: "2026-03-20T06:00:00-07:00" },
+        createdAt: "2026-03-20T06:00:00-07:00",
+      }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processOnboardingCatchup(allBookings, now, sentMarks);
+
+  // Prepaid booking can still receive onboarding/extension catch-up, but not payment education.
+  assert.equal(sentMarks.some((m) => m.id === "bk-catchup-prepaid" && m.key === "payment_education"), false);
+  // Ended/overdue at/after return time should not get extension/payment education.
+  assert.equal(sentMarks.some((m) => m.id === "bk-catchup-ended" && m.key === "extension_education"), false);
+  assert.equal(sentMarks.some((m) => m.id === "bk-catchup-ended" && m.key === "payment_education"), false);
+  // Stale beyond catch-up window should not be processed.
+  assert.equal(sentMarks.some((m) => m.id === "bk-catchup-stale"), false);
 });
 
 test("processActiveRentals: sends ended at return_datetime", async () => {

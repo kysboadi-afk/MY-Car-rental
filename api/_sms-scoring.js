@@ -90,6 +90,7 @@ const URGENCY_SCORE = {
   active_rental_1h_before_end:        36,
   active_rental_mid:                  34,  // same-day reminder, ~7–8 h before return
   return_reminder_24h:                34,  // 24h-before-return reminder
+  return_expectations:                34,  // 24h expectations reminder
   pickup_24h:                         35,
   unpaid_2h:                          33,
   OIL_CHECK_MERGED:                   33,
@@ -131,6 +132,7 @@ const CONTEXT_SCORE = {
   active_rental_1h_before_end:        16,
   active_rental_mid:                  15,  // same-day reminder, ~7–8 h before return
   return_reminder_24h:                14,  // 24h-before-return reminder
+  return_expectations:                14,  // 24h expectations reminder
   OIL_CHECK_MERGED:                   15,
   pickup_24h:                         14,
   unpaid_2h:                          14,

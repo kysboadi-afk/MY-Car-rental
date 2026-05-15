@@ -162,6 +162,29 @@ export const BOOKING_CONFIRMED =
   "We\u2019ll have everything ready for you.\n\n" +
   "Reply STOP to opt out.";
 
+/** Sent immediately after BOOKING_CONFIRMED to orient the renter. */
+export const BOOKING_ONBOARDING =
+  "Welcome to SLY RIDES, {customer_name}.\n\n" +
+  "Manage your rental anytime:\n" +
+  "{manage_link}\n\n" +
+  "Need help? Call or text (844) 511-4059.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent ~30 minutes after confirmation to reduce late returns. */
+export const EXTENSION_EDUCATION =
+  "Need more time during your rental?\n\n" +
+  "Text EXTEND anytime before your return time to see available options and payment links.\n\n" +
+  "Availability depends on upcoming bookings.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent next morning (when applicable) to explain payment expectations. */
+export const PAYMENT_EDUCATION =
+  "Quick payment reminder from SLY RIDES:\n\n" +
+  "Use your renter portal to review any balance and payment links:\n" +
+  "{payment_link}\n\n" +
+  "Questions? Call or text (844) 511-4059.\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent 24 hours before pickup when payment is still pending (reserved_unpaid). */
 export const UNPAID_REMINDER_24H =
   "Hi {customer_name},\n\n" +
@@ -221,6 +244,17 @@ export const RETURN_REMINDER_24H =
   "Your {vehicle} is due back tomorrow at {return_time}.\n" +
   "Vehicle will be ready for next renter at {buffered_time}.\n\n" +
   "Reply EXTEND if you\u2019d like more time.\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent ~24 hours before return with closeout expectations. */
+export const RETURN_EXPECTATIONS =
+  "Hi {customer_name},\n\n" +
+  "Your {vehicle} is due back tomorrow at {return_time}.\n\n" +
+  "Before return:\n" +
+  "\u2022 Remove all personal belongings\n" +
+  "\u2022 Return fuel at pickup level\n" +
+  "\u2022 Keep the vehicle clean and in good condition\n\n" +
+  "Need more time? Text EXTEND before your due time.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent mid-rental (e.g. roughly halfway through). */
@@ -608,6 +642,9 @@ export const TEMPLATES = {
   waitlist_booking_reminder: WAITLIST_BOOKING_REMINDER,
   waitlist_declined:         WAITLIST_DECLINED,
   booking_confirmed:         BOOKING_CONFIRMED,
+  booking_onboarding:        BOOKING_ONBOARDING,
+  extension_education:       EXTENSION_EDUCATION,
+  payment_education:         PAYMENT_EDUCATION,
   reservation_deposit_confirmed: RESERVATION_DEPOSIT_CONFIRMED,
   unpaid_reminder_24h:       UNPAID_REMINDER_24H,
   unpaid_reminder_2h:        UNPAID_REMINDER_2H,
@@ -618,6 +655,7 @@ export const TEMPLATES = {
   active_rental_mid:         ACTIVE_RENTAL_MID,
   active_rental_1h_before_end:   ACTIVE_RENTAL_1H_BEFORE_END,
   active_rental_15min_before_end: ACTIVE_RENTAL_15MIN_BEFORE_END,
+  return_expectations:       RETURN_EXPECTATIONS,
   extend_unavailable:        EXTEND_UNAVAILABLE,
   extend_limited:            EXTEND_LIMITED,
   extend_options_economy:    EXTEND_OPTIONS_ECONOMY,

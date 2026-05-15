@@ -46,7 +46,7 @@ import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_setti
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
-import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, BOOKING_ONBOARDING } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime, isoDateInLA } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
@@ -891,7 +891,7 @@ export default async function handler(req, res) {
         if (newStatus === "booked_paid" && updatedBooking.phone &&
             process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
-            await sendDedupedSms({
+            const bookingConfirmedSent = await sendDedupedSms({
               bookingId: updatedBooking.bookingId || updatedBooking.paymentIntentId,
               templateKey: "booking_confirmed",
               phone: updatedBooking.phone,
@@ -908,6 +908,17 @@ export default async function handler(req, res) {
                 }),
               }),
             });
+            if (bookingConfirmedSent && updatedBooking.pickupDate !== updatedBooking.returnDate) {
+              await sendDedupedSms({
+                bookingId: updatedBooking.bookingId || updatedBooking.paymentIntentId,
+                templateKey: "booking_onboarding",
+                phone: updatedBooking.phone,
+                body: render(BOOKING_ONBOARDING, {
+                  customer_name: (updatedBooking.name || "Customer").split(" ")[0],
+                  manage_link: "https://www.slytrans.com/manage-booking.html",
+                }),
+              });
+            }
           } catch (smsErr) {
             console.error("v2-bookings: booking confirmation SMS failed (non-fatal):", smsErr.message);
           }

@@ -15,7 +15,7 @@ import { hasOverlap } from "./_availability.js";
 import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { getVehicleById } from "./_vehicles.js";
-import { render, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, BOOKING_ONBOARDING } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -1215,7 +1215,7 @@ export default async function handler(req, res) {
     if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
       // Send confirmation only for fully-paid bookings (not deposit-only reservations)
       try {
-        await sendDedupedSms({
+        const bookingConfirmedSent = await sendDedupedSms({
           bookingId: persistedBookingId || normalizedPaymentIntentId,
           templateKey: "booking_confirmed",
           phone,
@@ -1232,6 +1232,17 @@ export default async function handler(req, res) {
             }),
           }),
         });
+        if (bookingConfirmedSent && pickup !== returnDate) {
+          await sendDedupedSms({
+            bookingId: persistedBookingId || normalizedPaymentIntentId,
+            templateKey: "booking_onboarding",
+            phone,
+            body: render(BOOKING_ONBOARDING, {
+              customer_name: (name || "").split(" ")[0] || name || "Customer",
+              manage_link: "https://www.slytrans.com/manage-booking.html",
+            }),
+          });
+        }
       } catch (smsErr) {
         console.error("Booking confirmation SMS failed:", smsErr);
       }

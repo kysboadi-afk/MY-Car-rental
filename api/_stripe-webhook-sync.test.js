@@ -204,6 +204,7 @@ mock.module("./_sms-templates.js", {
     render:                   (t) => t,
     DEFAULT_LOCATION:         "Los Angeles, CA",
     BOOKING_CONFIRMED:          "booking_confirmed",
+    BOOKING_ONBOARDING:         "booking_onboarding",
     RESERVATION_DEPOSIT_CONFIRMED: "reservation_deposit_confirmed",
     EXTEND_CONFIRMED_ECONOMY:   "ext_economy",
     LATE_FEE_APPLIED:           "late_fee_applied",
