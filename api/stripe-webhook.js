@@ -165,6 +165,7 @@ function hasSucceededPaymentForNotifications(paymentIntent) {
 function shouldSendOnboardingSms(pickupDate, returnDate) {
   const pickup = String(pickupDate || "").trim();
   const ret = String(returnDate || "").trim();
+  if (!pickup || !ret) return false;
   // Suppress onboarding for same-day rentals to avoid noisy messaging on trips
   // that may start and complete within a single day.
   if (pickup && ret && pickup === ret) return false;
