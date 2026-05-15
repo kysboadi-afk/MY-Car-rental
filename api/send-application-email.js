@@ -19,6 +19,12 @@ import { insertRenterApplication, patchRenterApplicationById } from "./_renter-a
 import { sendSubmittedApplicationNotifications } from "./_application-notifications.js";
 import { normalizePhone } from "./_bookings.js";
 
+// Allow large bodies — base64-encoded ID photos from mobile cameras can be
+// 10 MB+ after encoding; 30 MB matches the store-booking-docs.js limit.
+export const config = {
+  api: { bodyParser: { sizeLimit: "30mb" } },
+};
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // ~10 MB decoded — guard against oversized payloads
 const MAX_LICENSE_B64_LEN = 14_000_000;
