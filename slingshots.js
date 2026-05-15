@@ -90,7 +90,7 @@ function buildSlingshotCard(v, pricing) {
       </div>
       ${scarcity}
       <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
-        <button class="select-btn" id="select-btn-${vid}">Book Now</button>
+        <button class="select-btn" id="select-btn-${vid}">Reserve Now</button>
       </a>
     </div>
   </div>`;
@@ -136,7 +136,7 @@ function applyFleetStatus(fleetStatus) {
       badge.textContent = "\u25CF Available";
       badge.className   = "status-badge available";
 
-      btn.textContent = "Book Now";
+      btn.textContent = "Reserve Now";
       btn.disabled = false;
       btn.style.display = "";
       btn.classList.remove("btn-booked");

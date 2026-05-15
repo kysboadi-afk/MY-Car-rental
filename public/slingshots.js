@@ -80,7 +80,7 @@ function buildSlingshotCard(v, pricing) {
       <p style="font-size:12px;color:#aaa;margin:4px 0 8px">+$500 refundable deposit required</p>
       ${scarcity}
       <a href="slingshot-book.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
-        <button class="select-btn" id="select-btn-${vid}">Book Now</button>
+        <button class="select-btn" id="select-btn-${vid}">Reserve Now</button>
       </a>
     </div>
   </div>`;
@@ -126,7 +126,7 @@ function applyFleetStatus(fleetStatus) {
       badge.textContent = "\u25CF Available";
       badge.className   = "status-badge available";
 
-      btn.textContent = "Book Now";
+      btn.textContent = "Reserve Now";
       btn.disabled = false;
       btn.style.display = "";
       btn.classList.remove("btn-booked");

@@ -525,6 +525,8 @@ async function launchSlingshotPayment() {
       ? SlyLA.addDaysToISO(dateInput.value, returnResult.daysAdded)
       : dateInput.value;
     var total = pkg.price + SLINGSHOT_DEPOSIT;
+    var chargedToday = SLINGSHOT_DEPOSIT;
+    var balanceAtPickup = Math.max(0, total - chargedToday);
 
     var bookingPayload = {
       vehicleId:          vehicleId,
@@ -625,11 +627,12 @@ async function launchSlingshotPayment() {
         "Pickup: " + pickupDisplay + "<br>" +
         "Return by: " + returnDisplay + "<br>" +
         "Refundable deposit: $" + SLINGSHOT_DEPOSIT + "<br>" +
-        "<strong style='color:#ffb400'>Total charged today: $" + total.toFixed(2) + "</strong>";
+        "<strong style='color:#ffb400'>Deposit charged today: $" + chargedToday.toFixed(2) + "</strong><br>" +
+        "<small style='color:#bbb'>Remaining balance at pickup: $" + balanceAtPickup.toFixed(2) + "</small>";
     }
 
     var payAmountEl = document.getElementById("slPayAmount");
-    if (payAmountEl) payAmountEl.textContent = total.toFixed(2);
+    if (payAmountEl) payAmountEl.textContent = chargedToday.toFixed(2);
 
     paymentElement.mount("#sl-payment-element");
     if (payForm) payForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -663,7 +666,7 @@ async function launchSlingshotPayment() {
         paymentFormSubmitted = false;
         if (msgEl) msgEl.textContent = result.error.message;
         submitBtn.disabled = false;
-        submitBtn.innerHTML = "Pay $" + total.toFixed(2) + " Now 🔒";
+        submitBtn.innerHTML = "Pay Deposit $" + chargedToday.toFixed(2) + " Now 🔒";
         submitting = false;
       }
     };
@@ -676,7 +679,7 @@ async function launchSlingshotPayment() {
       if (msgEl) msgEl.textContent = "";
       if (payForm) payForm.style.display = "none";
       if (bookingSection) bookingSection.style.display = "";
-      if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now — Secure Your Slingshot"; }
+      if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
       // Cancel the pre-written pending booking so it no longer appears in admin.
       cancelPendingBooking(false);
     }, { once: true });
@@ -684,7 +687,7 @@ async function launchSlingshotPayment() {
   } catch (err) {
     console.error("slingshot-book payment error:", err);
     showPayError(err.message || "Payment initialization failed. Please try again or call (844) 511-4059.");
-    if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Book Now — Secure Your Slingshot"; }
+    if (bookBtn) { bookBtn.disabled = false; bookBtn.textContent = "Reserve Now — Pay $500 Deposit"; }
   }
 }
 
