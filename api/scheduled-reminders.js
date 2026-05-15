@@ -175,6 +175,9 @@ const REPAIR_RETURN_24H_LOWER_MIN  =  120; // return_reminder_24h: fire if retur
 // in America/Los_Angeles (PDT) time to avoid waking renters outside business hours.
 const SMS_WINDOW_START_HOUR = 5;  // 5:00 AM LA (PDT)
 const SMS_WINDOW_END_HOUR   = 22; // 10:00 PM LA (PDT, exclusive)
+const ONBOARDING_CATCHUP_WINDOW_HOURS = 24;
+const ONBOARDING_CATCHUP_EXTENSION_MIN_DELAY_MIN = 30;
+const ONBOARDING_CATCHUP_STATUSES = new Set(["active_rental", "active", "overdue"]);
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
@@ -772,7 +775,20 @@ function normalizeRenterContactInfo(booking) {
 
 function isoDateAtTimezone(date, tz = BUSINESS_TZ) {
   if (!(date instanceof Date) || isNaN(date.getTime())) return "";
+  if (tz === BUSINESS_TZ) return isoDateInLA(date);
   return date.toLocaleDateString("en-CA", { timeZone: tz });
+}
+
+function hourAtTimezone(date, tz = BUSINESS_TZ) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return NaN;
+  return parseInt(
+    date.toLocaleString("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hour12: false,
+    }),
+    10
+  );
 }
 
 function dateDiffDaysIso(a, b) {
@@ -794,6 +810,26 @@ async function hasRecentSmsWithin(sb, bookingId, minutes) {
   );
   if (!Number.isFinite(latestMs)) return false;
   return (Date.now() - latestMs) < minutes * 60 * 1000;
+}
+
+function getOnboardingAnchorDate(booking) {
+  const raw = booking?.smsSentAt?.booking_confirmed || booking?.createdAt || null;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function shouldProcessOnboardingCatchup(booking, now) {
+  if (!booking || !ONBOARDING_CATCHUP_STATUSES.has(booking.status)) return false;
+  const id = booking.bookingId || booking.paymentIntentId;
+  if (!id || !booking.phone) return false;
+  const anchor = getOnboardingAnchorDate(booking);
+  if (!anchor) return false;
+  const ageHours = (now.getTime() - anchor.getTime()) / MS_PER_HOUR;
+  if (!Number.isFinite(ageHours) || ageHours < 0) return false;
+  if (ageHours > ONBOARDING_CATCHUP_WINDOW_HOURS) return false;
+  return true;
 }
 
 /**
@@ -909,7 +945,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
         const confirmedAt = new Date(booking.smsSentAt.booking_confirmed);
         const confirmedIsoLA = isoDateAtTimezone(confirmedAt);
         const nowIsoLA = isoDateAtTimezone(now);
-        const currentLaHour = laHour();
+        const currentLaHour = hourAtTimezone(now);
         const isNextMorning = dateDiffDaysIso(confirmedIsoLA, nowIsoLA) === 1 && currentLaHour >= 8 && currentLaHour < 12;
         const isPrepaidRental = Number(booking.remainingBalance || 0) <= 0;
         if (
@@ -933,6 +969,96 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
               sentMarks.push({ vehicleId, id, key: "payment_education" });
               await logSmsToSupabase(id, "payment_education");
             }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Catch-up onboarding lifecycle for recently-confirmed active rentals.
+ * Purpose: ensure renters already in-progress benefit from onboarding flows
+ * without waiting for future bookings.
+ */
+export async function processOnboardingCatchup(allBookings, now, sentMarks) {
+  const sb = getSupabaseAdmin();
+  const currentLaHour = hourAtTimezone(now);
+
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (!shouldProcessOnboardingCatchup(booking, now)) continue;
+
+      const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
+      const anchor = getOnboardingAnchorDate(booking);
+      const minsSinceAnchor = (now.getTime() - anchor.getTime()) / 60000;
+      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
+      const rentalStillInProgress = !isNaN(returnDt.getTime()) && now.getTime() < returnDt.getTime();
+      const sameDayRental = booking.pickupDate && booking.returnDate && booking.pickupDate === booking.returnDate;
+
+      if (
+        !sameDayRental &&
+        !alreadySent(booking, "booking_onboarding") &&
+        !(await isSmsLogged(id, "booking_onboarding"))
+      ) {
+        const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
+          ...v,
+          manage_link: "https://www.slytrans.com/manage-booking.html",
+          payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+        }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "booking_onboarding" });
+          await logSmsToSupabase(id, "booking_onboarding");
+        }
+      }
+
+      if (
+        rentalStillInProgress &&
+        Number.isFinite(minsSinceAnchor) &&
+        minsSinceAnchor >= ONBOARDING_CATCHUP_EXTENSION_MIN_DELAY_MIN &&
+        (booking.extensionCount || 0) <= 0 &&
+        !alreadySent(booking, "extension_education") &&
+        !(await isSmsLogged(id, "extension_education"))
+      ) {
+        if (!(await hasRecentSmsWithin(sb, id, 20))) {
+          const sent = await safeSend(booking.phone, render(EXTENSION_EDUCATION, v), {
+            booking_ref: id,
+            vehicle_id: vehicleId,
+            message_type: "extension_education",
+          });
+          if (sent) {
+            sentMarks.push({ vehicleId, id, key: "extension_education" });
+            await logSmsToSupabase(id, "extension_education");
+          }
+        }
+      }
+
+      const anchorIsoLA = isoDateAtTimezone(anchor);
+      const nowIsoLA = isoDateAtTimezone(now);
+      const isDayAfterConfirm = dateDiffDaysIso(anchorIsoLA, nowIsoLA) === 1;
+      const isPrepaidRental = Number(booking.remainingBalance || 0) <= 0;
+      if (
+        rentalStillInProgress &&
+        isDayAfterConfirm &&
+        currentLaHour >= 6 &&
+        currentLaHour < 20 &&
+        !isPrepaidRental &&
+        !alreadySent(booking, "payment_education") &&
+        !(await isSmsLogged(id, "payment_education"))
+      ) {
+        if (!(await hasRecentSmsWithin(sb, id, 30))) {
+          const sent = await safeSend(booking.phone, render(PAYMENT_EDUCATION, {
+            ...v,
+            payment_link: booking.paymentLink || "https://www.slytrans.com/balance.html",
+          }), {
+            booking_ref: id,
+            vehicle_id: vehicleId,
+            message_type: "payment_education",
+          });
+          if (sent) {
+            sentMarks.push({ vehicleId, id, key: "payment_education" });
+            await logSmsToSupabase(id, "payment_education");
           }
         }
       }
@@ -2845,6 +2971,7 @@ export default async function handler(req, res) {
   await Promise.allSettled([
     processUnpaid(allBookings, now, sentMarks),
     processPaidBookings(allBookings, now, sentMarks),
+    processOnboardingCatchup(allBookings, now, sentMarks),
     processActiveRentals(allBookings, now, sentMarks),
     processCompleted(allBookings, now, sentMarks),
     processBalanceDue(allBookings, now, sentMarks),
