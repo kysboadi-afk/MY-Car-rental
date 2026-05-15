@@ -135,7 +135,7 @@ export function normalizeLedgerTransactionInput(input = {}) {
     throw new Error(`target_transaction_type must be one of: ${LEDGER_TRANSACTION_TYPES.join(", ")}`);
   }
   if (allocationScope === "targeted" && !targetTransactionType && !targetLedgerTransactionId) {
-    throw new Error("targeted allocation requires targetTransactionType or targetLedgerTransactionId");
+    throw new Error("targeted allocation requires either targetTransactionType or targetLedgerTransactionId");
   }
   if ((targetTransactionType || targetLedgerTransactionId) && !allocationScope) {
     metadata = { ...metadata, allocation_scope: "targeted" };
@@ -289,6 +289,10 @@ export function annotateLedgerTransactions(transactions = []) {
   const targetedCredits = [];
   let globalCreditCarryCents = 0;
   let outstandingCents = 0;
+  const getCreditBalanceCents = () => (
+    globalCreditCarryCents
+    + targetedCredits.reduce((sum, credit) => sum + Math.max(0, credit.remainingCents), 0)
+  );
 
   const applyToOpenDebits = (amountCents, targets = null) => {
     let remaining = amountCents;
@@ -356,8 +360,7 @@ export function annotateLedgerTransactions(transactions = []) {
       }
     }
 
-    const targetedCreditBalanceCents = targetedCredits.reduce((sum, credit) => sum + Math.max(0, credit.remainingCents), 0);
-    const creditBalanceCents = globalCreditCarryCents + targetedCreditBalanceCents;
+    const creditBalanceCents = getCreditBalanceCents();
     const remainingBalance = roundMoney(outstandingCents / 100);
     const creditBalance = roundMoney(creditBalanceCents / 100);
 
@@ -373,9 +376,7 @@ export function annotateLedgerTransactions(transactions = []) {
   });
 
   const finalOutstanding = roundMoney(outstandingCents / 100);
-  const finalCreditBalance = roundMoney(
-    (globalCreditCarryCents + targetedCredits.reduce((sum, credit) => sum + Math.max(0, credit.remainingCents), 0)) / 100
-  );
+  const finalCreditBalance = roundMoney(getCreditBalanceCents() / 100);
 
   return {
     transactions: annotated,
