@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SLINGSHOT_LIFECYCLE_APP_STATUSES,
   isIncompleteCheckoutAppStatus,
   toAppBookingStatus,
   toDbBookingStatus,
@@ -29,4 +30,10 @@ test("isIncompleteCheckoutAppStatus only flags incomplete checkout lifecycle sta
   assert.equal(isIncompleteCheckoutAppStatus("abandoned_checkout"), true);
   assert.equal(isIncompleteCheckoutAppStatus("reserved_unpaid"), false);
   assert.equal(isIncompleteCheckoutAppStatus("booked_paid"), false);
+});
+
+test("slingshot lifecycle statuses round-trip without aliasing", () => {
+  assert.equal(toDbBookingStatus("pending_manual_payment"), "pending_manual_payment");
+  assert.equal(toAppBookingStatus("ready_for_pickup"), "ready_for_pickup");
+  assert.equal(SLINGSHOT_LIFECYCLE_APP_STATUSES.has("agreement_pending"), true);
 });

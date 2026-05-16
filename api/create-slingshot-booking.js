@@ -28,9 +28,11 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
+import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://www.slytrans.com/slingshot-book.html";
+const SLINGSHOT_MANUAL_PAYMENT_ENABLED = /^(true|1|yes|on)$/i.test(String(process.env.SLINGSHOT_NO_PAYMENT || ""));
 
 function buildSlingshotIdentityReturnUrl(vehicleId) {
   const url = new URL(DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL);
@@ -233,7 +235,6 @@ export default async function handler(req, res) {
     }
 
     // ── Compute reservation pricing (no tax on slingshots) ────────────────────
-    // Full rental total = package price + refundable security deposit.
     const totalAmount = pkg.price + SLINGSHOT_DEPOSIT;
     const normalizedPaymentOption = String(paymentOption || "deposit").trim().toLowerCase();
     if (normalizedPaymentOption !== "deposit" && normalizedPaymentOption !== "full") {
@@ -243,28 +244,11 @@ export default async function handler(req, res) {
     const balanceAtPickup = Math.max(0, totalAmount - chargeAmount);
     const paymentType = normalizedPaymentOption === "full" ? "full_payment" : "reservation_deposit";
 
-    // ── Find or create Stripe Customer ────────────────────────────────────────
-    let stripeCustomerId;
-    try {
-      const existing = await stripe.customers.list({ email, limit: 1 });
-      if (existing.data.length > 0) {
-        stripeCustomerId = existing.data[0].id;
-      } else {
-        const newCust = await stripe.customers.create({
-          email,
-          name: trimmedName,
-          ...(trimmedPhone ? { phone: trimmedPhone } : {}),
-        });
-        stripeCustomerId = newCust.id;
-      }
-    } catch (custErr) {
-      console.error("[SLINGSHOT_BOOKING] Stripe Customer error:", custErr.message);
-      return res.status(500).json({ error: "Payment initialization failed. Please try again." });
-    }
-
     // ── Pre-write booking to Supabase BEFORE creating Stripe PI ──────────────
     const bookingId = "bk-" + crypto.randomBytes(6).toString("hex");
     const normalizedVehicleId = normalizeVehicleId(vehicleId) || vehicleId;
+    const manageToken = createManageToken(bookingId);
+    const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
 
     const preWriteRow = {
       booking_ref:       bookingId,
@@ -273,17 +257,19 @@ export default async function handler(req, res) {
       return_date:       returnDate,
       pickup_time:       normalizedPickupTime || null,
       return_time:       returnTime || null,
-      status:            toDbBookingStatus("pending_checkout"),
+      status:            toDbBookingStatus(SLINGSHOT_MANUAL_PAYMENT_ENABLED ? "agreement_pending" : "pending_checkout"),
       total_price:       totalAmount,
       deposit_paid:      0,
       remaining_balance: totalAmount,
-      payment_status:    "unpaid",
-      payment_method:    "stripe",
+      payment_status:    SLINGSHOT_MANUAL_PAYMENT_ENABLED ? "manual_pending" : "unpaid",
+      payment_method:    SLINGSHOT_MANUAL_PAYMENT_ENABLED ? "manual" : "stripe",
       category:          "slingshot",
       customer_name:     trimmedName  || null,
       customer_email:    email        || null,
       customer_phone:    trimmedPhone || null,
       renter_phone:      trimmedPhone || null,
+      manage_token:      manageToken,
+      identity_session_id: trimmedIdentitySessionId,
     };
 
     const { error: preWriteErr, attemptedRow } = await upsertBookingPrewrite(sb, preWriteRow, {
@@ -311,6 +297,38 @@ export default async function handler(req, res) {
       status: attemptedRow?.status || preWriteRow.status,
       totalAmount,
     });
+
+    if (SLINGSHOT_MANUAL_PAYMENT_ENABLED) {
+      return res.status(200).json({
+        success: true,
+        bookingId,
+        manageLink,
+        identityStatus: "verified",
+        nextStatus: "agreement_pending",
+        manualPayment: true,
+        totalAmount,
+        balanceAtPickup,
+      });
+    }
+
+    // ── Find or create Stripe Customer ────────────────────────────────────────
+    let stripeCustomerId;
+    try {
+      const existing = await stripe.customers.list({ email, limit: 1 });
+      if (existing.data.length > 0) {
+        stripeCustomerId = existing.data[0].id;
+      } else {
+        const newCust = await stripe.customers.create({
+          email,
+          name: trimmedName,
+          ...(trimmedPhone ? { phone: trimmedPhone } : {}),
+        });
+        stripeCustomerId = newCust.id;
+      }
+    } catch (custErr) {
+      console.error("[SLINGSHOT_BOOKING] Stripe Customer error:", custErr.message);
+      return res.status(500).json({ error: "Payment initialization failed. Please try again." });
+    }
 
     // ── Create Stripe PaymentIntent ───────────────────────────────────────────
     const paymentIntentParams = {

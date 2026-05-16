@@ -90,9 +90,9 @@ function buildSignatureHash(bookingId, generatedAt) {
  *
  * @param {object} data
  *   @param {string}  data.bookingId
- *   @param {string}  data.paymentIntentId
  *   @param {string}  data.stripeCustomerId
  *   @param {string}  data.renterName
+ *   @param {string}  [data.renterSignature]
  *   @param {string}  [data.driverLicenseNumber]
  *   @param {string}  data.renterPhone
  *   @param {string}  data.renterEmail
@@ -109,6 +109,9 @@ function buildSignatureHash(bookingId, generatedAt) {
  *   @param {string}  [data.paymentStatus]
  *   @param {boolean} [data.licenseVerified]
  *   @param {boolean} [data.identityVerified]
+ *   @param {string}  [data.identitySessionId]
+ *   @param {string}  [data.signatureMethod]
+ *   @param {string}  [data.signedAt]
  * @param {string}   [ipAddress]  — renter's IP address (optional)
  * @returns {Promise<Buffer>}
  */
@@ -116,9 +119,9 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
   return new Promise((resolve, reject) => {
     const {
       bookingId         = "",
-      paymentIntentId   = "",
       stripeCustomerId  = "",
       renterName        = "",
+      renterSignature   = "",
       driverLicenseNumber = DEFAULT_LICENSE_TEXT,
       renterPhone       = "",
       renterEmail       = "",
@@ -135,11 +138,16 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
       paymentStatus     = "paid",
       licenseVerified   = false,
       identityVerified  = false,
+      identitySessionId = "",
+      signatureMethod   = "typed_name",
+      signedAt          = "",
     } = data;
 
     const now          = new Date();
     const generatedAt  = laTimestamp(now);
-    const signedAt     = generatedAt;
+    const signedAtLabel = signedAt
+      ? laTimestamp(new Date(signedAt))
+      : generatedAt;
     const signatureHash = buildSignatureHash(bookingId, now.toISOString());
     const rentalType   = packageLabel ? `Hourly — ${packageLabel}` : "Hourly";
 
@@ -245,11 +253,11 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
     // ── Section 3 — Pricing ───────────────────────────────────────────────────
     sectionHeader(3, "Pricing Details");
     kv("Rental Type",        rentalType);
-    kv("Base Rate",          `$${Number(baseRate).toFixed(2)}`);
-    kv("Security Deposit",   `$${Number(securityDeposit).toFixed(2)}`);
-    kv("Total Charged",      `$${Number(totalPrice).toFixed(2)}`);
-    kv("Payment Status",     toStringOrEmpty(paymentStatus).toUpperCase());
-    kv("Stripe Payment ID",  paymentIntentId || "—");
+    kv("Rental Fee (Due at Pickup)", `$${Number(baseRate).toFixed(2)}`);
+    kv("Security Deposit (Due at Pickup)", `$${Number(securityDeposit).toFixed(2)}`);
+    kv("Total Due at Pickup", `$${Number(totalPrice).toFixed(2)}`);
+    kv("Collection Method", "Collected in person");
+    kv("Payment Status", toStringOrEmpty(paymentStatus) || "Due at pickup");
 
     // ── Section 4 — Security Deposit Terms ────────────────────────────────────
     sectionHeader(4, "Security Deposit Terms");
@@ -261,14 +269,14 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
       "Traffic violations or tolls",
     ]);
     doc.moveDown(0.2);
-    body(`Remaining balance will be refunded within ${POLICY.depositReturnDays} days after inspection.`);
+    body(`Any refundable deposit balance will be returned within ${POLICY.depositReturnDays} days after inspection.`);
 
     // ── Section 5 — Driver Eligibility ────────────────────────────────────────
     sectionHeader(5, "Driver Eligibility");
     body("Renter confirms:");
     bullets([
       `Age: ${POLICY.minAge}+ years (must be ${POLICY.minAge} or older)`,
-      `Valid driver's license uploaded: ${licenseVerified ? "Yes ✓" : "Pending — required at pickup"}`,
+      `Driver's license validated via Stripe Identity: ${licenseVerified || identityVerified ? "Yes ✓" : "Pending"}`,
       `Identity verification status: ${identityVerified ? "Verified ✓" : "Pending"}`,
     ]);
     doc.moveDown(0.2);
@@ -310,7 +318,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
     doc.moveDown(0.2);
     body("If damage occurs:");
     bullets([
-      "Renter will be charged immediately using the payment method on file",
+      "Renter authorizes in-person or manual collection of approved charges",
       "Additional charges may be invoiced if damages exceed the deposit",
     ]);
 
@@ -376,25 +384,37 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
     doc.moveDown(0.3);
     doc.font("Helvetica").fontSize(8.5).fillColor(BLACK)
       .text(
-        "By completing payment and booking, renter electronically agrees to all terms of this Rental Agreement, " +
+        "By typing their legal name and completing the digital signing step, renter electronically agrees to all terms of this Rental Agreement, " +
         "including the Terms and Conditions. This constitutes an electronic signature under applicable law.",
         60, doc.y, { width: PAGE_W - 20 }
       );
     doc.moveDown(0.4);
 
     doc.font("Helvetica-Bold").fontSize(9).fillColor(GREEN)
-      .text("✓ Agreement Accepted via Payment Confirmation", 60, doc.y);
+      .text("✓ Agreement Signed Electronically", 60, doc.y);
     doc.moveDown(0.25);
 
     doc.font("Helvetica").fontSize(8).fillColor(GRAY)
-      .text(`Accepted: ${signedAt}`, 60, doc.y);
+      .text(`Signed: ${signedAtLabel}`, 60, doc.y);
     doc.moveDown(0.1);
     doc.text(`Renter: ${renterName || "—"}  |  Email: ${renterEmail || "—"}  |  Phone: ${renterPhone || "—"}`, 60, doc.y, { width: PAGE_W - 20 });
     doc.moveDown(0.1);
+    if (renterSignature) {
+      doc.font("Helvetica-BoldOblique").fontSize(16).fillColor(BLACK)
+        .text(renterSignature, 60, doc.y);
+      doc.moveDown(0.15);
+      doc.font("Helvetica").fontSize(8).fillColor(GRAY);
+    }
     if (ipAddress) {
       doc.text(`IP Address: ${ipAddress}`, 60, doc.y);
       doc.moveDown(0.1);
     }
+    if (identitySessionId) {
+      doc.text(`Stripe Identity Session: ${identitySessionId}`, 60, doc.y);
+      doc.moveDown(0.1);
+    }
+    doc.text(`Signature Method: ${signatureMethod || "typed_name"}`, 60, doc.y);
+    doc.moveDown(0.1);
     doc.font("Helvetica").fontSize(7.5).fillColor(GRAY)
       .text(`Signature Hash: ${signatureHash}`, 60, doc.y);
 

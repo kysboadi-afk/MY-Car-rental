@@ -1,4 +1,11 @@
 export const APP_TO_DB_STATUS = {
+  inquiry_received:   "inquiry_received",
+  identity_pending:   "identity_pending",
+  identity_verified:  "identity_verified",
+  agreement_pending:  "agreement_pending",
+  agreement_signed:   "agreement_signed",
+  pending_manual_payment: "pending_manual_payment",
+  ready_for_pickup:   "ready_for_pickup",
   pending_checkout:   "pending_checkout",
   upload_failed:      "upload_failed",
   payment_failed:     "payment_failed",
@@ -12,6 +19,13 @@ export const APP_TO_DB_STATUS = {
 };
 
 export const DB_TO_APP_STATUS = {
+  inquiry_received:    "inquiry_received",
+  identity_pending:    "identity_pending",
+  identity_verified:   "identity_verified",
+  agreement_pending:   "agreement_pending",
+  agreement_signed:    "agreement_signed",
+  pending_manual_payment: "pending_manual_payment",
+  ready_for_pickup:    "ready_for_pickup",
   pending:              "pending_checkout",
   pending_checkout:     "pending_checkout",
   upload_failed:        "upload_failed",
@@ -48,6 +62,16 @@ export const INCOMPLETE_CHECKOUT_APP_STATUSES = new Set([
   "upload_failed",
   "payment_failed",
   "abandoned_checkout",
+]);
+
+export const SLINGSHOT_LIFECYCLE_APP_STATUSES = new Set([
+  "inquiry_received",
+  "identity_pending",
+  "identity_verified",
+  "agreement_pending",
+  "agreement_signed",
+  "pending_manual_payment",
+  "ready_for_pickup",
 ]);
 
 /**

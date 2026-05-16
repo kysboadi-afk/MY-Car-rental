@@ -39,6 +39,7 @@ import {
   autoCreateBlockedDate,
   autoReleaseBlockedDateOnReturn,
   parseTime12h,
+  writeAuditLog,
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -56,6 +57,7 @@ import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
+import { applySlingshotBookingStatusTransition } from "./_slingshot-booking-status-transitions.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -86,6 +88,52 @@ function escHtml(str) {
 
 function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+async function loadSlingshotBookingRow(sb, bookingId) {
+  const { data, error } = await sb
+    .from("bookings")
+    .select("id, booking_ref, vehicle_id, category, status, payment_status, payment_method, total_price, deposit_paid, remaining_balance, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, manage_token")
+    .eq("booking_ref", String(bookingId || "").trim())
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+async function sendStoredSlingshotAgreementEmail(sb, bookingRow, docsRow, manageLink) {
+  if (!docsRow?.agreement_pdf_url) throw new Error("No agreement PDF found for this booking.");
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error("SMTP is not configured.");
+  }
+  const { data: blobData, error: dlErr } = await sb.storage
+    .from("rental-agreements")
+    .download(docsRow.agreement_pdf_url);
+  if (dlErr) throw dlErr;
+  const pdfBuffer = Buffer.from(await blobData.arrayBuffer());
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || "587", 10),
+    secure: process.env.SMTP_PORT === "465",
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  const recipients = [String(bookingRow.customer_email || "").trim().toLowerCase()].filter(Boolean);
+  if (!recipients.length) throw new Error("Booking has no renter email.");
+  await transporter.sendMail({
+    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    to: recipients.join(", "),
+    subject: "Your signed Slingshot agreement",
+    html: `
+      <h2>Your signed Slingshot agreement</h2>
+      <p>Hi ${escHtml(bookingRow.customer_name || "there")},</p>
+      <p>Your signed agreement is attached. Payment for this booking will be collected in person at pickup.</p>
+      <p><a href="${escHtml(manageLink)}">Open your renter dashboard</a></p>
+    `,
+    attachments: [{
+      filename: `slingshot-agreement-${bookingRow.booking_ref}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    }],
+  });
 }
 
 function buildBalanceLinkForBooking(row = {}) {
@@ -1914,7 +1962,7 @@ export default async function handler(req, res) {
       if (bookingId) {
         const { data, error } = await sbLinks
           .from("bookings")
-          .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link")
+            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, category")
           .eq("booking_ref", String(bookingId).trim())
           .maybeSingle();
         if (error) return res.status(500).json({ error: `Booking lookup failed: ${error.message}` });
@@ -1922,7 +1970,7 @@ export default async function handler(req, res) {
       } else if (customerId) {
         const { data, error } = await sbLinks
           .from("bookings")
-          .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, created_at")
+            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, created_at, category")
           .eq("customer_id", String(customerId).trim())
           .order("created_at", { ascending: false })
           .limit(1)
@@ -1950,7 +1998,8 @@ export default async function handler(req, res) {
       }
 
       // Keep balance.html link as fallback (for SMS-only receivers who cannot open the dashboard)
-      const balanceLink = buildBalanceLinkForBooking(bkRow);
+      const isSlingshotManual = String(bkRow.category || "").toLowerCase() === "slingshot";
+      const balanceLink = isSlingshotManual ? "" : buildBalanceLinkForBooking(bkRow);
 
       const planProgress = await computePaymentPlanProgress(sbLinks, { bookingId: bkRow.booking_ref });
       const remainingBalance = roundMoney(bkRow.remaining_balance != null ? bkRow.remaining_balance : planProgress.remaining_balance || 0);
@@ -1970,13 +2019,13 @@ export default async function handler(req, res) {
         ? `Overdue amount: $${overdueAmount.toFixed(2)}.`
         : "";
       const defaultSms = [
-        customMessage || "Your next payment is due.",
+        customMessage || (isSlingshotManual ? "Your Slingshot booking is ready in the renter dashboard." : "Your next payment is due."),
         `Booking: ${bkRow.booking_ref}`,
         `Vehicle: ${vehicleLabel}`,
-        `Current balance: $${remainingBalance.toFixed(2)}.`,
-        overdueLine,
-        planLine,
-        `Manage & pay here: ${manageLink}`,
+        isSlingshotManual ? "Payment for this booking is collected in person at pickup." : `Current balance: $${remainingBalance.toFixed(2)}.`,
+        !isSlingshotManual ? overdueLine : "",
+        !isSlingshotManual ? planLine : "",
+        isSlingshotManual ? `Manage booking here: ${manageLink}` : `Manage & pay here: ${manageLink}`,
       ].filter(Boolean).join(" ");
 
       let smsSent = false;
@@ -2017,16 +2066,16 @@ export default async function handler(req, res) {
           await transporter.sendMail({
             from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
             to: email,
-            subject: "Manage & Pay Your Booking",
+            subject: isSlingshotManual ? "Manage Your Slingshot Booking" : "Manage & Pay Your Booking",
             html: `
-              <h2>Your Booking Payment Link</h2>
+              <h2>${isSlingshotManual ? "Your Slingshot Dashboard Link" : "Your Booking Payment Link"}</h2>
               <p>Hi ${escHtml(renterName || "there")},</p>
-              <p>${escHtml(customMessage || "Your next payment is due.")}</p>
+              <p>${escHtml(customMessage || (isSlingshotManual ? "Your Slingshot booking is ready in the renter dashboard." : "Your next payment is due."))}</p>
               <p><strong>Booking:</strong> ${escHtml(bkRow.booking_ref)}</p>
-              <p><strong>Current balance:</strong> $${remainingBalance.toFixed(2)}</p>
-              ${overdueAmount > 0 ? `<p><strong>Overdue amount:</strong> $${overdueAmount.toFixed(2)}</p>` : ""}
-              ${planProgress.has_active_plan ? `<p><strong>Payment plan remaining:</strong> $${paymentPlanRemaining.toFixed(2)}${nextDueDate ? ` (next due ${escHtml(nextDueDate)})` : ""}</p>` : ""}
-              <p><a href="${escHtml(manageLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Manage &amp; Pay Now</a></p>
+              ${isSlingshotManual ? `<p><strong>Payment:</strong> Due in person at pickup.</p>` : `<p><strong>Current balance:</strong> $${remainingBalance.toFixed(2)}</p>`}
+              ${!isSlingshotManual && overdueAmount > 0 ? `<p><strong>Overdue amount:</strong> $${overdueAmount.toFixed(2)}</p>` : ""}
+              ${!isSlingshotManual && planProgress.has_active_plan ? `<p><strong>Payment plan remaining:</strong> $${paymentPlanRemaining.toFixed(2)}${nextDueDate ? ` (next due ${escHtml(nextDueDate)})` : ""}</p>` : ""}
+              <p><a href="${escHtml(manageLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">${isSlingshotManual ? "Open Dashboard" : "Manage &amp; Pay Now"}</a></p>
               <p>If you need help, call us at (844) 511-4059.</p>
             `,
           });
@@ -2052,6 +2101,122 @@ export default async function handler(req, res) {
           remainingInstallments: Number(planProgress.remaining_installments || 0),
         },
       });
+    }
+
+    if (action === "slingshot_mark_payment_received") {
+      const { bookingId, paymentMethod, amountPaid, notes } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      const sb = getSupabaseAdmin();
+      if (!sb) return res.status(503).json({ error: "Database not configured" });
+
+      const booking = await loadSlingshotBookingRow(sb, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      if (String(booking.category || "").toLowerCase() !== "slingshot") {
+        return res.status(409).json({ error: "This action only supports slingshot bookings." });
+      }
+
+      const method = String(paymentMethod || "manual").trim().toLowerCase() || "manual";
+      const paidAmount = roundMoney(amountPaid != null ? amountPaid : booking.remaining_balance || booking.total_price || 0);
+      const paymentNotes = typeof notes === "string" ? notes.trim() : "";
+
+      let updatedBooking = booking;
+      if (String(booking.status || "") !== "ready_for_pickup") {
+        updatedBooking = await applySlingshotBookingStatusTransition(sb, booking, "ready_for_pickup", {
+          changedBy: "admin",
+          extraFields: {
+            payment_method: method,
+            payment_status: "paid",
+            deposit_paid: paidAmount,
+            remaining_balance: 0,
+            slingshot_payment_method: method,
+            slingshot_payment_notes: paymentNotes || null,
+          },
+          auditFields: {
+            payment_method: method,
+            payment_status: "paid",
+            deposit_paid: paidAmount,
+            remaining_balance: 0,
+            slingshot_payment_notes: paymentNotes || null,
+          },
+        });
+      } else {
+        const { error } = await sb.from("bookings").update({
+          payment_method: method,
+          payment_status: "paid",
+          deposit_paid: paidAmount,
+          remaining_balance: 0,
+          slingshot_payment_method: method,
+          slingshot_payment_notes: paymentNotes || null,
+          updated_at: new Date().toISOString(),
+        }).eq("booking_ref", bookingId);
+        if (error) return res.status(500).json({ error: error.message });
+        await writeAuditLog(bookingId, [
+          { field: "payment_method", oldValue: booking.payment_method || null, newValue: method },
+          { field: "payment_status", oldValue: booking.payment_status || null, newValue: "paid" },
+        ], "admin");
+      }
+
+      return res.status(200).json({
+        success: true,
+        bookingId,
+        status: updatedBooking.status || "ready_for_pickup",
+        paymentMethod: method,
+        amountPaid: paidAmount,
+      });
+    }
+
+    if (action === "slingshot_mark_agreement_signed") {
+      const { bookingId, notes } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      const sb = getSupabaseAdmin();
+      if (!sb) return res.status(503).json({ error: "Database not configured" });
+      const booking = await loadSlingshotBookingRow(sb, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      if (String(booking.category || "").toLowerCase() !== "slingshot") {
+        return res.status(409).json({ error: "This action only supports slingshot bookings." });
+      }
+
+      let current = booking;
+      if (String(current.status || "") === "identity_verified") {
+        current = await applySlingshotBookingStatusTransition(sb, current, "agreement_pending", { changedBy: "admin" });
+      }
+      if (String(current.status || "") === "agreement_pending") {
+        current = await applySlingshotBookingStatusTransition(sb, current, "agreement_signed", {
+          changedBy: "admin",
+          auditFields: { admin_agreement_override_note: notes || null },
+        });
+      }
+      if (String(current.status || "") === "agreement_signed") {
+        current = await applySlingshotBookingStatusTransition(sb, current, "pending_manual_payment", {
+          changedBy: "admin",
+          extraFields: { payment_status: "manual_pending" },
+          auditFields: { payment_status: "manual_pending" },
+        });
+      }
+      return res.status(200).json({ success: true, bookingId, status: current.status });
+    }
+
+    if (action === "slingshot_resend_agreement") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      const sb = getSupabaseAdmin();
+      if (!sb) return res.status(503).json({ error: "Database not configured" });
+      const booking = await loadSlingshotBookingRow(sb, bookingId);
+      if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const { data: docsRow, error: docsErr } = await sb
+        .from("pending_booking_docs")
+        .select("agreement_pdf_url")
+        .eq("booking_id", bookingId)
+        .maybeSingle();
+      if (docsErr) return res.status(500).json({ error: docsErr.message });
+      const manageToken = booking.manage_token || createManageToken(bookingId);
+      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
+      await sb.from("bookings").update({ manage_token: manageToken, updated_at: new Date().toISOString() }).eq("booking_ref", bookingId);
+      await sendStoredSlingshotAgreementEmail(sb, booking, docsRow, manageLink);
+      await writeAuditLog(bookingId, [
+        { field: "agreement_email_resent", oldValue: null, newValue: new Date().toISOString() },
+      ], "admin");
+      return res.status(200).json({ success: true, bookingId, manageLink });
     }
 
     // ── OVERRIDE_BALANCE — admin manually sets a new balance payment link ─────
