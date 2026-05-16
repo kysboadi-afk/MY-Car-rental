@@ -119,6 +119,26 @@ mock.module("./_pricing.js", {
   },
 });
 
+// _extension-risk.js mock — controls Phase 2 risk gate behaviour per test.
+// riskResult is returned by evaluateExtensionRisk; riskSettings by loadExtensionRiskSettings.
+let riskResult      = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+let riskSettingsMock = {
+  extension_partial_block_enabled: true,
+  extension_max_unpaid_exposure:   500,
+  extension_max_partial_count:     3,
+  extension_partial_min_pct:       50,
+  extension_overdue_block_partial: true,
+  extension_allow_override:        true,
+};
+
+mock.module("./_extension-risk.js", {
+  namedExports: {
+    EXTENSION_RISK_DEFAULTS:     riskSettingsMock,
+    loadExtensionRiskSettings:   async () => ({ ...riskSettingsMock }),
+    evaluateExtensionRisk:       async () => ({ ...riskResult }),
+  },
+});
+
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
 // capturedStripeParams stores the last params passed to paymentIntents.create so
 // metadata-content tests can assert on what was sent to Stripe.
@@ -949,3 +969,113 @@ test("extend-rental: no waiver when late_fee_waived_amount is absent from Supaba
   assert.equal(res._status, 200);
   assert.equal(res._body.lateFeeWaived, 0, "lateFeeWaived must default to 0 when no waiver is set");
 });
+
+// ── Phase 2: Risk gate integration tests ──────────────────────────────────────
+
+test("extend-rental: Phase 2 risk gate blocks partial payment when evaluateExtensionRisk denies", async () => {
+  // Simulate risk evaluator returning blocked (e.g. partial count exceeded).
+  riskResult = {
+    allowed:        false,
+    reason:         "You have reached the maximum number of partial extensions (3). Please pay your outstanding balance.",
+    partialCount:   3,
+    exposureAmount: 350,
+    riskOverride:   null,
+  };
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 200,   // partial payment — triggers Phase 2 gate
+  }), res);
+
+  assert.equal(res._status, 400, "Phase 2 risk block must return 400");
+  assert.equal(res._body.riskBlocked, true, "riskBlocked must be true");
+  assert.match(String(res._body?.error || ""), /maximum number|outstanding|balance/i);
+
+  // Reset risk result for subsequent tests
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 risk gate is skipped for full payments (remainingBalance=0)", async () => {
+  // Configure risk evaluator to block — but a full payment must never call it.
+  riskResult = {
+    allowed:        false,
+    reason:         "Simulated risk block",
+    partialCount:   99,
+    exposureAmount: 9999,
+    riskOverride:   null,
+  };
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  // No customPaymentAmount → full payment path
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200, "full payment must not be blocked by Phase 2 gate");
+  assert.equal(res._body.remainingBalance, "0.00", "full payment must leave zero balance");
+
+  // Reset
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 response includes riskBlocked, partialCount, exposureAmount on block", async () => {
+  riskResult = {
+    allowed:        false,
+    reason:         "Exposure exceeded",
+    partialCount:   2,
+    exposureAmount: 480,
+    riskOverride:   null,
+  };
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 165,
+  }), res);
+
+  assert.equal(res._status, 400);
+  assert.equal(res._body.riskBlocked,    true);
+  assert.equal(res._body.partialCount,   2);
+  assert.equal(res._body.exposureAmount, "480.00");
+
+  // Reset
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 passes through when risk gate allows the partial extension", async () => {
+  // Default riskResult is allowed: true — already reset above
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 200,
+  }), res);
+
+  assert.equal(res._status, 200, "allowed partial must succeed");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+  assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance must be tracked");
+});
+

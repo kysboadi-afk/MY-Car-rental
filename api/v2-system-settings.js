@@ -52,6 +52,13 @@ const DEFAULT_SETTINGS = [
   { key: "balance_overdue_threshold_days", value: 0,    description: "Days past due before the first overdue SMS reminder fires (0 = same day)", category: "notification" },
   { key: "balance_overdue_30_enabled",  value: true,    description: "Send a reminder SMS at 30 days past due", category: "notification" },
   { key: "balance_overdue_60_enabled",  value: true,    description: "Send a reminder SMS at 60 days past due (escalation notice)", category: "notification" },
+  // Extension risk gating (Phase 2)
+  { key: "extension_partial_block_enabled", value: true,  description: "Enable Phase 2 extension risk gating — blocks partial extensions that exceed exposure or count limits", category: "extension_policy" },
+  { key: "extension_max_unpaid_exposure",   value: 500,   description: "Maximum total unpaid balance (USD) from partial extensions allowed per booking before new partials are blocked", category: "extension_policy" },
+  { key: "extension_max_partial_count",     value: 3,     description: "Maximum number of partial-payment extensions allowed per booking", category: "extension_policy" },
+  { key: "extension_partial_min_pct",       value: 50,    description: "Minimum percentage of extension cost that must be paid upfront for a partial extension (used by Phase 1 minimum enforcement)", category: "extension_policy" },
+  { key: "extension_overdue_block_partial", value: true,  description: "Block partial-payment extensions when the booking status is overdue", category: "extension_policy" },
+  { key: "extension_allow_override",        value: true,  description: "Allow admin-set extension_risk_override on individual bookings to override the Phase 2 risk gate", category: "extension_policy" },
 ];
 
 export default async function handler(req, res) {

@@ -24,6 +24,7 @@ import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA, isoDateInLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
+import { loadExtensionRiskSettings, evaluateExtensionRisk } from "./_extension-risk.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -605,6 +606,27 @@ export default async function handler(req, res) {
     }
     const extensionRemainingBalance = Math.round(Math.max(0, extensionTotal - amountPaidNow) * 100) / 100;
     const extensionPaymentStatus = extensionRemainingBalance > 0 ? "partially_paid" : "paid";
+
+    // ── Phase 2: Extension risk gating ───────────────────────────────────────
+    // When the renter is making a partial payment, enforce system-wide exposure
+    // and count limits.  Full payments always bypass this gate.
+    if (extensionRemainingBalance > 0) {
+      const riskSettings = await loadExtensionRiskSettings();
+      const risk = await evaluateExtensionRisk(
+        sb,
+        sbActiveBookingRef || activeBooking.bookingId || null,
+        extensionRemainingBalance,
+        riskSettings
+      );
+      if (!risk.allowed) {
+        return res.status(400).json({
+          error:          risk.reason,
+          riskBlocked:    true,
+          partialCount:   risk.partialCount,
+          exposureAmount: risk.exposureAmount.toFixed(2),
+        });
+      }
+    }
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
