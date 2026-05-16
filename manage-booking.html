@@ -445,6 +445,384 @@
       font-size: 0.85em;
       margin-bottom: 16px;
     }
+
+    .dash-hero {
+      background: linear-gradient(135deg, #171717 0%, #232323 48%, #2c2c2c 100%);
+      color: #fff;
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 14px 34px rgba(0,0,0,0.2);
+    }
+    .dash-hero-top,
+    .dash-hero-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .dash-hero-top { margin-bottom: 18px; }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      color: #ffcf5a;
+      font-size: 0.78em;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .dash-hero h2 {
+      margin: 12px 0 8px;
+      font-size: clamp(1.45rem, 3vw, 2rem);
+      line-height: 1.15;
+    }
+    .dash-hero p {
+      margin: 0;
+      color: rgba(255,255,255,0.78);
+      font-size: 0.95em;
+      max-width: 640px;
+    }
+    .hero-booking-meta {
+      text-align: right;
+      min-width: 220px;
+    }
+    .hero-booking-meta .booking-id-label {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.74em;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .hero-booking-meta .booking-id-val {
+      margin-top: 6px;
+      font-size: 0.98em;
+      font-weight: 700;
+      font-family: monospace;
+      color: #fff;
+    }
+    .hero-contact-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.9em;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+      border: 1px solid #f0f0f0;
+      min-height: 118px;
+    }
+    .stat-label {
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72em;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .stat-value {
+      font-size: 1.4em;
+      font-weight: 800;
+      color: #111827;
+      line-height: 1.1;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+    .stat-note {
+      color: #6b7280;
+      font-size: 0.84em;
+      line-height: 1.45;
+    }
+    .stat-card.is-accent {
+      background: linear-gradient(135deg, #fff6db 0%, #fff 100%);
+      border-color: #ffe19a;
+    }
+    .stat-card.is-danger .stat-value { color: #c62828; }
+    .stat-card.is-success .stat-value { color: #2e7d32; }
+
+    .dashboard-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.95fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .section-stack { display: grid; gap: 16px; }
+    .section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .section-head h3 {
+      margin-bottom: 4px;
+    }
+    .section-kicker {
+      color: #6b7280;
+      font-size: 0.88em;
+      line-height: 1.5;
+      margin: 0;
+    }
+    .section-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f7f7f7;
+      color: #555;
+      font-size: 0.76em;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .detail-list {
+      display: grid;
+      gap: 10px;
+    }
+    .detail-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f2f2f2;
+    }
+    .detail-item:last-child { border-bottom: none; }
+    .detail-item-label {
+      color: #6b7280;
+      font-size: 0.88em;
+      min-width: 120px;
+    }
+    .detail-item-value {
+      text-align: right;
+      font-weight: 700;
+      color: #111827;
+      font-size: 0.92em;
+    }
+
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #f5f5f5;
+      color: #444;
+      font-size: 0.82em;
+      font-weight: 700;
+    }
+
+    .action-stack {
+      display: grid;
+      gap: 10px;
+    }
+    .action-stack .btn-primary,
+    .action-stack .btn-secondary,
+    .action-stack .btn-outline,
+    .action-stack .btn-linkish {
+      width: 100%;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-sizing: border-box;
+    }
+    .btn-linkish {
+      background: #f8fafc;
+      border: 1px solid #dfe7ef;
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: #111827;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-linkish[aria-disabled="true"],
+    .btn-linkish:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    .action-note {
+      background: #faf7ef;
+      border: 1px solid #efe4c1;
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #6d5a18;
+      font-size: 0.84em;
+      line-height: 1.45;
+    }
+
+    .plan-summary-grid,
+    .history-grid,
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .mini-card {
+      background: #f8fafc;
+      border: 1px solid #ecf0f4;
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .mini-card-label {
+      font-size: 0.74em;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7280;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .mini-card-value {
+      font-size: 1.1em;
+      font-weight: 800;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .mini-card-note {
+      color: #6b7280;
+      font-size: 0.84em;
+      line-height: 1.45;
+    }
+    .plan-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px solid #eceff3;
+      background: #fbfbfc;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .plan-banner-note {
+      color: #6b7280;
+      font-size: 0.88em;
+      margin-top: 4px;
+    }
+    .plan-banner.is-overdue {
+      border-color: #ffcdd2;
+      background: #fff5f5;
+    }
+    .plan-history-list,
+    .activity-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .history-item {
+      border: 1px solid #edf1f5;
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      background: #fff;
+    }
+    .history-item-main {
+      min-width: 0;
+    }
+    .history-item-title {
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+    }
+    .history-item-meta {
+      color: #6b7280;
+      font-size: 0.84em;
+      line-height: 1.45;
+    }
+    .history-item-amount {
+      font-weight: 800;
+      font-size: 0.96em;
+      white-space: nowrap;
+      text-align: right;
+    }
+    .history-item-amount.is-credit { color: #2e7d32; }
+    .history-item-amount.is-debit { color: #c62828; }
+    .empty-state {
+      border: 1px dashed #d9dee5;
+      border-radius: 12px;
+      padding: 18px;
+      text-align: center;
+      color: #6b7280;
+      font-size: 0.9em;
+      background: #fafbfd;
+    }
+
+    .extension-card {
+      background: linear-gradient(135deg, #101828 0%, #1f2937 100%);
+      color: #fff;
+    }
+    .extension-card h3,
+    .extension-card .section-kicker,
+    .extension-card .mini-card-label,
+    .extension-card .mini-card-note {
+      color: rgba(255,255,255,0.78);
+    }
+    .extension-card .mini-card {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.12);
+    }
+    .extension-card .mini-card-value,
+    .extension-card .section-tag {
+      color: #fff;
+    }
+    .extension-card .section-tag {
+      background: rgba(255,255,255,0.1);
+    }
+
+    @media (max-width: 1080px) {
+      .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .dashboard-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .portal-wrap { padding: 18px 12px 40px; }
+      .dash-card,
+      .dash-header,
+      .support-bar,
+      .dash-hero {
+        padding: 18px;
+        border-radius: 16px;
+      }
+      .hero-booking-meta { text-align: left; min-width: 0; }
+      .stats-grid,
+      .plan-summary-grid,
+      .history-grid,
+      .module-grid { grid-template-columns: 1fr; }
+      .detail-item { flex-direction: column; align-items: flex-start; }
+      .detail-item-value { text-align: left; }
+      .history-item { flex-direction: column; }
+      .history-item-amount { text-align: left; }
+    }
   </style>
 </head>
 <body>
@@ -526,101 +904,280 @@
        MAIN DASHBOARD – shown after successful booking load
   ══════════════════════════════════════════════════════════════════════════ -->
   <div id="main-content" style="display:none">
-
-    <!-- Dashboard header: greeting, booking ID, status -->
-    <div class="dash-header">
-      <div class="dash-header-left">
-        <h2 id="dash-greeting">Your Rental Dashboard</h2>
-        <p id="dash-subtitle">SLY Transportation Services LLC</p>
+    <section class="dash-hero">
+      <div class="dash-hero-top">
+        <div>
+          <span class="hero-eyebrow">Renter Dashboard</span>
+          <h2 id="dash-greeting">Your Rental Dashboard</h2>
+          <p id="dash-subtitle">Manage payments, view your booking details, and access your renter tools in one place.</p>
+        </div>
+        <div class="hero-booking-meta">
+          <div class="booking-id-label">Booking ID</div>
+          <div class="booking-id-val" id="s-booking-id">–</div>
+          <div style="margin-top:10px" id="s-status">–</div>
+        </div>
       </div>
-      <div class="dash-header-right">
-        <div class="booking-id-label">Booking ID</div>
-        <div class="booking-id-val" id="s-booking-id">–</div>
-        <div style="margin-top:6px" id="s-status">–</div>
+      <div class="dash-hero-bottom">
+        <div class="status-strip">
+          <span class="status-chip">📍 Los Angeles pickup</span>
+          <span class="status-chip" id="hero-payment-chip">💳 Payment details loading</span>
+          <span class="status-chip" id="hero-plan-chip">🗓️ Payment plan updates will appear here</span>
+        </div>
+        <a href="tel:+18445114059" class="hero-contact-pill">📞 Need help? (844) 511-4059</a>
       </div>
-    </div>
+    </section>
 
-    <!-- Lock notice (shown for confirmed/active/under-review bookings) -->
     <div id="lock-notice" class="lock-notice" style="display:none"></div>
 
-    <!-- ── 2-column grid: vehicle info + financial summary ─────────────────── -->
-    <div class="dash-grid">
-
-      <!-- Vehicle card -->
-      <div class="dash-card">
-        <h3>Your Vehicle</h3>
-        <img id="vehicle-img" src="" alt="Vehicle" class="vehicle-img" onerror="this.style.display='none'">
-        <p class="vehicle-name" id="s-vehicle">–</p>
-        <div class="trip-row">
-          <span class="trip-label">📅 Pickup</span>
-          <span class="trip-val" id="s-pickup">–</span>
-        </div>
-        <div class="trip-row">
-          <span class="trip-label">🏁 Return</span>
-          <span class="trip-val" id="s-return">–</span>
-        </div>
-        <div class="trip-row">
-          <span class="trip-label">📍 Location</span>
-          <span class="trip-val">Los Angeles, CA</span>
-        </div>
-        <div class="trip-row">
-          <span class="trip-label">⛽ Fuel</span>
-          <span class="trip-val">Return full tank</span>
-        </div>
-        <div class="trip-row" id="dpp-row" style="display:none">
-          <span class="trip-label">🛡️ Protection</span>
-          <span class="trip-val" id="s-protection">–</span>
-        </div>
+    <section class="stats-grid" aria-label="Booking financial summary">
+      <div class="stat-card">
+        <div class="stat-label">Total Booking Amount</div>
+        <div class="stat-value" id="stat-total">–</div>
+        <div class="stat-note" id="stat-total-note">Rental total including recorded booking charges.</div>
       </div>
+      <div class="stat-card is-success">
+        <div class="stat-label">Total Paid</div>
+        <div class="stat-value" id="stat-paid">–</div>
+        <div class="stat-note" id="stat-paid-note">Payments already posted to your booking.</div>
+      </div>
+      <div class="stat-card is-accent">
+        <div class="stat-label">Remaining Balance</div>
+        <div class="stat-value" id="stat-balance">–</div>
+        <div class="stat-note" id="stat-balance-note">Amount still due on your account.</div>
+      </div>
+      <div class="stat-card is-danger">
+        <div class="stat-label">Overdue Amount</div>
+        <div class="stat-value" id="stat-overdue">–</div>
+        <div class="stat-note" id="stat-overdue-note">Updated when a past-due installment or overdue rental balance exists.</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Next Payment Due</div>
+        <div class="stat-value" id="stat-next-due">–</div>
+        <div class="stat-note" id="stat-next-due-note">We’ll highlight your next upcoming due date here.</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Payment Plan Progress</div>
+        <div class="stat-value" id="stat-plan-progress">–</div>
+        <div class="stat-note" id="stat-plan-progress-note">Active plan progress and installment status.</div>
+      </div>
+    </section>
 
-      <!-- Financial summary card -->
-      <div class="dash-card">
-        <h3>Financial Summary</h3>
-        <div class="fin-row">
-          <span>Rental Total</span>
-          <span class="fin-val" id="s-total">–</span>
-        </div>
-        <div class="fin-row fin-paid">
-          <span>Amount Paid</span>
-          <span class="fin-val" id="s-deposit">–</span>
-        </div>
-        <div class="fin-row fin-balance" id="balance-row">
-          <span>Balance Due</span>
-          <span class="fin-val" id="s-balance">–</span>
-        </div>
-
-        <!-- Payment progress bar -->
-        <div class="payment-progress">
-          <div class="payment-progress-fill" id="payment-progress-fill" style="width:0%"></div>
-        </div>
-        <div class="payment-progress-label">
-          <span id="progress-paid-label">$0 paid</span>
-          <span id="progress-pct-label">0% complete</span>
-        </div>
-
-        <!-- Pay balance actions -->
-        <div id="pay-balance-section" style="display:none">
-          <div class="secure-note">🔒 Payments secured by Stripe</div>
-          <button id="btn-init-balance" class="btn-primary" type="button">
-            Pay Balance
-          </button>
-          <div id="balance-payment-wrap" style="display:none;margin-top:8px">
-            <div class="payment-panel">
-              <h4>Complete Your Payment</h4>
-              <div id="balance-stripe-element"></div>
-              <div id="balance-error" class="error-msg" style="display:none"></div>
-              <button id="btn-confirm-balance" class="btn-primary" type="button">Confirm Payment</button>
+    <section class="dashboard-layout">
+      <div class="section-stack">
+        <div class="dash-card">
+          <div class="section-head">
+            <div>
+              <h3>Vehicle &amp; Booking Details</h3>
+              <p class="section-kicker">Your current rental dates, pickup details, and vehicle support information.</p>
+            </div>
+            <span class="section-tag" id="vehicle-status-tag">Live booking details</span>
+          </div>
+          <img id="vehicle-img" src="" alt="Vehicle" class="vehicle-img" onerror="this.style.display='none'">
+          <p class="vehicle-name" id="s-vehicle">–</p>
+          <div class="detail-list">
+            <div class="detail-item">
+              <span class="detail-item-label">Pickup</span>
+              <span class="detail-item-value" id="s-pickup">–</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-item-label">Return</span>
+              <span class="detail-item-value" id="s-return">–</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-item-label">Pickup Location</span>
+              <span class="detail-item-value">Los Angeles, CA</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-item-label">Fuel Expectation</span>
+              <span class="detail-item-value">Return with a full tank unless otherwise noted</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-item-label">Support</span>
+              <span class="detail-item-value"><a href="tel:+18445114059" style="color:#1a73e8;text-decoration:none">(844) 511-4059</a></span>
+            </div>
+            <div class="detail-item" id="dpp-row" style="display:none">
+              <span class="detail-item-label">Protection Plan</span>
+              <span class="detail-item-value" id="s-protection">–</span>
             </div>
           </div>
-          <div id="action-msg-finance"></div>
         </div>
 
-        <!-- Already paid -->
-        <div id="paid-in-full-notice" style="display:none;margin-top:12px;text-align:center;font-size:0.88em;color:#2e7d32;font-weight:600">
-          ✅ Paid in full — thank you!
+        <div class="dash-card" id="payment-plan-card">
+          <div class="section-head">
+            <div>
+              <h3>Payment Plan Visibility</h3>
+              <p class="section-kicker">Uses the same renter balance and payment-plan backend already powering renter payment links.</p>
+            </div>
+            <span class="section-tag" id="plan-status-badge">No active plan</span>
+          </div>
+
+          <div id="plan-empty-state" class="empty-state">
+            No active payment plan is attached to this booking right now. If you have a balance due, you can still pay using the actions on this page.
+          </div>
+
+          <div id="plan-content" style="display:none">
+            <div class="plan-banner" id="plan-banner">
+              <div>
+                <div class="mini-card-label">Installment Progress</div>
+                <div class="mini-card-value" id="plan-progress-text">–</div>
+                <div class="plan-banner-note" id="plan-banner-note">Your next installment details will appear here.</div>
+              </div>
+              <div class="section-tag" id="plan-overdue-pill">On track</div>
+            </div>
+
+            <div class="payment-progress">
+              <div class="payment-progress-fill" id="plan-progress-fill" style="width:0%"></div>
+            </div>
+            <div class="payment-progress-label">
+              <span id="plan-progress-left">0 paid</span>
+              <span id="plan-progress-right">0% complete</span>
+            </div>
+
+            <div class="plan-summary-grid">
+              <div class="mini-card">
+                <div class="mini-card-label">Next Due Date</div>
+                <div class="mini-card-value" id="plan-next-due">–</div>
+                <div class="mini-card-note" id="plan-next-due-note">Upcoming installment timing.</div>
+              </div>
+              <div class="mini-card">
+                <div class="mini-card-label">Next Installment</div>
+                <div class="mini-card-value" id="plan-next-amount">–</div>
+                <div class="mini-card-note" id="plan-next-amount-note">Current installment amount due.</div>
+              </div>
+              <div class="mini-card">
+                <div class="mini-card-label">Remaining Balance</div>
+                <div class="mini-card-value" id="plan-remaining-balance">–</div>
+                <div class="mini-card-note" id="plan-remaining-note">Balance left after posted payments.</div>
+              </div>
+              <div class="mini-card">
+                <div class="mini-card-label">History Summary</div>
+                <div class="mini-card-value" id="plan-history-summary">–</div>
+                <div class="mini-card-note" id="plan-history-note">Recent payment activity tied to this booking.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-card extension-card" id="extension-card">
+          <div class="section-head">
+            <div>
+              <h3>Extension Availability</h3>
+              <p class="section-kicker">The existing extension flow stays isolated. This dashboard only surfaces your current balance, overdue state, and the next step to extend safely.</p>
+            </div>
+            <span class="section-tag" id="extension-status-pill">Extension info</span>
+          </div>
+
+          <div class="history-grid">
+            <div class="mini-card">
+              <div class="mini-card-label">Current Balance Owed</div>
+              <div class="mini-card-value" id="extension-balance">–</div>
+              <div class="mini-card-note" id="extension-balance-note">Outstanding renter balance before any new extension charges.</div>
+            </div>
+            <div class="mini-card">
+              <div class="mini-card-label">Overdue Amount</div>
+              <div class="mini-card-value" id="extension-overdue">–</div>
+              <div class="mini-card-note" id="extension-overdue-note">Shown when an overdue rental or installment exists.</div>
+            </div>
+          </div>
+
+          <div class="action-note" id="extension-preview-note" style="margin-top:14px">
+            Extension pricing stays in the specialized extension workflow. If a preview becomes available there, it will remain isolated from this dashboard.
+          </div>
+
+          <div class="action-stack" style="margin-top:14px">
+            <a id="extension-cta" class="btn-primary" href="#">⏱️ Open Extension Flow</a>
+            <div class="secure-note" id="extension-cta-note">The extension form opens the existing specialized renter extension experience.</div>
+          </div>
         </div>
       </div>
-    </div><!-- /dash-grid -->
+
+      <div class="section-stack">
+        <div class="dash-card">
+          <div class="section-head">
+            <div>
+              <h3>Payment Actions</h3>
+              <p class="section-kicker">Use existing renter payment links and reconciliation logic — no separate payment system is introduced here.</p>
+            </div>
+            <span class="section-tag">Secure checkout</span>
+          </div>
+
+          <div class="fin-row">
+            <span>Rental Total</span>
+            <span class="fin-val" id="s-total">–</span>
+          </div>
+          <div class="fin-row fin-paid">
+            <span>Total Paid</span>
+            <span class="fin-val" id="s-deposit">–</span>
+          </div>
+          <div class="fin-row fin-balance" id="balance-row">
+            <span>Balance Due</span>
+            <span class="fin-val" id="s-balance">–</span>
+          </div>
+
+          <div class="payment-progress">
+            <div class="payment-progress-fill" id="payment-progress-fill" style="width:0%"></div>
+          </div>
+          <div class="payment-progress-label">
+            <span id="progress-paid-label">$0 paid</span>
+            <span id="progress-pct-label">0% complete</span>
+          </div>
+
+          <div class="action-stack" id="pay-balance-section" style="display:none">
+            <button id="btn-init-balance" class="btn-primary" type="button">Pay Balance</button>
+            <a id="btn-open-partial" class="btn-secondary" href="#" style="display:none">Make Partial Payment</a>
+            <button id="btn-view-plan" class="btn-outline" type="button">View Payment Plan</button>
+            <button id="btn-download-latest-receipt" class="btn-linkish" type="button" aria-disabled="true">Download Receipt</button>
+            <div class="secure-note">🔒 Payments secured by Stripe. Partial payments continue to use the stabilized renter payment link flow.</div>
+
+            <div id="balance-payment-wrap" style="display:none">
+              <div class="payment-panel">
+                <h4>Complete Your Payment</h4>
+                <div id="balance-stripe-element"></div>
+                <div id="balance-error" class="error-msg" style="display:none"></div>
+                <button id="btn-confirm-balance" class="btn-primary" type="button">Confirm Payment</button>
+              </div>
+            </div>
+            <div id="action-msg-finance"></div>
+          </div>
+
+          <div id="paid-in-full-notice" style="display:none;margin-top:12px;text-align:center;font-size:0.88em;color:#2e7d32;font-weight:600">
+            ✅ Paid in full — thank you!
+          </div>
+        </div>
+
+        <div class="dash-card">
+          <div class="section-head">
+            <div>
+              <h3>Documents &amp; Agreements</h3>
+              <p class="section-kicker">Download what is already supported today, or contact support for anything still handled manually.</p>
+            </div>
+            <span class="section-tag">Renter docs</span>
+          </div>
+          <div class="doc-item">
+            <span class="doc-icon">📄</span>
+            <span class="doc-label">Rental Agreement</span>
+            <a id="doc-agreement-link" href="#" class="doc-action" style="display:none">Download PDF</a>
+            <span id="doc-agreement-unavailable" class="doc-action" style="color:#aaa;cursor:default">Not yet available</span>
+          </div>
+          <div class="doc-item">
+            <span class="doc-icon">🧾</span>
+            <span class="doc-label">Latest Payment Receipt</span>
+            <button id="doc-latest-receipt" class="doc-action" type="button" style="background:none;border:none;padding:0;display:none">Download Receipt</button>
+            <span id="doc-latest-receipt-unavailable" class="doc-action" style="color:#aaa;cursor:default">Available after payment posts</span>
+          </div>
+          <div class="doc-item">
+            <span class="doc-icon">📂</span>
+            <span class="doc-label">Uploaded Documents</span>
+            <span class="doc-action" style="color:#666;cursor:default">Available by support request</span>
+          </div>
+          <div class="doc-item">
+            <span class="doc-icon">📞</span>
+            <span class="doc-label">Need another document?</span>
+            <a href="tel:+18445114059" class="doc-action">Call (844) 511-4059</a>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ── Modify Booking (collapsible, only when editable) ────────────────── -->
     <details class="modify-details" id="edit-section">
@@ -716,29 +1273,45 @@
       </div>
     </details>
 
-    <!-- ── Documents ─────────────────────────────────────────────────────────── -->
     <div class="dash-card">
-      <h3>Documents</h3>
-      <div class="doc-item">
-        <span class="doc-icon">📄</span>
-        <span class="doc-label">Rental Agreement</span>
-        <a id="doc-agreement-link" href="#" class="doc-action" style="display:none">Download PDF</a>
-        <span id="doc-agreement-unavailable" class="doc-action" style="color:#aaa;cursor:default">Contact Support</span>
+      <div class="section-head">
+        <div>
+          <h3>Activity &amp; History</h3>
+          <p class="section-kicker">Recent payments, balance updates, extension-related entries, and notices tied to your account.</p>
+        </div>
+        <span class="section-tag" id="activity-summary-pill">Recent activity</span>
       </div>
-      <div class="doc-item">
-        <span class="doc-icon">📋</span>
-        <span class="doc-label">Request a Document</span>
-        <a href="tel:+18445114059" class="doc-action">Call (844) 511-4059</a>
+      <div class="history-grid" id="history-grid-summary">
+        <div class="mini-card">
+          <div class="mini-card-label">Recent Payments</div>
+          <div class="mini-card-value" id="history-payment-count">0</div>
+          <div class="mini-card-note" id="history-payment-note">No posted renter payments yet.</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-card-label">Recent Notices</div>
+          <div class="mini-card-value" id="history-notice-count">0</div>
+          <div class="mini-card-note" id="history-notice-note">You’re all caught up right now.</div>
+        </div>
+      </div>
+      <div id="activity-list" class="activity-list"></div>
+      <div id="activity-empty" class="empty-state">
+        Payment confirmations, extension history, and important renter notices will appear here once activity is available for this booking.
       </div>
     </div>
 
-    <!-- ── Activity (placeholder — future module) ────────────────────────────── -->
     <div class="dash-card">
-      <h3>Activity &amp; History</h3>
-      <div class="activity-placeholder">
-        <div class="act-icon">📋</div>
-        <p>Payment history, extension records, and account notices will appear here.</p>
-        <p style="margin-top:8px">For a full history of your account, call <a href="tel:+18445114059" style="color:#1a73e8">(844) 511-4059</a>.</p>
+      <div class="section-head">
+        <div>
+          <h3>Future Modules</h3>
+          <p class="section-kicker">This structure is ready for tolls, tickets, trip data, loyalty, renter risk, and maintenance notices.</p>
+        </div>
+        <span class="section-tag">Future-ready</span>
+      </div>
+      <div class="module-grid">
+        <div class="module-placeholder">Tolls &amp; tickets module</div>
+        <div class="module-placeholder">GPS / trip data module</div>
+        <div class="module-placeholder">Loyalty &amp; rewards module</div>
+        <div class="module-placeholder">Renter score / notices module</div>
       </div>
     </div>
 

@@ -55,11 +55,20 @@
   const $newVehicle       = document.getElementById("new-vehicle");
   const $payBalSection    = document.getElementById("pay-balance-section");
   const $btnInitBalance   = document.getElementById("btn-init-balance");
+  const $btnOpenPartial   = document.getElementById("btn-open-partial");
+  const $btnViewPlan      = document.getElementById("btn-view-plan");
+  const $btnDownloadLatestReceipt = document.getElementById("btn-download-latest-receipt");
   const $balanceWrap      = document.getElementById("balance-payment-wrap");
   const $balanceStripeEl  = document.getElementById("balance-stripe-element");
   const $balanceError     = document.getElementById("balance-error");
   const $btnConfirmBal    = document.getElementById("btn-confirm-balance");
   const $btnRetry         = document.getElementById("btn-retry-verify");
+  const $docAgreementLink = document.getElementById("doc-agreement-link");
+  const $docAgreementUnavailable = document.getElementById("doc-agreement-unavailable");
+  const $docLatestReceipt = document.getElementById("doc-latest-receipt");
+  const $docLatestReceiptUnavailable = document.getElementById("doc-latest-receipt-unavailable");
+  const $activityList     = document.getElementById("activity-list");
+  const $activityEmpty    = document.getElementById("activity-empty");
 
   // ── Booking state ───────────────────────────────────────────────────────────
   let booking          = null;
@@ -71,6 +80,10 @@
   let balanceStripe    = null;
   let balanceElements  = null;
   let balancePayEl     = null;
+  let ledgerSummary    = null;
+  let ledgerTransactions = [];
+  let latestReceiptTransaction = null;
+  let agreementPdfUrl  = null;
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function fmt(n) {
@@ -92,6 +105,118 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function setHtml(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = value;
+  }
+
+  function setDisplay(id, visible, displayValue = "") {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? displayValue : "none";
+  }
+
+  function formatDateTime(dateValue, timeValue) {
+    if (!dateValue) return "–";
+    const base = formatDate(dateValue);
+    return timeValue ? `${base} at ${timeValue}` : base;
+  }
+
+  function formatPlanDate(value) {
+    if (!value) return "–";
+    const dateOnly = String(value).slice(0, 10);
+    return formatDate(dateOnly);
+  }
+
+  function normalizeStatusKey(value) {
+    return String(value || "").toLowerCase().replace(/\s+/g, "_");
+  }
+
+  function buildBalanceLink(b) {
+    if (b?.balancePaymentLink) return b.balancePaymentLink;
+    const params = new URLSearchParams();
+    if (b?.vehicleId) params.set("v", b.vehicleId);
+    if (b?.pickupDate) params.set("p", b.pickupDate);
+    if (b?.returnDate) params.set("r", b.returnDate);
+    if (b?.customerEmail) params.set("e", b.customerEmail);
+    if (b?.bookingId) params.set("b", b.bookingId);
+    return params.toString() ? `https://www.slytrans.com/balance.html?${params.toString()}` : "";
+  }
+
+  function isOverdueDate(value) {
+    const dateKey = String(value || "").slice(0, 10);
+    if (!dateKey) return false;
+    const today = new Date();
+    const nowKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return dateKey < nowKey;
+  }
+
+  function transactionTitle(tx) {
+    const type = String(tx?.transaction_type || "").replace(/_/g, " ");
+    const normalized = type.toLowerCase();
+    if (normalized === "payment") return "Payment received";
+    if (normalized === "extension") return "Extension charge";
+    if (normalized === "late fee") return "Late fee";
+    if (normalized === "waiver") return "Waiver applied";
+    if (normalized === "refund") return "Refund posted";
+    return type ? type.replace(/\b\w/g, (c) => c.toUpperCase()) : "Account activity";
+  }
+
+  function transactionMeta(tx) {
+    const created = tx?.created_at ? new Date(tx.created_at) : null;
+    const createdLabel = created && Number.isFinite(created.getTime())
+      ? created.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric" })
+      : "Date unavailable";
+    const notes = String(tx?.notes || "").trim();
+    return notes ? `${createdLabel} • ${notes}` : createdLabel;
+  }
+
+  function findLatestReceiptTransaction(transactions) {
+    return (transactions || []).find((tx) => {
+      return tx && tx.transaction_type === "payment" && tx.direction === "credit";
+    }) || null;
+  }
+
+  function downloadReceiptForTransaction(tx) {
+    if (!booking || !tx) return;
+    const paidAt = tx.created_at ? new Date(tx.created_at).toLocaleString() : "Date unavailable";
+    const amount = fmt(Number(tx.amount || 0));
+    const receiptRef = tx.stripe_payment_intent_id || tx.source_id || tx.id || booking.bookingId || "payment";
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>SLY Receipt</title>
+<style>
+body{font-family:Arial,sans-serif;padding:32px;color:#111} .wrap{max-width:720px;margin:0 auto}
+h1{margin:0 0 8px} .meta{color:#555;margin-bottom:24px}
+table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #ddd;padding:10px;vertical-align:top}
+.amount{font-size:28px;font-weight:700;color:#1b5e20;margin:20px 0}
+</style></head><body><div class="wrap">
+<h1>Payment Receipt</h1>
+<div class="meta">SLY Transportation Services LLC • (844) 511-4059</div>
+<div class="amount">${escapeHtml(amount)}</div>
+<table>
+  <tr><td><strong>Booking ID</strong></td><td>${escapeHtml(booking.bookingId || "—")}</td></tr>
+  <tr><td><strong>Renter</strong></td><td>${escapeHtml(booking.customerName || "—")}</td></tr>
+  <tr><td><strong>Vehicle</strong></td><td>${escapeHtml(booking.vehicleName || booking.vehicleId || "—")}</td></tr>
+  <tr><td><strong>Payment Date</strong></td><td>${escapeHtml(paidAt)}</td></tr>
+  <tr><td><strong>Payment Reference</strong></td><td>${escapeHtml(receiptRef)}</td></tr>
+  <tr><td><strong>Description</strong></td><td>${escapeHtml(transactionTitle(tx))}</td></tr>
+</table>
+</div></body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sly-receipt-${booking.bookingId || "payment"}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
   function showSection(which) {
@@ -174,23 +299,34 @@
 
   // ── Populate dashboard ──────────────────────────────────────────────────────
   function populateDashboard(b) {
-    // Greeting
     const firstName = (b.customerName || "").split(" ")[0];
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
-    const greetEl   = document.getElementById("dash-greeting");
-    if (greetEl) greetEl.textContent = greeting;
+    const statusKey = normalizeStatusKey(b.status);
+    const total     = Number(b.totalPrice || 0);
+    const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
+    const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
+    const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
+    const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
+    const paidPct   = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
+    const plan      = b.paymentPlan || null;
+    const overdueAmount = plan?.isOverdue
+      ? Number(plan.nextInstallmentAmount || 0)
+      : (statusKey === "overdue" ? balance : 0);
+    const nextDueText = plan?.nextDueDate ? formatPlanDate(plan.nextDueDate) : (statusKey === "overdue" ? "Past due" : "Not scheduled");
+    const progressText = plan
+      ? `${plan.paidInstallments || 0}/${plan.totalInstallments || plan.installments || 0}`
+      : `${paidPct}%`;
 
-    // Booking ID + status badge in header
-    const idEl = document.getElementById("s-booking-id");
-    if (idEl) idEl.textContent = b.bookingId || "–";
-    const statusEl = document.getElementById("s-status");
-    if (statusEl) statusEl.innerHTML = statusBadgeHtml(b.status);
+    setText("dash-greeting", greeting);
+    setText("dash-subtitle", "Manage payments, view recent activity, and use renter self-service tools without leaving your booking.");
+    setText("s-booking-id", b.bookingId || "–");
+    setHtml("s-status", statusBadgeHtml(b.status));
+    setText("vehicle-status-tag", statusKey === "overdue" ? "Action needed" : "Current booking details");
+    setText("hero-payment-chip", balance > 0 ? `${fmt(balance)} still due` : "Paid in full");
+    setText("hero-plan-chip", plan ? `Plan: ${plan.status || "active"}` : "No active payment plan");
 
-    // ── Vehicle card ──────────────────────────────────────────────────────────
     const vehicleLabel = [b.vehicleYear, b.vehicleName].filter(Boolean).join(" ");
-    const vehicleEl = document.getElementById("s-vehicle");
-    if (vehicleEl) vehicleEl.textContent = vehicleLabel || "–";
-
+    setText("s-vehicle", vehicleLabel || "–");
     const imgEl = document.getElementById("vehicle-img");
     if (imgEl) {
       const src = VEHICLE_IMAGES[b.vehicleId] || "";
@@ -202,69 +338,82 @@
         imgEl.style.display = "none";
       }
     }
+    setText("s-pickup", formatDateTime(b.pickupDate, b.pickupTime));
+    setText("s-return", formatDateTime(b.returnDate, b.returnTime));
 
-    const pickupText = formatDate(b.pickupDate) + (b.pickupTime ? ` at ${b.pickupTime}` : "");
-    const returnText = formatDate(b.returnDate) + (b.returnTime ? ` at ${b.returnTime}` : "");
-    const pickupEl = document.getElementById("s-pickup");
-    const returnEl = document.getElementById("s-return");
-    if (pickupEl) pickupEl.textContent = pickupText;
-    if (returnEl) returnEl.textContent = returnText;
-
-    // DPP row
     const dppRow = document.getElementById("dpp-row");
     const dppVal = document.getElementById("s-protection");
     if (b.hasProtectionPlan && dppRow && dppVal) {
       const tierNames = { basic: "Basic", standard: "Standard", premium: "Premium" };
       dppVal.textContent = `${tierNames[b.protectionPlanTier] || ""} Protection Plan`.trim();
       dppRow.style.display = "";
+    } else if (dppRow) {
+      dppRow.style.display = "none";
     }
 
-    // ── Financial summary ─────────────────────────────────────────────────────
-    const total   = Number(b.totalPrice  || 0);
-    const paid    = Number(b.depositPaid || 0);
-    const balance = Number(b.balanceDue  || 0);
-    const paidPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
+    setText("s-total", fmt(total));
+    setText("s-deposit", fmt(paid));
+    setText("s-balance", fmt(balance));
+    setText("stat-total", fmt(total));
+    setText("stat-paid", fmt(paid));
+    setText("stat-balance", fmt(balance));
+    setText("stat-overdue", fmt(overdueAmount));
+    setText("stat-next-due", nextDueText);
+    setText("stat-plan-progress", progressText);
+    setText("stat-paid-note", paid > 0 ? `${fmt(paid)} recorded across deposit and later payments.` : "No posted payments yet.");
+    setText("stat-balance-note", balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.");
+    setText("stat-overdue-note", overdueAmount > 0 ? "Past-due amount requires attention." : "No overdue amount is currently flagged.");
+    setText("stat-next-due-note", plan?.nextDueDate ? "Based on your active payment plan." : "No payment-plan due date is currently scheduled.");
+    setText("stat-plan-progress-note", plan ? "Installment completion using the active plan." : "If a plan is created later, progress will appear here.");
 
-    const totalEl   = document.getElementById("s-total");
-    const depositEl = document.getElementById("s-deposit");
-    const balEl     = document.getElementById("s-balance");
-    if (totalEl)   totalEl.textContent   = fmt(total);
-    if (depositEl) depositEl.textContent = fmt(paid);
-    if (balEl)     balEl.textContent     = fmt(balance);
-
-    // Balance row color
     const balRow = document.getElementById("balance-row");
-    if (balRow) {
-      balRow.className = balance > 0 ? "fin-row fin-balance" : "fin-row fin-zero";
-    }
-
-    // Progress bar
+    if (balRow) balRow.className = balance > 0 ? "fin-row fin-balance" : "fin-row fin-zero";
+    setText("progress-paid-label", `${fmt(paid)} paid`);
+    setText("progress-pct-label", `${paidPct}% complete`);
     const fillEl = document.getElementById("payment-progress-fill");
     if (fillEl) fillEl.style.width = `${paidPct}%`;
-    const paidLbl = document.getElementById("progress-paid-label");
-    const pctLbl  = document.getElementById("progress-pct-label");
-    if (paidLbl) paidLbl.textContent = `${fmt(paid)} paid`;
-    if (pctLbl)  pctLbl.textContent  = `${paidPct}% complete`;
 
-    // ── Pay balance section ───────────────────────────────────────────────────
     const managedStatuses = ["reserved", "reserved_unpaid", "pending", "pending_verification", "approved", "active", "active_rental", "booked_paid", "overdue", "partial"];
-    const statusKey = (b.status || "").toLowerCase().replace(/\s+/g, "_");
     const canPayBalance = managedStatuses.includes(statusKey) && balance > 0;
-
+    const partialLink = buildBalanceLink(b);
     if (canPayBalance && $payBalSection) {
       $payBalSection.style.display = "block";
       if ($btnInitBalance) $btnInitBalance.textContent = `Pay Balance (${fmt(balance)})`;
+      if ($btnOpenPartial) {
+        if (partialLink) {
+          $btnOpenPartial.href = partialLink;
+          $btnOpenPartial.style.display = "";
+        } else {
+          $btnOpenPartial.style.display = "none";
+        }
+      }
     } else if ($payBalSection) {
       $payBalSection.style.display = "none";
     }
 
-    // Show "paid in full" notice
     const pifEl = document.getElementById("paid-in-full-notice");
-    if (pifEl) {
-      pifEl.style.display = (balance <= 0 && total > 0) ? "block" : "none";
-    }
+    if (pifEl) pifEl.style.display = (balance <= 0 && total > 0) ? "block" : "none";
 
-    // ── Lock notice + edit section visibility ─────────────────────────────────
+    renderPaymentPlanSummary(b, balance);
+    renderLedgerSummary(b, total, paid, balance, overdueAmount);
+
+    const extensionEligible = ["active", "active_rental", "overdue", "extended"].includes(statusKey);
+    const extensionHref = b.vehicleId ? `car.html?vehicle=${encodeURIComponent(b.vehicleId)}&extend=1` : "car.html?extend=1";
+    const extensionCta = document.getElementById("extension-cta");
+    if (extensionCta) {
+      extensionCta.href = extensionHref;
+      extensionCta.textContent = extensionEligible ? "⏱️ Open Extension Flow" : "📞 Contact Support About Extensions";
+      if (!extensionEligible) extensionCta.href = "tel:+18445114059";
+    }
+    setText("extension-status-pill", extensionEligible ? "Eligible to review extension options" : "Extension requires support");
+    setText("extension-balance", fmt(balance));
+    setText("extension-overdue", fmt(overdueAmount));
+    setText("extension-balance-note", balance > 0 ? "Current balance remains due before or alongside any extension arrangements." : "Your existing booking balance is currently clear.");
+    setText("extension-overdue-note", overdueAmount > 0 ? "An overdue amount is currently flagged on your account." : "No overdue extension-related amount is flagged.");
+    setText("extension-cta-note", extensionEligible
+      ? "The CTA opens the current specialized extension experience without changing extension pricing or validation."
+      : "Call support to review extension options for this booking status.");
+
     const editableStatuses = ["reserved", "reserved_unpaid", "pending"];
     const isLocked = !editableStatuses.includes(statusKey);
     if (isLocked) {
@@ -284,24 +433,15 @@
     } else {
       if ($lockNotice) $lockNotice.style.display = "none";
       if ($editSection) $editSection.style.display = "";
-      // Pre-fill edit form
       renderVehicleOptions($newVehicle, b.vehicleId || "");
-      if (b.pickupDate) {
-        const el = document.getElementById("new-pickup");
-        if (el) el.value = b.pickupDate;
-      }
-      if (b.returnDate) {
-        const el = document.getElementById("new-return");
-        if (el) el.value = b.returnDate;
-      }
+      const pickupEl = document.getElementById("new-pickup");
+      const returnEl = document.getElementById("new-return");
+      if (pickupEl && b.pickupDate) pickupEl.value = b.pickupDate;
+      if (returnEl && b.returnDate) returnEl.value = b.returnDate;
       const pickupTimeEl = document.getElementById("new-pickup-time");
-      if (b.pickupTime && pickupTimeEl) {
-        if ([...pickupTimeEl.options].some((o) => o.value === b.pickupTime)) pickupTimeEl.value = b.pickupTime;
-      }
       const returnTimeEl = document.getElementById("new-return-time");
-      if (b.returnTime && returnTimeEl) {
-        if ([...returnTimeEl.options].some((o) => o.value === b.returnTime)) returnTimeEl.value = b.returnTime;
-      }
+      if (b.pickupTime && pickupTimeEl && [...pickupTimeEl.options].some((o) => o.value === b.pickupTime)) pickupTimeEl.value = b.pickupTime;
+      if (b.returnTime && returnTimeEl && [...returnTimeEl.options].some((o) => o.value === b.returnTime)) returnTimeEl.value = b.returnTime;
       if ($newProtection) {
         $newProtection.checked = !!b.hasProtectionPlan;
         if ($dppTierRow) $dppTierRow.style.display = b.hasProtectionPlan ? "block" : "none";
@@ -310,27 +450,159 @@
       }
       if (b.protectionPlanTier) {
         const tierEl = document.getElementById("new-protection-tier");
-        if (tierEl && [...tierEl.options].some((o) => o.value === b.protectionPlanTier)) {
-          tierEl.value = b.protectionPlanTier;
-        }
+        if (tierEl && [...tierEl.options].some((o) => o.value === b.protectionPlanTier)) tierEl.value = b.protectionPlanTier;
       }
     }
 
-    // ── Documents section ─────────────────────────────────────────────────────
-    // balancePaymentLink is sometimes an agreement/doc URL — use it if it points to a PDF
-    const agreementLink = document.getElementById("doc-agreement-link");
-    const agreementNA   = document.getElementById("doc-agreement-unavailable");
-    if (agreementLink && agreementNA) {
-      // Show Download link if we have a PDF-like URL in balancePaymentLink or a rental-agreement URL
-      const docUrl = b.agreementPdfUrl || null;
-      if (docUrl) {
-        agreementLink.href = docUrl;
-        agreementLink.style.display = "";
-        agreementNA.style.display   = "none";
+    if ($docAgreementLink && $docAgreementUnavailable) {
+      if (agreementPdfUrl) {
+        $docAgreementLink.href = agreementPdfUrl;
+        $docAgreementLink.style.display = "";
+        $docAgreementUnavailable.style.display = "none";
       } else {
-        agreementLink.style.display = "none";
-        agreementNA.style.display   = "";
+        $docAgreementLink.style.display = "none";
+        $docAgreementUnavailable.style.display = "";
       }
+    }
+
+    if ($btnDownloadLatestReceipt) {
+      const canDownload = !!latestReceiptTransaction;
+      $btnDownloadLatestReceipt.setAttribute("aria-disabled", canDownload ? "false" : "true");
+    }
+    if ($docLatestReceipt && $docLatestReceiptUnavailable) {
+      $docLatestReceipt.style.display = latestReceiptTransaction ? "" : "none";
+      $docLatestReceiptUnavailable.style.display = latestReceiptTransaction ? "none" : "";
+    }
+  }
+
+  function renderPaymentPlanSummary(b, balance) {
+    const plan = b.paymentPlan || null;
+    setText("plan-status-badge", plan ? String(plan.status || "Active").replace(/^./, (c) => c.toUpperCase()) : "No active plan");
+    if (!plan) {
+      setDisplay("plan-empty-state", true);
+      setDisplay("plan-content", false);
+      return;
+    }
+
+    setDisplay("plan-empty-state", false);
+    setDisplay("plan-content", true);
+
+    const totalInstallments = Number(plan.totalInstallments || plan.installments || 0);
+    const paidInstallments = Number(plan.paidInstallments || 0);
+    const percent = totalInstallments > 0 ? Math.round((paidInstallments / totalInstallments) * 100) : 0;
+    const planBanner = document.getElementById("plan-banner");
+    const overduePill = document.getElementById("plan-overdue-pill");
+    if (planBanner) planBanner.className = `plan-banner${plan.isOverdue ? " is-overdue" : ""}`;
+    if (overduePill) overduePill.textContent = plan.isOverdue ? `Overdue by ${plan.overdueDays || 0} day(s)` : "On track";
+
+    setText("plan-progress-text", `${paidInstallments} of ${totalInstallments} installments paid`);
+    setText("plan-banner-note", plan.isOverdue
+      ? "A payment appears overdue. Please pay today or call support if you need help."
+      : "Your next payment information is current and visible below.");
+    const planFill = document.getElementById("plan-progress-fill");
+    if (planFill) planFill.style.width = `${percent}%`;
+    setText("plan-progress-left", `${paidInstallments} paid`);
+    setText("plan-progress-right", `${percent}% complete`);
+    setText("plan-next-due", formatPlanDate(plan.nextDueDate));
+    setText("plan-next-due-note", plan.nextDueDate
+      ? (isOverdueDate(plan.nextDueDate) ? "This due date is already past due." : "Upcoming scheduled due date.")
+      : "No upcoming due date is currently scheduled.");
+    setText("plan-next-amount", plan.nextInstallmentAmount ? fmt(Number(plan.nextInstallmentAmount)) : "–");
+    setText("plan-next-amount-note", plan.nextInstallmentNumber
+      ? `Installment ${plan.nextInstallmentNumber} is next in your schedule.`
+      : "No unpaid installment remains on this plan.");
+    setText("plan-remaining-balance", fmt(balance));
+    setText("plan-remaining-note", "Remaining balance still visible in renter payment flow.");
+    setText("plan-history-summary", `${paidInstallments}/${totalInstallments}`);
+    setText("plan-history-note", plan.isOverdue ? "Plan has an overdue installment." : "Plan history is currently on track.");
+  }
+
+  function renderLedgerSummary(b, total, paid, balance, overdueAmount) {
+    const transactions = Array.isArray(ledgerTransactions) ? ledgerTransactions.slice(0, 6) : [];
+    latestReceiptTransaction = findLatestReceiptTransaction(ledgerTransactions);
+    const paymentCount = (ledgerTransactions || []).filter((tx) => tx.transaction_type === "payment" && tx.direction === "credit").length;
+    const noticeCount = (ledgerTransactions || []).filter((tx) => ["late_fee", "refund", "extension"].includes(tx.transaction_type)).length
+      + (overdueAmount > 0 ? 1 : 0);
+
+    setText("history-payment-count", String(paymentCount));
+    setText("history-payment-note", paymentCount > 0 ? `${paymentCount} posted payment${paymentCount === 1 ? "" : "s"} on file.` : "No posted renter payments yet.");
+    setText("history-notice-count", String(noticeCount));
+    setText("history-notice-note", noticeCount > 0 ? "Review recent account activity below." : "You’re all caught up right now.");
+    setText("activity-summary-pill", transactions.length > 0 ? `${transactions.length} recent entries` : "Recent activity");
+
+    if (!$activityList || !$activityEmpty) return;
+    if (!transactions.length) {
+      $activityList.innerHTML = "";
+      $activityEmpty.style.display = "block";
+      return;
+    }
+
+    $activityEmpty.style.display = "none";
+    $activityList.innerHTML = transactions.map((tx) => {
+      const amount = Number(tx.amount || 0);
+      const amountCls = tx.direction === "credit" ? "history-item-amount is-credit" : "history-item-amount is-debit";
+      const amountPrefix = tx.direction === "credit" ? "-" : "+";
+      return `<div class="history-item">
+        <div class="history-item-main">
+          <div class="history-item-title">${escapeHtml(transactionTitle(tx))}</div>
+          <div class="history-item-meta">${escapeHtml(transactionMeta(tx))}</div>
+        </div>
+        <div class="${amountCls}">${escapeHtml(amountPrefix + fmt(amount))}</div>
+      </div>`;
+    }).join("");
+
+    if ($btnDownloadLatestReceipt) {
+      const canDownload = !!latestReceiptTransaction;
+      $btnDownloadLatestReceipt.setAttribute("aria-disabled", canDownload ? "false" : "true");
+      $btnDownloadLatestReceipt.disabled = !canDownload;
+    }
+    if ($docLatestReceipt) {
+      $docLatestReceipt.style.display = latestReceiptTransaction ? "" : "none";
+    }
+    if ($docLatestReceiptUnavailable) {
+      $docLatestReceiptUnavailable.style.display = latestReceiptTransaction ? "none" : "";
+    }
+  }
+
+  async function loadSupplementalData() {
+    if (!booking?.bookingId) return;
+
+    ledgerSummary = null;
+    ledgerTransactions = [];
+    agreementPdfUrl = null;
+    latestReceiptTransaction = null;
+
+    const ledgerPromise = fetch("/api/renter-ledger-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ booking_id: booking.bookingId }),
+    })
+      .then(async (resp) => {
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.error) return null;
+        return data;
+      })
+      .catch(() => null);
+
+    const agreementPromise = fetch(API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "get_agreement_url", token: activeToken }),
+    })
+      .then(async (resp) => {
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.error) return null;
+        return data;
+      })
+      .catch(() => null);
+
+    const [ledgerData, agreementData] = await Promise.all([ledgerPromise, agreementPromise]);
+    if (ledgerData?.summary) {
+      ledgerSummary = ledgerData.summary;
+      ledgerTransactions = Array.isArray(ledgerData.transactions) ? ledgerData.transactions : [];
+    }
+    if (agreementData?.url) {
+      agreementPdfUrl = agreementData.url;
     }
   }
 
@@ -365,6 +637,7 @@
       }
 
       booking = data;
+      await loadSupplementalData();
       populateDashboard(booking);
       showSection($main);
     } catch (err) {
@@ -713,6 +986,25 @@
         if ($btnConfirmBal) { $btnConfirmBal.disabled = false; $btnConfirmBal.textContent = "Confirm Payment"; }
       }
     });
+  }
+
+  if ($btnViewPlan) {
+    $btnViewPlan.addEventListener("click", () => {
+      const planCard = document.getElementById("payment-plan-card");
+      if (planCard) planCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function handleReceiptDownload() {
+    if (!latestReceiptTransaction) return;
+    downloadReceiptForTransaction(latestReceiptTransaction);
+  }
+
+  if ($btnDownloadLatestReceipt) {
+    $btnDownloadLatestReceipt.addEventListener("click", handleReceiptDownload);
+  }
+  if ($docLatestReceipt) {
+    $docLatestReceipt.addEventListener("click", handleReceiptDownload);
   }
 
   // ── Retry button in error state ─────────────────────────────────────────────
