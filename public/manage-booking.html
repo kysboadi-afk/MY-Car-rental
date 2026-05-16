@@ -9,103 +9,629 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
   <style>
-    .manage-card {
+    /* ── Portal shell ─────────────────────────────────────────────────────── */
+    .portal-wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    /* ── Base card ────────────────────────────────────────────────────────── */
+    .dash-card {
       background: #fff;
       color: #111;
       border-radius: 12px;
-      box-shadow: 0 2px 16px rgba(0,0,0,0.10);
-      padding: 32px;
-      max-width: 620px;
-      margin: 32px auto;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.08);
+      padding: 24px;
+      margin-bottom: 16px;
     }
-    .manage-card h2 { margin-top: 0; }
-    .booking-summary table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-    .booking-summary td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-    .booking-summary td:first-child { font-weight: 600; width: 45%; }
+    .dash-card h3 {
+      margin: 0 0 16px;
+      font-size: 1em;
+      font-weight: 700;
+      color: #111;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Verify state ─────────────────────────────────────────────────────── */
+    .verify-wrap {
+      max-width: 480px;
+      margin: 32px auto 0;
+    }
+    .verify-brand {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .verify-brand h1 {
+      font-size: 1.3em;
+      color: #111;
+      margin: 8px 0 4px;
+    }
+    .verify-brand p {
+      font-size: 0.9em;
+      color: #666;
+      margin: 0;
+    }
+    .trust-bar {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 0.78em;
+      color: #666;
+      margin: 16px 0 0;
+      padding-top: 16px;
+      border-top: 1px solid #f0f0f0;
+    }
+    .trust-bar span { display: flex; align-items: center; gap: 4px; }
+
+    /* ── Loading skeleton ─────────────────────────────────────────────────── */
+    .skel-line {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+      height: 14px;
+      margin: 8px 0;
+    }
+    .skel-line.tall { height: 120px; border-radius: 8px; }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    /* ── Error state ──────────────────────────────────────────────────────── */
+    .error-card {
+      max-width: 480px;
+      margin: 32px auto;
+      text-align: center;
+    }
+    .error-icon { font-size: 2.5em; margin-bottom: 8px; }
+
+    /* ── Dashboard header ─────────────────────────────────────────────────── */
+    .dash-header {
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dash-header-left h2 {
+      margin: 0 0 4px;
+      font-size: 1.15em;
+    }
+    .dash-header-left p {
+      margin: 0;
+      font-size: 0.85em;
+      color: #555;
+    }
+    .dash-header-right { text-align: right; }
+    .dash-header-right .booking-id-label {
+      font-size: 0.75em;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .dash-header-right .booking-id-val {
+      font-size: 0.88em;
+      font-weight: 700;
+      font-family: monospace;
+      color: #333;
+    }
+
+    /* ── Status badges ────────────────────────────────────────────────────── */
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.78em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .badge-active-rental { background: #e8f5e9; color: #1b5e20; }
+    .badge-upcoming      { background: #e3f2fd; color: #1565c0; }
+    .badge-overdue       { background: #ffebee; color: #b71c1c; }
+    .badge-pending       { background: #fff8e1; color: #e65100; }
+    .badge-extended      { background: #f3e5f5; color: #6a1b9a; }
+    .badge-reserved      { background: #e3f2fd; color: #1565c0; }
+    .badge-confirmed     { background: #e8f5e9; color: #2e7d32; }
+    .badge-review        { background: #fff3e0; color: #bf360c; }
+    .badge-default       { background: #f5f5f5; color: #555; }
+
+    /* ── 2-column grid ────────────────────────────────────────────────────── */
+    .dash-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 640px) {
+      .dash-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Vehicle card ─────────────────────────────────────────────────────── */
+    .vehicle-img {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      background: #f0f0f0;
+    }
+    .vehicle-name {
+      font-size: 1.05em;
+      font-weight: 700;
+      margin: 0 0 12px;
+      color: #111;
+    }
+    .trip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 7px 0;
+      border-bottom: 1px solid #f5f5f5;
+      font-size: 0.88em;
+      gap: 8px;
+    }
+    .trip-row:last-child { border-bottom: none; }
+    .trip-row .trip-label { color: #888; flex-shrink: 0; }
+    .trip-row .trip-val   { font-weight: 600; text-align: right; }
+
+    /* ── Financial summary ────────────────────────────────────────────────── */
+    .fin-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      font-size: 0.9em;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .fin-row:last-of-type { border-bottom: none; }
+    .fin-row.fin-total {
+      font-weight: 700;
+      font-size: 1em;
+      padding-top: 10px;
+      margin-top: 4px;
+      border-top: 2px solid #eee;
+      border-bottom: none;
+    }
+    .fin-row.fin-paid   .fin-val { color: #2e7d32; font-weight: 600; }
+    .fin-row.fin-balance .fin-val { color: #c62828; font-weight: 700; }
+    .fin-row.fin-zero    .fin-val { color: #2e7d32; font-weight: 700; }
+    .payment-progress {
+      height: 8px;
+      background: #eee;
+      border-radius: 4px;
+      margin: 14px 0 6px;
+      overflow: hidden;
+    }
+    .payment-progress-fill {
+      height: 100%;
+      background: #ffb400;
+      border-radius: 4px;
+      transition: width 0.4s;
+      min-width: 4px;
+    }
+    .payment-progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75em;
+      color: #888;
+      margin-bottom: 16px;
+    }
+
+    /* ── Action buttons ───────────────────────────────────────────────────── */
+    .btn-primary {
+      background: #ffb400;
+      color: #000;
+      border: none;
+      padding: 13px 24px;
+      border-radius: 8px;
+      font-size: 0.95em;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 10px;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: #111;
+      color: #fff;
+      border: none;
+      padding: 13px 24px;
+      border-radius: 8px;
+      font-size: 0.95em;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: #333; }
+    .btn-outline {
+      background: transparent;
+      color: #111;
+      border: 1.5px solid #ccc;
+      padding: 11px 24px;
+      border-radius: 8px;
+      font-size: 0.92em;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+      transition: border-color 0.15s;
+    }
+    .btn-outline:hover { border-color: #999; }
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    @media (max-width: 480px) { .btn-row { grid-template-columns: 1fr; } }
+
+    /* ── Inline payment section ───────────────────────────────────────────── */
+    .payment-panel {
+      background: #f9f9fb;
+      border: 1px solid #e5e5e5;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 14px;
+    }
+    .payment-panel h4 {
+      margin: 0 0 12px;
+      font-size: 0.95em;
+      color: #111;
+    }
+    #stripe-element,
+    #balance-stripe-element {
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 12px;
+      margin: 12px 0;
+      background: #fff;
+    }
+
+    /* ── Modify booking (collapsible) ─────────────────────────────────────── */
+    .modify-details {
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.08);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .modify-summary {
+      padding: 18px 24px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.95em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      list-style: none;
+    }
+    .modify-summary::-webkit-details-marker { display: none; }
+    .modify-summary .chevron {
+      font-size: 0.8em;
+      color: #888;
+      transition: transform 0.2s;
+    }
+    details[open] .modify-summary .chevron { transform: rotate(180deg); }
+    .modify-body { padding: 0 24px 24px; }
     .form-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
     .form-group { flex: 1; min-width: 160px; }
-    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92em; }
-    .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; box-sizing: border-box; }
-    .price-preview { background: #f5f7fa; border-radius: 8px; padding: 16px; margin: 16px 0; font-size: 0.95em; }
-    .price-preview .new-total { font-size: 1.15em; font-weight: 700; color: #1a73e8; }
-    .price-preview .fee-notice { color: #c62828; font-weight: 600; margin-top: 8px; }
-    .btn-primary { background: #ffb400; color: #000; border: none; padding: 13px 28px; border-radius: 6px; font-size: 1em; font-weight: 700; cursor: pointer; width: 100%; margin-top: 12px; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary { background: #1a73e8; color: #fff; border: none; padding: 13px 28px; border-radius: 6px; font-size: 1em; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; }
-    .lock-notice { background: #fff3cd; color: #111; border: 1px solid #ffc107; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-weight: 600; }
-    .status-badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 700; text-transform: uppercase; }
-    .status-reserved { background: #e3f2fd; color: #1565c0; }
-    .status-active   { background: #e8f5e9; color: #2e7d32; }
-    .status-partial  { background: #fff8e1; color: #f57f17; }
-    #stripe-element { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin: 12px 0; }
-    .error-msg { color: #c62828; background: #ffebee; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
-    .success-msg { color: #2e7d32; background: #e8f5e9; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
-    .spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #ccc; border-top-color: #1a73e8; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 8px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.88em; color: #444; }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.95em;
+      box-sizing: border-box;
+      color: #111;
+    }
+    .price-preview {
+      background: #f5f7fa;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 14px 0;
+      font-size: 0.92em;
+    }
+    .price-preview .new-total { font-size: 1.1em; font-weight: 700; color: #1a73e8; }
+    .fee-notice { color: #c62828; font-weight: 600; margin-top: 8px; }
+
+    /* ── Lock notice ──────────────────────────────────────────────────────── */
+    .lock-notice {
+      background: #fff8e1;
+      color: #333;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 0.9em;
+    }
+
+    /* ── Documents & activity sections ───────────────────────────────────── */
+    .doc-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #f5f5f5;
+      font-size: 0.9em;
+    }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-icon { font-size: 1.3em; flex-shrink: 0; }
+    .doc-label { flex: 1; font-weight: 600; }
+    .doc-action { color: #1a73e8; text-decoration: none; font-size: 0.88em; font-weight: 600; white-space: nowrap; }
+    .doc-action:hover { text-decoration: underline; }
+    .activity-placeholder {
+      text-align: center;
+      padding: 20px 0 8px;
+      color: #aaa;
+      font-size: 0.88em;
+    }
+    .activity-placeholder .act-icon { font-size: 2em; margin-bottom: 6px; }
+
+    /* ── Support CTA bar ──────────────────────────────────────────────────── */
+    .support-bar {
+      background: #fff;
+      color: #111;
+      border-radius: 12px;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.08);
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .support-bar-left { font-size: 0.9em; }
+    .support-bar-left strong { display: block; margin-bottom: 2px; }
+    .support-bar-left span { color: #666; }
+    .support-bar a.btn-call {
+      display: inline-block;
+      background: #ffb400;
+      color: #000;
+      font-weight: 700;
+      font-size: 0.9em;
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .secure-note {
+      font-size: 0.75em;
+      color: #888;
+      text-align: center;
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    /* ── Feedback messages ────────────────────────────────────────────────── */
+    .error-msg  { color: #c62828; background: #ffebee; border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-size: 0.9em; }
+    .success-msg{ color: #1b5e20; background: #e8f5e9; border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-size: 0.9em; }
+
+    /* ── Spinner ──────────────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 3px solid #ddd;
+      border-top-color: #ffb400;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Future-ready module placeholders ─────────────────────────────────── */
+    .module-placeholder {
+      border: 2px dashed #e0e0e0;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: #aaa;
+      font-size: 0.85em;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
 <header class="site-header">
-  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="SLY Transportation Services Logo" class="site-logo"></a>
+  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="SLY Transportation Logo" class="site-logo"></a>
   <nav class="site-nav">
     <a href="index.html">Home</a>
+    <a href="cars.html">Browse Cars</a>
+    <a href="manage-booking.html">Manage Booking</a>
   </nav>
   <a href="tel:+18445114059" class="header-phone">📞 (844) 511-4059</a>
 </header>
 
-<div class="container">
-  <div class="manage-card">
+<div class="portal-wrap">
 
-    <div id="verify-state" style="display:none">
-      <h2>Complete Your Booking</h2>
-      <p style="margin-bottom:14px;color:#444">Verify your booking first to continue.</p>
-      <div class="form-group" style="margin-bottom:12px">
-        <label for="verify-identifier">Phone, Email, or Booking ID</label>
-        <input id="verify-identifier" type="text" placeholder="Enter phone, email, or booking ID (bk-...)" autocomplete="email">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       VERIFY STATE – shown when there is no token in the URL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div id="verify-state" style="display:none">
+    <div class="verify-wrap">
+      <div class="verify-brand">
+        <img src="images/logo.jpg" alt="SLY Transportation Services LLC" style="height:56px;border-radius:8px;">
+        <h1>Renter Self-Service Portal</h1>
+        <p>Access your booking, make payments, and manage your rental.</p>
       </div>
-      <div id="verify-msg"></div>
-      <button id="btn-verify" class="btn-primary">Verify Booking</button>
+      <div class="dash-card">
+        <h3>Verify Your Identity</h3>
+        <div class="form-group" style="margin-bottom:14px">
+          <label for="verify-identifier">Phone number, email, or Booking ID</label>
+          <input id="verify-identifier" type="text"
+            placeholder="e.g. (310) 555-0100 or bk-abc123"
+            autocomplete="email"
+            style="font-size:1em">
+        </div>
+        <div id="verify-msg"></div>
+        <button id="btn-verify" class="btn-primary" style="margin-top:4px">Access My Booking</button>
+        <div class="trust-bar">
+          <span>🔒 Secure &amp; Encrypted</span>
+          <span>✅ No password needed</span>
+          <span>📞 (844) 511-4059</span>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <div id="loading-state" style="text-align:center;padding:40px 0;display:none">
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LOADING STATE
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div id="loading-state" style="display:none">
+    <div class="dash-card" style="text-align:center;padding:40px 24px">
       <span class="spinner"></span> Loading your booking&hellip;
     </div>
+    <div class="dash-grid">
+      <div class="dash-card"><div class="skel-line tall"></div><div class="skel-line" style="width:60%"></div><div class="skel-line" style="width:80%"></div></div>
+      <div class="dash-card"><div class="skel-line" style="width:70%"></div><div class="skel-line"></div><div class="skel-line"></div><div class="skel-line" style="width:50%"></div></div>
+    </div>
+  </div>
 
-    <div id="error-state" style="display:none">
-      <h2>Unable to Load Booking</h2>
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ERROR STATE
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div id="error-state" style="display:none">
+    <div class="dash-card error-card">
+      <div class="error-icon">⚠️</div>
+      <h2 style="margin:0 0 8px;font-size:1.15em">Unable to Load Booking</h2>
       <div id="error-msg" class="error-msg"></div>
-      <p>Please <a href="tel:+18445114059">call us at (844) 511-4059</a> for assistance.</p>
+      <p style="font-size:0.9em;color:#555;margin:12px 0 20px">
+        Your session may have expired, or the booking was not found.<br>
+        Please verify your identity again, or contact us for help.
+      </p>
+      <button id="btn-retry-verify" class="btn-primary" style="max-width:320px;margin:0 auto;display:block">Try Again</button>
+      <a href="tel:+18445114059" style="display:block;text-align:center;margin-top:12px;color:#1a73e8;font-size:0.9em;font-weight:600">
+        📞 Call Support: (844) 511-4059
+      </a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MAIN DASHBOARD – shown after successful booking load
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div id="main-content" style="display:none">
+
+    <!-- Dashboard header: greeting, booking ID, status -->
+    <div class="dash-header">
+      <div class="dash-header-left">
+        <h2 id="dash-greeting">Your Rental Dashboard</h2>
+        <p id="dash-subtitle">SLY Transportation Services LLC</p>
+      </div>
+      <div class="dash-header-right">
+        <div class="booking-id-label">Booking ID</div>
+        <div class="booking-id-val" id="s-booking-id">–</div>
+        <div style="margin-top:6px" id="s-status">–</div>
+      </div>
     </div>
 
-    <div id="main-content" style="display:none">
-      <h2>Manage Your Booking</h2>
+    <!-- Lock notice (shown for confirmed/active/under-review bookings) -->
+    <div id="lock-notice" class="lock-notice" style="display:none"></div>
 
-      <div id="lock-notice" class="lock-notice" style="display:none">
-      </div>
+    <!-- ── 2-column grid: vehicle info + financial summary ─────────────────── -->
+    <div class="dash-grid">
 
-      <div class="booking-summary">
-        <table>
-          <tr><td>Booking ID</td><td id="s-booking-id">–</td></tr>
-          <tr><td>Vehicle</td><td id="s-vehicle">–</td></tr>
-          <tr><td>Pickup</td><td id="s-pickup">–</td></tr>
-          <tr><td>Return</td><td id="s-return">–</td></tr>
-          <tr><td>Total</td><td id="s-total">–</td></tr>
-          <tr><td>Deposit Paid</td><td id="s-deposit">–</td></tr>
-          <tr><td>Balance Due</td><td id="s-balance">–</td></tr>
-          <tr><td>Status</td><td id="s-status">–</td></tr>
-        </table>
-        <div id="pay-balance-section" style="display:none">
-          <button id="btn-init-balance" class="btn-secondary" type="button">Pay Remaining Balance</button>
-          <div id="balance-payment-wrap" style="display:none;margin-top:10px">
-            <div id="balance-stripe-element"></div>
-            <div id="balance-error" class="error-msg" style="display:none"></div>
-            <button id="btn-confirm-balance" class="btn-primary" type="button">Complete Payment</button>
-          </div>
+      <!-- Vehicle card -->
+      <div class="dash-card">
+        <h3>Your Vehicle</h3>
+        <img id="vehicle-img" src="" alt="Vehicle" class="vehicle-img" onerror="this.style.display='none'">
+        <p class="vehicle-name" id="s-vehicle">–</p>
+        <div class="trip-row">
+          <span class="trip-label">📅 Pickup</span>
+          <span class="trip-val" id="s-pickup">–</span>
+        </div>
+        <div class="trip-row">
+          <span class="trip-label">🏁 Return</span>
+          <span class="trip-val" id="s-return">–</span>
+        </div>
+        <div class="trip-row">
+          <span class="trip-label">📍 Location</span>
+          <span class="trip-val">Los Angeles, CA</span>
+        </div>
+        <div class="trip-row">
+          <span class="trip-label">⛽ Fuel</span>
+          <span class="trip-val">Return full tank</span>
+        </div>
+        <div class="trip-row" id="dpp-row" style="display:none">
+          <span class="trip-label">🛡️ Protection</span>
+          <span class="trip-val" id="s-protection">–</span>
         </div>
       </div>
 
-      <div id="edit-section">
-        <h3>Update Booking Dates or Vehicle</h3>
+      <!-- Financial summary card -->
+      <div class="dash-card">
+        <h3>Financial Summary</h3>
+        <div class="fin-row">
+          <span>Rental Total</span>
+          <span class="fin-val" id="s-total">–</span>
+        </div>
+        <div class="fin-row fin-paid">
+          <span>Amount Paid</span>
+          <span class="fin-val" id="s-deposit">–</span>
+        </div>
+        <div class="fin-row fin-balance" id="balance-row">
+          <span>Balance Due</span>
+          <span class="fin-val" id="s-balance">–</span>
+        </div>
+
+        <!-- Payment progress bar -->
+        <div class="payment-progress">
+          <div class="payment-progress-fill" id="payment-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="payment-progress-label">
+          <span id="progress-paid-label">$0 paid</span>
+          <span id="progress-pct-label">0% complete</span>
+        </div>
+
+        <!-- Pay balance actions -->
+        <div id="pay-balance-section" style="display:none">
+          <div class="secure-note">🔒 Payments secured by Stripe</div>
+          <button id="btn-init-balance" class="btn-primary" type="button">
+            Pay Balance
+          </button>
+          <div id="balance-payment-wrap" style="display:none;margin-top:8px">
+            <div class="payment-panel">
+              <h4>Complete Your Payment</h4>
+              <div id="balance-stripe-element"></div>
+              <div id="balance-error" class="error-msg" style="display:none"></div>
+              <button id="btn-confirm-balance" class="btn-primary" type="button">Confirm Payment</button>
+            </div>
+          </div>
+          <div id="action-msg-finance"></div>
+        </div>
+
+        <!-- Already paid -->
+        <div id="paid-in-full-notice" style="display:none;margin-top:12px;text-align:center;font-size:0.88em;color:#2e7d32;font-weight:600">
+          ✅ Paid in full — thank you!
+        </div>
+      </div>
+    </div><!-- /dash-grid -->
+
+    <!-- ── Modify Booking (collapsible, only when editable) ────────────────── -->
+    <details class="modify-details" id="edit-section">
+      <summary class="modify-summary">
+        <span>✏️ Modify Booking</span>
+        <span class="chevron">▼</span>
+      </summary>
+      <div class="modify-body">
+        <p style="font-size:0.88em;color:#666;margin:0 0 16px">
+          Change your dates, vehicle, or protection plan. One free change is included.
+        </p>
         <div class="form-group" style="margin-bottom:16px">
           <label for="new-vehicle">Vehicle</label>
           <select id="new-vehicle">
@@ -147,16 +673,21 @@
           </div>
         </div>
         <div class="form-group" style="margin-bottom:16px">
-          <label for="new-protection">
-            <input type="checkbox" id="new-protection"> Add Damage Protection Plan
+          <label style="font-weight:600;font-size:0.88em;color:#444;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="new-protection" style="width:auto;margin:0">
+            Add Damage Protection Plan
           </label>
-          <div id="dpp-tier-row" style="display:none;margin-top:8px">
-            <label for="new-protection-tier">Protection Tier</label>
+          <div id="dpp-tier-row" style="display:none;margin-top:10px">
+            <label for="new-protection-tier" style="font-size:0.85em;color:#444;display:block;margin-bottom:4px">Protection Tier</label>
             <select id="new-protection-tier">
               <option value="basic">Basic – $15/day (limits liability to $2,500)</option>
               <option value="standard">Standard – $30/day (limits liability to $1,000)</option>
               <option value="premium">Premium – $50/day (limits liability to $500)</option>
             </select>
+          </div>
+          <div id="own-insurance-note" style="display:none;margin-top:10px;padding:10px 14px;background:#e8f5e9;border-radius:6px;font-size:0.88em;color:#2e7d32">
+            📋 You've opted out of the Protection Plan. Please have your own insurance card ready at pickup.
+            Call <a href="tel:+18445114059" style="color:#1a73e8">(844) 511-4059</a> with questions.
           </div>
         </div>
 
@@ -168,29 +699,69 @@
 
         <div id="action-msg"></div>
 
-        <!-- Free change button (change_count === 0) -->
         <button id="btn-apply" class="btn-primary" style="display:none">Apply Change (Free)</button>
 
-        <!-- Paid change: show Stripe card element -->
         <div id="paid-change-section" style="display:none">
-          <p>A <strong>change fee</strong> of <span id="change-fee-amount">$25</span> is required for this update.</p>
-          <div id="stripe-element"></div>
-          <div id="stripe-error" class="error-msg" style="display:none"></div>
-          <button id="btn-pay-fee" class="btn-primary">Pay Change Fee &amp; Apply</button>
+          <div class="payment-panel" style="margin-top:12px">
+            <p style="margin:0 0 10px;font-size:0.9em">
+              A <strong>change fee</strong> of <span id="change-fee-amount">$25</span> is required.
+            </p>
+            <div id="stripe-element"></div>
+            <div id="stripe-error" class="error-msg" style="display:none"></div>
+            <button id="btn-pay-fee" class="btn-primary">Pay Change Fee &amp; Apply</button>
+          </div>
         </div>
 
-        <button id="btn-preview" class="btn-secondary" style="margin-top:12px">Preview New Pricing</button>
+        <button id="btn-preview" class="btn-secondary" style="margin-top:12px">Preview Pricing</button>
+      </div>
+    </details>
+
+    <!-- ── Documents ─────────────────────────────────────────────────────────── -->
+    <div class="dash-card">
+      <h3>Documents</h3>
+      <div class="doc-item">
+        <span class="doc-icon">📄</span>
+        <span class="doc-label">Rental Agreement</span>
+        <a id="doc-agreement-link" href="#" class="doc-action" style="display:none">Download PDF</a>
+        <span id="doc-agreement-unavailable" class="doc-action" style="color:#aaa;cursor:default">Contact Support</span>
+      </div>
+      <div class="doc-item">
+        <span class="doc-icon">📋</span>
+        <span class="doc-label">Request a Document</span>
+        <a href="tel:+18445114059" class="doc-action">Call (844) 511-4059</a>
       </div>
     </div>
 
-  </div>
-</div>
+    <!-- ── Activity (placeholder — future module) ────────────────────────────── -->
+    <div class="dash-card">
+      <h3>Activity &amp; History</h3>
+      <div class="activity-placeholder">
+        <div class="act-icon">📋</div>
+        <p>Payment history, extension records, and account notices will appear here.</p>
+        <p style="margin-top:8px">For a full history of your account, call <a href="tel:+18445114059" style="color:#1a73e8">(844) 511-4059</a>.</p>
+      </div>
+    </div>
 
-<footer style="text-align:center;padding:32px 0;color:#888;font-size:0.85em">
-  &copy; 2026 SLY Transportation Services LLC &bull; <a href="tel:+18445114059">(844) 511-4059</a>
+    <!-- ── Support CTA ────────────────────────────────────────────────────────── -->
+    <div class="support-bar">
+      <div class="support-bar-left">
+        <strong>Need help with your booking?</strong>
+        <span>Our team is available 7 days a week.</span>
+      </div>
+      <a href="tel:+18445114059" class="btn-call">📞 (844) 511-4059</a>
+    </div>
+
+  </div><!-- /main-content -->
+
+</div><!-- /portal-wrap -->
+
+<footer style="text-align:center;padding:32px 0;color:#555;font-size:0.82em">
+  &copy; 2026 SLY Transportation Services LLC &bull;
+  <a href="tel:+18445114059" style="color:#ffb400">(844) 511-4059</a>
 </footer>
 
 <script src="site-settings.js"></script>
+<script src="shared-page-context.js"></script>
 <script src="manage-booking.js"></script>
 <script src="chatbot.js"></script>
 </body>

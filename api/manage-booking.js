@@ -446,7 +446,11 @@ export default async function handler(req, res) {
     return res.status(200).json({
       bookingId,
       vehicleId,
-      vehicleName: vehicleData?.name || vehicleId,
+      vehicleName:  vehicleData?.name  || vehicleId,
+      vehicleYear:  vehicleData?.year  || null,
+      vehicleMake:  vehicleData?.make  || null,
+      vehicleModel: vehicleData?.model || null,
+      vehicleColor: vehicleData?.color || null,
       pickupDate:  row.pickup_date,
       returnDate:  row.return_date,
       pickupTime:  row.pickup_time,
