@@ -315,7 +315,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const firstName = (b.customerName || "").split(" ")[0];
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
     const statusKey = normalizeStatusKey(b.status);
-    const total     = Number(b.totalPrice || 0);
+    const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
     const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
     const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
     const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
