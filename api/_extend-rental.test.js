@@ -119,6 +119,26 @@ mock.module("./_pricing.js", {
   },
 });
 
+// _extension-risk.js mock — controls Phase 2 risk gate behaviour per test.
+// riskResult is returned by evaluateExtensionRisk; riskSettings by loadExtensionRiskSettings.
+let riskResult      = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+let riskSettingsMock = {
+  extension_partial_block_enabled: true,
+  extension_max_unpaid_exposure:   500,
+  extension_max_partial_count:     3,
+  extension_partial_min_pct:       50,
+  extension_overdue_block_partial: true,
+  extension_allow_override:        true,
+};
+
+mock.module("./_extension-risk.js", {
+  namedExports: {
+    EXTENSION_RISK_DEFAULTS:     riskSettingsMock,
+    loadExtensionRiskSettings:   async () => ({ ...riskSettingsMock }),
+    evaluateExtensionRisk:       async () => ({ ...riskResult }),
+  },
+});
+
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
 // capturedStripeParams stores the last params passed to paymentIntents.create so
 // metadata-content tests can assert on what was sent to Stripe.
@@ -542,6 +562,8 @@ test("extend-rental: 404 when no active booking matches the provided email", asy
 });
 
 test("extend-rental: 200 accepts customPaymentAmount for active extension and tracks partial status", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  daily=$55, minimum=ceil(5/2)=3×$55=$165.
+  // $200 is above the minimum, so the partial payment is accepted.
   capturedStripeParams = null;
   const active = makeActiveBooking();
   mockBookings = { camry: [active] };
@@ -552,17 +574,126 @@ test("extend-rental: 200 accepts customPaymentAmount for active extension and tr
     vehicleId:     "camry",
     email:         "alice@example.com",
     newReturnDate: "2026-05-05",
-    customPaymentAmount: 150,
+    customPaymentAmount: 200,
   }), res);
 
   assert.equal(res._status, 200);
-  assert.equal(res._body.extensionAmount, "150.00", "extensionAmount should be the pay-now amount");
-  assert.equal(res._body.amountPaidNow, "150.00");
+  assert.equal(res._body.extensionAmount, "200.00", "extensionAmount should be the pay-now amount");
+  assert.equal(res._body.amountPaidNow, "200.00");
   assert.equal(res._body.extensionPaymentStatus, "partially_paid");
   assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance should be tracked");
-  assert.equal(capturedStripeParams.amount, 15000, "Stripe PI amount must use the custom pay-now amount");
-  assert.equal(capturedStripeParams.metadata.extension_amount_paid, "150.00");
+  assert.equal(capturedStripeParams.amount, 20000, "Stripe PI amount must use the custom pay-now amount");
+  assert.equal(capturedStripeParams.metadata.extension_amount_paid, "200.00");
   assert.equal(capturedStripeParams.metadata.extension_payment_status, "partially_paid");
+});
+
+// ── Phase 1: Partial-payment minimum enforcement tests ────────────────────────
+
+test("extend-rental: 400 when customPaymentAmount is below partial-payment minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  daily=$55, minimum=ceil(5/2)=3×$55=$165.
+  // $100 is below $165, so the request must be rejected.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 100,
+  }), res);
+
+  assert.equal(res._status, 400, "below-minimum partial payment must return 400");
+  assert.match(String(res._body?.error || ""), /minimum/i, "error must mention minimum");
+  assert.equal(res._body.minimumPayment, "165.00", "minimumPayment must be 3 × $55");
+  assert.equal(res._body.extensionDays, 5);
+  assert.equal(res._body.dailyRate, "55.00");
+});
+
+test("extend-rental: 200 when customPaymentAmount equals minimum (Phase 1 — boundary)", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  minimum=3×$55=$165. Exactly $165 must succeed.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 165,
+  }), res);
+
+  assert.equal(res._status, 200, "exact-minimum partial payment must succeed");
+  assert.equal(res._body.amountPaidNow, "165.00");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+});
+
+test("extend-rental: 200 and full-payment pricing unchanged when paying full tiered amount (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  Weekly tier = $300 (mocked).
+  // Paying the full $300 is a full payment — existing tiered pricing stays unchanged.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    // No customPaymentAmount — full payment path
+  }), res);
+
+  assert.equal(res._status, 200, "full payment must succeed");
+  // extensionTotal should equal amountPaidNow (no remaining balance)
+  assert.equal(res._body.remainingBalance, "0.00", "full payment must leave no remaining balance");
+  assert.equal(res._body.extensionPaymentStatus, "paid");
+});
+
+test("extend-rental: 400 when 7-day partial payment is below 4-day minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  daily=$55, minimum=ceil(7/2)=4×$55=$220.
+  // $150 is below $220.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    customPaymentAmount: 150,
+  }), res);
+
+  assert.equal(res._status, 400, "below-minimum for 7-day extension must return 400");
+  assert.equal(res._body.minimumPayment, "220.00", "7-day minimum must be 4 × $55");
+  assert.equal(res._body.extensionDays, 7);
+});
+
+test("extend-rental: 200 when 7-day partial pays exactly the 4-day minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  minimum=ceil(7/2)=4×$55=$220.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    customPaymentAmount: 220,
+  }), res);
+
+  assert.equal(res._status, 200, "7-day partial at minimum must succeed");
+  assert.equal(res._body.amountPaidNow, "220.00");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+  // Standard-rate total for 7 days: 7×$55=$385 taxed (9.5%) = $421.58
+  assert.ok(Number(res._body.extensionTotal) > 220, "extensionTotal must be > amountPaidNow");
+  assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance must be > 0");
 });
 
 test("extend-rental: 400 when customPaymentAmount exceeds extension balance", async () => {
@@ -838,3 +969,113 @@ test("extend-rental: no waiver when late_fee_waived_amount is absent from Supaba
   assert.equal(res._status, 200);
   assert.equal(res._body.lateFeeWaived, 0, "lateFeeWaived must default to 0 when no waiver is set");
 });
+
+// ── Phase 2: Risk gate integration tests ──────────────────────────────────────
+
+test("extend-rental: Phase 2 risk gate blocks partial payment when evaluateExtensionRisk denies", async () => {
+  // Simulate risk evaluator returning blocked (e.g. partial count exceeded).
+  riskResult = {
+    allowed:        false,
+    reason:         "You have reached the maximum number of partial extensions (3). Please pay your outstanding balance.",
+    partialCount:   3,
+    exposureAmount: 350,
+    riskOverride:   null,
+  };
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 200,   // partial payment — triggers Phase 2 gate
+  }), res);
+
+  assert.equal(res._status, 400, "Phase 2 risk block must return 400");
+  assert.equal(res._body.riskBlocked, true, "riskBlocked must be true");
+  assert.match(String(res._body?.error || ""), /maximum number|outstanding|balance/i);
+
+  // Reset risk result for subsequent tests
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 risk gate is skipped for full payments (remainingBalance=0)", async () => {
+  // Configure risk evaluator to block — but a full payment must never call it.
+  riskResult = {
+    allowed:        false,
+    reason:         "Simulated risk block",
+    partialCount:   99,
+    exposureAmount: 9999,
+    riskOverride:   null,
+  };
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  // No customPaymentAmount → full payment path
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200, "full payment must not be blocked by Phase 2 gate");
+  assert.equal(res._body.remainingBalance, "0.00", "full payment must leave zero balance");
+
+  // Reset
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 response includes riskBlocked, partialCount, exposureAmount on block", async () => {
+  riskResult = {
+    allowed:        false,
+    reason:         "Exposure exceeded",
+    partialCount:   2,
+    exposureAmount: 480,
+    riskOverride:   null,
+  };
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 165,
+  }), res);
+
+  assert.equal(res._status, 400);
+  assert.equal(res._body.riskBlocked,    true);
+  assert.equal(res._body.partialCount,   2);
+  assert.equal(res._body.exposureAmount, "480.00");
+
+  // Reset
+  riskResult = { allowed: true, reason: null, partialCount: 0, exposureAmount: 0, riskOverride: null };
+});
+
+test("extend-rental: Phase 2 passes through when risk gate allows the partial extension", async () => {
+  // Default riskResult is allowed: true — already reset above
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:           "camry",
+    email:               "alice@example.com",
+    newReturnDate:       "2026-05-05",
+    customPaymentAmount: 200,
+  }), res);
+
+  assert.equal(res._status, 200, "allowed partial must succeed");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+  assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance must be tracked");
+});
+

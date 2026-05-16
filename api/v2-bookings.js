@@ -298,6 +298,7 @@ export default async function handler(req, res) {
             late_fee_approved_at,
             late_fee_waived,
             late_fee_waived_amount,
+            extension_risk_override,
             customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
           `);
 
@@ -415,6 +416,7 @@ export default async function handler(req, res) {
               lateFeeApprovedAt: r.late_fee_approved_at || null,
               lateFeeWaived:   r.late_fee_waived || false,
               lateFeeWaivedAmount: r.late_fee_waived_amount != null ? Number(r.late_fee_waived_amount) : null,
+              extensionRiskOverride: r.extension_risk_override || null,
               _source:         "supabase",
             };
           });
@@ -1945,6 +1947,51 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, manageLink });
+    }
+
+    // ── SET_EXTENSION_OVERRIDE — admin sets per-booking risk gate override ────
+    // Allows the admin to force-allow or force-block partial extensions for a
+    // specific booking, bypassing the system-wide Phase 2 risk limits.
+    if (action === "set_extension_override") {
+      const { bookingId, override } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const VALID_OVERRIDES = ["allow", "block", null];
+      if (!VALID_OVERRIDES.includes(override === undefined ? null : override)) {
+        return res.status(400).json({ error: "override must be 'allow', 'block', or null" });
+      }
+
+      const sbOvr = getSupabaseAdmin();
+      if (!sbOvr) return res.status(500).json({ error: "Database not configured" });
+
+      const overrideValue = override ?? null;
+      const patch = { extension_risk_override: overrideValue, updated_at: new Date().toISOString() };
+
+      const { data: updatedOvr, error: ovrErr } = await sbOvr
+        .from("bookings")
+        .update(patch)
+        .eq("booking_ref", bookingId)
+        .select("id");
+      if (ovrErr) return res.status(500).json({ error: ovrErr.message });
+
+      if (!updatedOvr || updatedOvr.length === 0) {
+        const numericId = parseInt(bookingId, 10);
+        if (!isNaN(numericId)) {
+          const { data: updatedOvrById, error: ovrErr2 } = await sbOvr
+            .from("bookings")
+            .update(patch)
+            .eq("id", numericId)
+            .select("id");
+          if (ovrErr2) return res.status(500).json({ error: ovrErr2.message });
+          if (!updatedOvrById || updatedOvrById.length === 0) {
+            return res.status(404).json({ error: "Booking not found" });
+          }
+        } else {
+          return res.status(404).json({ error: "Booking not found" });
+        }
+      }
+
+      return res.status(200).json({ success: true, override: overrideValue });
     }
 
     // ── SEND_PAYMENT_LINK — admin-driven renter payment collection workflow ───

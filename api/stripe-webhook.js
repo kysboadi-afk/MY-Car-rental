@@ -2335,11 +2335,16 @@ export default async function handler(req, res) {
                 .from("booking_extensions")
                 .upsert(
                   {
-                    booking_id:        resolvedBookingId,
-                    payment_intent_id: paymentIntent.id,
-                    amount:            extensionAmountDollars,
-                    new_return_date:   new_return_date,
-                    new_return_time:   updatedBooking.returnTime || null,
+                    booking_id:                  resolvedBookingId,
+                    payment_intent_id:           paymentIntent.id,
+                    amount:                      extensionAmountDollars,
+                    new_return_date:             new_return_date,
+                    new_return_time:             updatedBooking.returnTime || null,
+                    // Phase 2 risk-gating fields — track partial vs full payments
+                    // and remaining balance so evaluateExtensionRisk can cap exposure.
+                    payment_type:                extensionRemainingBalance > 0 ? "partial" : "full",
+                    extension_total_amount:      extensionTotalAmount,
+                    extension_remaining_balance: extensionRemainingBalance,
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );

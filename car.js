@@ -1455,12 +1455,16 @@ function initExtendRentalForm() {
   var extPayHint    = document.getElementById("extPayHint");
   var extPriceDisplay = document.getElementById("extPriceDisplay");
   var extPriceAmount  = document.getElementById("extPriceAmount");
+  var extPartialHint  = document.getElementById("extPartialHint");
 
   // Set today as the minimum new return date
   var todayISO = SlyLA.todayISO();
   if (extNewReturn && !extNewReturn.getAttribute("min")) {
     extNewReturn.setAttribute("min", todayISO);
   }
+
+  // Shared state updated by updatePriceEstimate() and read by updateExtBtn().
+  var extPriceData = { days: 0, dailyRate: 55, fullCost: 0, minPayment: 0 };
 
   function isValidEmailFmt(val) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -1471,6 +1475,7 @@ function initExtendRentalForm() {
   function updatePriceEstimate() {
     if (!extNewReturn || !extNewReturn.value) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
@@ -1478,11 +1483,13 @@ function initExtendRentalForm() {
     var newReturn = extNewReturn.value;
     if (newReturn <= today) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
     if (!carData) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
@@ -1507,9 +1514,25 @@ function initExtendRentalForm() {
     if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
     cost2 += rem * daily;
 
+    // Phase 1: compute minimum partial payment (half of extension at daily rate).
+    var minDays = Math.ceil(extraDays / 2);
+    var minPayment = minDays * daily;
+
+    // Store for use in updateExtBtn().
+    extPriceData = { days: extraDays, dailyRate: daily, fullCost: cost2, minPayment: minPayment };
+
     if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
     if (extCustomAmount) {
       extCustomAmount.setAttribute("max", cost2.toFixed(2));
+    }
+
+    // Show minimum partial payment hint.
+    if (extPartialHint) {
+      extPartialHint.textContent = "Partial payment minimum: $" + minPayment.toFixed(0) +
+        " (" + minDays + " of " + extraDays + " day" + (extraDays !== 1 ? "s" : "") +
+        " × $" + daily + "/day)";
+      extPartialHint.style.color = "#aaa";
+      extPartialHint.style.display = "";
     }
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
@@ -1521,7 +1544,34 @@ function initExtendRentalForm() {
     var dateOk   = extNewReturn && extNewReturn.value;
     var customAmountRaw = extCustomAmount ? extCustomAmount.value.trim() : "";
     var customAmount = customAmountRaw ? Number(customAmountRaw) : null;
-    var customAmountOk = !customAmountRaw || (Number.isFinite(customAmount) && customAmount > 0);
+
+    // Phase 1: validate partial payment minimum when an amount is entered.
+    var customAmountOk = true;
+    if (customAmountRaw) {
+      if (!Number.isFinite(customAmount) || customAmount <= 0) {
+        customAmountOk = false;
+      } else if (extPriceData.days > 0 && customAmount < extPriceData.fullCost) {
+        // Partial payment — check minimum requirement.
+        if (customAmount < extPriceData.minPayment) {
+          customAmountOk = false;
+          if (extPartialHint) {
+            extPartialHint.textContent = "Partial extensions require payment covering at least half of the requested extension days. Minimum: $" +
+              extPriceData.minPayment.toFixed(0) + " (" + Math.ceil(extPriceData.days / 2) + " day" +
+              (Math.ceil(extPriceData.days / 2) !== 1 ? "s" : "") + " × $" + extPriceData.dailyRate + "/day).";
+            extPartialHint.style.color = "#f87171";
+            extPartialHint.style.display = "";
+          }
+        } else if (extPartialHint) {
+          // Amount is valid — restore informational hint color.
+          var minDays2 = Math.ceil(extPriceData.days / 2);
+          extPartialHint.textContent = "Partial payment minimum: $" + extPriceData.minPayment.toFixed(0) +
+            " (" + minDays2 + " of " + extPriceData.days + " day" + (extPriceData.days !== 1 ? "s" : "") +
+            " × $" + extPriceData.dailyRate + "/day)";
+          extPartialHint.style.color = "#aaa";
+        }
+      }
+    }
+
     var contactOk = emailOk || phoneOk;
     var ready    = contactOk && dateOk && customAmountOk;
     if (extSubmitBtn) extSubmitBtn.disabled = !ready;
@@ -1534,8 +1584,8 @@ function initExtendRentalForm() {
 
   if (extNewReturn) {
     extNewReturn.addEventListener("change", function() {
-      updateExtBtn();
       updatePriceEstimate();
+      updateExtBtn();
     });
   }
   updateExtBtn();
@@ -1573,7 +1623,19 @@ async function launchExtendRentalPayment() {
       }),
     });
     var data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Server error");
+    if (!resp.ok) {
+      // Phase 1: surface the minimum-payment error with a clear message.
+      var errMsg = data.error || "Server error";
+      if (data.minimumPayment) {
+        var partialHintEl = document.getElementById("extPartialHint");
+        if (partialHintEl) {
+          partialHintEl.textContent = errMsg;
+          partialHintEl.style.color = "#f87171";
+          partialHintEl.style.display = "";
+        }
+      }
+      throw new Error(errMsg);
+    }
 
     var {
       clientSecret,

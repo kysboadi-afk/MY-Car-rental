@@ -24,6 +24,7 @@ import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA, isoDateInLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
+import { loadExtensionRiskSettings, evaluateExtensionRisk } from "./_extension-risk.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -489,13 +490,15 @@ export default async function handler(req, res) {
     let extensionAmount = 0;
     let extensionLabel;
     let lateFeeIncluded = 0;
+    let extensionDays = 1;  // hoisted so partial-payment minimum check can use it below
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
       // current return date, preferring Supabase over bookings.json) to
       // newReturnDate — never from today or pickup_date.
       const extraMs   = newReturnMs - currentReturnMs;
-      const days = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
+      extensionDays   = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
+      const days      = extensionDays;
       extensionLabel  = `+${days} day${days !== 1 ? "s" : ""}`;
 
       const price = computeAmountFromPricing(pricing, days);
@@ -564,7 +567,37 @@ export default async function handler(req, res) {
       extensionAmount = applyTax(price, settings) + lateFeeIncluded + deferredFeeIncluded;
     }
 
-    const extensionTotal = Math.round(extensionAmount * 100) / 100;
+    const originalExtensionTotal = Math.round(extensionAmount * 100) / 100;
+
+    // ── Phase 1: Partial-payment minimum enforcement (CAR rentals only) ──────
+    // For partial payments, the extension value is computed at the standard
+    // daily rate (no discounted package pricing). The renter must cover at
+    // least half the requested extension days upfront at that daily rate.
+    let extensionTotal = originalExtensionTotal;
+    if (requestedPaymentAmount !== null && requestedPaymentAmount < originalExtensionTotal) {
+      const dailyRate = computeAmountFromPricing(pricing, 1);
+      if (dailyRate !== null && dailyRate > 0) {
+        // Recalculate extension total at standard daily rate for partial payments.
+        const standardRentalCost = Math.round(dailyRate * extensionDays * 100) / 100;
+        const standardRateTotal = Math.round(
+          (applyTax(standardRentalCost, settings) + lateFeeIncluded + sbDeferredLateFee) * 100
+        ) / 100;
+        // Partial payments track remaining balance against the standard-rate total.
+        extensionTotal = standardRateTotal;
+
+        const minDays = Math.ceil(extensionDays / 2);
+        const minimumUpfront = Math.round(minDays * dailyRate * 100) / 100;
+        if (requestedPaymentAmount < minimumUpfront) {
+          return res.status(400).json({
+            error: `Partial extensions require payment covering at least half of the requested extension days. Minimum: $${minimumUpfront.toFixed(2)} (${minDays} day${minDays !== 1 ? "s" : ""} × $${dailyRate.toFixed(2)}/day).`,
+            minimumPayment: minimumUpfront.toFixed(2),
+            extensionDays: extensionDays,
+            dailyRate: dailyRate.toFixed(2),
+          });
+        }
+      }
+    }
+
     const amountPaidNow = requestedPaymentAmount != null
       ? Math.round(requestedPaymentAmount * 100) / 100
       : extensionTotal;
@@ -573,6 +606,27 @@ export default async function handler(req, res) {
     }
     const extensionRemainingBalance = Math.round(Math.max(0, extensionTotal - amountPaidNow) * 100) / 100;
     const extensionPaymentStatus = extensionRemainingBalance > 0 ? "partially_paid" : "paid";
+
+    // ── Phase 2: Extension risk gating ───────────────────────────────────────
+    // When the renter is making a partial payment, enforce system-wide exposure
+    // and count limits.  Full payments always bypass this gate.
+    if (extensionRemainingBalance > 0) {
+      const riskSettings = await loadExtensionRiskSettings();
+      const risk = await evaluateExtensionRisk(
+        sb,
+        sbActiveBookingRef || activeBooking.bookingId || null,
+        extensionRemainingBalance,
+        riskSettings
+      );
+      if (!risk.allowed) {
+        return res.status(400).json({
+          error:          risk.reason,
+          riskBlocked:    true,
+          partialCount:   risk.partialCount,
+          exposureAmount: risk.exposureAmount.toFixed(2),
+        });
+      }
+    }
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
