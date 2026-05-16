@@ -47,7 +47,7 @@ export async function logSmsToSupabase(bookingId, templateKey, returnDateAtSend 
   }
 }
 
-export async function sendDedupedSms({ bookingId, templateKey, phone, body, returnDateAtSend, metadata }) {
+export async function sendDedupedSms({ bookingId, templateKey, phone, body, returnDateAtSend, metadata, forceSend = false }) {
   const normalizedPhone = normalizePhone(phone || "");
   if (!normalizedPhone || !body) return false;
   if (!bookingId) {
@@ -71,7 +71,7 @@ export async function sendDedupedSms({ bookingId, templateKey, phone, body, retu
       console.warn("_sms-log: sms_delivery_logs write failed (non-fatal):", deliveryErr.message);
     }
   };
-  const alreadyLogged = bookingId
+  const alreadyLogged = !forceSend && bookingId
     ? await isSmsLogged(bookingId, templateKey, returnDateAtSend || SMS_LOGS_NO_RETURN_DATE)
     : false;
   if (alreadyLogged) {

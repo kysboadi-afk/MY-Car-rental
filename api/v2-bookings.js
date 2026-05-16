@@ -1903,6 +1903,7 @@ export default async function handler(req, res) {
       const { bookingId, customerId } = body;
       const sendSmsChannel = body.send_sms !== false;
       const sendEmailChannel = !!body.send_email;
+      const forceSms = body.force_sms === true;
       const customMessage = typeof body.message === "string" ? body.message.trim() : "";
 
       const sbLinks = getSupabaseAdmin();
@@ -1985,6 +1986,7 @@ export default async function handler(req, res) {
           templateKey: "admin_payment_link",
           phone,
           body: defaultSms,
+          forceSend: forceSms,
           returnDateAtSend: bkRow.return_date || "9999-12-31",
           metadata: {
             source: "admin_send_payment_link",
