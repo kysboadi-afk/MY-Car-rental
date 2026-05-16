@@ -69,6 +69,15 @@
   const $docLatestReceiptUnavailable = document.getElementById("doc-latest-receipt-unavailable");
   const $activityList     = document.getElementById("activity-list");
   const $activityEmpty    = document.getElementById("activity-empty");
+  // Partial payment DOM refs
+  const $partialSection   = document.getElementById("partial-payment-section");
+  const $partialAmtInput  = document.getElementById("partial-amount-input");
+  const $partialMaxBtn    = document.getElementById("partial-max-btn");
+  const $partialPreview   = document.getElementById("partial-amount-preview");
+  const $btnInitPartial   = document.getElementById("btn-init-partial");
+  const $partialStripeEl  = document.getElementById("partial-stripe-element");
+  const $partialError     = document.getElementById("partial-error");
+  const $btnConfirmPartial = document.getElementById("btn-confirm-partial");
 
   // ── Booking state ───────────────────────────────────────────────────────────
   let booking          = null;
@@ -80,6 +89,10 @@
   let balanceStripe    = null;
   let balanceElements  = null;
   let balancePayEl     = null;
+  let partialStripe    = null;
+  let partialElements  = null;
+  let partialPayEl     = null;
+  let currentBalance   = 0;
   let ledgerSummary    = null;
   let ledgerTransactions = [];
   let latestReceiptTransaction = null;
@@ -375,18 +388,11 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
     const managedStatuses = ["reserved", "reserved_unpaid", "pending", "pending_verification", "approved", "active", "active_rental", "booked_paid", "overdue", "partial"];
     const canPayBalance = managedStatuses.includes(statusKey) && balance > 0;
-    const partialLink = buildBalanceLink(b);
+    currentBalance = balance;
     if (canPayBalance && $payBalSection) {
       $payBalSection.style.display = "block";
       if ($btnInitBalance) $btnInitBalance.textContent = `Pay Balance (${fmt(balance)})`;
-      if ($btnOpenPartial) {
-        if (partialLink) {
-          $btnOpenPartial.href = partialLink;
-          $btnOpenPartial.style.display = "";
-        } else {
-          $btnOpenPartial.style.display = "none";
-        }
-      }
+      if ($btnOpenPartial) $btnOpenPartial.style.display = "";
     } else if ($payBalSection) {
       $payBalSection.style.display = "none";
     }
@@ -918,6 +924,8 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
   // ── Pay remaining balance ───────────────────────────────────────────────────
   if ($btnInitBalance) {
     $btnInitBalance.addEventListener("click", async () => {
+      // Close partial payment section if open
+      if ($partialSection) $partialSection.style.display = "none";
       $btnInitBalance.disabled    = true;
       $btnInitBalance.textContent = "Loading Payment…";
       if ($balanceError) $balanceError.style.display = "none";
@@ -953,7 +961,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       } finally {
         if ($btnInitBalance) {
           $btnInitBalance.disabled    = false;
-          $btnInitBalance.textContent = `Pay Balance (${fmt(Number(booking?.balanceDue || 0))})`;
+          $btnInitBalance.textContent = `Pay Balance (${fmt(currentBalance || Number(booking?.balanceDue || 0))})`;
         }
       }
     });
@@ -984,6 +992,170 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
         console.error("[manage-booking] balance pay error:", err);
       } finally {
         if ($btnConfirmBal) { $btnConfirmBal.disabled = false; $btnConfirmBal.textContent = "Confirm Payment"; }
+      }
+    });
+  }
+
+  // ── Open/close partial payment section ──────────────────────────────────────
+  if ($btnOpenPartial) {
+    $btnOpenPartial.addEventListener("click", () => {
+      if (!$partialSection) return;
+      const isVisible = $partialSection.style.display !== "none";
+      if (isVisible) {
+        $partialSection.style.display = "none";
+        return;
+      }
+      // Close the full balance panel if open
+      if ($balanceWrap) $balanceWrap.style.display = "none";
+
+      // Seed the amount input with the current balance
+      const maxAmt = currentBalance || Number(booking?.balanceDue || 0);
+      if ($partialAmtInput) {
+        $partialAmtInput.max   = maxAmt.toFixed(2);
+        $partialAmtInput.value = maxAmt.toFixed(2);
+      }
+      updatePartialPreview();
+
+      // Reset Stripe section
+      if ($partialStripeEl) $partialStripeEl.style.display = "none";
+      if ($btnConfirmPartial) $btnConfirmPartial.style.display = "none";
+      if ($partialError) $partialError.style.display = "none";
+      if ($btnInitPartial) { $btnInitPartial.disabled = false; $btnInitPartial.textContent = "Initialize Payment"; }
+
+      $partialSection.style.display = "block";
+    });
+  }
+
+  function updatePartialPreview() {
+    if (!$partialPreview || !$partialAmtInput) return;
+    const maxAmt = currentBalance || Number(booking?.balanceDue || 0);
+    const val = Math.round(parseFloat($partialAmtInput.value) * 100) / 100;
+    if (!Number.isFinite(val) || val <= 0) {
+      $partialPreview.textContent = "";
+      return;
+    }
+    if (val > maxAmt) {
+      $partialPreview.innerHTML = `<span style="color:#c62828">Amount exceeds remaining balance (${fmt(maxAmt)})</span>`;
+      return;
+    }
+    const remaining = Math.max(0, Math.round((maxAmt - val) * 100) / 100);
+    $partialPreview.innerHTML = remaining > 0
+      ? `After payment: <strong style="color:#b45309">${fmt(remaining)} still due</strong>`
+      : `<span style="color:#2e7d32">✓ Pays balance in full</span>`;
+  }
+
+  if ($partialAmtInput) {
+    $partialAmtInput.addEventListener("input", updatePartialPreview);
+  }
+
+  if ($partialMaxBtn) {
+    $partialMaxBtn.addEventListener("click", () => {
+      if (!$partialAmtInput) return;
+      const maxAmt = currentBalance || Number(booking?.balanceDue || 0);
+      $partialAmtInput.value = maxAmt.toFixed(2);
+      updatePartialPreview();
+    });
+  }
+
+  // ── Initialize partial payment ───────────────────────────────────────────────
+  if ($btnInitPartial) {
+    $btnInitPartial.addEventListener("click", async () => {
+      if ($partialError) $partialError.style.display = "none";
+      const maxAmt = currentBalance || Number(booking?.balanceDue || 0);
+      const requestedAmt = Math.round(parseFloat($partialAmtInput?.value || "0") * 100) / 100;
+
+      if (!Number.isFinite(requestedAmt) || requestedAmt <= 0) {
+        if ($partialError) { $partialError.textContent = "Enter a valid payment amount."; $partialError.style.display = "block"; }
+        return;
+      }
+      if (requestedAmt > maxAmt) {
+        if ($partialError) { $partialError.textContent = `Amount exceeds remaining balance (${fmt(maxAmt)}).`; $partialError.style.display = "block"; }
+        return;
+      }
+
+      $btnInitPartial.disabled    = true;
+      $btnInitPartial.textContent = "Preparing Payment…";
+
+      // Unmount any previous partial Stripe element
+      if (partialPayEl) { try { partialPayEl.unmount(); } catch (_e) { /* ok */ } partialPayEl = null; }
+      partialStripe = null; partialElements = null;
+      if ($partialStripeEl) $partialStripeEl.innerHTML = "";
+
+      try {
+        const isFullBalance = Math.round(requestedAmt * 100) === Math.round(maxAmt * 100);
+        const body = { action: "create_balance_payment_intent", token: activeToken };
+        if (!isFullBalance) body.payment_amount = requestedAmt;
+
+        const resp = await fetch(API_BASE, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || !data.clientSecret) {
+          if ($partialError) { $partialError.textContent = data.error || "Could not initialize payment."; $partialError.style.display = "block"; }
+          return;
+        }
+        if (typeof Stripe === "undefined") { // eslint-disable-line no-undef
+          if ($partialError) { $partialError.textContent = "Payment library failed to load. Please refresh."; $partialError.style.display = "block"; }
+          return;
+        }
+
+        partialStripe   = Stripe(data.publishableKey); // eslint-disable-line no-undef
+        partialElements = partialStripe.elements({ clientSecret: data.clientSecret });
+        partialPayEl    = partialElements.create("payment", {
+          fields: { billingDetails: { name: "never" } },
+        });
+        if ($partialStripeEl) {
+          $partialStripeEl.style.display = "block";
+          partialPayEl.mount($partialStripeEl);
+        }
+        const payAmt = Number(data.paymentAmount || requestedAmt);
+        if ($btnConfirmPartial) {
+          $btnConfirmPartial.textContent = `Pay ${fmt(payAmt)}`;
+          $btnConfirmPartial.style.display = "";
+          $btnConfirmPartial.disabled = false;
+        }
+        // Disable amount inputs while payment is initialized
+        if ($partialAmtInput) $partialAmtInput.disabled = true;
+        if ($partialMaxBtn) $partialMaxBtn.disabled = true;
+      } catch (err) {
+        if ($partialError) { $partialError.textContent = "Network error. Please try again."; $partialError.style.display = "block"; }
+        console.error("[manage-booking] partial init error:", err);
+      } finally {
+        if ($btnInitPartial) { $btnInitPartial.disabled = false; $btnInitPartial.textContent = "Initialize Payment"; }
+      }
+    });
+  }
+
+  // ── Confirm partial payment ──────────────────────────────────────────────────
+  if ($btnConfirmPartial) {
+    $btnConfirmPartial.addEventListener("click", async () => {
+      if (!partialStripe || !partialElements) return;
+      $btnConfirmPartial.disabled    = true;
+      $btnConfirmPartial.textContent = "Processing…";
+      if ($partialError) $partialError.style.display = "none";
+
+      try {
+        const result = await partialStripe.confirmPayment({
+          elements: partialElements,
+          confirmParams: { return_url: window.location.href },
+          redirect: "if_required",
+        });
+        if (result.error) {
+          if ($partialError) { $partialError.textContent = result.error.message || "Payment failed. Please try again."; $partialError.style.display = "block"; }
+          return;
+        }
+        if (result.paymentIntent?.status === "succeeded") {
+          setActionMsg("✅ Payment received. Updating your booking…", "success", document.getElementById("action-msg-finance"));
+          setTimeout(() => window.location.reload(), PAYMENT_SUCCESS_RELOAD_DELAY_MS);
+        }
+      } catch (err) {
+        if ($partialError) { $partialError.textContent = "Payment failed. Please try again."; $partialError.style.display = "block"; }
+        console.error("[manage-booking] partial pay error:", err);
+      } finally {
+        if ($btnConfirmPartial) { $btnConfirmPartial.disabled = false; $btnConfirmPartial.textContent = "Confirm Payment"; }
       }
     });
   }
