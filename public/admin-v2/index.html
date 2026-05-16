@@ -5785,10 +5785,13 @@ async function sendPaymentLinkForBooking(bookingId, opts = {}) {
     });
     const bits = [];
     if (data.smsSent) bits.push('SMS sent');
-    if (data.smsDedupSkipped) bits.push('SMS deduplicated');
+    if (data.smsDedupSkipped) bits.push('SMS deduplicated (already sent recently)');
     if (data.emailSent) bits.push('email sent');
-    if (!bits.length) bits.push('request processed');
-    showToast(`Payment link: ${bits.join(', ')}.`, 'success');
+    if (!bits.length) bits.push('no phone or email on file — check booking');
+    showToast(`Payment link: ${bits.join(', ')}.`, data.smsSent || data.emailSent ? 'success' : 'warning');
+    if (data.manageLink) {
+      console.info('[send_payment_link] manage-booking link sent:', data.manageLink);
+    }
   } catch (err) {
     showToast('Failed to send payment link: ' + err.message, 'error');
   }
@@ -5806,7 +5809,15 @@ async function sendPaymentLinkForCustomer(customerId) {
       send_email: true,
     });
     const bookingLabel = data.bookingId ? ` for ${data.bookingId}` : '';
-    showToast(`Payment link sent${bookingLabel}.`, 'success');
+    const bits = [];
+    if (data.smsSent) bits.push('SMS sent');
+    if (data.smsDedupSkipped) bits.push('SMS deduplicated');
+    if (data.emailSent) bits.push('email sent');
+    if (!bits.length) bits.push('no phone or email on file');
+    showToast(`Payment link${bookingLabel}: ${bits.join(', ')}.`, data.smsSent || data.emailSent ? 'success' : 'warning');
+    if (data.manageLink) {
+      console.info('[send_payment_link] manage-booking link sent:', data.manageLink);
+    }
   } catch (err) {
     showToast('Failed to send customer payment link: ' + err.message, 'error');
   }

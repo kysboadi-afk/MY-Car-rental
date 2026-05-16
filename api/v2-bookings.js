@@ -1933,8 +1933,22 @@ export default async function handler(req, res) {
 
       if (!bkRow?.booking_ref) return res.status(404).json({ error: "No eligible booking found." });
 
+      // Generate a fresh manage token so the renter can pay inside the dashboard
+      const newManageToken = createManageToken(bkRow.booking_ref);
+      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(newManageToken)}`;
+
+      // Best-effort persist the token so the dashboard's existing token stays fresh
+      try {
+        await sbLinks
+          .from("bookings")
+          .update({ manage_token: newManageToken, updated_at: new Date().toISOString() })
+          .eq("booking_ref", bkRow.booking_ref);
+      } catch (tokenErr) {
+        console.warn("send_payment_link: manage token persist failed (non-fatal):", tokenErr.message);
+      }
+
+      // Keep balance.html link as fallback (for SMS-only receivers who cannot open the dashboard)
       const balanceLink = buildBalanceLinkForBooking(bkRow);
-      if (!balanceLink) return res.status(400).json({ error: "No balance link available for this booking." });
 
       const planProgress = await computePaymentPlanProgress(sbLinks, { bookingId: bkRow.booking_ref });
       const remainingBalance = roundMoney(bkRow.remaining_balance != null ? bkRow.remaining_balance : planProgress.remaining_balance || 0);
@@ -1960,7 +1974,7 @@ export default async function handler(req, res) {
         `Current balance: $${remainingBalance.toFixed(2)}.`,
         overdueLine,
         planLine,
-        `Pay securely here: ${balanceLink}`,
+        `Manage & pay here: ${manageLink}`,
       ].filter(Boolean).join(" ");
 
       let smsSent = false;
@@ -1976,6 +1990,7 @@ export default async function handler(req, res) {
             source: "admin_send_payment_link",
             booking_id: bkRow.booking_ref,
             customer_id: bkRow.customer_id || null,
+            manage_link: manageLink,
             balance_link: balanceLink,
             remaining_balance: remainingBalance,
             overdue_amount: overdueAmount,
@@ -1999,16 +2014,16 @@ export default async function handler(req, res) {
           await transporter.sendMail({
             from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
             to: email,
-            subject: "Secure Payment Link for Your Booking",
+            subject: "Manage & Pay Your Booking",
             html: `
-              <h2>Payment Link</h2>
+              <h2>Your Booking Payment Link</h2>
               <p>Hi ${escHtml(renterName || "there")},</p>
               <p>${escHtml(customMessage || "Your next payment is due.")}</p>
               <p><strong>Booking:</strong> ${escHtml(bkRow.booking_ref)}</p>
               <p><strong>Current balance:</strong> $${remainingBalance.toFixed(2)}</p>
               ${overdueAmount > 0 ? `<p><strong>Overdue amount:</strong> $${overdueAmount.toFixed(2)}</p>` : ""}
               ${planProgress.has_active_plan ? `<p><strong>Payment plan remaining:</strong> $${paymentPlanRemaining.toFixed(2)}${nextDueDate ? ` (next due ${escHtml(nextDueDate)})` : ""}</p>` : ""}
-              <p><a href="${escHtml(balanceLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Pay Now</a></p>
+              <p><a href="${escHtml(manageLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Manage &amp; Pay Now</a></p>
               <p>If you need help, call us at (844) 511-4059.</p>
             `,
           });
@@ -2021,6 +2036,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         bookingId: bkRow.booking_ref,
+        manageLink,
         balanceLink,
         smsSent,
         smsDedupSkipped,
