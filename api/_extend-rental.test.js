@@ -542,6 +542,8 @@ test("extend-rental: 404 when no active booking matches the provided email", asy
 });
 
 test("extend-rental: 200 accepts customPaymentAmount for active extension and tracks partial status", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  daily=$55, minimum=ceil(5/2)=3×$55=$165.
+  // $200 is above the minimum, so the partial payment is accepted.
   capturedStripeParams = null;
   const active = makeActiveBooking();
   mockBookings = { camry: [active] };
@@ -552,17 +554,126 @@ test("extend-rental: 200 accepts customPaymentAmount for active extension and tr
     vehicleId:     "camry",
     email:         "alice@example.com",
     newReturnDate: "2026-05-05",
-    customPaymentAmount: 150,
+    customPaymentAmount: 200,
   }), res);
 
   assert.equal(res._status, 200);
-  assert.equal(res._body.extensionAmount, "150.00", "extensionAmount should be the pay-now amount");
-  assert.equal(res._body.amountPaidNow, "150.00");
+  assert.equal(res._body.extensionAmount, "200.00", "extensionAmount should be the pay-now amount");
+  assert.equal(res._body.amountPaidNow, "200.00");
   assert.equal(res._body.extensionPaymentStatus, "partially_paid");
   assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance should be tracked");
-  assert.equal(capturedStripeParams.amount, 15000, "Stripe PI amount must use the custom pay-now amount");
-  assert.equal(capturedStripeParams.metadata.extension_amount_paid, "150.00");
+  assert.equal(capturedStripeParams.amount, 20000, "Stripe PI amount must use the custom pay-now amount");
+  assert.equal(capturedStripeParams.metadata.extension_amount_paid, "200.00");
   assert.equal(capturedStripeParams.metadata.extension_payment_status, "partially_paid");
+});
+
+// ── Phase 1: Partial-payment minimum enforcement tests ────────────────────────
+
+test("extend-rental: 400 when customPaymentAmount is below partial-payment minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  daily=$55, minimum=ceil(5/2)=3×$55=$165.
+  // $100 is below $165, so the request must be rejected.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 100,
+  }), res);
+
+  assert.equal(res._status, 400, "below-minimum partial payment must return 400");
+  assert.match(String(res._body?.error || ""), /minimum/i, "error must mention minimum");
+  assert.equal(res._body.minimumPayment, "165.00", "minimumPayment must be 3 × $55");
+  assert.equal(res._body.extensionDays, 5);
+  assert.equal(res._body.dailyRate, "55.00");
+});
+
+test("extend-rental: 200 when customPaymentAmount equals minimum (Phase 1 — boundary)", async () => {
+  // Extension: Apr 30 → May 5 = 5 days.  minimum=3×$55=$165. Exactly $165 must succeed.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+    customPaymentAmount: 165,
+  }), res);
+
+  assert.equal(res._status, 200, "exact-minimum partial payment must succeed");
+  assert.equal(res._body.amountPaidNow, "165.00");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+});
+
+test("extend-rental: 200 and full-payment pricing unchanged when paying full tiered amount (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  Weekly tier = $300 (mocked).
+  // Paying the full $300 is a full payment — existing tiered pricing stays unchanged.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    // No customPaymentAmount — full payment path
+  }), res);
+
+  assert.equal(res._status, 200, "full payment must succeed");
+  // extensionTotal should equal amountPaidNow (no remaining balance)
+  assert.equal(res._body.remainingBalance, "0.00", "full payment must leave no remaining balance");
+  assert.equal(res._body.extensionPaymentStatus, "paid");
+});
+
+test("extend-rental: 400 when 7-day partial payment is below 4-day minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  daily=$55, minimum=ceil(7/2)=4×$55=$220.
+  // $150 is below $220.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    customPaymentAmount: 150,
+  }), res);
+
+  assert.equal(res._status, 400, "below-minimum for 7-day extension must return 400");
+  assert.equal(res._body.minimumPayment, "220.00", "7-day minimum must be 4 × $55");
+  assert.equal(res._body.extensionDays, 7);
+});
+
+test("extend-rental: 200 when 7-day partial pays exactly the 4-day minimum (Phase 1)", async () => {
+  // Extension: Apr 30 → May 7 = 7 days.  minimum=ceil(7/2)=4×$55=$220.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-07",
+    customPaymentAmount: 220,
+  }), res);
+
+  assert.equal(res._status, 200, "7-day partial at minimum must succeed");
+  assert.equal(res._body.amountPaidNow, "220.00");
+  assert.equal(res._body.extensionPaymentStatus, "partially_paid");
+  // Standard-rate total for 7 days: 7×$55=$385 taxed (9.5%) = $421.58
+  assert.ok(Number(res._body.extensionTotal) > 220, "extensionTotal must be > amountPaidNow");
+  assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance must be > 0");
 });
 
 test("extend-rental: 400 when customPaymentAmount exceeds extension balance", async () => {
