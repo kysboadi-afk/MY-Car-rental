@@ -25,6 +25,8 @@ const BUSINESS_CLOSE_HOUR = 20; // 8 PM Los Angeles time
 var pageParams = new URLSearchParams(window.location.search);
 var vehicleId = pageParams.get("vehicle") || "";
 var isExtendMode = /^(true|1)$/i.test(pageParams.get("extend") || "");
+var isIdentityReturnMode = /^(return|returned|1|true)$/i.test(pageParams.get("identity") || "")
+  || !!(pageParams.get("verification_session") || pageParams.get("verificationSessionId") || pageParams.get("session_id"));
 
 // ----- State -----
 var selectedPackage = null; // "2hr" | "3hr" | "6hr" | "24hr"
@@ -36,6 +38,8 @@ var agreementSigned = false;        // true once renter signs the rental agreeme
 var agreementSignature = "";        // typed name used as electronic signature
 var verifiedIdentitySessionId = null;
 var selectedPaymentOption = "manual";
+var SLINGSHOT_IDENTITY_STATE_KEY = "slySlingshotIdentityState";
+var SLINGSHOT_BOOKING_DRAFT_KEY = "slySlingshotBookingDraft";
 
 // ----- Helpers -----
 function escHtml(str) {
@@ -56,6 +60,99 @@ function showPayError(msg) {
 function clearPayError() {
   var el = document.getElementById("payError");
   if (el) { el.textContent = ""; el.style.display = "none"; }
+}
+
+function normalizeIdentityContext(data) {
+  return {
+    vehicleId: String((data && data.vehicleId) || vehicleId || "").trim().toLowerCase(),
+    name: String((data && data.name) || "").trim().replace(/\s+/g, " ").toLowerCase(),
+    email: String((data && data.email) || "").trim().toLowerCase(),
+    phone: String((data && data.phone) || "").replace(/[^\d+]/g, ""),
+  };
+}
+
+function readIdentityState() {
+  try {
+    var raw = sessionStorage.getItem(SLINGSHOT_IDENTITY_STATE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeIdentityState(context, sessionId) {
+  try {
+    var normalized = normalizeIdentityContext(context || {});
+    sessionStorage.setItem(SLINGSHOT_IDENTITY_STATE_KEY, JSON.stringify({
+      sessionId: String(sessionId || "").trim(),
+      vehicleId: normalized.vehicleId,
+      name: normalized.name,
+      email: normalized.email,
+      phone: normalized.phone,
+      updatedAt: Date.now(),
+    }));
+  } catch (_) {}
+}
+
+function clearIdentityState() {
+  try { sessionStorage.removeItem(SLINGSHOT_IDENTITY_STATE_KEY); } catch (_) {}
+}
+
+function syncVerifiedIdentitySession(payload) {
+  var stored = readIdentityState();
+  if (!stored || !stored.sessionId) return;
+  if (!payload) {
+    verifiedIdentitySessionId = stored.sessionId;
+    return;
+  }
+  var expected = normalizeIdentityContext(payload);
+  if (stored.vehicleId === expected.vehicleId &&
+      stored.name === expected.name &&
+      stored.email === expected.email &&
+      stored.phone === expected.phone) {
+    verifiedIdentitySessionId = stored.sessionId;
+    return;
+  }
+  clearIdentityState();
+  verifiedIdentitySessionId = null;
+}
+
+function readBookingDraft() {
+  try {
+    var raw = sessionStorage.getItem(SLINGSHOT_BOOKING_DRAFT_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeBookingDraft(draft) {
+  try {
+    sessionStorage.setItem(SLINGSHOT_BOOKING_DRAFT_KEY, JSON.stringify({
+      ...(draft || {}),
+      updatedAt: Date.now(),
+    }));
+  } catch (_) {}
+}
+
+function clearBookingDraft() {
+  try { sessionStorage.removeItem(SLINGSHOT_BOOKING_DRAFT_KEY); } catch (_) {}
+}
+
+function clearIdentityReturnParamsFromUrl() {
+  try {
+    var url = new URL(window.location.href);
+    ["identity", "verification_session", "verificationSessionId", "session_id"].forEach(function(key) {
+      url.searchParams.delete(key);
+    });
+    var newSearch = url.searchParams.toString();
+    var next = url.pathname + (newSearch ? "?" + newSearch : "") + url.hash;
+    window.history.replaceState({}, "", next);
+  } catch (_) {}
 }
 
 function showSlingshotManualConfirmation(data) {
@@ -467,6 +564,7 @@ function initPackagePicker(gridId, onSelect) {
 // =====================================================================
 
 async function ensureSlingshotIdentityVerified(payload) {
+  syncVerifiedIdentitySession(payload);
   if (verifiedIdentitySessionId) return verifiedIdentitySessionId;
 
   var createResp = await fetch(API_BASE + "/api/create-slingshot-booking", {
@@ -487,6 +585,7 @@ async function ensureSlingshotIdentityVerified(payload) {
   if (!createData.identityClientSecret || !createData.publishableKey || !createData.verificationSessionId) {
     throw new Error("Identity verification setup is incomplete. Please try again.");
   }
+  writeIdentityState(payload, createData.verificationSessionId);
 
   var stripe = Stripe(createData.publishableKey);
   var verifyResult = await stripe.verifyIdentity(createData.identityClientSecret);
@@ -521,6 +620,17 @@ async function launchSlingshotPayment() {
   if (!agreementSigned)   { showPayError("Please read and sign the Rental Agreement before booking."); return; }
   var agreeEl = document.getElementById("slAgree");
   if (!agreeEl || !agreeEl.checked) { showPayError("Please check the box to confirm you have signed the Rental Agreement."); return; }
+  writeBookingDraft({
+    vehicleId: vehicleId,
+    slingshotPackage: selectedPackage,
+    pickupDate: dateInput.value,
+    pickupTime: timeSelect.value,
+    name: name,
+    email: email,
+    phone: phone,
+    agreementSignature: agreementSignature,
+    agreementSigned: agreementSigned,
+  });
 
   if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Verifying identity…"; }
 
@@ -611,6 +721,8 @@ async function launchSlingshotPayment() {
     if (!signResp.ok) {
       throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
     }
+    clearIdentityState();
+    clearBookingDraft();
     paymentFormSubmitted = true;
     var confirmedBookingId = signData.bookingId || pendingBookingId || "";
     var confirmedManageLink = signData.manageLink || data.manageLink || "";
@@ -828,6 +940,7 @@ function initBookingForm() {
     var el = document.getElementById(id);
     if (el) el.addEventListener("input", function() {
       verifiedIdentitySessionId = null;
+      clearIdentityState();
       updateBookBtn();
     });
   });
@@ -928,6 +1041,56 @@ function initBookingForm() {
   if (bookBtn) {
     bookBtn.addEventListener("click", launchSlingshotPayment);
   }
+
+  (function maybeResumeFromIdentityReturn() {
+    if (!isIdentityReturnMode) return;
+    var draft = readBookingDraft();
+    if (!draft || String(draft.vehicleId || "") !== String(vehicleId || "")) return;
+    var dateInput = document.getElementById("slPickupDate");
+    var timeSelect = document.getElementById("slPickupTime");
+    var nameInput = document.getElementById("slName");
+    var emailInput = document.getElementById("slEmail");
+    var phoneInput = document.getElementById("slPhone");
+    var signInput = document.getElementById("slSignatureInput");
+    var agreeCheck = document.getElementById("slAgree");
+
+    if (nameInput) nameInput.value = draft.name || "";
+    if (emailInput) emailInput.value = draft.email || "";
+    if (phoneInput) phoneInput.value = draft.phone || "";
+    if (dateInput) dateInput.value = draft.pickupDate || "";
+    if (draft.slingshotPackage) {
+      var pkgBtn = document.querySelector('#packageGrid .package-btn[data-pkg="' + draft.slingshotPackage + '"]');
+      if (pkgBtn) pkgBtn.click();
+      selectedPackage = draft.slingshotPackage;
+    }
+
+    populateTimeSlots();
+    if (timeSelect && draft.pickupTime) timeSelect.value = draft.pickupTime;
+    if (signInput && draft.agreementSignature) signInput.value = draft.agreementSignature;
+    agreementSignature = draft.agreementSignature || agreementSignature;
+    agreementSigned = !!draft.agreementSigned;
+    if (agreeCheck && agreementSigned) {
+      agreeCheck.checked = true;
+      agreeCheck.disabled = false;
+    }
+
+    syncVerifiedIdentitySession({
+      vehicleId: vehicleId,
+      name: draft.name || "",
+      email: draft.email || "",
+      phone: draft.phone || "",
+    });
+
+    updateReturnTimeDisplay();
+    updateTotalBreakdown();
+    updateBookBtn();
+    clearIdentityReturnParamsFromUrl();
+    clearBookingDraft();
+
+    if (verifiedIdentitySessionId) {
+      setTimeout(function() { launchSlingshotPayment(); }, 0);
+    }
+  }());
 
   updateBookBtn();
   updateTotalBreakdown();
