@@ -20,7 +20,7 @@ import { sendSms } from "./_textmagic.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_SMS_LENGTH = 160;
-const DEFAULT_MESSAGE = "SLY RIDES test message — your SMS provider is working correctly.";
+const DEFAULT_MESSAGE = "Sly Car Rentals test message — your SMS provider is working correctly.";
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

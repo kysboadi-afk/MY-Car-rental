@@ -1,5 +1,5 @@
 // api/_sms-templates.js
-// Centralized SMS template library for the SLY RIDES rental management system.
+// Centralized SMS template library for the Sly Car Rentals rental management system.
 import { CAR_PICKUP_LOCATION } from "./_pickup-location.js";
 //
 // All customer-facing SMS messages are defined here as functions that accept
@@ -164,7 +164,7 @@ export const BOOKING_CONFIRMED =
 
 /** Sent immediately after BOOKING_CONFIRMED to orient the renter. */
 export const BOOKING_ONBOARDING =
-  "Welcome to SLY RIDES, {customer_name}.\n\n" +
+  "Welcome to Sly Car Rentals, {customer_name}.\n\n" +
   "Your renter dashboard is your main portal for:\n" +
   "• balance + payments\n" +
   "• payment plan status\n" +
@@ -187,7 +187,7 @@ export const EXTENSION_EDUCATION =
 
 /** Sent next morning (when applicable) to explain payment expectations. */
 export const PAYMENT_EDUCATION =
-  "Payment guide from SLY RIDES:\n\n" +
+  "Payment guide from Sly Car Rentals:\n\n" +
   "Use your renter dashboard to check:\n" +
   "• current balance\n" +
   "• next payment due\n" +
@@ -389,7 +389,7 @@ export const PRE_RETURN_LATE_FEE_WARNING =
   "\u2022 Each additional overdue day: +$25/day\n\n" +
   "Extend here:\n" +
   "{extend_link}\n\n" +
-  "\u2013 SLY Rides\n\n" +
+  "\u2013 Sly Car Rentals\n\n" +
   "Reply STOP to opt out.";
 
 /**
@@ -404,7 +404,7 @@ export const LATE_GRACE_STARTED =
   "A $25 late fee now applies.\n\n" +
   "Extend or return your vehicle now. Late fees continue at $25 for each overdue day.\n\n" +
   "{extend_link}\n\n" +
-  "\u2013 SLY Rides\n\n" +
+  "\u2013 Sly Car Rentals\n\n" +
   "Reply STOP to opt out.";
 
 /**
@@ -419,7 +419,7 @@ export const LATE_ESCALATION =
   "A $25 late fee applies.\n\n" +
   "Please extend or return immediately. Late fees continue at $25 for each overdue day.\n\n" +
   "{extend_link}\n\n" +
-  "\u2013 SLY Rides\n\n" +
+  "\u2013 Sly Car Rentals\n\n" +
   "Reply STOP to opt out.";
 
 /**
@@ -433,7 +433,7 @@ export const PAYMENT_FAILED_BALANCE =
   "{payment_link}\n\n" +
   "Partial payments are accepted if a balance remains.\n\n" +
   "To avoid additional late fees, pay as soon as possible.\n\n" +
-  "\u2013 SLY Rides\n\n" +
+  "\u2013 Sly Car Rentals\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent 30 minutes before scheduled return. */
@@ -487,7 +487,7 @@ export const POST_RENTAL_CHARGE =
  * Variables: ticket_number, violation_date, amount
  */
 export const VIOLATION_NOTICE =
-  "Notice from Sly Transportation Services LLC:\n\n" +
+  "Notice from Sly Car Rentals:\n\n" +
   "A violation (#{ticket_number}) was recorded during your rental on {violation_date}.\n\n" +
   "Amount: \${amount}\n\n" +
   "We will contact you with next steps. Questions? Call (844) 511-4059.\n\n" +
@@ -499,7 +499,7 @@ export const VIOLATION_NOTICE =
  * Variables: ticket_number
  */
 export const VIOLATION_TRANSFER_SUBMITTED =
-  "Sly Transportation Services LLC:\n\n" +
+  "Sly Car Rentals:\n\n" +
   "We have submitted a transfer of liability for violation #{ticket_number} on your behalf.\n\n" +
   "If the transfer is approved you will not be charged. We will notify you of the outcome.\n\n" +
   "Questions? Call (844) 511-4059.\n\n" +
@@ -510,7 +510,7 @@ export const VIOLATION_TRANSFER_SUBMITTED =
  * Variables: amount, ticket_number
  */
 export const VIOLATION_CHARGED =
-  "Sly Transportation Services LLC:\n\n" +
+  "Sly Car Rentals:\n\n" +
   "You have been charged \${amount} for violation #{ticket_number} during your rental.\n\n" +
   "This includes the violation amount and a \$25 admin fee.\n\n" +
   "Questions? Call (844) 511-4059.\n\n" +
@@ -521,7 +521,7 @@ export const VIOLATION_CHARGED =
  * Variables: ticket_number
  */
 export const VIOLATION_CHARGE_FAILED =
-  "Sly Transportation Services LLC:\n\n" +
+  "Sly Car Rentals:\n\n" +
   "Payment failed for violation #{ticket_number}. Please update your payment method.\n\n" +
   "We will retry automatically. To resolve this, contact us at (844) 511-4059.\n\n" +
   "Reply STOP to opt out.";
@@ -611,7 +611,7 @@ export const RETENTION_DAY_30 =
 /** Sent 3 days before the balance due_date when net balance > 0. */
 export const BALANCE_DUE_REMINDER =
   "Hi {customer_name},\n\n" +
-  "Your SLY RIDES balance is ${balance_amount}.\n" +
+  "Your Sly Car Rentals balance is ${balance_amount}.\n" +
   "Next due date: {due_date}.\n\n" +
   "Open your renter dashboard to pay or review your plan:\n" +
   "{payment_link}\n\n" +
@@ -622,7 +622,7 @@ export const BALANCE_DUE_REMINDER =
 /** Sent on the day a balance becomes overdue (day 0). */
 export const BALANCE_OVERDUE =
   "Hi {customer_name},\n\n" +
-  "Your SLY RIDES balance of ${balance_amount} is now overdue.\n\n" +
+  "Your Sly Car Rentals balance of ${balance_amount} is now overdue.\n\n" +
   "Open your renter dashboard to pay now and review what is due:\n" +
   "{payment_link}\n\n" +
   "Partial payments are accepted, but overdue balances can still accrue late fees.\n\n" +
@@ -631,7 +631,7 @@ export const BALANCE_OVERDUE =
 /** Sent at 30 days past due. */
 export const BALANCE_OVERDUE_30 =
   "Hi {customer_name},\n\n" +
-  "Your SLY RIDES balance of ${balance_amount} is 30 days past due.\n\n" +
+  "Your Sly Car Rentals balance of ${balance_amount} is 30 days past due.\n\n" +
   "Continued non-payment may affect your ability to rent.\n\n" +
   "Open your renter dashboard to pay now or review the balance details:\n" +
   "{payment_link}\n\n" +
@@ -640,7 +640,7 @@ export const BALANCE_OVERDUE_30 =
 /** Sent at 60 days past due. */
 export const BALANCE_OVERDUE_60 =
   "Hi {customer_name},\n\n" +
-  "Your SLY RIDES balance of ${balance_amount} is 60 days past due.\n\n" +
+  "Your Sly Car Rentals balance of ${balance_amount} is 60 days past due.\n\n" +
   "This account is at risk of being sent to collections.\n\n" +
   "Open your renter dashboard and contact us immediately:\n" +
   "{payment_link}\n\n" +
