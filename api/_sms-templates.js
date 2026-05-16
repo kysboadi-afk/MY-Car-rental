@@ -165,23 +165,37 @@ export const BOOKING_CONFIRMED =
 /** Sent immediately after BOOKING_CONFIRMED to orient the renter. */
 export const BOOKING_ONBOARDING =
   "Welcome to SLY RIDES, {customer_name}.\n\n" +
-  "Manage your rental anytime:\n" +
+  "Your renter dashboard is your main portal for:\n" +
+  "• balance + payments\n" +
+  "• payment plan status\n" +
+  "• extension requests\n" +
+  "• booking docs/agreement\n\n" +
+  "Open dashboard:\n" +
   "{manage_link}\n\n" +
+  "If your account has a balance, partial payments are accepted.\n\n" +
   "Need help? Call or text (844) 511-4059.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent ~30 minutes after confirmation to reduce late returns. */
 export const EXTENSION_EDUCATION =
-  "Need more time during your rental?\n\n" +
-  "Text EXTEND anytime before your return time to see available options and payment links.\n\n" +
-  "Availability depends on upcoming bookings.\n\n" +
+  "Need more time?\n\n" +
+  "Use your renter dashboard first to request an extension.\n\n" +
+  "You can still text EXTEND anytime before return.\n\n" +
+  "Extension availability depends on upcoming bookings.\n\n" +
+  "If only part of an extension is paid now, any remaining amount stays due on your booking.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent next morning (when applicable) to explain payment expectations. */
 export const PAYMENT_EDUCATION =
-  "Quick payment reminder from SLY RIDES:\n\n" +
-  "Use your renter portal to review any balance and payment links:\n" +
+  "Payment guide from SLY RIDES:\n\n" +
+  "Use your renter dashboard to check:\n" +
+  "• current balance\n" +
+  "• next payment due\n" +
+  "• payment plan progress (if active)\n\n" +
+  "Pay/manage here:\n" +
   "{payment_link}\n\n" +
+  "Partial payments are accepted when a balance remains.\n\n" +
+  "Past-due balances may incur late fees.\n\n" +
   "Questions? Call or text (844) 511-4059.\n\n" +
   "Reply STOP to opt out.";
 
@@ -414,9 +428,11 @@ export const LATE_ESCALATION =
  */
 export const PAYMENT_FAILED_BALANCE =
   "Hi {customer_name},\n\n" +
-  "We were unable to process your payment.\n\n" +
-  "Please complete your payment here:\n" +
+  "We could not process your recent payment.\n\n" +
+  "Please open your renter dashboard to review your balance, due status, and payment options:\n" +
   "{payment_link}\n\n" +
+  "Partial payments are accepted if a balance remains.\n\n" +
+  "To avoid additional late fees, pay as soon as possible.\n\n" +
   "\u2013 SLY Rides\n\n" +
   "Reply STOP to opt out.";
 
@@ -595,17 +611,21 @@ export const RETENTION_DAY_30 =
 /** Sent 3 days before the balance due_date when net balance > 0. */
 export const BALANCE_DUE_REMINDER =
   "Hi {customer_name},\n\n" +
-  "A balance of ${balance_amount} on your SLY RIDES account is due on {due_date}.\n\n" +
-  "Pay now to avoid a late fee:\n" +
+  "Your SLY RIDES balance is ${balance_amount}.\n" +
+  "Next due date: {due_date}.\n\n" +
+  "Open your renter dashboard to pay or review your plan:\n" +
   "{payment_link}\n\n" +
+  "Partial payments are accepted when a balance remains.\n\n" +
+  "Pay by the due date to avoid late fees.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent on the day a balance becomes overdue (day 0). */
 export const BALANCE_OVERDUE =
   "Hi {customer_name},\n\n" +
   "Your SLY RIDES balance of ${balance_amount} is now overdue.\n\n" +
-  "Please pay as soon as possible to keep your account in good standing:\n" +
+  "Open your renter dashboard to pay now and review what is due:\n" +
   "{payment_link}\n\n" +
+  "Partial payments are accepted, but overdue balances can still accrue late fees.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent at 30 days past due. */
@@ -613,7 +633,7 @@ export const BALANCE_OVERDUE_30 =
   "Hi {customer_name},\n\n" +
   "Your SLY RIDES balance of ${balance_amount} is 30 days past due.\n\n" +
   "Continued non-payment may affect your ability to rent.\n\n" +
-  "Pay now:\n" +
+  "Open your renter dashboard to pay now or review the balance details:\n" +
   "{payment_link}\n\n" +
   "Reply STOP to opt out.";
 
@@ -621,7 +641,8 @@ export const BALANCE_OVERDUE_30 =
 export const BALANCE_OVERDUE_60 =
   "Hi {customer_name},\n\n" +
   "Your SLY RIDES balance of ${balance_amount} is 60 days past due.\n\n" +
-  "This account is at risk of being sent to collections. Please contact us immediately:\n" +
+  "This account is at risk of being sent to collections.\n\n" +
+  "Open your renter dashboard and contact us immediately:\n" +
   "{payment_link}\n\n" +
   "Reply STOP to opt out.";
 

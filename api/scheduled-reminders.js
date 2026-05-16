@@ -91,6 +91,7 @@ import {
   sendWebhookNotificationEmails,
   mapVehicleId,
 } from "./stripe-webhook.js";
+import { buildRenterPortalLinks } from "./_sms-links.js";
 
 // ─── Late-fee amounts ──────────────────────────────────────────────────────────
 // Global rule for all cars: fixed $25 late fee after grace/reset windows.
@@ -597,6 +598,12 @@ function buildVehicleExtendLink(booking) {
   return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(vehicleId)}&extend=1`;
 }
 
+function buildManagePortalLink(booking) {
+  const bookingId = booking?.bookingId || booking?.paymentIntentId || "";
+  const vehicleId = booking?.vehicleId || booking?.vehicle_id || "";
+  return buildRenterPortalLinks({ bookingId, vehicleId }).manageLink;
+}
+
 function getBookingPaymentLinkWithFallback(booking) {
   return booking?.paymentLink || booking?.balancePaymentLink || buildVehicleExtendLink(booking);
 }
@@ -910,7 +917,7 @@ export async function processPaidBookings(allBookings, now, sentMarks) {
       ) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
-          manage_link: buildVehicleExtendLink(booking),
+          manage_link: buildManagePortalLink(booking),
           payment_link: getBookingPaymentLinkWithFallback(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
@@ -1015,7 +1022,7 @@ export async function processOnboardingCatchup(allBookings, now, sentMarks) {
       ) {
         const sent = await safeSend(booking.phone, render(BOOKING_ONBOARDING, {
           ...v,
-          manage_link: buildVehicleExtendLink(booking),
+          manage_link: buildManagePortalLink(booking),
           payment_link: getBookingPaymentLinkWithFallback(booking),
         }), { booking_ref: id, vehicle_id: vehicleId, message_type: "booking_onboarding" });
         if (sent) {
@@ -2661,7 +2668,8 @@ async function processLedgerBalanceReminders(now, sentMarks) {
       const daysDiff = Math.floor((now.getTime() - earliestDue.getTime()) / (24 * 60 * 60 * 1000));
       const dueDateStr = earliestDue.toISOString().slice(0, 10);
       const balanceStr = netBalance.toFixed(2);
-      const paymentLink = `https://www.slytrans.com/balance?ref=${encodeURIComponent(bk.booking_ref)}`;
+      const links = buildRenterPortalLinks({ bookingId: bk.booking_ref });
+      const paymentLink = links.primaryLink;
 
       const v = {
         customer_name: bk.customer_name || "Valued Customer",

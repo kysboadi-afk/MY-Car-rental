@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { sendSms } from "./_textmagic.js";
+import { dispatchSms } from "./_sms-dispatcher.js";
 import {
   render,
   APPLICATION_RECEIVED,
@@ -143,8 +143,19 @@ async function sendMailIfPossible({ to, subject, text, html, attachments = [] })
 
 async function sendApplicantSms(template, vars, phone) {
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY || !phone) return false;
-  await sendSms(normalizePhone(phone), render(template, vars));
-  return true;
+  const templateKey = vars && typeof vars === "object" && vars.__template_key
+    ? String(vars.__template_key)
+    : null;
+  const { __template_key, ...payloadVars } = vars || {};
+  const result = await dispatchSms({
+    phone: normalizePhone(phone),
+    body: render(template, payloadVars),
+    templateKey,
+    source: "application_notifications",
+    dedupe: false,
+    throwOnError: true,
+  });
+  return !!result.sent;
 }
 
 export async function sendSubmittedApplicationNotifications(application = {}, { attachments = [] } = {}) {
@@ -234,7 +245,11 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
     });
   }
 
-  await sendApplicantSms(APPLICATION_RECEIVED, { customer_name: ctx.firstName, verification_link: ctx.verificationLink || "" }, ctx.phone);
+  await sendApplicantSms(APPLICATION_RECEIVED, {
+    customer_name: ctx.firstName,
+    verification_link: ctx.verificationLink || "",
+    __template_key: "application_received",
+  }, ctx.phone);
 }
 
 function buildIdentityIssueContent(kind, ctx) {
@@ -414,7 +429,10 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
     });
   }
 
-  await sendApplicantSms(APPLICATION_UNDER_REVIEW, { customer_name: ctx.firstName }, ctx.phone);
+  await sendApplicantSms(APPLICATION_UNDER_REVIEW, {
+    customer_name: ctx.firstName,
+    __template_key: "application_under_review",
+  }, ctx.phone);
 }
 
 export async function sendIdentityIssueNotifications(application = {}, kind = "requires_input") {
@@ -430,7 +448,16 @@ export async function sendIdentityIssueNotifications(application = {}, kind = "r
     });
   }
 
-  await sendApplicantSms(copy.smsTemplate, { customer_name: ctx.firstName, verification_link: ctx.verificationLink || "" }, ctx.phone);
+  await sendApplicantSms(copy.smsTemplate, {
+    customer_name: ctx.firstName,
+    verification_link: ctx.verificationLink || "",
+    __template_key:
+      kind === "requires_input"
+        ? "application_requires_input"
+        : kind === "failed"
+          ? "application_identity_failed"
+          : "application_identity_canceled",
+  }, ctx.phone);
 }
 
 /**
@@ -504,7 +531,11 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       });
     }
 
-    await sendApplicantSms(APPLICATION_APPROVED, { customer_name: ctx.firstName, waitlist_link: "https://www.slytrans.com/cars.html" }, ctx.phone);
+    await sendApplicantSms(APPLICATION_APPROVED, {
+      customer_name: ctx.firstName,
+      waitlist_link: "https://www.slytrans.com/cars.html",
+      __template_key: "application_approved",
+    }, ctx.phone);
     return;
   }
 
@@ -562,7 +593,10 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       });
     }
 
-    await sendApplicantSms(APPLICATION_DENIED, { customer_name: ctx.firstName }, ctx.phone);
+    await sendApplicantSms(APPLICATION_DENIED, {
+      customer_name: ctx.firstName,
+      __template_key: "application_denied",
+    }, ctx.phone);
     return;
   }
 
@@ -622,7 +656,10 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       });
     }
 
-    await sendApplicantSms(APPLICATION_NEEDS_INFO, { customer_name: ctx.firstName }, ctx.phone);
+    await sendApplicantSms(APPLICATION_NEEDS_INFO, {
+      customer_name: ctx.firstName,
+      __template_key: "application_needs_info",
+    }, ctx.phone);
     return;
   }
 }

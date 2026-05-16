@@ -21,7 +21,7 @@ import {
   computeBreakdownLinesFromSettings,
   applyTax,
 } from "./_settings.js";
-import { sendSms } from "./_textmagic.js";
+import { dispatchSms } from "./_sms-dispatcher.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { computeInsights } from "../lib/ai/insights.js";
@@ -887,8 +887,15 @@ async function toolSendSms({ phone, message }) {
     throw new Error("message must be a string of 1–1000 characters");
   }
 
-  const result = await sendSms(phone, message);
-  return { sent: true, to: phone, id: result?.id };
+  const result = await dispatchSms({
+    phone,
+    body: message,
+    templateKey: "admin_manual_sms",
+    source: "admin_actions",
+    dedupe: false,
+    throwOnError: true,
+  });
+  return { sent: !!result.sent, to: phone, id: result?.providerId || null };
 }
 
 async function toolGetInsights({ scope } = {}) {
@@ -2453,8 +2460,17 @@ async function toolSendMessageToDriver({ bookingId, message }) {
   if (!booking)   throw new Error(`Booking "${bookingId}" not found`);
   if (!booking.phone) throw new Error(`Booking "${bookingId}" has no phone number on record`);
 
-  const result = await sendSms(booking.phone, message);
-  return { sent: true, bookingId, to: booking.phone, name: booking.name, id: result?.id };
+  const result = await dispatchSms({
+    bookingId,
+    vehicleId: booking.vehicleId || booking.vehicle_id || null,
+    phone: booking.phone,
+    body: message,
+    templateKey: "admin_driver_message",
+    source: "admin_actions",
+    dedupe: false,
+    throwOnError: true,
+  });
+  return { sent: !!result.sent, bookingId, to: booking.phone, name: booking.name, id: result?.providerId || null };
 }
 
 
