@@ -494,17 +494,33 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: "No balance is due for this booking." });
     }
 
+    // Optional partial payment amount — capped server-side to balanceDue
+    let paymentAmount = balanceDue;
+    if (body.payment_amount !== undefined && body.payment_amount !== null) {
+      const requested = Math.round(Number(body.payment_amount) * 100) / 100;
+      if (!Number.isFinite(requested) || requested <= 0) {
+        return res.status(400).json({ error: "payment_amount must be a positive number." });
+      }
+      if (requested > balanceDue) {
+        return res.status(400).json({
+          error: `Payment amount ($${requested.toFixed(2)}) exceeds remaining balance ($${balanceDue.toFixed(2)}).`,
+        });
+      }
+      paymentAmount = requested;
+    }
+    const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(balanceDue * 100);
+
     const uiVehicle = uiVehicleId(row.vehicle_id || "");
     const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(balanceDue * 100),
+      amount: Math.round(paymentAmount * 100),
       currency: "usd",
       receipt_email: row.customer_email || undefined,
-      description: `Sly Transportation Services LLC – ${vehicleData?.name || uiVehicle || "Rental"} Balance Payment`,
+      description: `Sly Transportation Services LLC – ${vehicleData?.name || uiVehicle || "Rental"} ${isPartialPayment ? "Partial " : ""}Balance Payment`,
       automatic_payment_methods: { enabled: true },
       metadata: {
-        payment_type: "rental_balance",
+        payment_type: isPartialPayment ? "partial_balance" : "rental_balance",
         booking_id: bookingId,
         original_booking_id: bookingId,
         vehicle_id: uiVehicle || "",
@@ -515,12 +531,18 @@ export default async function handler(req, res) {
         pickup_date: row.pickup_date || "",
         return_date: row.return_date || "",
         remaining_balance: String(balanceDue),
+        payment_amount: String(paymentAmount),
+        remaining_after_payment: isPartialPayment
+          ? String(Math.max(0, Math.round((balanceDue - paymentAmount) * 100) / 100))
+          : "0",
       },
     });
     return res.status(200).json({
       clientSecret: paymentIntent.client_secret,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
       balanceAmount: balanceDue,
+      paymentAmount,
+      isPartialPayment,
     });
   }
 

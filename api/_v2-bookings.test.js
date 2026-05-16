@@ -341,8 +341,10 @@ function createSendPaymentLinkSupabaseMock({ bookings = [] } = {}) {
         let orderBy = null;
         let orderAsc = true;
         let limitCount = null;
+        let updatePayload = null;
         return {
           select() { return this; },
+          update(payload) { updatePayload = payload; return this; },
           eq(column, value) {
             filters.push((row) => row[column] === value);
             return this;
@@ -370,6 +372,14 @@ function createSendPaymentLinkSupabaseMock({ bookings = [] } = {}) {
               found = found.slice(0, limitCount);
             }
             return { data: found[0] || null, error: null };
+          },
+          // Resolve update chains (.update().eq()) as a thenable
+          then(resolve) {
+            if (updatePayload) {
+              const matched = rows.filter((row) => filters.every((fn) => fn(row)));
+              matched.forEach((row) => Object.assign(row, updatePayload));
+            }
+            resolve({ error: null });
           },
         };
       }
@@ -1466,6 +1476,9 @@ test("send_payment_link: bookingId path sends deduped SMS with payment-plan cont
   assert.equal(smsCalls.length, 1, "SMS should be sent once");
   assert.match(smsCalls[0].body, /Booking: bk-send-001/);
   assert.match(smsCalls[0].body, /Overdue amount: \$30\.00\./);
+  assert.match(smsCalls[0].body, /manage-booking\.html/, "SMS should link to manage-booking dashboard");
+  assert.ok(res._body?.manageLink, "response should include manageLink");
+  assert.match(String(res._body?.manageLink || ""), /manage-booking\.html\?t=/, "manageLink should contain token");
 });
 
 test("send_payment_link: customerId path resolves latest booking and supports email-only send", async () => {
@@ -1527,6 +1540,8 @@ test("send_payment_link: customerId path resolves latest booking and supports em
   assert.equal(sentEmails.length, 1, "email should be sent");
   assert.equal(sentEmails[0].to, "bob@example.com");
   assert.match(String(sentEmails[0].html || ""), /bk-customer-newer/);
+  assert.match(String(sentEmails[0].html || ""), /manage-booking\.html/, "email should link to manage-booking dashboard");
+  assert.ok(res._body?.manageLink, "response should include manageLink");
 });
 
 test("send_payment_link: duplicate sends are deduped by sms_logs key", async () => {
