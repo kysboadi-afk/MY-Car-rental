@@ -59,6 +59,21 @@ const DEFAULT_SETTINGS = [
   { key: "extension_partial_min_pct",       value: 50,    description: "Minimum percentage of extension cost that must be paid upfront for a partial extension (used by Phase 1 minimum enforcement)", category: "extension_policy" },
   { key: "extension_overdue_block_partial", value: true,  description: "Block partial-payment extensions when the booking status is overdue", category: "extension_policy" },
   { key: "extension_allow_override",        value: true,  description: "Allow admin-set extension_risk_override on individual bookings to override the Phase 2 risk gate", category: "extension_policy" },
+  // Extension operational automation (Phase 4 foundation)
+  { key: "extension_risk_automation_enabled",                value: false, description: "Enable Phase 4 operational extension risk-state automation for car rentals only", category: "extension_automation" },
+  { key: "extension_risk_alerts_enabled",                    value: true,  description: "Emit Phase 4 operational alerts for car-rental extension risk signals", category: "extension_automation" },
+  { key: "extension_risk_warning_exposure_pct",              value: 80,    description: "Exposure percentage of the unpaid extension limit that should trigger a warning-state recommendation", category: "extension_automation" },
+  { key: "extension_risk_warning_partial_count",             value: 2,     description: "Partial-extension count that should trigger a warning-state recommendation", category: "extension_automation" },
+  { key: "extension_risk_warning_failed_payment_count",      value: 1,     description: "Failed extension-payment count that should trigger a warning-state recommendation", category: "extension_automation" },
+  { key: "extension_risk_restricted_partial_count",          value: 3,     description: "Partial-extension count that should trigger restricted-extension recommendations", category: "extension_automation" },
+  { key: "extension_risk_restricted_overdue_count",          value: 2,     description: "Overdue-behavior count that should trigger restricted-extension recommendations", category: "extension_automation" },
+  { key: "extension_risk_manual_review_exposure",            value: 500,   description: "Projected unpaid extension exposure (USD) that should recommend manual review", category: "extension_automation" },
+  { key: "extension_risk_manual_review_failed_payment_count",value: 2,     description: "Failed extension-payment count that should recommend manual review", category: "extension_automation" },
+  { key: "extension_risk_full_payment_required_exposure",    value: 750,   description: "Projected unpaid extension exposure (USD) that should recommend full payment before further extensions", category: "extension_automation" },
+  { key: "extension_risk_full_payment_required_overdue_count", value: 3,   description: "Overdue-behavior count that should recommend a full-payment-required state", category: "extension_automation" },
+  { key: "extension_risk_abnormal_frequency_count",          value: 4,     description: "Extension frequency threshold that should trigger abnormal-frequency alerts", category: "extension_automation" },
+  { key: "extension_risk_override_alert_threshold",          value: 3,     description: "Override-usage threshold that should trigger repeated-override alerts", category: "extension_automation" },
+  { key: "extension_risk_excessive_stack_count",             value: 4,     description: "Extension stacking threshold that should recommend restricted-extension handling", category: "extension_automation" },
 ];
 
 export default async function handler(req, res) {
