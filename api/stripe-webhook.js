@@ -51,6 +51,7 @@ import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
 import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
+import { reconcilePaymentPlanPayment, computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 
@@ -3275,6 +3276,10 @@ export default async function handler(req, res) {
                 paymentIntentId: paymentIntent.id,
                 amount:          paidAmount,
                 notes:           `Rental balance payment ($${paidAmount.toFixed(2)})`,
+                metadata: {
+                  payment_source: "balance_self_pay",
+                  payment_plan_reconciliation: "pending",
+                },
               });
               console.log("[LEDGER_BALANCE_PAYMENT]", {
                 booking_ref: bookingPatch.bookingId || bookingRef,
@@ -3282,6 +3287,52 @@ export default async function handler(req, res) {
                 amount:      paidAmount,
                 duplicate:   ledgerResult.duplicate,
               });
+
+              try {
+                const reconcileResult = await reconcilePaymentPlanPayment(sbLedger, {
+                  booking_id: bookingPatch.bookingId || bookingRef,
+                  payment_intent_id: paymentIntent.id,
+                  amount: paidAmount,
+                  ledger_transaction_id: ledgerResult?.transaction?.id || null,
+                  created_by: "stripe_webhook",
+                });
+                const progress = await computePaymentPlanProgress(sbLedger, {
+                  bookingId: bookingPatch.bookingId || bookingRef,
+                });
+                await sbLedger
+                  .from("renter_balance_ledger")
+                  .update({
+                    metadata: {
+                      ...(ledgerResult?.transaction?.metadata || {}),
+                      payment_source: "balance_self_pay",
+                      payment_plan_reconciliation: {
+                        duplicate: !!reconcileResult?.duplicate,
+                        amount_allocated: Number(reconcileResult?.amount_allocated || 0),
+                        amount_unapplied: Number(reconcileResult?.amount_unapplied || 0),
+                        allocations: (reconcileResult?.allocations || []).map((row) => ({
+                          plan_id: row.plan_id || null,
+                          installment_id: row.installment_id || null,
+                          amount_allocated: Number(row.amount_allocated || 0),
+                          allocation_type: row.allocation_type || "installment_paid",
+                        })),
+                        remaining_plan_balance: Number(progress?.remaining_balance || 0),
+                        overdue_plan_amount: Number(progress?.overdue_amount || 0),
+                        next_due_date: progress?.next_due_date || null,
+                      },
+                    },
+                  })
+                  .eq("id", ledgerResult?.transaction?.id || "");
+                console.log("[PAYMENT_PLAN_RECONCILED]", {
+                  booking_ref: bookingPatch.bookingId || bookingRef,
+                  pi_id: paymentIntent.id,
+                  duplicate: !!reconcileResult?.duplicate,
+                  amount_allocated: Number(reconcileResult?.amount_allocated || 0),
+                  amount_unapplied: Number(reconcileResult?.amount_unapplied || 0),
+                  remaining_plan_balance: Number(progress?.remaining_balance || 0),
+                });
+              } catch (planErr) {
+                console.error("stripe-webhook: payment-plan reconciliation failed (non-fatal):", planErr.message);
+              }
             }
           } catch (ledgerErr) {
             console.error("stripe-webhook: balance_payment ledger write failed (non-fatal):", ledgerErr.message);

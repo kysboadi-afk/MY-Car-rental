@@ -2448,6 +2448,10 @@
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
             Create Payment Plan
           </button>
+          <button class="btn btn-secondary btn-sm" onclick="sendPaymentLinkFromLedger()">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10H7z"/><path d="M3 12h4m10 0h4"/></svg>
+            Send Payment Link
+          </button>
         </div>
         <!-- Booking ID search -->
         <div class="filters-row" style="margin-bottom:12px;">
@@ -2604,7 +2608,7 @@
             <table>
               <thead><tr>
                 <th>Booking</th><th>Customer</th><th>Email</th>
-                <th>Balance</th><th>Due Date</th><th>Days Overdue</th><th>Bucket</th>
+                <th>Balance</th><th>Due Date</th><th>Days Overdue</th><th>Bucket</th><th>Actions</th>
               </tr></thead>
               <tbody id="ov-tbody"></tbody>
             </table>
@@ -2647,7 +2651,7 @@
               <thead><tr>
                 <th>Plan ID</th><th>Booking</th><th>Customer</th>
                 <th>Total</th><th>Installments</th><th>Status</th>
-                <th>Next Due</th><th>Actions</th>
+                <th>Plan Balance</th><th>Overdue</th><th>Next Due</th><th>Last Payment</th><th>Actions</th>
               </tr></thead>
               <tbody id="pp-tbody"></tbody>
             </table>
@@ -5746,6 +5750,7 @@ function applyBookingFilters() {
           <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(actionBookingId)}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
           ${b.phone ? `<a href="tel:${esc(b.phone)}" class="btn btn-secondary btn-sm" title="Call customer">📞</a>` : ''}
           ${b.email ? `<a href="mailto:${esc(b.email)}" class="btn btn-secondary btn-sm" title="Email customer">✉️</a>` : ''}
+          <button class="btn btn-secondary btn-sm" onclick="sendPaymentLinkForBooking('${esc(actionBookingId)}')" title="Send payment link">💳 Pay Link</button>
         </div>
       </td>
     </tr>`;
@@ -5762,6 +5767,49 @@ function bookingActionId(b) {
 
 function ticketBookingIdentifier(ticket) {
   return normalizeActionId(ticket?.booking_ref ?? ticket?.bookingId ?? ticket?.booking_id ?? '');
+}
+
+async function sendPaymentLinkForBooking(bookingId, opts = {}) {
+  const bookingRef = normalizeActionId(bookingId);
+  if (!bookingRef) { showToast('Booking ID is required.', 'error'); return; }
+  const message = typeof opts.message === 'string' ? opts.message.trim() : '';
+  const sendEmail = !!opts.sendEmail;
+  try {
+    const data = await apiPost('/api/v2-bookings', {
+      secret: adminSecret,
+      action: 'send_payment_link',
+      bookingId: bookingRef,
+      send_sms: true,
+      send_email: sendEmail,
+      message: message || undefined,
+    });
+    const bits = [];
+    if (data.smsSent) bits.push('SMS sent');
+    if (data.smsDedupSkipped) bits.push('SMS deduplicated');
+    if (data.emailSent) bits.push('email sent');
+    if (!bits.length) bits.push('request processed');
+    showToast(`Payment link: ${bits.join(', ')}.`, 'success');
+  } catch (err) {
+    showToast('Failed to send payment link: ' + err.message, 'error');
+  }
+}
+
+async function sendPaymentLinkForCustomer(customerId) {
+  const id = normalizeActionId(customerId);
+  if (!id) { showToast('Customer ID is required.', 'error'); return; }
+  try {
+    const data = await apiPost('/api/v2-bookings', {
+      secret: adminSecret,
+      action: 'send_payment_link',
+      customerId: id,
+      send_sms: true,
+      send_email: true,
+    });
+    const bookingLabel = data.bookingId ? ` for ${data.bookingId}` : '';
+    showToast(`Payment link sent${bookingLabel}.`, 'success');
+  } catch (err) {
+    showToast('Failed to send customer payment link: ' + err.message, 'error');
+  }
 }
 
 function resolveBookingForActions(incomingBookingId, incomingBookingRef) {
@@ -5969,6 +6017,7 @@ function viewBooking(bookingId, vehicleId) {
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(actionBookingId)}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(actionBookingId)}', this)">📧 Resend Email</button>
+    <button class="btn btn-secondary" onclick="sendPaymentLinkForBooking('${esc(actionBookingId)}')">💳 Send Payment Link</button>
     <button class="btn btn-secondary" onclick="downloadRentalAgreement('${esc(actionBookingId)}', this)" title="Download the rental agreement PDF for this booking">📄 Download Agreement</button>
     <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(actionBookingId)}')">✏️ Edit Booking</button>
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(actionBookingId)}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
@@ -8661,6 +8710,7 @@ function viewCustomer(id) {
   document.getElementById('cust-detail-id').value = id;
   document.getElementById('cust-detail-actions').innerHTML = `
     <button class="btn btn-secondary btn-sm" onclick="viewCustomerBookings('${esc(c.phone || '')}', '${esc(c.name || '')}')">📋 Bookings</button>
+    <button class="btn btn-secondary btn-sm" onclick="sendPaymentLinkForCustomer('${esc(id)}')">💳 Send Payment Link</button>
     <button class="btn btn-secondary btn-sm" onclick="openEditCustomerModal('${esc(id)}')">✏️ Edit</button>
     ${!c.flagged
       ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
@@ -12637,6 +12687,15 @@ function loadBalanceLedger() {
     });
 }
 
+function sendPaymentLinkFromLedger() {
+  const bookingId = (document.getElementById('bl-booking-search')?.value || '').trim() || currentLedgerBookingId;
+  if (!bookingId) {
+    showToast('Load a booking ledger first.', 'error');
+    return;
+  }
+  sendPaymentLinkForBooking(bookingId);
+}
+
 function renderBalanceSummary(summary) {
   const row = document.getElementById('bl-summary-row');
   if (!row) return;
@@ -13020,6 +13079,7 @@ async function loadOverdueBalances() {
               <td>${esc(row.earliest_due_date || '—')}</td>
               <td style="font-family:monospace;">${row.days_overdue != null ? row.days_overdue + 'd' : '—'}</td>
               <td><span style="color:${bucketColor};font-weight:600;">${esc(row.aging_bucket || '—')}</span></td>
+              <td><button class="btn btn-secondary btn-sm" onclick="sendPaymentLinkForBooking('${esc(row.booking_id || '')}')">💳 Send Link</button></td>
             </tr>
           `);
         }
@@ -13076,9 +13136,13 @@ async function loadPaymentPlans() {
               <td style="font-family:monospace;font-weight:600;">$${(plan.total_amount || 0).toFixed(2)}</td>
               <td>${esc(String(plan.installments || '?'))} × ${esc(String(plan.interval_days || '?'))}d</td>
               <td><span style="color:${statusColor};font-weight:600;">${esc(plan.status || '—')}</span></td>
+              <td style="font-family:monospace;color:${(plan.remaining_balance || 0) > 0 ? 'var(--warning)' : 'var(--success)'};">$${(plan.remaining_balance || 0).toFixed(2)}</td>
+              <td style="font-family:monospace;color:${(plan.overdue_amount || 0) > 0 ? 'var(--danger)' : 'var(--text-sub)'};">$${(plan.overdue_amount || 0).toFixed(2)}</td>
               <td>${plan.next_due_date ? esc(plan.next_due_date.slice(0, 10)) : '—'}</td>
+              <td>${plan.last_payment_at ? esc(String(plan.last_payment_at).slice(0, 10)) : '—'}</td>
               <td>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="btn btn-secondary btn-sm" data-booking-id="${esc(plan.booking_id || '')}" onclick="sendPaymentLinkForBooking(this.dataset.bookingId)">💳 Send Link</button>
                   <button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="editPaymentPlan(this.dataset.planId)">Edit</button>
                   ${plan.status === 'active' ? `<button class="btn btn-secondary btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="cancelPaymentPlan(this.dataset.planId)">Cancel</button>` : ''}
                   <button class="btn btn-danger btn-sm" data-plan-id="${esc(plan.id || '')}" onclick="deletePaymentPlan(this.dataset.planId)">Delete</button>

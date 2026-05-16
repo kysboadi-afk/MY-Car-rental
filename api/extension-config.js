@@ -16,6 +16,9 @@
 //   STRIPE_PUBLISHABLE_KEY — returned to the client so Stripe.js can be initialized
 
 import Stripe from "stripe";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { getLedgerSummary } from "./_renter-balance-ledger.js";
+import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -73,6 +76,41 @@ export default async function handler(req, res) {
       ? metadataRemaining
       : Math.max(0, resolvedExtensionTotal - resolvedAmountPaid);
     const resolvedStatus = ((pi.metadata || {}).extension_payment_status || (resolvedRemaining > 0 ? "partially_paid" : "paid")).toLowerCase();
+    const bookingRef = String((pi.metadata || {}).original_booking_id || (pi.metadata || {}).booking_id || "").trim();
+
+    let currentOutstandingBalance = 0;
+    let overdueAmount = 0;
+    let paymentPlanRemainingBalance = 0;
+    let paymentPlanOverdueAmount = 0;
+    let paymentPlanNextDueDate = null;
+    let hasActivePaymentPlan = false;
+
+    if (bookingRef) {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        try {
+          const summary = await getLedgerSummary(sb, { bookingId: bookingRef });
+          currentOutstandingBalance = Number(summary?.remaining_balance || 0);
+        } catch (_) {
+          currentOutstandingBalance = 0;
+        }
+        try {
+          const progress = await computePaymentPlanProgress(sb, { bookingId: bookingRef });
+          hasActivePaymentPlan = !!progress?.has_active_plan;
+          paymentPlanRemainingBalance = Number(progress?.remaining_balance || 0);
+          paymentPlanOverdueAmount = Number(progress?.overdue_amount || 0);
+          paymentPlanNextDueDate = progress?.next_due_date || null;
+          overdueAmount = paymentPlanOverdueAmount;
+        } catch (_) {
+          hasActivePaymentPlan = false;
+        }
+      }
+    }
+
+    const totalOwedBeforeExtension = Math.max(
+      0,
+      Number(currentOutstandingBalance || 0)
+    );
 
     return res.status(200).json({
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
@@ -85,6 +123,14 @@ export default async function handler(req, res) {
       vehicleName:    pi.metadata.vehicle_name    || pi.metadata.vehicle_id || "",
       vehicleId:      pi.metadata.vehicle_id      || "",
       renterName:     pi.metadata.renter_name     || "",
+      bookingId:      bookingRef || "",
+      currentOutstandingBalance: Number(currentOutstandingBalance || 0).toFixed(2),
+      overdueAmount: Number(overdueAmount || 0).toFixed(2),
+      paymentPlanRemainingBalance: Number(paymentPlanRemainingBalance || 0).toFixed(2),
+      paymentPlanOverdueAmount: Number(paymentPlanOverdueAmount || 0).toFixed(2),
+      paymentPlanNextDueDate: paymentPlanNextDueDate || null,
+      hasActivePaymentPlan,
+      totalOwedBeforeExtension: Number(totalOwedBeforeExtension || 0).toFixed(2),
     });
   } catch (err) {
     console.error("extension-config: Stripe error:", err.message);
