@@ -80,6 +80,34 @@ function parseInboundWebhookPayload(rawBody = "") {
   return parsed;
 }
 
+function equalsSafe(left, right) {
+  const a = Buffer.from(String(left || ""), "utf8");
+  const b = Buffer.from(String(right || ""), "utf8");
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function extractSignatureCandidate(headerValue) {
+  const raw = String(headerValue || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(?:sha256|v1)\s*=\s*(.+)$/i);
+  return (match ? match[1] : raw).trim();
+}
+
+function isValidTextMagicSignature(secret, rawBody, providedHeader) {
+  const provided = extractSignatureCandidate(providedHeader);
+  if (!provided) return false;
+  const hmac = crypto.createHmac("sha256", secret).update(rawBody);
+  const expectedHex = hmac.digest("hex");
+  const expectedBase64 = Buffer.from(expectedHex, "hex").toString("base64");
+  const expectedBase64Url = Buffer.from(expectedHex, "hex").toString("base64url");
+  return (
+    equalsSafe(provided, expectedHex) ||
+    equalsSafe(provided, expectedBase64) ||
+    equalsSafe(provided, expectedBase64Url)
+  );
+}
+
 function extractInboundSmsFields(payload = {}) {
   return {
     fromPhone: firstNonEmpty(
@@ -910,11 +938,7 @@ export default async function handler(req, res) {
       console.warn("receive-textmagic-sms: missing X-TM-Signature header — rejecting request");
       return res.status(403).json({ error: "Missing signature" });
     }
-    const expectedSig = crypto
-      .createHmac("sha256", tmSecret)
-      .update(rawBody)
-      .digest("hex");
-    if (expectedSig !== tmSig) {
+    if (!isValidTextMagicSignature(tmSecret, rawBody, tmSig)) {
       console.warn("receive-textmagic-sms: X-TM-Signature mismatch — rejecting request");
       return res.status(403).json({ error: "Invalid signature" });
     }

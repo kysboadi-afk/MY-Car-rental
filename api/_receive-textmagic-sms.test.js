@@ -1,6 +1,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
+import crypto from "node:crypto";
 
 process.env.TEXTMAGIC_USERNAME = "tm_user";
 process.env.TEXTMAGIC_API_KEY = "tm_key";
@@ -137,10 +138,10 @@ function resetState() {
   supabaseRows = null;
 }
 
-function makeReq(rawBody, contentType = "application/x-www-form-urlencoded") {
+function makeReq(rawBody, contentType = "application/x-www-form-urlencoded", headers = {}) {
   const req = Readable.from([Buffer.from(rawBody)]);
   req.method = "POST";
-  req.headers = { "content-type": contentType };
+  req.headers = { "content-type": contentType, ...headers };
   return req;
 }
 
@@ -245,4 +246,54 @@ test("receive-textmagic-sms: uses Supabase booking snapshot when bookings.json i
   assert.equal(res._status, 200);
   assert.equal(smsCalls.length, 1);
   assert.equal(smsCalls[0].templateKey, "extend_flexible_prompt");
+});
+
+test("receive-textmagic-sms: accepts base64 signature header when webhook secret is configured", async () => {
+  resetState();
+  process.env.TEXTMAGIC_WEBHOOK_SECRET = "test_secret";
+  bookingsData = {
+    camry: [{
+      bookingId: "bk_ext_sig_1",
+      phone: "+13105550100",
+      status: "active_rental",
+      vehicleName: "Camry 2012",
+      returnDate: "2026-05-20",
+      returnTime: "10:00 AM",
+    }],
+  };
+
+  const rawBody = "from=%2B13105550100&text=extend";
+  const signature = crypto.createHmac("sha256", process.env.TEXTMAGIC_WEBHOOK_SECRET).update(rawBody).digest("base64");
+  const res = makeRes();
+  await handler(makeReq(rawBody, "application/x-www-form-urlencoded", { "x-tm-signature": signature }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(smsCalls.length, 1);
+  assert.equal(smsCalls[0].templateKey, "extend_flexible_prompt");
+  delete process.env.TEXTMAGIC_WEBHOOK_SECRET;
+});
+
+test("receive-textmagic-sms: accepts prefixed hex signature header", async () => {
+  resetState();
+  process.env.TEXTMAGIC_WEBHOOK_SECRET = "test_secret";
+  bookingsData = {
+    camry: [{
+      bookingId: "bk_ext_sig_2",
+      phone: "+13105550100",
+      status: "active_rental",
+      vehicleName: "Camry 2012",
+      returnDate: "2026-05-20",
+      returnTime: "10:00 AM",
+    }],
+  };
+
+  const rawBody = "from=%2B13105550100&text=extend";
+  const hex = crypto.createHmac("sha256", process.env.TEXTMAGIC_WEBHOOK_SECRET).update(rawBody).digest("hex");
+  const res = makeRes();
+  await handler(makeReq(rawBody, "application/x-www-form-urlencoded", { "x-tm-signature": `sha256=${hex}` }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(smsCalls.length, 1);
+  assert.equal(smsCalls[0].templateKey, "extend_flexible_prompt");
+  delete process.env.TEXTMAGIC_WEBHOOK_SECRET;
 });
