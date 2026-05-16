@@ -17,7 +17,7 @@ import crypto from "crypto";
  * Change these constants if business rules change — no hunting through prose.
  */
 const POLICY = {
-  companyName:         "LA Slingshot Rentals",
+  companyName:         "SLY Slingshot Rentals",
   companyPhone:        "(844) 511-4059",
   companyEmail:        "info@slytrans.com",
   timezone:            "America/Los_Angeles",
@@ -212,7 +212,7 @@ export function generateSlingshotRentalAgreementPdf(data, ipAddress) {
 
     // ── Document header ───────────────────────────────────────────────────────
     doc.font("Helvetica-Bold").fontSize(14).fillColor(BLACK)
-      .text("LA SLINGSHOT RENTALS — VEHICLE RENTAL AGREEMENT", { align: "center" });
+      .text("SLY SLINGSHOT RENTALS — VEHICLE RENTAL AGREEMENT", { align: "center" });
     doc.moveDown(0.2);
     doc.font("Helvetica").fontSize(9).fillColor(GRAY)
       .text(`Generated: ${generatedAt}`, { align: "center" });

@@ -1,6 +1,6 @@
-// ===== LA Slingshot Rentals CHATBOT =====
+// ===== SLY Slingshot Rentals CHATBOT =====
 // Slingshot-specific variant. References slingshot vehicles, hourly packages,
-// and LA Slingshot Rentals LLC branding only — no car-rental / delivery-app content.
+// and SLY Slingshot Rentals branding only — no car-rental / delivery-app content.
 
 // Safely escape user-supplied text before embedding it into bot HTML
 function slEscHtml(str) {
@@ -191,7 +191,7 @@ var slBotResponses = [
   {
     patterns: ["hello","hi","hey","howdy","sup","what's up"],
     reply: function() {
-      return "Hey! 👋 Welcome to <strong>LA Slingshot Rentals</strong>!\n\nLooking to rent a Polaris Slingshot in Los Angeles? We have packages starting at <strong>$150 for 2 hours</strong>.\n\n<a href=\"slingshots.html\">👉 Browse our slingshots and book now</a>";
+      return "Hey! 👋 Welcome to <strong>SLY Slingshot Rentals</strong>!\n\nLooking to rent a Polaris Slingshot in Los Angeles? We have packages starting at <strong>$150 for 2 hours</strong>.\n\n<a href=\"slingshots.html\">👉 Browse our slingshots and book now</a>";
     }
   },
   {
@@ -248,7 +248,7 @@ var slBotResponses = [
   },
   {
     patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
-    reply: "You're welcome! 😊 Happy to help. Enjoy your slingshot experience with LA Slingshot Rentals! 🏎️💨"
+    reply: "You're welcome! 😊 Happy to help. Enjoy your slingshot experience with SLY Slingshot Rentals! 🏎️💨"
   }
 ];
 
@@ -272,7 +272,7 @@ function buildSlingshotChatbot() {
       '</button>' +
       '<div id="chat-box" hidden>' +
         '<div id="chat-header">' +
-          '<span id="chat-header-title">LA Slingshot Rentals</span>' +
+          '<span id="chat-header-title">SLY Slingshot Rentals</span>' +
           '<button id="chat-close" aria-label="Close chat">✕</button>' +
         '</div>' +
         '<div id="chat-messages"></div>' +
@@ -387,7 +387,7 @@ function buildSlingshotChatbot() {
     badge.hidden   = true;
     dismissReminder();
     if (!messages.children.length) {
-      addMessage("Hey! 👋 Welcome to <strong>LA Slingshot Rentals</strong>! How can I help you today?", "bot");
+      addMessage("Hey! 👋 Welcome to <strong>SLY Slingshot Rentals</strong>! How can I help you today?", "bot");
       setTimeout(showEntryChips, 600);
     }
     input.focus();

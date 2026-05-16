@@ -3627,7 +3627,7 @@ export default async function handler(req, res) {
                 </table>
                 ${slPdfBuffer ? "<p>📄 Your signed rental agreement is attached. Please keep it for your records.</p>" : ""}
                 <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
-                <p>Thank you for choosing LA Slingshot Rentals!</p>
+                <p>Thank you for choosing SLY Slingshot Rentals!</p>
               `,
               text: [
                 "✅ Slingshot Booking Confirmed",
