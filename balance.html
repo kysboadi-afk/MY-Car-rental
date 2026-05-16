@@ -164,6 +164,58 @@
     .ledger-credit { color: #4ade80; }
     .ledger-empty  { color: #555; text-align: center; padding: 20px; }
     #historySection { display: none; }
+    .plan-kv {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 14px;
+    }
+    .plan-kv td {
+      border: 1px solid #2e2e2e;
+      padding: 8px 10px;
+      vertical-align: top;
+    }
+    .plan-kv td:first-child {
+      color: #aaa;
+      width: 42%;
+      white-space: nowrap;
+    }
+    #paymentPlanNote {
+      margin: 12px 0 0;
+      font-size: 13px;
+      color: #c9b37a;
+    }
+    @media (max-width: 640px) {
+      .balance-wrap {
+        margin: 20px auto;
+        padding: 0 10px 36px;
+      }
+      .balance-card {
+        padding: 18px 14px;
+        border-radius: 12px;
+      }
+      .balance-summary-table td:first-child,
+      .plan-kv td:first-child {
+        width: 46%;
+        white-space: normal;
+      }
+      .balance-amount-display {
+        font-size: 25px;
+      }
+      .partial-payment-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      #partialMaxBtn,
+      #payBtn,
+      #extPayBtn {
+        width: 100%;
+      }
+      .ledger-table th,
+      .ledger-table td {
+        font-size: 12px;
+        padding: 7px 6px;
+      }
+    }
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -201,6 +253,12 @@
           <h2>📋 Your Booking</h2>
           <p style="color:#ccc;margin:0 0 12px;font-size:14px">Your $50 reservation deposit was received. Pay the remaining balance below to complete your booking.</p>
           <table class="balance-summary-table" id="bookingTable"></table>
+        </div>
+
+        <div class="balance-card" id="paymentPlanSection" style="display:none">
+          <h2>🧾 Payment Plan</h2>
+          <table class="plan-kv" id="paymentPlanTable"></table>
+          <p id="paymentPlanNote"></p>
         </div>
 
         <!-- Payment history (shown when ledger has entries) -->
@@ -284,25 +342,38 @@
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
 
-      // ── Read booking params from URL ──────────────────────────────────────
-      var params       = new URLSearchParams(window.location.search);
-      var vehicleId    = params.get("v")   || "";
-      var pickup       = params.get("p")   || "";
-      var returnDate   = params.get("r")   || "";
-      var protectionPlan = params.get("pp") === "1";
-      var renterName   = params.get("n")   || "";
-      var renterEmail  = params.get("e")   || "";
-      var renterPhone  = params.get("ph")  || "";
-      var pickupTime   = params.get("pt")  || "";
-      var returnTime   = params.get("rt")  || "";
-      var carName      = params.get("car") || vehicleId;
-      var bookingId    = params.get("b")   || "";
-      var originalPiId = params.get("opi") || "";
+      // ── Read booking params from URL (supports aliases) ───────────────────
+      var params = new URLSearchParams(window.location.search);
+      function firstParam(keys) {
+        for (var i = 0; i < keys.length; i++) {
+          var v = params.get(keys[i]);
+          if (v != null && String(v).trim()) return String(v).trim();
+        }
+        return "";
+      }
+      function boolParam(keys) {
+        var raw = firstParam(keys).toLowerCase();
+        return raw === "1" || raw === "true" || raw === "yes";
+      }
+
+      var vehicleId      = firstParam(["v", "vehicleId", "vehicle_id", "vehicle"]);
+      var pickup         = firstParam(["p", "pickup", "pickupDate"]);
+      var returnDate     = firstParam(["r", "return", "returnDate"]);
+      var protectionPlan = boolParam(["pp", "protectionPlan"]);
+      var renterName     = firstParam(["n", "name", "renterName"]);
+      var renterEmail    = firstParam(["e", "email", "renterEmail"]);
+      var renterPhone    = firstParam(["ph", "phone", "renterPhone"]);
+      var pickupTime     = firstParam(["pt", "pickupTime"]);
+      var returnTime     = firstParam(["rt", "returnTime"]);
+      var carName        = firstParam(["car", "vehicleName"]) || vehicleId;
+      var bookingId      = firstParam(["b", "bookingId", "booking_id"]);
+      var customerId     = firstParam(["c", "cid", "customerId", "customer_id"]);
+      var originalPiId   = firstParam(["opi", "originalPaymentIntentId", "paymentIntentId"]);
 
       // Extension mode params
-      var isExtension  = params.get("ext") === "1";
-      var extCs        = params.get("cs")  || "";
-      var extPiId      = params.get("piId") || "";
+      var isExtension = params.get("ext") === "1";
+      var extCs = firstParam(["cs", "clientSecret"]);
+      var extPiId = firstParam(["piId", "pi", "paymentIntentId"]);
 
       // ── Helpers ───────────────────────────────────────────────────────────
       function escHtml(str) {
@@ -311,6 +382,55 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;");
+      }
+
+      function updateLoading(msg) {
+        var el = document.getElementById("loadingSection");
+        if (!el) return;
+        if (msg) el.innerHTML = "<p>" + escHtml(msg) + "</p>";
+      }
+
+      function parseJsonResponse(res) {
+        if (!res) return Promise.resolve({});
+        return res.text().then(function (txt) {
+          if (!txt) return {};
+          try { return JSON.parse(txt); } catch (_err) { return { error: "Invalid server response." }; }
+        });
+      }
+
+      function renderPaymentPlanSummary(plan) {
+        var section = document.getElementById("paymentPlanSection");
+        var table = document.getElementById("paymentPlanTable");
+        var note = document.getElementById("paymentPlanNote");
+        if (!section || !table || !note) return;
+        if (!plan || typeof plan !== "object") {
+          section.style.display = "none";
+          return;
+        }
+
+        var statusMap = {
+          active: "Active",
+          defaulted: "Needs Attention",
+          completed: "Completed",
+          cancelled: "Cancelled",
+        };
+        var rows = [
+          ["Status", escHtml(statusMap[String(plan.status || "").toLowerCase()] || String(plan.status || "Active"))],
+          ["Installments", escHtml(String(plan.paidInstallments || 0) + " of " + String(plan.totalInstallments || plan.installments || 0) + " paid")],
+        ];
+        if (plan.nextInstallmentAmount) rows.push(["Next Payment", "<strong style='color:#ffb400'>$" + escHtml(plan.nextInstallmentAmount) + "</strong>"]);
+        if (plan.nextDueDate) rows.push(["Next Due Date", escHtml(String(plan.nextDueDate).slice(0, 10))]);
+        rows.push(["Plan Total", "$" + escHtml(plan.totalAmount || "0.00")]);
+
+        table.innerHTML = rows.map(function (r) {
+          return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
+        }).join("");
+        if (plan.isOverdue) {
+          note.textContent = "⚠️ A payment appears overdue. Please pay today or call (844) 511-4059.";
+        } else {
+          note.textContent = "Your plan remains active. You can still make a payment now.";
+        }
+        section.style.display = "";
       }
 
       function showFatal(msg) {
@@ -327,8 +447,9 @@
           return;
         }
 
+        updateLoading("Loading extension details…");
         fetch(API_BASE + "/api/extension-config?piId=" + encodeURIComponent(extPiId))
-          .then(function (res) { return res.json(); })
+          .then(parseJsonResponse)
           .then(function (cfg) {
             if (cfg.error) { showFatal(cfg.error); return; }
 
@@ -387,7 +508,7 @@
               extPayBtn.textContent = "Pay $" + extAmount + " Now 🔒";
             });
 
-            extPayBtn.addEventListener("click", function () {
+            extPayBtn.onclick = function () {
               if (extPayBtn.disabled) return;
               extPayBtn.disabled    = true;
               extPayBtn.textContent = "Processing…";
@@ -409,7 +530,7 @@
                   window.location.href = "/success.html?ext=1&payment_intent=" + encodeURIComponent(result.paymentIntent.id);
                 }
               });
-            });
+            };
           })
           .catch(function (err) {
             console.error("extension-config fetch error:", err);
@@ -419,10 +540,52 @@
         return; // Exit — do not run the standard balance flow below
       }
 
-      // ── Validate required params (standard balance payment) ───────────────
-      if (!vehicleId || !pickup || !returnDate || !renterEmail) {
-        showFatal("This payment link is invalid or has expired. Please contact us for a new link.");
-        return;
+      function hasMinimumStandardFields() {
+        return !!(vehicleId && pickup && returnDate && renterEmail);
+      }
+
+      function resolveBookingContextIfNeeded() {
+        if (hasMinimumStandardFields()) return Promise.resolve(true);
+        var identifier = bookingId || customerId;
+        if (!identifier) return Promise.resolve(false);
+
+        updateLoading("Finding your booking…");
+        return fetch(API_BASE + "/api/manage-booking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "verify", identifier: identifier }),
+        })
+          .then(parseJsonResponse)
+          .then(function (verifyResp) {
+            if (!verifyResp || verifyResp.error || !verifyResp.token) return false;
+            return fetch(API_BASE + "/api/manage-booking", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "get", token: verifyResp.token }),
+            }).then(parseJsonResponse).then(function (ctx) {
+              if (!ctx || ctx.error) return false;
+              vehicleId = vehicleId || ctx.vehicleId || "";
+              pickup = pickup || ctx.pickupDate || "";
+              returnDate = returnDate || ctx.returnDate || "";
+              renterEmail = renterEmail || ctx.customerEmail || "";
+              renterName = renterName || ctx.customerName || "";
+              renterPhone = renterPhone || ctx.customerPhone || "";
+              pickupTime = pickupTime || ctx.pickupTime || "";
+              returnTime = returnTime || ctx.returnTime || "";
+              bookingId = bookingId || ctx.bookingId || "";
+              if (!carName || carName === vehicleId) {
+                carName = ctx.vehicleName || carName || vehicleId;
+              }
+              if (ctx.hasProtectionPlan && params.get("pp") == null) {
+                protectionPlan = true;
+              }
+              return hasMinimumStandardFields();
+            });
+          })
+          .catch(function (err) {
+            console.warn("balance: booking context resolve failed (non-fatal):", err);
+            return false;
+          });
       }
 
       // ── Build booking summary table ───────────────────────────────────────
@@ -449,8 +612,11 @@
 
       // ── Fetch balance PaymentIntent from API ──────────────────────────────
       var currentPaymentAmount = null; // tracks the selected partial amount
+      var activePayElement = null;
+      var activeElements = null;
 
       function loadBalance() {
+        updateLoading("Loading payment details…");
         fetch(API_BASE + "/api/pay-balance", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -467,9 +633,13 @@
             payment_amount:    currentPaymentAmount || undefined,
           }),
         })
-          .then(function (res) { return res.json(); })
+          .then(parseJsonResponse)
           .then(function (data) {
             if (data.error) { showFatal(data.error); return; }
+            if (typeof Stripe === "undefined") {
+              showFatal("Payment services are unavailable right now. Please refresh or call (844) 511-4059.");
+              return;
+            }
 
             var clientSecret        = data.clientSecret;
             var publishableKey      = data.publishableKey;
@@ -487,6 +657,7 @@
             document.getElementById("mainSection").style.display    = "";
             document.getElementById("bookingTable").innerHTML = buildSummaryTable(balanceAmount, fullTotal, depositPaid, waiverApplied);
             document.getElementById("balanceDisplay").textContent   = "Balance Remaining: $" + balanceAmount;
+            renderPaymentPlanSummary(data.paymentPlan || null);
 
             // ── Partial payment input ─────────────────────────────────────
             if (maxAmount > 0) {
@@ -521,17 +692,24 @@
               }
               updatePreview();
 
-              partialInput.addEventListener("input", updatePreview);
-              partialMaxBtn.addEventListener("click", function () {
+              partialInput.oninput = updatePreview;
+              partialMaxBtn.onclick = function () {
                 partialInput.value = maxAmount.toFixed(2);
                 updatePreview();
-              });
+              };
             }
 
             // ── Mount Stripe Payment Element ──────────────────────────────
+            if (activePayElement) {
+              try { activePayElement.unmount(); } catch (_e) { /* ignore */ }
+              activePayElement = null;
+            }
+            document.getElementById("payment-element").innerHTML = "";
             var stripe   = Stripe(publishableKey);
             var elements = stripe.elements({ clientSecret: clientSecret, appearance: { theme: "night" } });
             var payEl    = elements.create("payment");
+            activeElements = elements;
+            activePayElement = payEl;
             payEl.mount("#payment-element");
 
             var payBtn = document.getElementById("payBtn");
@@ -562,7 +740,7 @@
             }
 
             // ── Payment submission ────────────────────────────────────────
-            payBtn.addEventListener("click", function () {
+            payBtn.onclick = function () {
               if (payBtn.disabled) return;
 
               // Validate partial amount before submitting
@@ -584,7 +762,8 @@
                   payBtn.disabled    = true;
                   payBtn.textContent = "Preparing…";
                   // Unmount current Stripe elements and reload with new PI
-                  try { payEl.unmount(); } catch (e) { /* ok */ }
+                  try { if (activePayElement) activePayElement.unmount(); } catch (_e) { /* ok */ }
+                  activePayElement = null;
                   loadBalance();
                   return;
                 }
@@ -624,7 +803,7 @@
                   window.location.href = "/success.html?vehicle=" + encodeURIComponent(vehicleId);
                 }
               });
-            });
+            };
           })
           .catch(function (err) {
             console.error("pay-balance fetch error:", err);
@@ -632,16 +811,14 @@
           });
       }
 
-      loadBalance();
-
-      // ── Fetch & render ledger history (non-critical) ──────────────────────
-      if (bookingId) {
+      function loadLedgerHistory() {
+        if (!bookingId) return;
         fetch(API_BASE + "/api/renter-ledger-summary", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ booking_id: bookingId }),
         })
-          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (r) { return r.ok ? parseJsonResponse(r) : null; })
           .then(function (ledger) {
             if (!ledger || !ledger.success) return;
             var txns = ledger.transactions || [];
@@ -678,6 +855,20 @@
           })
           .catch(function () { /* ledger history is non-critical */ });
       }
+
+      updateLoading("Loading your booking…");
+      resolveBookingContextIfNeeded()
+        .then(function () {
+          if (!hasMinimumStandardFields()) {
+            showFatal("This payment link is invalid or has expired. Please contact us for a new link.");
+            return;
+          }
+          loadBalance();
+          loadLedgerHistory();
+        })
+        .catch(function () {
+          showFatal("Failed to load payment information. Please refresh the page or contact us.");
+        });
     })();
   </script>
 </body>

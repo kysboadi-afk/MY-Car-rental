@@ -75,6 +75,15 @@ test("manage-booking get falls back to legacy booking columns when newer columns
   const selects = [];
   supabaseClient = {
     from(table) {
+      if (table === "payment_plans") {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          in() { return this; },
+          order() { return this; },
+          limit() { return Promise.resolve(makeQueryResult([])); },
+        };
+      }
       assert.equal(table, "bookings");
       const ctx = { selectValue: "" };
       return {
@@ -111,5 +120,44 @@ test("manage-booking get falls back to legacy booking columns when newer columns
   assert.equal(res._body.vehicleName, "Camry 2012");
   assert.equal(res._body.hasProtectionPlan, false);
   assert.equal(res._body.protectionPlanTier, null);
+  assert.equal(res._body.paymentPlan, null);
   assert.deepEqual(selects.length, 2);
+});
+
+test("manage-booking get_agreement_url returns a signed URL when agreement PDF exists", async () => {
+  supabaseClient = {
+    from(table) {
+      assert.equal(table, "pending_booking_docs");
+      return {
+        select() { return this; },
+        eq(column, value) {
+          assert.equal(column, "booking_id");
+          assert.equal(value, "bk-fallback-001");
+          return this;
+        },
+        async maybeSingle() {
+          return makeQueryResult({ agreement_pdf_url: "bk-fallback-001/rental-agreement.pdf" });
+        },
+      };
+    },
+    storage: {
+      from(bucket) {
+        assert.equal(bucket, "rental-agreements");
+        return {
+          async createSignedUrl(path, expiresIn) {
+            assert.equal(path, "bk-fallback-001/rental-agreement.pdf");
+            assert.equal(expiresIn, 3600);
+            return { data: { signedUrl: "https://files.example/agreement.pdf" }, error: null };
+          },
+        };
+      },
+    },
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ action: "get_agreement_url", token: "valid-token" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.url, "https://files.example/agreement.pdf");
+  assert.equal(res._body.path, "bk-fallback-001/rental-agreement.pdf");
 });

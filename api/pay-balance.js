@@ -23,8 +23,34 @@ import {
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getVehicleById } from "./_vehicles.js";
 import { getLedgerRemainingBalance } from "./_renter-balance-ledger.js";
+import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
+const POSTGRES_UNDEFINED_TABLE_ERROR = "42P01";
+
+async function fetchBookingContext(sb, bookingRef) {
+  if (!bookingRef) return null;
+  let result = await sb
+    .from("bookings")
+    .select(
+      "booking_ref, vehicle_id, pickup_date, return_date, customer_name, customer_email, has_protection_plan"
+    )
+    .eq("booking_ref", bookingRef)
+    .maybeSingle();
+  if (result.error?.code === POSTGRES_UNDEFINED_COLUMN_ERROR) {
+    result = await sb
+      .from("bookings")
+      .select("booking_ref, vehicle_id, pickup_date, return_date, customer_name, customer_email")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+  }
+  if (result.error) {
+    console.warn("pay-balance: booking context lookup failed (non-fatal):", result.error.message);
+    return null;
+  }
+  return result.data || null;
+}
 
 export default async function handler(req, res) {
   // CORS — allow requests from the production frontend only
@@ -49,11 +75,37 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const {
+    let {
       vehicleId, name, email, pickup, returnDate, protectionPlan,
       bookingId, originalPaymentIntentId, depositPaymentIntentId,
       payment_amount,
     } = req.body;
+
+    const sb = getSupabaseAdmin();
+    if (!sb) {
+      return res.status(503).json({ error: "Database unavailable. Please try again." });
+    }
+
+    const bookingRef = typeof bookingId === "string" ? bookingId.trim() : "";
+    if (bookingRef && (!vehicleId || !pickup || !returnDate || !email || !name)) {
+      const bookingCtx = await fetchBookingContext(sb, bookingRef);
+      if (bookingCtx) {
+        vehicleId = vehicleId || bookingCtx.vehicle_id || "";
+        pickup = pickup || bookingCtx.pickup_date || "";
+        returnDate = returnDate || bookingCtx.return_date || "";
+        email = email || bookingCtx.customer_email || "";
+        name = name || bookingCtx.customer_name || "";
+        if (protectionPlan === undefined || protectionPlan === null) {
+          protectionPlan = !!bookingCtx.has_protection_plan;
+        }
+      }
+    }
+
+    const protectionPlanEnabled =
+      protectionPlan === true ||
+      protectionPlan === 1 ||
+      protectionPlan === "1" ||
+      String(protectionPlan || "").toLowerCase() === "true";
 
     // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -83,17 +135,13 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
 
     // Fetch vehicle pricing from the vehicle_pricing table — DB is the sole source of truth.
-    const sb = getSupabaseAdmin();
-    if (!sb) {
-      return res.status(503).json({ error: "Database unavailable. Please try again." });
-    }
     const pricing = await getVehiclePricing(sb, vehicleId);
 
     // Compute rental days and apply flat tier pricing via shared helper.
     const days = computeRentalDays(pickup, returnDate);
     const computedFullRental = computeAmountFromPricing(pricing, days);
     console.log('[pricing-booking]', { vehicle: vehicleId, days, pricing, price: computedFullRental });
-    const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
+    const protectionCost = protectionPlanEnabled ? computeDppCostFromSettings(days, null) : 0;
 
     const depositPaid = settings.camry_booking_deposit;
     const preTaxAmount = computedFullRental + protectionCost;
@@ -106,7 +154,6 @@ export default async function handler(req, res) {
     // /api/waive-late-fee (fee_type: "rental_balance" or "all_fees"), honour
     // that waiver so the customer is charged the reduced amount.
     let waiverApplied = 0;
-    const bookingRef = typeof bookingId === "string" ? bookingId.trim() : "";
     if (bookingRef) {
       try {
         const { data: bkRow } = await sb
@@ -171,6 +218,12 @@ export default async function handler(req, res) {
     }
 
     const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(totalRemainingBalance * 100);
+    let paymentPlan = null;
+    if (bookingRef) {
+      paymentPlan = await fetchPaymentPlanSummary(sb, bookingRef, {
+        missingTableErrorCode: POSTGRES_UNDEFINED_TABLE_ERROR,
+      });
+    }
 
     // Find or create a Stripe Customer so the card can be saved for future
     // off-session charges (e.g., damages, late fees).
@@ -235,6 +288,7 @@ export default async function handler(req, res) {
       preTaxAmount:           preTaxAmount.toFixed(2),
       depositPaid:            depositPaid.toFixed(2),
       waiverApplied:          waiverApplied.toFixed(2),
+      paymentPlan,
     });
   } catch (err) {
     console.error("Stripe PaymentIntent (balance) error:", err);
