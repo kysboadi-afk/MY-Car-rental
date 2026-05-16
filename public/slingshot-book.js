@@ -946,7 +946,7 @@ function initBookingForm() {
         var pickPart   = (dateInput && timeSelect && dateInput.value && timeSelect.value)
           ? "<strong>" + escHtml(SlyLA.formatLocalDateTime(dateInput.value, timeSelect.value)) + "</strong>"
           : "<strong>[pickup date/time]</strong>";
-        introEl.innerHTML = "This Rental Agreement is entered into between LA Slingshot Rentals (\"Company\") and " + namePart + " (\"Renter\") for the rental of a <strong>Polaris Slingshot</strong> starting " + pickPart + ".";
+        introEl.innerHTML = "This Rental Agreement is entered into between SLY Slingshot Rentals (\"Company\") and " + namePart + " (\"Renter\") for the rental of a <strong>Polaris Slingshot</strong> starting " + pickPart + ".";
       }
       if (slAgreementBox) slAgreementBox.style.display = "";
       slSignBtn.style.display = "none";
