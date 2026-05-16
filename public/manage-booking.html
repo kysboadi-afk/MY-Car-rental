@@ -288,12 +288,38 @@
       color: #111;
     }
     #stripe-element,
-    #balance-stripe-element {
+    #balance-stripe-element,
+    #partial-stripe-element {
       border: 1px solid #ccc;
       border-radius: 6px;
       padding: 12px;
       margin: 12px 0;
       background: #fff;
+    }
+    .partial-amt-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 8px 0 4px;
+    }
+    .partial-amt-row input[type="number"] {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1em;
+      box-sizing: border-box;
+      color: #111;
+    }
+    .partial-amt-row input[type="number"]:focus {
+      outline: none;
+      border-color: #1a73e8;
+    }
+    #partial-amount-preview {
+      font-size: 0.82em;
+      color: #555;
+      min-height: 18px;
+      margin-bottom: 10px;
     }
 
     /* ── Modify booking (collapsible) ─────────────────────────────────────── */
@@ -1124,10 +1150,10 @@
 
           <div class="action-stack" id="pay-balance-section" style="display:none">
             <button id="btn-init-balance" class="btn-primary" type="button">Pay Balance</button>
-            <a id="btn-open-partial" class="btn-secondary" href="#" style="display:none">Make Partial Payment</a>
+            <button id="btn-open-partial" class="btn-secondary" type="button" style="display:none">💰 Make Partial Payment</button>
             <button id="btn-view-plan" class="btn-outline" type="button">View Payment Plan</button>
             <button id="btn-download-latest-receipt" class="btn-linkish" type="button" aria-disabled="true">Download Receipt</button>
-            <div class="secure-note">🔒 Payments secured by Stripe. Partial payments continue to use the stabilized renter payment link flow.</div>
+            <div class="secure-note">🔒 Payments secured by Stripe.</div>
 
             <div id="balance-payment-wrap" style="display:none">
               <div class="payment-panel">
@@ -1137,6 +1163,23 @@
                 <button id="btn-confirm-balance" class="btn-primary" type="button">Confirm Payment</button>
               </div>
             </div>
+
+            <div id="partial-payment-section" style="display:none">
+              <div class="payment-panel">
+                <h4>💰 Partial Payment</h4>
+                <label for="partial-amount-input" style="font-size:0.85em;color:#444;display:block;margin-bottom:2px">Amount to pay now</label>
+                <div class="partial-amt-row">
+                  <input type="number" id="partial-amount-input" min="1" step="0.01" placeholder="0.00" />
+                  <button type="button" id="partial-max-btn" class="btn-outline" style="padding:8px 12px;white-space:nowrap">Pay Max</button>
+                </div>
+                <div id="partial-amount-preview"></div>
+                <button id="btn-init-partial" class="btn-primary" type="button">Initialize Payment</button>
+                <div id="partial-stripe-element" style="display:none"></div>
+                <div id="partial-error" class="error-msg" style="display:none"></div>
+                <button id="btn-confirm-partial" class="btn-primary" type="button" style="display:none">Confirm Payment</button>
+              </div>
+            </div>
+
             <div id="action-msg-finance"></div>
           </div>
 
