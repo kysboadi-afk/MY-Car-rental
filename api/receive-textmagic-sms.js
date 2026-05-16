@@ -54,6 +54,53 @@ const ECONOMY_EXTENSION_PRICES = {
   7: { days: 7,  label: "+1 week", price: 350 },
 };
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function parseInboundWebhookPayload(rawBody = "") {
+  const raw = String(rawBody || "");
+  if (!raw.trim()) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch (_) {
+    // Fall through to x-www-form-urlencoded parsing.
+  }
+
+  const params = new URLSearchParams(raw);
+  const parsed = {};
+  for (const [key, value] of params.entries()) {
+    parsed[key] = value;
+  }
+  return parsed;
+}
+
+function extractInboundSmsFields(payload = {}) {
+  return {
+    fromPhone: firstNonEmpty(
+      payload.from,
+      payload.From,
+      payload.phone,
+      payload.Phone,
+      payload.sender,
+      payload.Sender
+    ),
+    messageText: firstNonEmpty(
+      payload.text,
+      payload.Text,
+      payload.body,
+      payload.Body,
+      payload.message,
+      payload.Message
+    ),
+  };
+}
+
 async function sendInboundRenterSms({
   phone,
   message,
@@ -804,16 +851,8 @@ export default async function handler(req, res) {
     }
   }
 
-  // Parse the JSON body (Vercel body parser is disabled above).
-  let body;
-  try {
-    body = rawBody ? JSON.parse(rawBody) : {};
-  } catch (parseErr) {
-    return res.status(400).json({ error: "Invalid JSON body" });
-  }
-
-  // TextMagic sends: { from, to, text, id, ... }
-  const { from: fromPhone, text: messageText } = body;
+  const body = parseInboundWebhookPayload(rawBody);
+  const { fromPhone, messageText } = extractInboundSmsFields(body);
 
   if (!fromPhone || !messageText) {
     return res.status(400).json({ error: "Missing from or text" });

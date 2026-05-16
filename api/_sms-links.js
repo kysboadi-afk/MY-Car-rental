@@ -1,4 +1,19 @@
+import { createManageToken } from "./_manage-booking-token.js";
 import { isFeatureEnabled } from "./_sms-rollout.js";
+
+function normalizeValue(value) {
+  return String(value || "").trim();
+}
+
+function resolveManageToken({ bookingId, manageToken } = {}) {
+  const normalizedManageToken = normalizeValue(manageToken);
+  if (normalizedManageToken) return normalizedManageToken;
+
+  const normalizedBookingId = normalizeValue(bookingId);
+  if (!normalizedBookingId) return "";
+
+  return createManageToken(normalizedBookingId);
+}
 
 export function buildManageBookingLink({ token } = {}) {
   const base = "https://www.slytrans.com/manage-booking.html";
@@ -19,14 +34,23 @@ export function buildLegacyExtendEntryLink({ vehicleId } = {}) {
   return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalizedVehicleId)}&extend=1`;
 }
 
+export function buildDashboardExtendLink({ bookingId, manageToken, vehicleId } = {}) {
+  const resolvedManageToken = resolveManageToken({ bookingId, manageToken });
+  if (resolvedManageToken) {
+    return buildManageBookingLink({ token: resolvedManageToken });
+  }
+  return buildLegacyExtendEntryLink({ vehicleId });
+}
+
 export function isDashboardFirstLinksEnabled() {
   return isFeatureEnabled("SMS_DASHBOARD_FIRST_LINKS", true);
 }
 
 export function buildRenterPortalLinks({ bookingId, manageToken, vehicleId } = {}) {
-  const manageLink = buildManageBookingLink({ token: manageToken });
+  const resolvedManageToken = resolveManageToken({ bookingId, manageToken });
+  const manageLink = buildManageBookingLink({ token: resolvedManageToken });
   const balanceLink = buildLegacyBalanceLink({ bookingId });
-  const extendLink = buildLegacyExtendEntryLink({ vehicleId });
+  const extendLink = buildDashboardExtendLink({ bookingId, manageToken: resolvedManageToken, vehicleId });
   const dashboardFirst = isDashboardFirstLinksEnabled();
   const primaryLink = dashboardFirst ? manageLink : balanceLink;
   const secondaryLink = dashboardFirst ? balanceLink : manageLink;
@@ -39,4 +63,3 @@ export function buildRenterPortalLinks({ bookingId, manageToken, vehicleId } = {
     secondaryLink,
   };
 }
-
