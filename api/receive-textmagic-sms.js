@@ -101,6 +101,75 @@ function extractInboundSmsFields(payload = {}) {
   };
 }
 
+const INBOUND_SUPABASE_STATUSES = [
+  "booked_paid",
+  "reserved_unpaid",
+  "reserved",
+  "active_rental",
+  "active",
+  "overdue",
+  "pending",
+  "approved",
+  "pending_verification",
+];
+
+async function loadInboundBookingsSnapshot() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const selectCols =
+      "booking_ref, payment_intent_id, vehicle_id, customer_name, customer_phone, renter_phone, " +
+      "pickup_date, pickup_time, return_date, return_time, status, extend_pending, balance_payment_link";
+    const fallbackCols =
+      "booking_ref, payment_intent_id, vehicle_id, customer_name, customer_phone, " +
+      "pickup_date, pickup_time, return_date, return_time, status, balance_payment_link";
+    let rows = null;
+    let err = null;
+
+    ({ data: rows, error: err } = await sb
+      .from("bookings")
+      .select(selectCols)
+      .in("status", INBOUND_SUPABASE_STATUSES)
+      .order("created_at", { ascending: false }));
+
+    if (err && err.code === "42703") {
+      ({ data: rows, error: err } = await sb
+        .from("bookings")
+        .select(fallbackCols)
+        .in("status", INBOUND_SUPABASE_STATUSES)
+        .order("created_at", { ascending: false }));
+    }
+
+    if (!err && Array.isArray(rows) && rows.length > 0) {
+      const byVehicle = {};
+      for (const row of rows) {
+        const vehicleId = row.vehicle_id || "unknown";
+        if (!byVehicle[vehicleId]) byVehicle[vehicleId] = [];
+        byVehicle[vehicleId].push({
+          bookingId: row.booking_ref || "",
+          paymentIntentId: row.payment_intent_id || "",
+          vehicleId,
+          vehicleName: vehicleId,
+          name: row.customer_name || "",
+          phone: row.renter_phone || row.customer_phone || "",
+          pickupDate: row.pickup_date ? String(row.pickup_date).split("T")[0] : "",
+          pickupTime: row.pickup_time ? String(row.pickup_time).substring(0, 5) : "",
+          returnDate: row.return_date ? String(row.return_date).split("T")[0] : "",
+          returnTime: row.return_time ? String(row.return_time).substring(0, 5) : "",
+          status: String(row.status || "").trim(),
+          extendPending: !!row.extend_pending,
+          paymentLink: row.balance_payment_link || "",
+        });
+      }
+      return { data: byVehicle, sha: null };
+    }
+    if (err) {
+      console.warn("receive-textmagic-sms: Supabase booking snapshot failed, falling back to bookings.json:", err.message);
+    }
+  }
+
+  return loadBookings();
+}
+
 async function sendInboundRenterSms({
   phone,
   message,
@@ -873,7 +942,7 @@ export default async function handler(req, res) {
 
   let allBookings, data, sha;
   try {
-    const loaded = await loadBookings();
+    const loaded = await loadInboundBookingsSnapshot();
     allBookings = loaded.data;
     data = loaded.data;
     sha = loaded.sha;

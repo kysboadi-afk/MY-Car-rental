@@ -10,6 +10,7 @@ const smsCalls = [];
 let bookingsData = {};
 let savedBookings = null;
 let createdPaymentIntent = null;
+let supabaseRows = null;
 
 mock.module("stripe", {
   defaultExport: class FakeStripe {
@@ -78,7 +79,21 @@ mock.module("./_pricing.js", {
 
 mock.module("./_supabase.js", {
   namedExports: {
-    getSupabaseAdmin: () => null,
+    getSupabaseAdmin: () => {
+      if (!Array.isArray(supabaseRows)) return null;
+      return {
+        from: () => ({
+          select: () => ({
+            in: () => ({
+              order: async () => ({ data: supabaseRows, error: null }),
+            }),
+          }),
+          update: () => ({
+            eq: async () => ({ data: null, error: null }),
+          }),
+        }),
+      };
+    },
   },
 });
 
@@ -119,6 +134,7 @@ function resetState() {
   bookingsData = {};
   savedBookings = null;
   createdPaymentIntent = null;
+  supabaseRows = null;
 }
 
 function makeReq(rawBody, contentType = "application/x-www-form-urlencoded") {
@@ -202,4 +218,31 @@ test("receive-textmagic-sms: accepts form-encoded day selection and returns paym
   assert.equal(createdPaymentIntent?.metadata?.booking_id, "bk_ext_2");
   assert.equal(savedBookings.camry[0].extendPending, false);
   assert.equal(savedBookings.camry[0].extensionPendingPayment.paymentLink, "https://www.slytrans.com/balance.html?ext=1&cs=cs_ext_test&piId=pi_ext_test");
+});
+
+test("receive-textmagic-sms: uses Supabase booking snapshot when bookings.json is stale", async () => {
+  resetState();
+  bookingsData = {};
+  supabaseRows = [{
+    booking_ref: "bk_ext_supabase",
+    payment_intent_id: "pi_live_1",
+    vehicle_id: "camry",
+    customer_name: "Live Customer",
+    customer_phone: "+13105550100",
+    renter_phone: "+13105550100",
+    pickup_date: "2026-05-18",
+    pickup_time: "10:00",
+    return_date: "2026-05-20",
+    return_time: "10:00",
+    status: "active_rental",
+    extend_pending: false,
+    balance_payment_link: "",
+  }];
+
+  const res = makeRes();
+  await handler(makeReq("from=%2B13105550100&text=extend"), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(smsCalls.length, 1);
+  assert.equal(smsCalls[0].templateKey, "extend_flexible_prompt");
 });
