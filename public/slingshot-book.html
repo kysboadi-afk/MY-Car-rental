@@ -302,10 +302,6 @@
     <section class="booking" id="bookingSection">
       <h2 id="bookingHeading">Complete Your Reservation</h2>
 
-      <div id="paymentRetryBanner" class="payment-retry-banner" style="display:none" role="alert">
-        <strong>⚠️ Payment not completed.</strong> Your booking details have been pre-filled. Please review and try again.
-      </div>
-
       <!-- Package selector -->
       <label style="display:block;margin-bottom:8px;font-weight:600">Select Rental Package</label>
       <div class="package-grid" id="packageGrid">
@@ -371,7 +367,7 @@
       </div>
 
       <div class="id-upload-section">
-        <p class="id-note">Identity verification is completed securely with Stripe before payment. No ID upload is required on this page.</p>
+        <p class="id-note">Identity verification is completed securely with Stripe. No ID upload is required on this page.</p>
       </div>
 
       <!-- Rental Agreement -->
@@ -489,24 +485,6 @@
       </label>
       <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation, Stripe identity verification, and agreement signing.</p>
     </section>
-
-    <section class="booking" id="slManualConfirmation" style="display:none">
-      <h2>✅ Slingshot Reservation Confirmed</h2>
-      <p>Your identity verification and rental agreement are complete.</p>
-      <p><strong>Payment is due in person at pickup.</strong> Rental payment, deposit, and any pickup charges are no longer collected online for Slingshot bookings.</p>
-      <p><strong>Booking ID:</strong> <span id="slConfirmBookingId">—</span></p>
-      <p><a id="slConfirmManageLink" href="#" class="sign-agreement-btn" style="display:none">Open Renter Dashboard</a></p>
-      <p><a id="slConfirmAgreementLink" href="#" class="confirm-sign-btn" style="display:none">View Signed Agreement</a></p>
-    </section>
-
-    <!-- Stripe payment form (shown after booking creation, outside bookingSection) -->
-    <div id="slPaymentForm" class="booking" style="display:none">
-      <div id="slBookingSummary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
-      <div id="sl-payment-element"></div>
-      <div id="sl-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
-      <button id="sl-submit-payment" type="button">Pay Deposit $<span id="slPayAmount">0</span> Now 🔒</button>
-      <button id="sl-cancel-payment" type="button">← Change booking details</button>
-    </div>
 
     <!-- ── Extend Rental Section ── -->
     <section class="booking" id="extendSection" style="display:none">

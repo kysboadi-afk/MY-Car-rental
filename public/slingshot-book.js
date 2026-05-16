@@ -597,155 +597,32 @@ async function launchSlingshotPayment() {
 
     sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-    if (data && data.manualPayment) {
-      var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId: pendingBookingId,
-          signature: agreementSignature,
-        }),
-      });
-      var signData = await signResp.json();
-      if (!signResp.ok) {
-        throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
-      }
-      paymentFormSubmitted = true;
-      showSlingshotManualConfirmation({
-        bookingId: signData.bookingId || pendingBookingId,
-        manageLink: signData.manageLink || data.manageLink || "",
-        agreementPdfUrl: signData.agreementPdfUrl || "",
-      });
-      return;
-    }
-
-    var clientSecret    = data.clientSecret;
-    var publishableKey  = data.publishableKey;
-
-    if (!clientSecret || !publishableKey) {
-      throw new Error("Invalid server response — missing Stripe credentials.");
-    }
-
-    sessionStorage.setItem("slyStripePublishable", publishableKey);
-
-    // Initialize Stripe and show payment form
-    var stripe   = Stripe(publishableKey);
-    var elements = stripe.elements({
-      clientSecret,
-      defaultValues: { billingDetails: { name, email } },
+    // Sign the rental agreement and send confirmation emails to renter and owner,
+    // then redirect to the thank-you page. Payments are collected in person.
+    var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bookingId: pendingBookingId,
+        signature: agreementSignature,
+      }),
     });
-
-    var paymentElement = elements.create("payment", {
-      fields: { billingDetails: { name: "never" } },
-    });
-
-    // Hide booking form, show payment form
-    var bookingSection = document.getElementById("bookingSection");
-    if (bookingSection) bookingSection.style.display = "none";
-    var payForm = document.getElementById("slPaymentForm");
-    if (payForm) payForm.style.display = "";
-
-    // Populate summary box
-    var summaryEl = document.getElementById("slBookingSummary");
-    if (summaryEl) {
-      var pickupDisplay = SlyLA.formatLocalDateTime(dateInput.value, timeSelect.value);
-      var returnDisplay = SlyLA.formatLocalDateTime(returnDate, returnResult.time);
-      summaryEl.innerHTML =
-        "<strong>🏎️ Slingshot Rental</strong><br>" +
-        (carData ? "Vehicle: " + carData.name + "<br>" : "") +
-        "Package: " + pkg.label + " ($" + pkg.price + ")<br>" +
-        "Pickup: " + pickupDisplay + "<br>" +
-        "Return by: " + returnDisplay + "<br>" +
-        "Refundable deposit: $" + SLINGSHOT_DEPOSIT + "<br>" +
-        "<strong style='color:#ffb400'>" + details.paymentLabel + " charged today: $" + chargedToday.toFixed(2) + "</strong><br>" +
-        (balanceAtPickup > 0
-          ? "<small style='color:#bbb'>Remaining balance at pickup: $" + balanceAtPickup.toFixed(2) + "</small>"
-          : "<small style='color:#bbb'>Remaining balance at pickup: $0.00</small>");
+    var signData = await signResp.json();
+    if (!signResp.ok) {
+      throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
     }
-
-    var payAmountEl = document.getElementById("slPayAmount");
-    if (payAmountEl) payAmountEl.textContent = chargedToday.toFixed(2);
-
-    paymentElement.mount("#sl-payment-element");
-    if (payForm) payForm.scrollIntoView({ behavior: "smooth", block: "start" });
-
-    var submitBtn = document.getElementById("sl-submit-payment");
-    var cancelBtn = document.getElementById("sl-cancel-payment");
-    var msgEl     = document.getElementById("sl-payment-message");
-    var submitting = false;
-    if (submitBtn) submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
-
-    var handleSubmit = async function() {
-      if (submitting) return;
-      submitting = true;
-      submitBtn.disabled  = true;
-      submitBtn.innerHTML = "Processing…";
-      if (msgEl) msgEl.textContent = "";
-
-      // Mark payment as submitted so the pagehide handler does NOT cancel the
-      // pending booking — Stripe is about to redirect to success.html on success.
-      paymentFormSubmitted = true;
-      try {
-        var submitResult = await elements.submit();
-        if (submitResult && submitResult.error) {
-          paymentFormSubmitted = false;
-          if (msgEl) msgEl.textContent = submitResult.error.message || "Please complete your payment details and try again.";
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
-          submitting = false;
-          return;
-        }
-
-        var result = await stripe.confirmPayment({
-          elements,
-          confirmParams: {
-            return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
-            receipt_email: email,
-            payment_method_data: {
-              billing_details: {
-                name: name,
-                email: email,
-                phone: phone,
-              },
-            },
-          },
-        });
-
-        if (result.error) {
-          // Payment failed or was cancelled — allow the user to try again or cancel.
-          paymentFormSubmitted = false;
-          await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
-          if (msgEl) msgEl.textContent = result.error.message;
-          submitBtn.disabled = false;
-          submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
-          submitting = false;
-        }
-      } catch (err) {
-        paymentFormSubmitted = false;
-        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_exception", { source: "slingshot_confirm_payment", preservePendingBookingId: true });
-        if (msgEl) {
-          msgEl.textContent = err && err.message
-            ? err.message
-            : "Payment could not be submitted. Please try again.";
-        }
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = "Pay $" + chargedToday.toFixed(2) + " Now 🔒";
-        submitting = false;
-      }
-    };
-    submitBtn.addEventListener("click", handleSubmit);
-
-    cancelBtn.addEventListener("click", function() {
-      submitting = false;
-      submitBtn.removeEventListener("click", handleSubmit);
-      paymentElement.unmount();
-      if (msgEl) msgEl.textContent = "";
-      if (payForm) payForm.style.display = "none";
-      if (bookingSection) bookingSection.style.display = "";
-      if (bookBtn) { bookBtn.disabled = false; updateBookBtnLabel(); }
-      // Cancel the pre-written pending booking so it no longer appears in admin.
-      updatePendingBookingLifecycle("abandoned_checkout", "cancel_button_before_payment", { source: "cancel_payment_button" });
-    }, { once: true });
+    paymentFormSubmitted = true;
+    var confirmedBookingId = signData.bookingId || pendingBookingId || "";
+    var confirmedManageLink = signData.manageLink || data.manageLink || "";
+    var redirectUrl = "thank-you.html?from=slingshot";
+    if (confirmedBookingId) {
+      redirectUrl += "&bookingId=" + encodeURIComponent(confirmedBookingId);
+    }
+    if (confirmedManageLink) {
+      redirectUrl += "&manageLink=" + encodeURIComponent(confirmedManageLink);
+    }
+    window.location.href = redirectUrl;
+    return;
 
   } catch (err) {
     console.error("slingshot-book payment error:", err);
