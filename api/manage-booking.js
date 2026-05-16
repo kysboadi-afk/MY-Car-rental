@@ -485,8 +485,7 @@ export default async function handler(req, res) {
     }
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
-    const eligiblePaymentStatuses = ["partial", "unpaid"];
-    if (!MANAGE_ELIGIBLE_STATUSES.includes(row.status) || !eligiblePaymentStatuses.includes(row.payment_status)) {
+    if (!MANAGE_ELIGIBLE_STATUSES.includes(row.status)) {
       return res.status(409).json({ error: "This booking is not eligible for balance payment." });
     }
     const balanceDue = effectiveBalanceDue(row);
