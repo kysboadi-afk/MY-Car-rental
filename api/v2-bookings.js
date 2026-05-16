@@ -2250,6 +2250,11 @@ export default async function handler(req, res) {
       if (!sb) return res.status(503).json({ error: "Database not configured" });
       const booking = await loadSlingshotBookingRow(sb, bookingId);
       if (!booking) return res.status(404).json({ error: "Booking not found" });
+      const bookingStatus = String(booking.status || "").trim();
+      const paymentStatus = String(booking.payment_status || "").trim().toLowerCase();
+      if (bookingStatus !== "ready_for_pickup" && paymentStatus !== "paid") {
+        return res.status(409).json({ error: "Agreement can only be sent after in-person payment is marked received." });
+      }
       const { data: docsRow, error: docsErr } = await sb
         .from("pending_booking_docs")
         .select("agreement_pdf_url")

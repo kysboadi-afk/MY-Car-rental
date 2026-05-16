@@ -597,8 +597,8 @@ async function launchSlingshotPayment() {
 
     sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-    // Sign the rental agreement and send confirmation emails to renter and owner,
-    // then redirect to the thank-you page. Payments are collected in person.
+    // Sign the rental agreement, save booking docs, and redirect to thank-you.
+    // Agreement delivery is triggered by admin after in-person payment is received.
     var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
