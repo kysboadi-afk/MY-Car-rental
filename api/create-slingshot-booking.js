@@ -33,12 +33,32 @@ import { createManageToken } from "./_manage-booking-token.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://www.slytrans.com/slingshot-book.html";
 const SLINGSHOT_MANUAL_PAYMENT_ENABLED = /^(true|1|yes|on)$/i.test(String(process.env.SLINGSHOT_NO_PAYMENT || ""));
+const SLINGSHOT_IDENTITY_POLL_ATTEMPTS = 5;
+const SLINGSHOT_IDENTITY_POLL_DELAY_MS = 1500;
 
 function buildSlingshotIdentityReturnUrl(vehicleId) {
   const url = new URL(DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL);
   if (vehicleId) url.searchParams.set("vehicle", vehicleId);
   url.searchParams.set("identity", "return");
   return url.toString();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retrieveVerifiedSlingshotIdentitySession(stripe, sessionId) {
+  let session = null;
+  for (let attempt = 0; attempt < SLINGSHOT_IDENTITY_POLL_ATTEMPTS; attempt += 1) {
+    session = await stripe.identity.verificationSessions.retrieve(sessionId);
+    const status = String(session?.status || "").toLowerCase();
+    if (status === "verified") return session;
+    if (status !== "processing" || attempt === SLINGSHOT_IDENTITY_POLL_ATTEMPTS - 1) {
+      return session;
+    }
+    await sleep(SLINGSHOT_IDENTITY_POLL_DELAY_MS);
+  }
+  return session;
 }
 
 export default async function handler(req, res) {
@@ -184,11 +204,15 @@ export default async function handler(req, res) {
     }
     let verifiedIdentitySession;
     try {
-      verifiedIdentitySession = await stripe.identity.verificationSessions.retrieve(trimmedIdentitySessionId);
+      verifiedIdentitySession = await retrieveVerifiedSlingshotIdentitySession(stripe, trimmedIdentitySessionId);
     } catch (identityErr) {
       return res.status(400).json({ error: "Could not verify your identity session. Please try again." });
     }
-    if (String(verifiedIdentitySession?.status || "").toLowerCase() !== "verified") {
+    const verifiedIdentityStatus = String(verifiedIdentitySession?.status || "").toLowerCase();
+    if (verifiedIdentityStatus === "processing") {
+      return res.status(409).json({ error: "Identity verification is still processing. Please wait a few seconds and try again." });
+    }
+    if (verifiedIdentityStatus !== "verified") {
       return res.status(400).json({ error: "Identity verification is incomplete. Please complete verification and try again." });
     }
 

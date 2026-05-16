@@ -1085,7 +1085,6 @@ function initBookingForm() {
     updateTotalBreakdown();
     updateBookBtn();
     clearIdentityReturnParamsFromUrl();
-    clearBookingDraft();
 
     if (verifiedIdentitySessionId) {
       setTimeout(function() { launchSlingshotPayment(); }, 0);
