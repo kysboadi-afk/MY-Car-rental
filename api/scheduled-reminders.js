@@ -718,7 +718,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
   if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
     try {
       const smsText =
-        `[SLY RIDES] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
+        `[Sly Car Rentals] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
         `Approve $${feeAmount} charge: ${approveUrl}\n` +
         `Adjust amount: ${adjustUrl}\n` +
         `Decline (no charge): ${declineUrl}`;
@@ -2552,7 +2552,7 @@ async function runReconciliation() {
           .slice(0, 3)
           .map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`)
           .join(", ");
-        const smsText = `[SLY RIDES] ⚠️ ${manualPIIds.length} payment(s) need manual review: ${manualSummary}${manualPIIds.length > 3 ? ` +${manualPIIds.length - 3} more` : ""}. Check email.`;
+        const smsText = `[Sly Car Rentals] ⚠️ ${manualPIIds.length} payment(s) need manual review: ${manualSummary}${manualPIIds.length > 3 ? ` +${manualPIIds.length - 3} more` : ""}. Check email.`;
         await sendSms(OWNER_PHONE, smsText);
       } catch (smsErr) {
         console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
