@@ -339,6 +339,10 @@
             var extLabel       = cfg.extensionLabel;
             var extVehicleName = cfg.vehicleName || cfg.vehicleId || "your vehicle";
             var extRenterName  = cfg.renterName;
+            var priorOutstanding = parseFloat(cfg.currentOutstandingBalance || "0");
+            var priorOverdue = parseFloat(cfg.overdueAmount || "0");
+            var planRemaining = parseFloat(cfg.paymentPlanRemainingBalance || "0");
+            var totalBeforeExtension = parseFloat(cfg.totalOwedBeforeExtension || "0");
 
             // Show extension view
             document.getElementById("loadingSection").style.display  = "none";
@@ -351,6 +355,14 @@
             if (extRenterName) rows.push(["Renter",    escHtml(extRenterName)]);
             rows.push(["Vehicle",    escHtml(extVehicleName)]);
             if (extLabel)      rows.push(["Extension", escHtml(extLabel)]);
+            rows.push(["Outstanding Balance (Before Extension)", "<strong style='color:#f59e0b'>$" + escHtml(priorOutstanding.toFixed(2)) + "</strong>"]);
+            if (priorOverdue > 0) {
+              rows.push(["Overdue Amount", "<strong style='color:#f87171'>$" + escHtml(priorOverdue.toFixed(2)) + "</strong>"]);
+            }
+            if (planRemaining > 0) {
+              rows.push(["Payment Plan Remaining", "<strong style='color:#f59e0b'>$" + escHtml(planRemaining.toFixed(2)) + "</strong>"]);
+            }
+            rows.push(["Total Owed Before Extension", "<strong style='color:#f59e0b'>$" + escHtml(totalBeforeExtension.toFixed(2)) + "</strong>"]);
             rows.push(["Extension Total", "<strong style='color:#ffb400'>$" + escHtml(extTotal) + "</strong>"]);
             rows.push(["Paying Now", "<strong style='color:#ffb400'>$" + escHtml(extAmount) + "</strong>"]);
             if (parseFloat(extRemaining) > 0) {

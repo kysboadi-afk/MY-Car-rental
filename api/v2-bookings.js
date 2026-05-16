@@ -54,6 +54,7 @@ import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById, loadVehicles } from "./_vehicles.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
+import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -72,6 +73,33 @@ const BOOKED_DATES_PATH = "booked-dates.json";
 // App-level status values that indicate a rental is in progress (vehicle picked up).
 // Used by the cancellation guard to require explicit confirmation before overriding.
 const ACTIVE_RENTAL_STATUSES = new Set(["active_rental", "overdue", "extended"]);
+
+function escHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function buildBalanceLinkForBooking(row = {}) {
+  if (row.balance_payment_link) return String(row.balance_payment_link).trim();
+  const base = "https://www.slytrans.com/balance.html";
+  const p = new URLSearchParams();
+  const vid = uiVehicleId(row.vehicle_id || "");
+  if (vid) p.set("v", vid);
+  if (row.pickup_date) p.set("p", row.pickup_date);
+  if (row.return_date) p.set("r", row.return_date);
+  if (row.customer_email) p.set("e", row.customer_email);
+  if (row.booking_ref) p.set("b", row.booking_ref);
+  if (row.payment_intent_id) p.set("opi", row.payment_intent_id);
+  return `${base}?${p.toString()}`;
+}
 
 function normalizeStoredDocBase64(base64Value) {
   if (!base64Value || typeof base64Value !== "string") return "";
@@ -1868,6 +1896,143 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, manageLink });
+    }
+
+    // ── SEND_PAYMENT_LINK — admin-driven renter payment collection workflow ───
+    if (action === "send_payment_link") {
+      const { bookingId, customerId } = body;
+      const sendSmsChannel = body.send_sms !== false;
+      const sendEmailChannel = !!body.send_email;
+      const customMessage = typeof body.message === "string" ? body.message.trim() : "";
+
+      const sbLinks = getSupabaseAdmin();
+      if (!sbLinks) return res.status(503).json({ error: "Database not configured" });
+
+      let bkRow = null;
+      if (bookingId) {
+        const { data, error } = await sbLinks
+          .from("bookings")
+          .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link")
+          .eq("booking_ref", String(bookingId).trim())
+          .maybeSingle();
+        if (error) return res.status(500).json({ error: `Booking lookup failed: ${error.message}` });
+        bkRow = data || null;
+      } else if (customerId) {
+        const { data, error } = await sbLinks
+          .from("bookings")
+          .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, created_at")
+          .eq("customer_id", String(customerId).trim())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) return res.status(500).json({ error: `Customer booking lookup failed: ${error.message}` });
+        bkRow = data || null;
+      } else {
+        return res.status(400).json({ error: "bookingId or customerId is required" });
+      }
+
+      if (!bkRow?.booking_ref) return res.status(404).json({ error: "No eligible booking found." });
+
+      const balanceLink = buildBalanceLinkForBooking(bkRow);
+      if (!balanceLink) return res.status(400).json({ error: "No balance link available for this booking." });
+
+      const planProgress = await computePaymentPlanProgress(sbLinks, { bookingId: bkRow.booking_ref });
+      const remainingBalance = roundMoney(bkRow.remaining_balance != null ? bkRow.remaining_balance : planProgress.remaining_balance || 0);
+      const overdueAmount = roundMoney(planProgress.overdue_amount || 0);
+      const nextDueDate = planProgress.next_due_date ? String(planProgress.next_due_date).slice(0, 10) : "";
+      const paymentPlanRemaining = roundMoney(planProgress.remaining_balance || 0);
+
+      const renterName = String(bkRow.customer_name || "").trim();
+      const phone = normalizePhone(bkRow.customer_phone || bkRow.renter_phone || "");
+      const email = String(bkRow.customer_email || "").trim().toLowerCase();
+      const vehicleLabel = bkRow.vehicle_id || "your rental";
+
+      const planLine = planProgress.has_active_plan
+        ? `Installment plan remaining: $${paymentPlanRemaining.toFixed(2)}${nextDueDate ? ` (next due ${nextDueDate})` : ""}.`
+        : "";
+      const overdueLine = overdueAmount > 0
+        ? `Overdue amount: $${overdueAmount.toFixed(2)}.`
+        : "";
+      const defaultSms = [
+        customMessage || "Your next payment is due.",
+        `Booking: ${bkRow.booking_ref}`,
+        `Vehicle: ${vehicleLabel}`,
+        `Current balance: $${remainingBalance.toFixed(2)}.`,
+        overdueLine,
+        planLine,
+        `Pay securely here: ${balanceLink}`,
+      ].filter(Boolean).join(" ");
+
+      let smsSent = false;
+      let smsDedupSkipped = false;
+      if (sendSmsChannel && phone) {
+        const smsResult = await sendDedupedSms({
+          bookingId: bkRow.booking_ref,
+          templateKey: "admin_payment_link",
+          phone,
+          body: defaultSms,
+          returnDateAtSend: bkRow.return_date || "9999-12-31",
+          metadata: {
+            source: "admin_send_payment_link",
+            booking_id: bkRow.booking_ref,
+            customer_id: bkRow.customer_id || null,
+            balance_link: balanceLink,
+            remaining_balance: remainingBalance,
+            overdue_amount: overdueAmount,
+            payment_plan_remaining: paymentPlanRemaining,
+            next_due_date: nextDueDate || null,
+          },
+        });
+        smsSent = !!smsResult;
+        smsDedupSkipped = !smsResult;
+      }
+
+      let emailSent = false;
+      if (sendEmailChannel && email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_PORT === "465",
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          await transporter.sendMail({
+            from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            to: email,
+            subject: "Secure Payment Link for Your Booking",
+            html: `
+              <h2>Payment Link</h2>
+              <p>Hi ${escHtml(renterName || "there")},</p>
+              <p>${escHtml(customMessage || "Your next payment is due.")}</p>
+              <p><strong>Booking:</strong> ${escHtml(bkRow.booking_ref)}</p>
+              <p><strong>Current balance:</strong> $${remainingBalance.toFixed(2)}</p>
+              ${overdueAmount > 0 ? `<p><strong>Overdue amount:</strong> $${overdueAmount.toFixed(2)}</p>` : ""}
+              ${planProgress.has_active_plan ? `<p><strong>Payment plan remaining:</strong> $${paymentPlanRemaining.toFixed(2)}${nextDueDate ? ` (next due ${escHtml(nextDueDate)})` : ""}</p>` : ""}
+              <p><a href="${escHtml(balanceLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Pay Now</a></p>
+              <p>If you need help, call us at (844) 511-4059.</p>
+            `,
+          });
+          emailSent = true;
+        } catch (emailErr) {
+          console.error("v2-bookings send_payment_link: email failed (non-fatal):", emailErr.message);
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        bookingId: bkRow.booking_ref,
+        balanceLink,
+        smsSent,
+        smsDedupSkipped,
+        emailSent,
+        paymentPlan: {
+          hasActivePlan: !!planProgress.has_active_plan,
+          remainingBalance: paymentPlanRemaining,
+          overdueAmount,
+          nextDueDate: nextDueDate || null,
+          remainingInstallments: Number(planProgress.remaining_installments || 0),
+        },
+      });
     }
 
     // ── OVERRIDE_BALANCE — admin manually sets a new balance payment link ─────

@@ -28,6 +28,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
+import { computePaymentPlanProgress, reconcilePaymentPlanPayment } from "./_payment-plan-reconcile.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -189,7 +190,42 @@ async function handleGet(sb, body, res) {
       .select("*")
       .eq("plan_id", plan.id)
       .order("installment_number", { ascending: true });
-    results.push({ ...plan, installments: installments || [] });
+    const normalizedInstallments = (installments || []).map((row) => ({
+      ...row,
+      amount_paid: row.amount_paid != null
+        ? roundMoney(row.amount_paid)
+        : (row.status === "paid" ? roundMoney(row.amount) : 0),
+    }));
+    const remainingBalance = roundMoney(
+      normalizedInstallments.reduce((sum, row) => (
+        sum + Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0)))
+      ), 0)
+    );
+    const overdueAmount = roundMoney(
+      normalizedInstallments.reduce((sum, row) => {
+        const openAmount = Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0)));
+        if (openAmount <= 0 || !row.due_date) return sum;
+        return new Date(row.due_date).getTime() < Date.now() ? sum + openAmount : sum;
+      }, 0)
+    );
+    const nextDue = normalizedInstallments
+      .filter((row) => Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0))) > 0 && row.due_date)
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0] || null;
+    results.push({
+      ...plan,
+      installments: normalizedInstallments,
+      remaining_balance: remainingBalance,
+      overdue_amount: overdueAmount,
+      remaining_installments: normalizedInstallments.filter((row) => (
+        Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0))) > 0
+      )).length,
+      next_due_date: nextDue?.due_date || plan.next_due_date || null,
+      last_payment_at: normalizedInstallments
+        .map((row) => row.last_paid_at || row.paid_at || null)
+        .filter(Boolean)
+        .sort()
+        .pop() || null,
+    });
   }
 
   return res.status(200).json({ ok: true, plans: results });
@@ -207,7 +243,51 @@ async function handleList(sb, body, res) {
   const { data: plans, error } = await q;
   if (error) throw new Error(`Could not list payment plans: ${error.message}`);
 
-  return res.status(200).json({ ok: true, plans: plans || [] });
+  const enrichedPlans = [];
+  for (const plan of plans || []) {
+    const progress = await computePaymentPlanProgress(sb, { bookingId: plan.booking_id });
+    const { data: installments } = await sb
+      .from("payment_plan_installments")
+      .select("*")
+      .eq("plan_id", plan.id)
+      .order("installment_number", { ascending: true });
+    const scopedInstallments = (installments || []).map((row) => ({
+      ...row,
+      amount_paid: row.amount_paid != null
+        ? roundMoney(row.amount_paid)
+        : (row.status === "paid" ? roundMoney(row.amount) : 0),
+    }));
+    const remainingBalance = roundMoney(
+      scopedInstallments.reduce((sum, row) => (
+        sum + Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0)))
+      ), 0)
+    );
+    const overdueAmount = roundMoney(
+      scopedInstallments.reduce((sum, row) => {
+        const openAmount = Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0)));
+        if (openAmount <= 0 || !row.due_date) return sum;
+        return new Date(row.due_date).getTime() < Date.now() ? sum + openAmount : sum;
+      }, 0)
+    );
+    const remainingInstallments = scopedInstallments.filter((row) => (
+      Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0))) > 0
+    )).length;
+    const nextDue = scopedInstallments
+      .filter((row) => Math.max(0, roundMoney(Number(row.amount || 0) - Number(row.amount_paid || 0))) > 0 && row.due_date)
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())[0] || null;
+
+    enrichedPlans.push({
+      ...plan,
+      remaining_balance: remainingBalance,
+      overdue_amount: overdueAmount,
+      remaining_installments: remainingInstallments,
+      next_due_date: nextDue?.due_date || plan.next_due_date || null,
+      last_payment_at: scopedInstallments.map((row) => row.last_paid_at || row.paid_at || null).filter(Boolean).sort().pop() || null,
+      active_plan_count_for_booking: progress.active_plan_count,
+    });
+  }
+
+  return res.status(200).json({ ok: true, plans: enrichedPlans });
 }
 
 // ── Cancel ─────────────────────────────────────────────────────────────────────
@@ -424,7 +504,12 @@ async function handlePayInstallment(sb, body, res) {
     .maybeSingle();
   if (instErr) throw new Error(`Could not fetch installment: ${instErr.message}`);
   if (!installment) throw new Error("Installment not found");
-  if (installment.status === "paid") throw new Error("Installment is already paid");
+  const normalizedAmountPaid = installment.amount_paid != null
+    ? roundMoney(installment.amount_paid)
+    : (installment.status === "paid" ? roundMoney(installment.amount) : 0);
+  if (normalizedAmountPaid >= roundMoney(installment.amount) - 0.009) {
+    throw new Error("Installment is already paid");
+  }
 
   // Use a distinct source_type for payment plan installments so these credits
   // are distinguishable from regular one-time Stripe payments in the ledger.
@@ -469,50 +554,31 @@ async function handlePayInstallment(sb, body, res) {
     ledgerTxId = ledgerRow.id;
   }
 
-  // Determine installment status: partial vs paid.
-  const outstanding = Math.round((Number(installment.amount) - amtPaid) * 100) / 100;
-  const newStatus = outstanding > 0.01 ? "partial" : "paid";
+  const reconcile = await reconcilePaymentPlanPayment(sb, {
+    booking_id: plan.booking_id,
+    payment_intent_id,
+    amount: amtPaid,
+    ledger_transaction_id: ledgerTxId,
+    created_by: body.created_by || "admin",
+  });
+  const allocatedInstallment = (reconcile.allocations || []).find((row) => (
+    String(row.installment_id || "") === String(installment.id)
+  ));
+  const newStatus = allocatedInstallment?.allocation_type === "installment_paid"
+    ? "paid"
+    : "partial";
 
-  const { error: updateErr } = await sb
-    .from("payment_plan_installments")
-    .update({
-      status: newStatus,
-      paid_at: newStatus === "paid" ? new Date().toISOString() : null,
-      payment_intent_id,
-      ledger_transaction_id: ledgerTxId,
-    })
-    .eq("id", installment.id);
-  if (updateErr) throw new Error(`Could not update installment: ${updateErr.message}`);
-
-  // Check if all installments are now paid → auto-complete plan.
-  const { data: allInst } = await sb
-    .from("payment_plan_installments")
-    .select("status")
-    .eq("plan_id", plan_id);
-  const allPaid = (allInst || []).every((i) => i.status === "paid");
-  if (allPaid) {
-    await sb.from("payment_plans").update({ status: "completed" }).eq("id", plan_id);
-  } else {
-    // Advance next_due_date to the next pending installment's due_date.
-    const { data: nextInst } = await sb
-      .from("payment_plan_installments")
-      .select("due_date")
-      .eq("plan_id", plan_id)
-      .eq("status", "pending")
-      .order("installment_number", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (nextInst) {
-      await sb.from("payment_plans").update({ next_due_date: nextInst.due_date }).eq("id", plan_id);
-    }
-  }
+  const latestProgress = await computePaymentPlanProgress(sb, { bookingId: plan.booking_id, includeInstallments: true });
+  const planCompleted = latestProgress.remaining_balance <= 0.009;
 
   return res.status(200).json({
     ok: true,
     message: `Installment ${installment_number} ${newStatus}.`,
     installment_status: newStatus,
     ledger_transaction_id: ledgerTxId,
-    plan_completed: allPaid,
+    plan_completed: planCompleted,
     duplicate_ledger: isDuplicate,
+    reconciliation: reconcile,
+    plan_progress: latestProgress,
   });
 }
