@@ -29,6 +29,7 @@ import { autoUpsertBooking, writeAuditLog } from "./_booking-automation.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { getVehicleById } from "./_vehicles.js";
 import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
+import { getLedgerSummary } from "./_renter-balance-ledger.js";
 import {
   loadPricingSettings,
   computeDppCostFromSettings,
@@ -488,26 +489,43 @@ export default async function handler(req, res) {
     if (!MANAGE_ELIGIBLE_STATUSES.includes(row.status)) {
       return res.status(409).json({ error: "This booking is not eligible for balance payment." });
     }
-    const balanceDue = effectiveBalanceDue(row);
-    if (!Number.isFinite(balanceDue) || balanceDue <= 0) {
+    let resolvedBalance = effectiveBalanceDue(row);
+
+    // The booking row fields (total_price, remaining_balance) can be 0 when the
+    // balance is tracked exclusively via the ledger system.  Fall back to the
+    // ledger's remaining_balance so renters are never incorrectly told there is
+    // nothing to pay.
+    if (!Number.isFinite(resolvedBalance) || resolvedBalance <= 0) {
+      try {
+        const ledger = await getLedgerSummary(getSupabaseAdmin(), { bookingId });
+        const ledgerBalance = Number(ledger.remaining_balance || 0);
+        if (Number.isFinite(ledgerBalance) && ledgerBalance > 0) {
+          resolvedBalance = ledgerBalance;
+        }
+      } catch (ledgerErr) {
+        console.warn("[manage-booking] create_balance_payment_intent: ledger fallback failed:", ledgerErr.message);
+      }
+    }
+
+    if (!Number.isFinite(resolvedBalance) || resolvedBalance <= 0) {
       return res.status(409).json({ error: "No balance is due for this booking." });
     }
 
-    // Optional partial payment amount — capped server-side to balanceDue
-    let paymentAmount = balanceDue;
+    // Optional partial payment amount — capped server-side to resolvedBalance
+    let paymentAmount = resolvedBalance;
     if (body.payment_amount !== undefined && body.payment_amount !== null) {
       const requested = Math.round(Number(body.payment_amount) * 100) / 100;
       if (!Number.isFinite(requested) || requested <= 0) {
         return res.status(400).json({ error: "payment_amount must be a positive number." });
       }
-      if (requested > balanceDue) {
+      if (requested > resolvedBalance) {
         return res.status(400).json({
-          error: `Payment amount ($${requested.toFixed(2)}) exceeds remaining balance ($${balanceDue.toFixed(2)}).`,
+          error: `Payment amount ($${requested.toFixed(2)}) exceeds remaining balance ($${resolvedBalance.toFixed(2)}).`,
         });
       }
       paymentAmount = requested;
     }
-    const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(balanceDue * 100);
+    const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(resolvedBalance * 100);
 
     const uiVehicle = uiVehicleId(row.vehicle_id || "");
     const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
@@ -529,17 +547,17 @@ export default async function handler(req, res) {
         email: row.customer_email || "",
         pickup_date: row.pickup_date || "",
         return_date: row.return_date || "",
-        remaining_balance: String(balanceDue),
+        remaining_balance: String(resolvedBalance),
         payment_amount: String(paymentAmount),
         remaining_after_payment: isPartialPayment
-          ? String(Math.max(0, Math.round((balanceDue - paymentAmount) * 100) / 100))
+          ? String(Math.max(0, Math.round((resolvedBalance - paymentAmount) * 100) / 100))
           : "0",
       },
     });
     return res.status(200).json({
       clientSecret: paymentIntent.client_secret,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
-      balanceAmount: balanceDue,
+      balanceAmount: resolvedBalance,
       paymentAmount,
       isPartialPayment,
     });
