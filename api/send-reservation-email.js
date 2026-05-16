@@ -25,6 +25,7 @@ import { resolvePickupLocation } from "./_pickup-location.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
 import { normalizeClockTime, deriveReturnTime, formatTime12h, isoDateInLA } from "./_time.js";
 import { sendDedupedSms } from "./_sms-log.js";
+import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1212,7 +1213,14 @@ export default async function handler(req, res) {
     // This comment replaces the old save block to make the ordering clear.
 
     // ── Booking confirmation SMS ──────────────────────────────────────────────
-    if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    if (
+      isConfirmed &&
+      shouldSendBookingLifecycleSms("send_reservation_email") &&
+      !fullRentalCost &&
+      phone &&
+      process.env.TEXTMAGIC_USERNAME &&
+      process.env.TEXTMAGIC_API_KEY
+    ) {
       // Send confirmation only for fully-paid bookings (not deposit-only reservations)
       try {
         const bookingConfirmedSent = await sendDedupedSms({

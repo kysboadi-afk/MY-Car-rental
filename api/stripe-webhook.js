@@ -49,6 +49,7 @@ import { getVehicleById } from "./_vehicles.js";
 import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
+import { buildRenterPortalLinks } from "./_sms-links.js";
 import { appendCustomerLedgerShadowEntry } from "./_customer-ledger.js";
 import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
 import { reconcilePaymentPlanPayment, computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
@@ -1527,6 +1528,11 @@ function buildVehicleExtendEntryLink(vehicleId) {
   const normalized = String(uiVehicleId(vehicleId || "") || "").trim();
   if (!normalized) return "https://www.slytrans.com/manage-booking.html";
   return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
+}
+
+function buildRenterOnboardingLink({ bookingId, vehicleId }) {
+  const links = buildRenterPortalLinks({ bookingId, vehicleId });
+  return links.primaryLink;
 }
 
 async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, amountDollars, paymentType }) {
@@ -3163,7 +3169,10 @@ export default async function handler(req, res) {
                 phone: preContact.phone,
                 body: render(BOOKING_ONBOARDING, {
                   customer_name: sanitizeSmsValue(preContact.name || ""),
-                  manage_link: buildVehicleExtendEntryLink(preContact.vehicleId),
+                  manage_link: buildRenterOnboardingLink({
+                    bookingId: bookingRef || originalPiId || paymentIntent.id,
+                    vehicleId: preContact.vehicleId,
+                  }),
                 }),
               });
             }
@@ -3731,7 +3740,10 @@ export default async function handler(req, res) {
               phone: sl_renter_phone,
               body: render(BOOKING_ONBOARDING, {
                 customer_name: sanitizeSmsValue(sl_renter_name || ""),
-                manage_link: buildVehicleExtendEntryLink(sl_vehicle_id),
+                manage_link: buildRenterOnboardingLink({
+                  bookingId: sl_booking_id || paymentIntent.id,
+                  vehicleId: sl_vehicle_id,
+                }),
               }),
             });
           }
@@ -3851,7 +3863,10 @@ export default async function handler(req, res) {
               phone: _notifyMeta.renter_phone,
               body: render(BOOKING_ONBOARDING, {
                 customer_name: sanitizeSmsValue(_notifyMeta.renter_name || ""),
-                manage_link: buildVehicleExtendEntryLink(_notifyMeta.vehicle_id),
+                manage_link: buildRenterOnboardingLink({
+                  bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
+                  vehicleId: _notifyMeta.vehicle_id,
+                }),
               }),
             });
           }

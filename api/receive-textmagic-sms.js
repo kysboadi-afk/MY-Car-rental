@@ -21,7 +21,7 @@
 
 import Stripe from "stripe";
 import crypto from "crypto";
-import { sendSms } from "./_textmagic.js";
+import { dispatchSms } from "./_sms-dispatcher.js";
 import {
   render,
   DEFAULT_LOCATION,
@@ -53,6 +53,25 @@ const ECONOMY_EXTENSION_PRICES = {
   3: { days: 3,  label: "+3 days", price: 165 },
   7: { days: 7,  label: "+1 week", price: 350 },
 };
+
+async function sendInboundRenterSms({
+  phone,
+  message,
+  templateKey = null,
+  bookingId = null,
+  vehicleId = null,
+}) {
+  return dispatchSms({
+    bookingId,
+    vehicleId,
+    templateKey,
+    phone,
+    body: message,
+    dedupe: false,
+    source: "receive_textmagic_sms",
+    throwOnError: true,
+  });
+}
 
 /**
  * Find the index of a booking within `data[vehicleId]` by bookingId or paymentIntentId.
@@ -413,7 +432,11 @@ async function validatePaymentLinkForSms(fullLink, bookingId, templateKey) {
 async function handleExtend(fromPhone, allBookings, data, sha) {
   const match = findActiveRental(allBookings, fromPhone);
   if (!match) {
-    await sendSms(fromPhone, "We couldn\u2019t find an active rental for this number. Please call us at (844) 511-4059.");
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: "We couldn\u2019t find an active rental for this number. Please call us at (844) 511-4059.",
+      templateKey: "extend_no_active_booking",
+    });
     return;
   }
   const { vehicleId, booking } = match;
@@ -432,7 +455,13 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   );
 
   if (availMinutes <= 0) {
-    await sendSms(fromPhone, render(EXTEND_UNAVAILABLE, {}));
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_UNAVAILABLE, {}),
+      templateKey: "extend_unavailable",
+      bookingId,
+      vehicleId,
+    });
     return;
   }
 
@@ -440,7 +469,13 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   const minExtension = 24 * 60;
   if (availMinutes < minExtension) {
     const maxLabel = `${Math.floor(availMinutes / 60 / 24)} day(s)`;
-    await sendSms(fromPhone, render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }));
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }),
+      templateKey: "extend_limited",
+      bookingId,
+      vehicleId,
+    });
     return;
   }
 
@@ -467,7 +502,13 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
 
   // Send option SMS
   const optionMsg = EXTEND_FLEXIBLE_PROMPT;
-  await sendSms(fromPhone, optionMsg);
+  await sendInboundRenterSms({
+    phone: fromPhone,
+    message: optionMsg,
+    templateKey: "extend_flexible_prompt",
+    bookingId,
+    vehicleId,
+  });
 }
 
 /**
@@ -486,7 +527,13 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   const selected = pricing[optionNum];
 
   if (!selected) {
-    await sendSms(fromPhone, "Invalid option. Reply 1, 3, or 7.");
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: "Invalid option. Reply 1, 3, or 7.",
+      templateKey: "extend_invalid_option",
+      bookingId: booking.bookingId || booking.paymentIntentId || null,
+      vehicleId,
+    });
     return;
   }
 
@@ -495,7 +542,13 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   const requiredMinutes = (selected.days || 1) * 24 * 60;
   if (requiredMinutes > availMinutes) {
     const maxLabel = `${Math.floor(availMinutes / 60 / 24)} day(s)`;
-    await sendSms(fromPhone, render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }));
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }),
+      templateKey: "extend_limited",
+      bookingId: booking.bookingId || booking.paymentIntentId || null,
+      vehicleId,
+    });
     return;
   }
 
@@ -566,15 +619,18 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
     }
   }
 
-  await sendSms(
-    fromPhone,
-    render(EXTEND_SELECTED, {
-      extra_time:   selected.label,
-      vehicle:      booking.vehicleName || vehicleId,
-      price:        String(selected.price),
+  await sendInboundRenterSms({
+    phone: fromPhone,
+    message: render(EXTEND_SELECTED, {
+      extra_time: selected.label,
+      vehicle: booking.vehicleName || vehicleId,
+      price: String(selected.price),
       payment_link: paymentLink,
-    })
-  );
+    }),
+    templateKey: "extend_selected",
+    bookingId,
+    vehicleId,
+  });
 }
 
 /**
@@ -608,13 +664,16 @@ async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data
 
   if (availMinutes !== Infinity && requiredMinutes > availMinutes) {
     const maxDays = Math.max(0, Math.floor(availMinutes / 60 / 24));
-    await sendSms(
-      fromPhone,
-      render(EXTEND_LIMITED, {
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_LIMITED, {
         max_available_time: `${maxDays} day${maxDays !== 1 ? "s" : ""}`,
         vehicle: booking.vehicleName || vehicleId,
-      })
-    );
+      }),
+      templateKey: "extend_limited",
+      bookingId: booking.bookingId || booking.paymentIntentId || null,
+      vehicleId,
+    });
     return;
   }
 
@@ -674,26 +733,32 @@ async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data
   // Send confirmation SMS — include weekly upsell when days < 7
   const weeklyPrice = car.weekly || 350;
   if (days < 7) {
-    await sendSms(
-      fromPhone,
-      render(EXTEND_SELECTED_UPSELL, {
-        extra_time:   label,
-        vehicle:      booking.vehicleName || vehicleId,
-        price:        String(price),
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_SELECTED_UPSELL, {
+        extra_time: label,
+        vehicle: booking.vehicleName || vehicleId,
+        price: String(price),
         payment_link: paymentLink,
         weekly_price: String(weeklyPrice),
-      })
-    );
+      }),
+      templateKey: "extend_selected_upsell",
+      bookingId,
+      vehicleId,
+    });
   } else {
-    await sendSms(
-      fromPhone,
-      render(EXTEND_SELECTED, {
-        extra_time:   label,
-        vehicle:      booking.vehicleName || vehicleId,
-        price:        String(price),
+    await sendInboundRenterSms({
+      phone: fromPhone,
+      message: render(EXTEND_SELECTED, {
+        extra_time: label,
+        vehicle: booking.vehicleName || vehicleId,
+        price: String(price),
         payment_link: paymentLink,
-      })
-    );
+      }),
+      templateKey: "extend_selected",
+      bookingId,
+      vehicleId,
+    });
   }
 }
 
@@ -791,12 +856,15 @@ export default async function handler(req, res) {
         {
           const days = parseDaysFromMessage(messageText.trim());
           if (days === null) {
-            await sendSms(
-              normalizedFrom,
-              render(EXTEND_INVALID_INPUT, {
+            await sendInboundRenterSms({
+              phone: normalizedFrom,
+              message: render(EXTEND_INVALID_INPUT, {
                 options: "a number of days — e.g. 3, 7, 14, or say \"2 weeks\", \"month\"",
-              })
-            );
+              }),
+              templateKey: "extend_invalid_input",
+              bookingId: pendingMatch.booking.bookingId || pendingMatch.booking.paymentIntentId || null,
+              vehicleId: pendingMatch.vehicleId,
+            });
           } else {
             await handleFlexibleEconomyExtension(normalizedFrom, days, allBookings, data, sha);
           }

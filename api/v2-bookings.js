@@ -55,6 +55,7 @@ import { getVehicleById, loadVehicles } from "./_vehicles.js";
 import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
+import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const VEHICLE_NAMES    = {
@@ -890,7 +891,7 @@ export default async function handler(req, res) {
           updatedBooking.returnTime || null
         );
         // Send booking confirmation SMS when status transitions to booked_paid
-        if (newStatus === "booked_paid" && updatedBooking.phone &&
+        if (newStatus === "booked_paid" && shouldSendBookingLifecycleSms("v2_bookings") && updatedBooking.phone &&
             process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
             const bookingConfirmedSent = await sendDedupedSms({

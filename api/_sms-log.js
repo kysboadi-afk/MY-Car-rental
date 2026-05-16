@@ -47,29 +47,51 @@ export async function logSmsToSupabase(bookingId, templateKey, returnDateAtSend 
   }
 }
 
+export async function logSmsDeliveryToSupabase({
+  booking_ref = null,
+  vehicle_id = null,
+  renter_phone = null,
+  message_type = null,
+  message_body = null,
+  status,
+  error = null,
+  provider_id = null,
+}) {
+  const sb = getSupabaseAdmin();
+  if (!sb || !status) return;
+  try {
+    await sb.from("sms_delivery_logs").insert({
+      booking_ref: booking_ref || null,
+      vehicle_id: vehicle_id || null,
+      renter_phone: renter_phone || null,
+      message_type: message_type || null,
+      message_body: message_body || null,
+      status,
+      error,
+      provider_id,
+    });
+  } catch (deliveryErr) {
+    console.warn("_sms-log: sms_delivery_logs write failed (non-fatal):", deliveryErr.message);
+  }
+}
+
 export async function sendDedupedSms({ bookingId, templateKey, phone, body, returnDateAtSend, metadata, forceSend = false }) {
   const normalizedPhone = normalizePhone(phone || "");
   if (!normalizedPhone || !body) return false;
   if (!bookingId) {
     console.warn(`_sms-log: sendDedupedSms called without bookingId for template "${templateKey}"`);
   }
-  const sb = getSupabaseAdmin();
   const logDelivery = async ({ status, error = null, provider_id = null }) => {
-    if (!sb) return;
-    try {
-      await sb.from("sms_delivery_logs").insert({
-        booking_ref:  bookingId || null,
-        vehicle_id:   null,
-        renter_phone: normalizedPhone || null,
-        message_type: templateKey || null,
-        message_body: body,
-        status,
-        error,
-        provider_id,
-      });
-    } catch (deliveryErr) {
-      console.warn("_sms-log: sms_delivery_logs write failed (non-fatal):", deliveryErr.message);
-    }
+    await logSmsDeliveryToSupabase({
+      booking_ref: bookingId || null,
+      vehicle_id: null,
+      renter_phone: normalizedPhone || null,
+      message_type: templateKey || null,
+      message_body: body,
+      status,
+      error,
+      provider_id,
+    });
   };
   const alreadyLogged = !forceSend && bookingId
     ? await isSmsLogged(bookingId, templateKey, returnDateAtSend || SMS_LOGS_NO_RETURN_DATE)
