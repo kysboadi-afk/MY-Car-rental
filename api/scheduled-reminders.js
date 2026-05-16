@@ -593,15 +593,17 @@ function alreadySentAny(booking, keys) {
 }
 
 function buildVehicleExtendLink(booking) {
-  const vehicleId = String(booking?.vehicleId || booking?.vehicle_id || "").trim();
-  if (!vehicleId) return "https://www.slytrans.com/manage-booking.html";
-  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(vehicleId)}&extend=1`;
+  const bookingId = booking?.bookingId || booking?.paymentIntentId || "";
+  const vehicleId = booking?.vehicleId || booking?.vehicle_id || "";
+  const manageToken = booking?.manageToken || booking?.manage_token || "";
+  return buildRenterPortalLinks({ bookingId, manageToken, vehicleId }).extendLink;
 }
 
 function buildManagePortalLink(booking) {
   const bookingId = booking?.bookingId || booking?.paymentIntentId || "";
   const vehicleId = booking?.vehicleId || booking?.vehicle_id || "";
-  return buildRenterPortalLinks({ bookingId, vehicleId }).manageLink;
+  const manageToken = booking?.manageToken || booking?.manage_token || "";
+  return buildRenterPortalLinks({ bookingId, manageToken, vehicleId }).manageLink;
 }
 
 function getBookingPaymentLinkWithFallback(booking) {
