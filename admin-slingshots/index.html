@@ -4928,9 +4928,9 @@ function applyBookingFilters() {
           ${b.status === 'pending_manual_payment' ? `
             <button class="btn btn-success btn-sm" onclick="markSlingshotPaymentReceived('${esc(b.bookingId || '')}',this)">Mark Payment Received</button>
           ` : ''}
-          ${['agreement_signed','pending_manual_payment','ready_for_pickup'].includes(b.status) ? `
+          ${['ready_for_pickup'].includes(b.status) ? `
             <button class="btn btn-secondary btn-sm" onclick="openSlingshotAgreement('${esc(b.bookingId || '')}')">Agreement</button>
-            <button class="btn btn-secondary btn-sm" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}',this)">Resend Agreement</button>
+            <button class="btn btn-secondary btn-sm" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}',this)">Send Agreement</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
@@ -5094,9 +5094,9 @@ function viewBooking(bookingId, vehicleId) {
     ${b.status === 'pending_manual_payment' ? `
       <button class="btn btn-success" onclick="markSlingshotPaymentReceived('${esc(b.bookingId || '')}',this)">💵 Mark Payment Received</button>
     ` : ''}
-    ${['agreement_signed','pending_manual_payment','ready_for_pickup'].includes(b.status) ? `
+    ${['ready_for_pickup'].includes(b.status) ? `
       <button class="btn btn-secondary" onclick="openSlingshotAgreement('${esc(b.bookingId || '')}')">📄 View Agreement</button>
-      <button class="btn btn-secondary" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}', this)">📄 Resend Agreement</button>
+      <button class="btn btn-secondary" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}', this)">📄 Send Agreement</button>
     ` : ''}
     ${b.status === 'booked_paid' ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
@@ -5299,11 +5299,11 @@ function resendSlingshotAgreement(bookingId, btn) {
     action: 'slingshot_resend_agreement',
     bookingId,
   }).then(() => {
-    showToast('Agreement email resent.', 'success');
+    showToast('Agreement sent to renter.', 'success');
   }).catch((err) => {
     showToast('Error: ' + err.message, 'error');
   }).finally(() => {
-    if (btn) { btn.disabled = false; btn.textContent = '📄 Resend Agreement'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📄 Send Agreement'; }
   });
 }
 
