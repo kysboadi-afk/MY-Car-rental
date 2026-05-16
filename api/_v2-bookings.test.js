@@ -1587,6 +1587,51 @@ test("send_payment_link: duplicate sends are deduped by sms_logs key", async () 
   assert.equal(sb.smsLogs.length, 1, "sms_logs should only store one row");
 });
 
+test("send_payment_link: force_sms bypasses dedup and resends SMS", async () => {
+  resetStore(); resetCalls();
+  const sb = createSendPaymentLinkSupabaseMock({
+    bookings: [{
+      booking_ref: "bk-force-001",
+      customer_id: "cust-force-001",
+      customer_name: "Force User",
+      customer_phone: "+13105550005",
+      renter_phone: null,
+      customer_email: "force@example.com",
+      vehicle_id: "camry",
+      pickup_date: "2026-06-01",
+      return_date: "2026-06-05",
+      remaining_balance: 75,
+      payment_intent_id: "pi_force",
+      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-force-001",
+      created_at: "2026-05-01T09:00:00.000Z",
+    }],
+  });
+  supabaseMockState.client = sb;
+
+  const first = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-force-001",
+  }), first);
+
+  const forced = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-force-001",
+    force_sms: true,
+  }), forced);
+
+  assert.equal(first._status, 200);
+  assert.equal(forced._status, 200);
+  assert.equal(first._body?.smsSent, true);
+  assert.equal(forced._body?.smsSent, true);
+  assert.equal(forced._body?.smsDedupSkipped, false);
+  assert.equal(smsCalls.length, 2, "force_sms should bypass dedup and send again");
+  assert.equal(sb.smsLogs.length, 1, "dedup key row should remain a single upserted record");
+});
+
 test("send_payment_link: SMS failure returns 500 and retry sends successfully", async () => {
   resetStore(); resetCalls();
   const sb = createSendPaymentLinkSupabaseMock({

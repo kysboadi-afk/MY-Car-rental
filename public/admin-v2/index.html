@@ -5774,6 +5774,7 @@ async function sendPaymentLinkForBooking(bookingId, opts = {}) {
   if (!bookingRef) { showToast('Booking ID is required.', 'error'); return; }
   const message = typeof opts.message === 'string' ? opts.message.trim() : '';
   const sendEmail = !!opts.sendEmail;
+  const forceSms = !!opts.forceSms;
   try {
     const data = await apiPost('/api/v2-bookings', {
       secret: adminSecret,
@@ -5781,6 +5782,7 @@ async function sendPaymentLinkForBooking(bookingId, opts = {}) {
       bookingId: bookingRef,
       send_sms: true,
       send_email: sendEmail,
+      force_sms: forceSms,
       message: message || undefined,
     });
     const bits = [];
@@ -5791,6 +5793,12 @@ async function sendPaymentLinkForBooking(bookingId, opts = {}) {
     showToast(`Payment link: ${bits.join(', ')}.`, data.smsSent || data.emailSent ? 'success' : 'warning');
     if (data.manageLink) {
       console.info('[send_payment_link] manage-booking link sent:', data.manageLink);
+    }
+    if (data.smsDedupSkipped && !forceSms) {
+      const shouldForceResend = confirm('A payment link SMS was sent recently. Send again now anyway?');
+      if (shouldForceResend) {
+        return sendPaymentLinkForBooking(bookingRef, { ...opts, forceSms: true });
+      }
     }
   } catch (err) {
     showToast('Failed to send payment link: ' + err.message, 'error');
