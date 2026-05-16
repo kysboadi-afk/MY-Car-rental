@@ -627,7 +627,6 @@ async function launchSlingshotPayment() {
     }
 
     sessionStorage.setItem("slyStripePublishable", publishableKey);
-    sessionStorage.setItem("slyPiSecret", clientSecret);
 
     // Initialize Stripe and show payment form
     var stripe   = Stripe(publishableKey);
