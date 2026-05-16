@@ -349,20 +349,6 @@
         <p class="rt-value" id="returnTimeDisplay">—</p>
       </div>
 
-      <div class="payment-choice-box">
-        <p class="payment-choice-title">Payment Option</p>
-        <div class="payment-choice-options">
-          <label>
-            <input type="radio" name="slPaymentOption" value="deposit" checked>
-            Pay refundable deposit now ($500)
-          </label>
-          <label>
-            <input type="radio" name="slPaymentOption" value="full">
-            Pay full amount now
-          </label>
-        </div>
-      </div>
-
       <!-- Contact info -->
       <label for="slName">Full Name</label>
       <input type="text" id="slName" placeholder="Enter your full name" autocomplete="off" required>
@@ -417,7 +403,7 @@
             <p>Renter must be <strong>21 years of age or older</strong> with a valid driver's license. Only the approved renter may operate the vehicle.</p>
 
             <h4>SECURITY DEPOSIT (Refundable)</h4>
-            <p>A <strong>$500 refundable security deposit</strong> is required at time of booking. It will be returned after the vehicle is inspected upon return (typically within 5–7 business days). Deposit covers damages, late fees, cleaning, traffic violations, tolls, and fuel.</p>
+            <p>A <strong>$500 refundable security deposit</strong> is due at pickup and will be collected in person. It will be returned after the vehicle is inspected upon return (typically within 5–7 business days). Deposit covers damages, late fees, cleaning, traffic violations, tolls, and fuel.</p>
 
             <h4>USE RESTRICTIONS</h4>
             <p>Renter agrees NOT to:</p>
@@ -450,9 +436,9 @@
             <h4>CANCELLATION POLICY</h4>
             <p>Free cancellation is available up to 24 hours before pickup. Late cancellation fees are non-refundable. No-show policy: no refund — full charge applies.</p>
 
-            <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
-            <p>By signing this agreement, renter expressly authorizes SLY Slingshot Rentals to charge the payment method on file for all amounts owed, including rental charges, security deposit deductions, vehicle damage, repair costs, late fees, fuel, cleaning, smoking, towing, storage, tickets, tolls, and administrative fees.</p>
-            <p>Renter agrees not to dispute, reverse, or initiate a chargeback for any legitimate charge incurred in accordance with this agreement. In the event of a payment dispute, this signed agreement serves as binding proof of authorization.</p>
+            <h4>PAYMENT COLLECTION</h4>
+            <p>Rental payment, security deposit, and any pickup-related charges are collected manually in person at pickup unless SLY Slingshot Rentals approves another arrangement in writing.</p>
+            <p>By signing this agreement, renter acknowledges responsibility for all legitimate rental charges, security-deposit deductions, vehicle damage, repair costs, late fees, fuel, cleaning, smoking, towing, storage, tickets, tolls, and administrative fees incurred under this agreement.</p>
 
             <h4>GOVERNING LAW</h4>
             <p>This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County. By signing, the renter acknowledges they have read, understood, and agreed to all terms above.</p>
@@ -483,7 +469,7 @@
           <span>$500.00</span>
         </div>
         <div class="total-breakdown-row total-row">
-          <span>Total charged today</span>
+          <span>Total due at pickup</span>
           <span>$<span id="totalAmountDisplay">0</span></span>
         </div>
         <div class="total-breakdown-row balance-row" id="remainingBalanceRow">
@@ -494,14 +480,23 @@
 
       <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
 
-      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Reserve Now — Pay $500 Deposit</button>
+      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Verify Identity &amp; Confirm Reservation</button>
       <p class="sl-book-urgency">Limited availability — weekends sell out fast</p>
-      <p class="deposit-notice" id="paymentOptionNotice">Pay $500 refundable deposit now to reserve — returned after inspection</p>
+      <p class="deposit-notice" id="paymentOptionNotice">Rental payment, deposit, and pickup charges are collected in person at pickup.</p>
       <label class="agree" style="margin-top:8px">
         <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
         <span>I have read and signed the Rental Agreement &amp; Terms</span>
       </label>
-      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation and Stripe identity verification.</p>
+      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation, Stripe identity verification, and agreement signing.</p>
+    </section>
+
+    <section class="booking" id="slManualConfirmation" style="display:none">
+      <h2>✅ Slingshot Reservation Confirmed</h2>
+      <p>Your identity verification and rental agreement are complete.</p>
+      <p><strong>Payment is due in person at pickup.</strong> Rental payment, deposit, and any pickup charges are no longer collected online for Slingshot bookings.</p>
+      <p><strong>Booking ID:</strong> <span id="slConfirmBookingId">—</span></p>
+      <p><a id="slConfirmManageLink" href="#" class="sign-agreement-btn" style="display:none">Open Renter Dashboard</a></p>
+      <p><a id="slConfirmAgreementLink" href="#" class="confirm-sign-btn" style="display:none">View Signed Agreement</a></p>
     </section>
 
     <!-- Stripe payment form (shown after booking creation, outside bookingSection) -->

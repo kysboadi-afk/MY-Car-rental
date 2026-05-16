@@ -51,12 +51,12 @@ const BOOKING_SELECT_COLS =
   "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
   "change_count, manage_token, balance_payment_link, pending_change, " +
-  "has_protection_plan, protection_plan_tier, " +
+  "has_protection_plan, protection_plan_tier, category, identity_session_id, " +
   "customer_name, customer_email, customer_phone, payment_intent_id, created_at";
 const BOOKING_SELECT_FALLBACK_COLS =
   "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
-  "change_count, customer_name, customer_email, customer_phone, created_at";
+  "change_count, category, identity_session_id, customer_name, customer_email, customer_phone, created_at";
 
 
 function normalizeLookupPhone(value) {
@@ -463,6 +463,8 @@ export default async function handler(req, res) {
       returnTime:  row.return_time,
       status:      row.status,
       paymentStatus: row.payment_status,
+      category:      row.category || null,
+      identitySessionId: row.identity_session_id || null,
       totalPrice:    totalPriceNum,
       depositPaid:   depositPaidNum,
       balanceDue,
@@ -486,6 +488,9 @@ export default async function handler(req, res) {
     }
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (String(row.category || "").toLowerCase() === "slingshot") {
+      return res.status(409).json({ error: "Slingshot bookings are paid in person at pickup and do not support online balance payments." });
+    }
     if (!MANAGE_ELIGIBLE_STATUSES.includes(row.status)) {
       return res.status(409).json({ error: "This booking is not eligible for balance payment." });
     }

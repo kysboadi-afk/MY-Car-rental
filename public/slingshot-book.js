@@ -35,7 +35,7 @@ var carData = null;                 // vehicle data from API
 var agreementSigned = false;        // true once renter signs the rental agreement
 var agreementSignature = "";        // typed name used as electronic signature
 var verifiedIdentitySessionId = null;
-var selectedPaymentOption = "deposit"; // "deposit" | "full"
+var selectedPaymentOption = "manual";
 
 // ----- Helpers -----
 function escHtml(str) {
@@ -58,18 +58,44 @@ function clearPayError() {
   if (el) { el.textContent = ""; el.style.display = "none"; }
 }
 
+function showSlingshotManualConfirmation(data) {
+  var bookingSection = document.getElementById("bookingSection");
+  var confirmSection = document.getElementById("slManualConfirmation");
+  var bookingIdEl = document.getElementById("slConfirmBookingId");
+  var manageEl = document.getElementById("slConfirmManageLink");
+  var agreementEl = document.getElementById("slConfirmAgreementLink");
+  if (bookingSection) bookingSection.style.display = "none";
+  if (confirmSection) confirmSection.style.display = "";
+  if (bookingIdEl) bookingIdEl.textContent = data && data.bookingId ? data.bookingId : "—";
+  if (manageEl) {
+    if (data && data.manageLink) {
+      manageEl.href = data.manageLink;
+      manageEl.style.display = "";
+    } else {
+      manageEl.style.display = "none";
+    }
+  }
+  if (agreementEl) {
+    if (data && data.agreementPdfUrl) {
+      agreementEl.href = data.agreementPdfUrl;
+      agreementEl.style.display = "";
+    } else {
+      agreementEl.style.display = "none";
+    }
+  }
+  if (confirmSection) confirmSection.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function getSelectedPaymentOption() {
-  var checked = document.querySelector('input[name="slPaymentOption"]:checked');
-  var value = checked ? String(checked.value || "").toLowerCase() : "deposit";
-  return value === "full" ? "full" : "deposit";
+  return "manual";
 }
 
 function computePaymentDetails(pkgKey, paymentOption) {
   var pkg = SLINGSHOT_PACKAGES[pkgKey];
   if (!pkg) return null;
   var total = pkg.price + SLINGSHOT_DEPOSIT;
-  var option = paymentOption === "full" ? "full" : "deposit";
-  var chargedToday = option === "full" ? total : SLINGSHOT_DEPOSIT;
+  var option = String(paymentOption || "manual").toLowerCase();
+  var chargedToday = option === "manual" ? 0 : (option === "full" ? total : SLINGSHOT_DEPOSIT);
   var balanceAtPickup = Math.max(0, total - chargedToday);
   return {
     packageLabel: pkg.label,
@@ -77,8 +103,8 @@ function computePaymentDetails(pkgKey, paymentOption) {
     totalAmount: total,
     chargedToday: chargedToday,
     balanceAtPickup: balanceAtPickup,
-    paymentType: option === "full" ? "full_payment" : "reservation_deposit",
-    paymentLabel: option === "full" ? "Full payment" : "Deposit payment",
+    paymentType: option === "manual" ? "manual_payment" : (option === "full" ? "full_payment" : "reservation_deposit"),
+    paymentLabel: option === "manual" ? "Manual payment" : (option === "full" ? "Full payment" : "Deposit payment"),
   };
 }
 
@@ -87,16 +113,10 @@ function updateBookBtnLabel() {
   if (!btn) return;
   var details = selectedPackage ? computePaymentDetails(selectedPackage, selectedPaymentOption) : null;
   if (!details) {
-    btn.textContent = selectedPaymentOption === "full"
-      ? "Reserve Now — Pay Full Amount"
-      : "Reserve Now — Pay $500 Deposit";
+    btn.textContent = "Verify Identity & Confirm Reservation";
     return;
   }
-  if (selectedPaymentOption === "full") {
-    btn.textContent = "Reserve Now — Pay $" + details.chargedToday.toFixed(2) + " Full Amount";
-  } else {
-    btn.textContent = "Reserve Now — Pay $" + details.chargedToday.toFixed(2) + " Deposit";
-  }
+  btn.textContent = "Verify Identity & Confirm Reservation";
 }
 
 /**
@@ -380,9 +400,7 @@ function updateTotalBreakdown() {
   if (!selectedPackage) {
     breakdownEl.style.display = "none";
     if (noticeEl) {
-      noticeEl.textContent = selectedPaymentOption === "full"
-        ? "Pay full rental amount now (includes refundable deposit)."
-        : "Pay $500 refundable deposit now to reserve — returned after inspection";
+      noticeEl.textContent = "Rental payment, deposit, and pickup charges are collected in person at pickup.";
     }
     updateBookBtnLabel();
     return;
@@ -393,13 +411,11 @@ function updateTotalBreakdown() {
 
   if (pkgLabel)     pkgLabel.textContent     = details.packageLabel + " rental";
   if (pkgPrice)     pkgPrice.textContent     = "$" + details.packagePrice.toFixed(2);
-  if (totalDisplay) totalDisplay.textContent = details.chargedToday.toFixed(2);
+  if (totalDisplay) totalDisplay.textContent = details.totalAmount.toFixed(2);
   if (balanceEl)    balanceEl.textContent    = details.balanceAtPickup.toFixed(2);
-  if (balanceRow)   balanceRow.style.display = details.balanceAtPickup > 0 ? "" : "none";
+  if (balanceRow)   balanceRow.style.display = "none";
   if (noticeEl) {
-    noticeEl.textContent = details.balanceAtPickup > 0
-      ? "Pay $500 refundable deposit now to reserve — returned after inspection"
-      : "Pay full rental amount now (includes refundable deposit).";
+    noticeEl.textContent = "Rental payment, deposit, and pickup charges are collected in person at pickup.";
   }
   breakdownEl.style.display = "";
   updateBookBtnLabel();
@@ -491,8 +507,6 @@ async function launchSlingshotPayment() {
   var emailInput = document.getElementById("slEmail");
   var phoneInput = document.getElementById("slPhone");
   var bookBtn    = document.getElementById("slBookBtn");
-  var paymentOption = selectedPaymentOption;
-
   if (!selectedPackage) { showPayError("Please select a rental package."); return; }
   if (!dateInput || !dateInput.value) { showPayError("Please select a pickup date."); return; }
   if (!timeSelect || !timeSelect.value) { showPayError("Please select a pickup time."); return; }
@@ -508,7 +522,7 @@ async function launchSlingshotPayment() {
   var agreeEl = document.getElementById("slAgree");
   if (!agreeEl || !agreeEl.checked) { showPayError("Please check the box to confirm you have signed the Rental Agreement."); return; }
 
-  if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Loading payment…"; }
+  if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Verifying identity…"; }
 
   try {
     var identitySessionId = await ensureSlingshotIdentityVerified({
@@ -518,14 +532,15 @@ async function launchSlingshotPayment() {
       phone: phone,
     });
 
-    // Call create-slingshot-booking
+    if (bookBtn) bookBtn.textContent = "Finalizing reservation…";
+
     var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vehicleId,
         slingshotPackage: selectedPackage,
-        paymentOption:    paymentOption,
+        paymentOption:    "deposit",
         pickupDate:       dateInput.value,
         pickupTime:       timeSelect.value,
         name,
@@ -542,20 +557,10 @@ async function launchSlingshotPayment() {
       throw err;
     }
 
-    var clientSecret    = data.clientSecret;
-    var publishableKey  = data.publishableKey;
     pendingBookingId    = data.bookingId;
 
-    if (!clientSecret || !publishableKey) {
-      throw new Error("Invalid server response — missing Stripe credentials.");
-    }
-
-    // Save publishable key and client secret for success.html
-    sessionStorage.setItem("slyStripePublishable", publishableKey);
-    sessionStorage.setItem("slyPiSecret", clientSecret);
-
     // Build booking payload for success.html → send-reservation-email
-    var details = computePaymentDetails(selectedPackage, paymentOption);
+    var details = computePaymentDetails(selectedPackage, "manual");
     if (!details) throw new Error("Invalid package selected. Please choose a package and try again.");
     var pkg = SLINGSHOT_PACKAGES[selectedPackage];
     var returnResult = computeReturnHHMM(timeSelect.value, pkg.hours);
@@ -580,7 +585,7 @@ async function launchSlingshotPayment() {
       total:              total.toFixed(2),
       chargedToday:       chargedToday.toFixed(2),
       balanceAtPickup:    balanceAtPickup.toFixed(2),
-      paymentOption:      paymentOption,
+      paymentOption:      "manual",
       paymentType:        details.paymentType,
       slingshotPackage:   selectedPackage,
       packageLabel:       pkg.label,
@@ -591,6 +596,37 @@ async function launchSlingshotPayment() {
     };
 
     sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+
+    if (data && data.manualPayment) {
+      var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: pendingBookingId,
+          signature: agreementSignature,
+        }),
+      });
+      var signData = await signResp.json();
+      if (!signResp.ok) {
+        throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
+      }
+      paymentFormSubmitted = true;
+      showSlingshotManualConfirmation({
+        bookingId: signData.bookingId || pendingBookingId,
+        manageLink: signData.manageLink || data.manageLink || "",
+        agreementPdfUrl: signData.agreementPdfUrl || "",
+      });
+      return;
+    }
+
+    var clientSecret    = data.clientSecret;
+    var publishableKey  = data.publishableKey;
+
+    if (!clientSecret || !publishableKey) {
+      throw new Error("Invalid server response — missing Stripe credentials.");
+    }
+
+    sessionStorage.setItem("slyStripePublishable", publishableKey);
 
     // Initialize Stripe and show payment form
     var stripe   = Stripe(publishableKey);
@@ -713,7 +749,7 @@ async function launchSlingshotPayment() {
 
   } catch (err) {
     console.error("slingshot-book payment error:", err);
-    showPayError(err.message || "Payment initialization failed. Please try again or call (844) 511-4059.");
+    showPayError(err.message || "Reservation could not be completed. Please try again or call (844) 511-4059.");
     if (bookBtn) { bookBtn.disabled = false; updateBookBtnLabel(); }
   }
 }
@@ -1009,14 +1045,6 @@ function initBookingForm() {
   if (slSmsConsent) {
     slSmsConsent.addEventListener("change", updateBookBtn);
   }
-
-  document.querySelectorAll('input[name="slPaymentOption"]').forEach(function(opt) {
-    opt.addEventListener("change", function() {
-      selectedPaymentOption = getSelectedPaymentOption();
-      updateTotalBreakdown();
-      updateBookBtn();
-    });
-  });
 
   // Book button
   var bookBtn = document.getElementById("slBookBtn");

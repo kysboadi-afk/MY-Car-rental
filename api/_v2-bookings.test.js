@@ -96,6 +96,7 @@ mock.module("./_booking-automation.js", {
     autoUpsertBooking:              async (b) => { automationCalls.booking.push({ ...b }); },
     autoCreateBlockedDate:          async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
     autoReleaseBlockedDateOnReturn: async (vid, ref) => { automationCalls.releaseBlocked.push({ vehicleId: vid, bookingRef: ref }); },
+    writeAuditLog:                  async () => {},
     parseTime12h:            (t) => {
       if (!t) return null;
       const m = String(t).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);

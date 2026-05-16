@@ -261,6 +261,13 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
   // ── Status badge mapping ────────────────────────────────────────────────────
   const STATUS_MAP = {
+    inquiry_received:     { label: "Inquiry Received",     cls: "badge-pending" },
+    identity_pending:     { label: "Identity Pending",     cls: "badge-review" },
+    identity_verified:    { label: "Identity Verified",    cls: "badge-review" },
+    agreement_pending:    { label: "Agreement Pending",    cls: "badge-pending" },
+    agreement_signed:     { label: "Agreement Signed",     cls: "badge-confirmed" },
+    pending_manual_payment: { label: "Pay at Pickup",      cls: "badge-review" },
+    ready_for_pickup:     { label: "Ready for Pickup",     cls: "badge-confirmed" },
     reserved:             { label: "Upcoming",         cls: "badge-upcoming" },
     reserved_unpaid:      { label: "Pending Payment",  cls: "badge-pending" },
     pending:              { label: "Pending Review",   cls: "badge-pending" },
@@ -315,6 +322,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const firstName = (b.customerName || "").split(" ")[0];
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
     const statusKey = normalizeStatusKey(b.status);
+    const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
     const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
     const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
     const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
@@ -335,8 +343,10 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("s-booking-id", b.bookingId || "–");
     setHtml("s-status", statusBadgeHtml(b.status));
     setText("vehicle-status-tag", statusKey === "overdue" ? "Action needed" : "Current booking details");
-    setText("hero-payment-chip", balance > 0 ? `${fmt(balance)} still due` : "Paid in full");
-    setText("hero-plan-chip", plan ? `Plan: ${plan.status || "active"}` : "No active payment plan");
+    setText("hero-payment-chip", isSlingshot && ["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
+      ? "Payment due at pickup"
+      : (balance > 0 ? `${fmt(balance)} still due` : "Paid in full"));
+    setText("hero-plan-chip", isSlingshot ? "Manual slingshot workflow" : (plan ? `Plan: ${plan.status || "active"}` : "No active payment plan"));
 
     const vehicleLabel = [b.vehicleYear, b.vehicleName].filter(Boolean).join(" ");
     setText("s-vehicle", vehicleLabel || "–");
@@ -374,7 +384,11 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("stat-next-due", nextDueText);
     setText("stat-plan-progress", progressText);
     setText("stat-paid-note", paid > 0 ? `${fmt(paid)} recorded across deposit and later payments.` : "No posted payments yet.");
-    setText("stat-balance-note", balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.");
+    setText("stat-balance-note", isSlingshot
+      ? (["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
+          ? "Payment for this slingshot booking is collected in person at pickup."
+          : "Complete the onboarding steps below to finish your slingshot reservation.")
+      : (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking."));
     setText("stat-overdue-note", overdueAmount > 0 ? "Past-due amount requires attention." : "No overdue amount is currently flagged.");
     setText("stat-next-due-note", plan?.nextDueDate ? "Based on your active payment plan." : "No payment-plan due date is currently scheduled.");
     setText("stat-plan-progress-note", plan ? "Installment completion using the active plan." : "If a plan is created later, progress will appear here.");
@@ -387,7 +401,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     if (fillEl) fillEl.style.width = `${paidPct}%`;
 
     const managedStatuses = ["reserved", "reserved_unpaid", "pending", "pending_verification", "approved", "active", "active_rental", "booked_paid", "overdue", "partial"];
-    const canPayBalance = managedStatuses.includes(statusKey) && balance > 0;
+    const canPayBalance = !isSlingshot && managedStatuses.includes(statusKey) && balance > 0;
     currentBalance = balance;
     if (canPayBalance && $payBalSection) {
       $payBalSection.style.display = "block";
@@ -425,7 +439,12 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     if (isLocked) {
       if ($lockNotice) {
         $lockNotice.style.display = "block";
-        if (statusKey === "approved" || statusKey === "active" || statusKey === "active_rental" || statusKey === "booked_paid") {
+        if (isSlingshot && (statusKey === "identity_pending" || statusKey === "identity_verified" || statusKey === "agreement_pending")) {
+          const resumeHref = `https://www.slytrans.com/slingshot-book.html?vehicle=${encodeURIComponent(b.vehicleId || "")}&resume=${encodeURIComponent(b.bookingId || "")}`;
+          $lockNotice.innerHTML = `📝 Complete your slingshot onboarding to continue. <a href="${resumeHref}">Resume identity / agreement steps</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.`;
+        } else if (isSlingshot && (statusKey === "agreement_signed" || statusKey === "pending_manual_payment" || statusKey === "ready_for_pickup")) {
+          $lockNotice.innerHTML = "💵 Your slingshot payment will be collected in person at pickup. Use this dashboard to view your agreement and booking details.";
+        } else if (statusKey === "approved" || statusKey === "active" || statusKey === "active_rental" || statusKey === "booked_paid") {
           $lockNotice.innerHTML = "✅ Your booking is confirmed. Dates and vehicle cannot be changed online. Please call <a href=\"tel:+18445114059\">(844) 511-4059</a> if you need assistance.";
         } else if (statusKey === "overdue") {
           $lockNotice.innerHTML = "⚠️ Your rental is overdue. Please return the vehicle and contact us immediately at <a href=\"tel:+18445114059\">(844) 511-4059</a>.";

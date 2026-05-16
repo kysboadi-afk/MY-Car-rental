@@ -4455,6 +4455,13 @@ function bookingRowColor(b, derived) {
 function bookingStatusBadge(b, derived) {
   if (!derived) derived = bookingDerivedStatus(b, new Date());
   const map = {
+    inquiry_received:   ['badge-gray',   'Inquiry'],
+    identity_pending:   ['badge-orange', 'Identity Pending'],
+    identity_verified:  ['badge-blue',   'Identity Verified'],
+    agreement_pending:  ['badge-orange', 'Agreement Pending'],
+    agreement_signed:   ['badge-green',  'Agreement Signed'],
+    pending_manual_payment: ['badge-purple', 'Awaiting Payment'],
+    ready_for_pickup:   ['badge-green',  'Ready for Pickup'],
     reserved_unpaid:   ['badge-orange', 'Pending'],
     booked_paid:       ['badge-green',  'Confirmed'],
     active_rental:     ['badge-blue',   'Active'],
@@ -4915,6 +4922,16 @@ function applyBookingFilters() {
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
           ` : ''}
+          ${b.status === 'agreement_pending' || b.status === 'identity_verified' ? `
+            <button class="btn btn-success btn-sm" onclick="adminMarkSlingshotAgreementSigned('${esc(b.bookingId || '')}',this)">Sign Agreement</button>
+          ` : ''}
+          ${b.status === 'pending_manual_payment' ? `
+            <button class="btn btn-success btn-sm" onclick="markSlingshotPaymentReceived('${esc(b.bookingId || '')}',this)">Mark Payment Received</button>
+          ` : ''}
+          ${['agreement_signed','pending_manual_payment','ready_for_pickup'].includes(b.status) ? `
+            <button class="btn btn-secondary btn-sm" onclick="openSlingshotAgreement('${esc(b.bookingId || '')}')">Agreement</button>
+            <button class="btn btn-secondary btn-sm" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}',this)">Resend Agreement</button>
+          ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
               const extReturnDt = bookingReturnDateTime(b);
@@ -5071,6 +5088,16 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
     ` : ''}
+    ${b.status === 'agreement_pending' || b.status === 'identity_verified' ? `
+      <button class="btn btn-success" onclick="adminMarkSlingshotAgreementSigned('${esc(b.bookingId || '')}',this)">✍ Mark Agreement Signed</button>
+    ` : ''}
+    ${b.status === 'pending_manual_payment' ? `
+      <button class="btn btn-success" onclick="markSlingshotPaymentReceived('${esc(b.bookingId || '')}',this)">💵 Mark Payment Received</button>
+    ` : ''}
+    ${['agreement_signed','pending_manual_payment','ready_for_pickup'].includes(b.status) ? `
+      <button class="btn btn-secondary" onclick="openSlingshotAgreement('${esc(b.bookingId || '')}')">📄 View Agreement</button>
+      <button class="btn btn-secondary" onclick="resendSlingshotAgreement('${esc(b.bookingId || '')}', this)">📄 Resend Agreement</button>
+    ` : ''}
     ${b.status === 'booked_paid' ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
@@ -5222,6 +5249,75 @@ function markBookingPaymentPaid(bookingId, vehicleId, btn) {
       showToast('Error: ' + err.message, 'error');
       if (btn) btn.disabled = false;
     });
+}
+
+function markSlingshotPaymentReceived(bookingId, btn) {
+  const method = (prompt('Payment method received? (cash, card, zelle, manual)', 'cash') || '').trim().toLowerCase();
+  if (!method) return;
+  const amount = (prompt('Amount received (leave blank to use remaining balance)', '') || '').trim();
+  const notes = (prompt('Payment notes (optional)', '') || '').trim();
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret,
+    action: 'slingshot_mark_payment_received',
+    bookingId,
+    paymentMethod: method,
+    amountPaid: amount ? Number(amount) : undefined,
+    notes,
+  }).then(() => {
+    showToast('Slingshot payment marked received.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
+  });
+}
+
+function adminMarkSlingshotAgreementSigned(bookingId, btn) {
+  const notes = (prompt('Optional admin override note', '') || '').trim();
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret,
+    action: 'slingshot_mark_agreement_signed',
+    bookingId,
+    notes,
+  }).then(() => {
+    showToast('Agreement marked signed.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
+  });
+}
+
+function resendSlingshotAgreement(bookingId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret,
+    action: 'slingshot_resend_agreement',
+    bookingId,
+  }).then(() => {
+    showToast('Agreement email resent.', 'success');
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+  }).finally(() => {
+    if (btn) { btn.disabled = false; btn.textContent = '📄 Resend Agreement'; }
+  });
+}
+
+function openSlingshotAgreement(bookingId) {
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret,
+    action: 'get_agreement_url',
+    bookingId,
+  }).then((data) => {
+    if (data && data.url) window.open(data.url, '_blank', 'noopener');
+    else showToast('Agreement link unavailable.', 'error');
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+  });
 }
 
 function handleReturn(bookingRef, btn) {
@@ -5432,6 +5528,13 @@ function loadRawBookings() {
       tableEl.style.display = '';
 
       const STATUS_LABELS = {
+        inquiry_received: 'Inquiry',
+        identity_pending: 'Identity Pending',
+        identity_verified: 'Identity Verified',
+        agreement_pending: 'Agreement Pending',
+        agreement_signed: 'Agreement Signed',
+        pending_manual_payment: 'Awaiting Payment',
+        ready_for_pickup: 'Ready',
         pending: 'Pending', approved: 'Approved', active: 'Active',
         completed: 'Completed', cancelled: 'Cancelled',
         reserved_unpaid: 'Reserved', booked_paid: 'Paid', active_rental: 'Active',
@@ -5440,10 +5543,10 @@ function loadRawBookings() {
 
       document.getElementById('raw-bookings-tbody').innerHTML = rows.map((b) => {
         const statusLabel = STATUS_LABELS[b.status] || esc(b.status || '–');
-        const statusColor = ['active','active_rental','approved','booked_paid'].includes(b.status) ? 'var(--success)'
+        const statusColor = ['active','active_rental','approved','booked_paid','agreement_signed','ready_for_pickup'].includes(b.status) ? 'var(--success)'
           : ['completed','completed_rental'].includes(b.status) ? 'var(--text-sub)'
           : ['cancelled','cancelled_rental'].includes(b.status) ? 'var(--danger)'
-          : ['pending','reserved_unpaid'].includes(b.status) ? 'var(--warning)'
+          : ['pending','reserved_unpaid','identity_pending','agreement_pending','pending_manual_payment','inquiry_received'].includes(b.status) ? 'var(--warning)'
           : 'var(--text)';
         return `<tr>
           <td style="font-family:monospace;font-size:11px;">${esc((b.bookingId || '').slice(0,12))}…</td>
@@ -6109,6 +6212,13 @@ function fmt12h(hhmm) {
 
 function statusBadge(status) {
   const map = {
+    inquiry_received:   'badge-gray',
+    identity_pending:   'badge-orange',
+    identity_verified:  'badge-blue',
+    agreement_pending:  'badge-orange',
+    agreement_signed:   'badge-green',
+    pending_manual_payment: 'badge-purple',
+    ready_for_pickup:   'badge-green',
     reserved_unpaid:   'badge-orange',
     booked_paid:       'badge-green',
     active_rental:     'badge-blue',
@@ -6116,6 +6226,13 @@ function statusBadge(status) {
     cancelled_rental:  'badge-red',
   };
   const labels = {
+    inquiry_received:   'Inquiry',
+    identity_pending:   'Identity Pending',
+    identity_verified:  'Identity Verified',
+    agreement_pending:  'Agreement Pending',
+    agreement_signed:   'Agreement Signed',
+    pending_manual_payment: 'Awaiting Payment',
+    ready_for_pickup:   'Ready for Pickup',
     reserved_unpaid:  'Pending',
     booked_paid:      'Confirmed',
     active_rental:    'Active',
