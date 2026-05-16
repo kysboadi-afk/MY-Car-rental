@@ -26,7 +26,7 @@
 
 import crypto from "crypto";
 import nodemailer from "nodemailer";
-import { loadBookings, saveBookings } from "./_bookings.js";
+import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";

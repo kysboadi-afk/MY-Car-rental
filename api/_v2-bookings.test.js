@@ -47,6 +47,18 @@ const bookingsStore = {};
 const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], releaseBlocked: [] };
 // SMS calls
 const smsCalls = [];
+const smsMockState = { shouldThrow: false, errorMessage: "TextMagic send failed" };
+const paymentPlanProgressMockState = {
+  value: {
+    has_active_plan: false,
+    remaining_balance: 0,
+    overdue_amount: 0,
+    next_due_date: null,
+    remaining_installments: 0,
+  },
+};
+const sentEmails = [];
+const emailMockState = { shouldThrow: false, errorMessage: "SMTP send failed" };
 // Supabase mock — not used by these tests (automation is mocked out)
 const supabaseMockState = { client: null };
 
@@ -140,7 +152,32 @@ mock.module("./_availability.js", {
 
 mock.module("./_textmagic.js", {
   namedExports: {
-    sendSms: async (phone, body) => { smsCalls.push({ phone, body }); },
+    sendSms: async (phone, body) => {
+      smsCalls.push({ phone, body });
+      if (smsMockState.shouldThrow) {
+        throw new Error(smsMockState.errorMessage);
+      }
+      return { id: `tm-${smsCalls.length}` };
+    },
+  },
+});
+
+mock.module("./_payment-plan-reconcile.js", {
+  namedExports: {
+    computePaymentPlanProgress: async () => ({ ...paymentPlanProgressMockState.value }),
+  },
+});
+
+mock.module("nodemailer", {
+  defaultExport: {
+    createTransport: () => ({
+      sendMail: async (payload) => {
+        sentEmails.push({ ...payload });
+        if (emailMockState.shouldThrow) {
+          throw new Error(emailMockState.errorMessage);
+        }
+      },
+    }),
   },
 });
 
@@ -274,7 +311,109 @@ function resetCalls() {
   automationCalls.blocked.length = 0;
   automationCalls.releaseBlocked.length = 0;
   smsCalls.length = 0;
+  sentEmails.length = 0;
+  smsMockState.shouldThrow = false;
+  smsMockState.errorMessage = "TextMagic send failed";
+  emailMockState.shouldThrow = false;
+  emailMockState.errorMessage = "SMTP send failed";
+  paymentPlanProgressMockState.value = {
+    has_active_plan: false,
+    remaining_balance: 0,
+    overdue_amount: 0,
+    next_due_date: null,
+    remaining_installments: 0,
+  };
   supabaseMockState.client = null;
+}
+
+function createSendPaymentLinkSupabaseMock({ bookings = [] } = {}) {
+  const rows = bookings.map((r) => ({ ...r }));
+  const smsLogs = [];
+  const smsDeliveryLogs = [];
+
+  return {
+    rows,
+    smsLogs,
+    smsDeliveryLogs,
+    from(table) {
+      if (table === "bookings") {
+        const filters = [];
+        let orderBy = null;
+        let orderAsc = true;
+        let limitCount = null;
+        return {
+          select() { return this; },
+          eq(column, value) {
+            filters.push((row) => row[column] === value);
+            return this;
+          },
+          order(column, opts = {}) {
+            orderBy = column;
+            orderAsc = opts.ascending !== false;
+            return this;
+          },
+          limit(value) {
+            limitCount = Number(value);
+            return this;
+          },
+          async maybeSingle() {
+            let found = rows.filter((row) => filters.every((fn) => fn(row)));
+            if (orderBy) {
+              found = found.slice().sort((a, b) => {
+                const av = a?.[orderBy];
+                const bv = b?.[orderBy];
+                if (av === bv) return 0;
+                return orderAsc ? (av > bv ? 1 : -1) : (av > bv ? -1 : 1);
+              });
+            }
+            if (Number.isFinite(limitCount) && limitCount >= 0) {
+              found = found.slice(0, limitCount);
+            }
+            return { data: found[0] || null, error: null };
+          },
+        };
+      }
+
+      if (table === "sms_logs") {
+        const filters = {};
+        return {
+          select() { return this; },
+          eq(column, value) {
+            filters[column] = value;
+            return this;
+          },
+          async maybeSingle() {
+            const existing = smsLogs.find((item) =>
+              item.booking_id === filters.booking_id &&
+              item.template_key === filters.template_key &&
+              item.return_date_at_send === filters.return_date_at_send
+            );
+            return { data: existing || null, error: null };
+          },
+          async upsert(row) {
+            const exists = smsLogs.some((item) =>
+              item.booking_id === row.booking_id &&
+              item.template_key === row.template_key &&
+              item.return_date_at_send === row.return_date_at_send
+            );
+            if (!exists) smsLogs.push({ ...row, id: smsLogs.length + 1 });
+            return { error: null };
+          },
+        };
+      }
+
+      if (table === "sms_delivery_logs") {
+        return {
+          async insert(row) {
+            smsDeliveryLogs.push({ ...row, id: smsDeliveryLogs.length + 1 });
+            return { error: null };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected table: ${table}`);
+    },
+  };
 }
 
 // ─── Minimal create payload ───────────────────────────────────────────────────
@@ -1279,4 +1418,201 @@ test("delete: returns 400 when bookingId is missing", async () => {
   await handler(makeReq({ secret: "test-admin-secret", action: "delete" }), res);
   assert.equal(res._status, 400);
   assert.match(res._body?.error || "", /bookingId is required/);
+});
+
+test("send_payment_link: bookingId path sends deduped SMS with payment-plan context", async () => {
+  resetStore(); resetCalls();
+  supabaseMockState.client = createSendPaymentLinkSupabaseMock({
+    bookings: [{
+      booking_ref: "bk-send-001",
+      customer_id: "cust-001",
+      customer_name: "Alice Smith",
+      customer_phone: "+13105550001",
+      renter_phone: null,
+      customer_email: "alice@example.com",
+      vehicle_id: "camry",
+      pickup_date: "2026-06-01",
+      return_date: "2026-06-05",
+      remaining_balance: 170.5,
+      payment_intent_id: "pi_balance_001",
+      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-send-001",
+      created_at: "2026-05-01T10:00:00.000Z",
+    }],
+  });
+  paymentPlanProgressMockState.value = {
+    has_active_plan: true,
+    remaining_balance: 120.25,
+    overdue_amount: 30,
+    next_due_date: "2026-06-07T00:00:00.000Z",
+    remaining_installments: 2,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-send-001",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body?.success, true);
+  assert.equal(res._body?.bookingId, "bk-send-001");
+  assert.equal(res._body?.smsSent, true);
+  assert.equal(res._body?.smsDedupSkipped, false);
+  assert.equal(res._body?.paymentPlan?.hasActivePlan, true);
+  assert.equal(res._body?.paymentPlan?.remainingBalance, 120.25);
+  assert.equal(res._body?.paymentPlan?.overdueAmount, 30);
+  assert.equal(res._body?.paymentPlan?.nextDueDate, "2026-06-07");
+  assert.equal(smsCalls.length, 1, "SMS should be sent once");
+  assert.match(smsCalls[0].body, /Booking: bk-send-001/);
+  assert.match(smsCalls[0].body, /Overdue amount: \$30\.00\./);
+});
+
+test("send_payment_link: customerId path resolves latest booking and supports email-only send", async () => {
+  resetStore(); resetCalls();
+  process.env.SMTP_HOST = "smtp.test.invalid";
+  process.env.SMTP_PORT = "587";
+  process.env.SMTP_USER = "test@test.invalid";
+  process.env.SMTP_PASS = "test-password";
+
+  supabaseMockState.client = createSendPaymentLinkSupabaseMock({
+    bookings: [
+      {
+        booking_ref: "bk-customer-older",
+        customer_id: "cust-200",
+        customer_name: "Bob Rider",
+        customer_phone: "+13105550002",
+        renter_phone: null,
+        customer_email: "bob@example.com",
+        vehicle_id: "camry",
+        pickup_date: "2026-06-01",
+        return_date: "2026-06-05",
+        remaining_balance: 80,
+        payment_intent_id: "pi_old",
+        balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-customer-older",
+        created_at: "2026-05-01T09:00:00.000Z",
+      },
+      {
+        booking_ref: "bk-customer-newer",
+        customer_id: "cust-200",
+        customer_name: "Bob Rider",
+        customer_phone: "+13105550002",
+        renter_phone: null,
+        customer_email: "bob@example.com",
+        vehicle_id: "camry2013",
+        pickup_date: "2026-06-10",
+        return_date: "2026-06-14",
+        remaining_balance: 95,
+        payment_intent_id: "pi_new",
+        balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-customer-newer",
+        created_at: "2026-05-10T09:00:00.000Z",
+      },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    customerId: "cust-200",
+    send_sms: false,
+    send_email: true,
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body?.bookingId, "bk-customer-newer", "must resolve latest booking for customer");
+  assert.equal(res._body?.smsSent, false);
+  assert.equal(res._body?.emailSent, true);
+  assert.equal(smsCalls.length, 0, "SMS should be disabled");
+  assert.equal(sentEmails.length, 1, "email should be sent");
+  assert.equal(sentEmails[0].to, "bob@example.com");
+  assert.match(String(sentEmails[0].html || ""), /bk-customer-newer/);
+});
+
+test("send_payment_link: duplicate sends are deduped by sms_logs key", async () => {
+  resetStore(); resetCalls();
+  const sb = createSendPaymentLinkSupabaseMock({
+    bookings: [{
+      booking_ref: "bk-dedup-001",
+      customer_id: "cust-dedup-001",
+      customer_name: "Dedup User",
+      customer_phone: "+13105550003",
+      renter_phone: null,
+      customer_email: "dedup@example.com",
+      vehicle_id: "camry",
+      pickup_date: "2026-06-01",
+      return_date: "2026-06-05",
+      remaining_balance: 60,
+      payment_intent_id: "pi_dedup",
+      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-dedup-001",
+      created_at: "2026-05-01T09:00:00.000Z",
+    }],
+  });
+  supabaseMockState.client = sb;
+
+  const first = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-dedup-001",
+  }), first);
+  const second = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-dedup-001",
+  }), second);
+
+  assert.equal(first._status, 200);
+  assert.equal(second._status, 200);
+  assert.equal(first._body?.smsSent, true);
+  assert.equal(second._body?.smsSent, false);
+  assert.equal(second._body?.smsDedupSkipped, true);
+  assert.equal(smsCalls.length, 1, "dedup should prevent second provider send");
+  assert.equal(sb.smsLogs.length, 1, "sms_logs should only store one row");
+});
+
+test("send_payment_link: SMS failure returns 500 and retry sends successfully", async () => {
+  resetStore(); resetCalls();
+  const sb = createSendPaymentLinkSupabaseMock({
+    bookings: [{
+      booking_ref: "bk-retry-001",
+      customer_id: "cust-retry-001",
+      customer_name: "Retry User",
+      customer_phone: "+13105550004",
+      renter_phone: null,
+      customer_email: "retry@example.com",
+      vehicle_id: "camry",
+      pickup_date: "2026-06-01",
+      return_date: "2026-06-05",
+      remaining_balance: 45,
+      payment_intent_id: "pi_retry",
+      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-retry-001",
+      created_at: "2026-05-01T09:00:00.000Z",
+    }],
+  });
+  supabaseMockState.client = sb;
+
+  smsMockState.shouldThrow = true;
+  smsMockState.errorMessage = "simulated sms provider outage";
+  const failed = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-retry-001",
+  }), failed);
+  assert.equal(failed._status, 500);
+  assert.match(String(failed._body?.error || ""), /simulated sms provider outage/);
+  assert.equal(sb.smsLogs.length, 0, "failed send must not create dedup lock");
+
+  smsMockState.shouldThrow = false;
+  const retried = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-retry-001",
+  }), retried);
+  assert.equal(retried._status, 200);
+  assert.equal(retried._body?.smsSent, true);
+  assert.equal(sb.smsLogs.length, 1, "successful retry should log dedup row once");
 });
