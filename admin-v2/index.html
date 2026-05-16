@@ -4051,7 +4051,15 @@ async function apiPost(path, body, signal = undefined) {
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
+function ensureApplicationsPageMountedInContent() {
+  const applicationsPage = document.getElementById('page-applications');
+  const content = document.querySelector('.main .content');
+  if (!applicationsPage || !content) return;
+  if (applicationsPage.parentElement !== content) content.appendChild(applicationsPage);
+}
+
 function navigate(page) {
+  ensureApplicationsPageMountedInContent();
   // Hide all pages
   document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
