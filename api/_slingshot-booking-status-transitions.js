@@ -5,6 +5,7 @@ const ALLOWED_TRANSITIONS = {
   inquiry_received: new Set(["identity_pending", "identity_verified", "agreement_pending", "cancelled_rental"]),
   identity_pending: new Set(["identity_verified", "agreement_pending", "cancelled_rental"]),
   identity_verified: new Set(["agreement_pending", "agreement_signed", "pending_manual_payment", "cancelled_rental"]),
+  pending_checkout: new Set(["agreement_pending", "agreement_signed", "pending_manual_payment", "cancelled_rental"]),
   agreement_pending: new Set(["agreement_signed", "pending_manual_payment", "cancelled_rental"]),
   agreement_signed: new Set(["pending_manual_payment", "ready_for_pickup", "cancelled_rental"]),
   pending_manual_payment: new Set(["ready_for_pickup", "cancelled_rental"]),

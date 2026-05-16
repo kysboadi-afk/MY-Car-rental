@@ -121,7 +121,7 @@ export default async function handler(req, res) {
   }
 
   const currentStatus = String(booking.status || "").trim();
-  const allowedStatuses = new Set(["identity_verified", "agreement_pending", "agreement_signed", "pending_manual_payment", "ready_for_pickup"]);
+  const allowedStatuses = new Set(["identity_verified", "pending_checkout", "agreement_pending", "agreement_signed", "pending_manual_payment", "ready_for_pickup"]);
   if (!allowedStatuses.has(currentStatus)) {
     return res.status(409).json({ error: `Booking is not ready for agreement signing (current status: ${currentStatus || "unknown"}).` });
   }
@@ -207,7 +207,7 @@ export default async function handler(req, res) {
     .eq("booking_ref", trimmedBookingId);
 
   let currentBookingState = booking;
-  if (currentStatus === "identity_verified") {
+  if (currentStatus === "identity_verified" || currentStatus === "pending_checkout") {
     currentBookingState = await applySlingshotBookingStatusTransition(sb, currentBookingState, "agreement_pending", {
       changedBy: "slingshot-agreement",
     });
