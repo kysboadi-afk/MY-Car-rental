@@ -78,6 +78,7 @@ export default async function handler(req, res) {
   const {
     applicationId,
     name, phone, email, age, experience, apps, agreeTerms,
+    agreeSmsConsent,
     agreeBackgroundCheck, driverLicenseNumber, driverLicenseState, zipcode,
     licenseFileName, licenseMimeType, licenseBase64,
     hasInsurance, insuranceBase64, insuranceFileName, insuranceMimeType,
@@ -88,6 +89,12 @@ export default async function handler(req, res) {
     return res
       .status(400)
       .json({ error: "Missing required fields: name, phone, experience." });
+  }
+
+  if (!agreeTerms || !agreeSmsConsent || !agreeBackgroundCheck) {
+    return res.status(400).json({
+      error: "All required consents must be accepted: terms, SMS consent, and background check authorization.",
+    });
   }
 
   const uploadDiagnostics = buildUploadDiagnostics(req, [
@@ -193,7 +200,7 @@ export default async function handler(req, res) {
         experience,
         apps,
         agreeTerms,
-        agreeSmsConsent: !!(req.body && req.body.agreeSmsConsent),
+        agreeSmsConsent: !!agreeSmsConsent,
         agreeBackgroundCheck: !!agreeBackgroundCheck,
         hasInsurance,
         protectionPlanPref,

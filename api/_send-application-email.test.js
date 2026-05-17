@@ -86,6 +86,8 @@ const VALID_BODY = {
   experience: "3–5 years",
   apps: ["DoorDash", "Uber Eats"],
   agreeTerms: true,
+  agreeSmsConsent: true,
+  agreeBackgroundCheck: true,
   licenseFileName: "license.jpg",
   licenseMimeType: "image/jpeg",
   licenseBase64: Buffer.from("fake-image-data").toString("base64"),
@@ -127,6 +129,13 @@ test("returns 400 when required fields are missing", async () => {
   await handler(makeReq("POST", { name: "Jane" }), res);
   assert.equal(res._status, 400);
   assert.ok(res._body.error);
+});
+
+test("returns 400 when required consents are not all accepted", async () => {
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, agreeBackgroundCheck: false }), res);
+  assert.equal(res._status, 400);
+  assert.ok(String(res._body.error || "").includes("required consents"));
 });
 
 test("returns 200 and sends email for valid application", async () => {
@@ -193,7 +202,15 @@ test("infers attachment MIME type from filename when mobile browsers omit it", a
 test("sends without attachment when license fields are omitted", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
+  const body = {
+    name: "Jane Driver",
+    phone: TEST_PHONE,
+    age: 25,
+    experience: "3–5 years",
+    agreeTerms: true,
+    agreeSmsConsent: true,
+    agreeBackgroundCheck: true,
+  };
   await handler(makeReq("POST", body), res);
   assert.equal(res._status, 200);
   assert.equal(sentMails[0].attachments.length, 0);
@@ -208,6 +225,8 @@ test("html-escapes special characters to prevent XSS", async () => {
     age: 25,
     experience: "<img src=x onerror=alert(1)>",
     agreeTerms: true,
+    agreeSmsConsent: true,
+    agreeBackgroundCheck: true,
   }), res);
   assert.equal(res._status, 200);
   const html = sentMails[0].html;
@@ -252,16 +271,25 @@ test("decision is 'declined' when experience is less than 3 months", async () =>
 test("decision is 'review' when license is missing", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
+  const body = {
+    name: "Jane Driver",
+    phone: TEST_PHONE,
+    age: 25,
+    experience: "3–5 years",
+    agreeTerms: true,
+    agreeSmsConsent: true,
+    agreeBackgroundCheck: true,
+  };
   await handler(makeReq("POST", body), res);
   assert.equal(res._body.decision, "review");
 });
 
-test("decision is 'review' when terms are not agreed", async () => {
+test("returns 400 when terms are not agreed", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { ...VALID_BODY, agreeTerms: false }), res);
-  assert.equal(res._body.decision, "review");
+  assert.equal(res._status, 400);
+  assert.ok(String(res._body.error || "").includes("required consents"));
 });
 
 test("owner email subject reflects submitted lifecycle instead of decision label", async () => {
@@ -303,7 +331,15 @@ test("submit SMS stays lifecycle-based even when precheck decision is declined",
 test("submit SMS no longer claims application is already under review", async () => {
   sentMessages.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
+  const body = {
+    name: "Jane Driver",
+    phone: TEST_PHONE,
+    age: 25,
+    experience: "3–5 years",
+    agreeTerms: true,
+    agreeSmsConsent: true,
+    agreeBackgroundCheck: true,
+  };
   await handler(makeReq("POST", body), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
