@@ -26,7 +26,7 @@ export function getVeriffConfig() {
 }
 
 function defaultWebhookUrl() {
-  const base = pickString(process.env.VERIFF_WEBHOOK_BASE_URL) || "https://www.slytrans.com";
+  const base = pickString(process.env.VERIFF_WEBHOOK_BASE_URL) || "https://sly-rides.vercel.app";
   const sanitized = base.endsWith("/") ? base.slice(0, -1) : base;
   return `${sanitized}/api/stripe-identity-webhook`;
 }
