@@ -1344,6 +1344,7 @@
                   <th>Paid</th>
                   <th>Status</th>
                   <th>Source</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="raw-bookings-tbody"></tbody>
@@ -5222,11 +5223,11 @@ async function saveEditBooking(btn) {
 }
 
 function deleteBooking(bookingId, btn) {
-  if (!confirm('Permanently delete booking ' + bookingId + '?\n\nThis cannot be undone. All associated records (revenue, blocked dates) will also be removed.')) return;
+  if (!confirm('Archive booking ' + bookingId + '?\n\nThis removes it from active Booking views, and you can restore it from Raw Bookings.')) return;
   if (btn) btn.disabled = true;
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'delete', bookingId })
     .then(() => {
-      showToast('Booking ' + bookingId + ' deleted.', 'success');
+      showToast('Booking ' + bookingId + ' archived.', 'success');
       closeModal('booking-detail-modal');
       allBookings = [];
       loadBookings();
@@ -5517,7 +5518,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'slingshot' })
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'slingshot', include_deleted: true })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];
@@ -5548,6 +5549,10 @@ function loadRawBookings() {
           : ['cancelled','cancelled_rental'].includes(b.status) ? 'var(--danger)'
           : ['pending','reserved_unpaid','identity_pending','agreement_pending','pending_manual_payment','inquiry_received'].includes(b.status) ? 'var(--warning)'
           : 'var(--text)';
+        const isDeleted = !!b.deletedAt;
+        const sourceLabel = isDeleted
+          ? `${esc(b._source || '–')} · archived ${esc((b.deletedAt || '').slice(0, 10) || '')}`
+          : esc(b._source || '–');
         return `<tr>
           <td style="font-family:monospace;font-size:11px;">${esc((b.bookingId || '').slice(0,12))}…</td>
           <td>
@@ -5558,13 +5563,30 @@ function loadRawBookings() {
           <td>${esc(b.pickupDate || '–')}${b.pickupTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(fmt12h(b.pickupTime))+'</span>' : ''}</td>
           <td>${esc(b.returnDate || '–')}${b.returnTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(fmt12h(b.returnTime))+'</span>' : ''}</td>
           <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
-          <td><span style="font-weight:600;color:${statusColor};">${statusLabel}</span></td>
-          <td style="font-size:11px;color:var(--text-sub);">${esc(b._source || '–')}</td>
+          <td><span style="font-weight:600;color:${statusColor};">${statusLabel}</span>${isDeleted ? '<br><span class="badge badge-danger" style="font-size:10px;margin-top:3px;">Archived</span>' : ''}</td>
+          <td style="font-size:11px;color:var(--text-sub);">${sourceLabel}</td>
+          <td>${isDeleted ? `<button class="btn btn-secondary btn-sm" onclick="restoreDeletedBooking('${esc(b.bookingId || '')}',this)">↩ Restore</button>` : '<span style="font-size:11px;color:var(--text-sub);">—</span>'}</td>
         </tr>`;
       }).join('');
     })
     .catch((err) => {
       loadEl.innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function restoreDeletedBooking(bookingId, btn) {
+  if (!bookingId) return;
+  if (!confirm('Restore archived booking ' + bookingId + '?')) return;
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'restore', bookingId })
+    .then(() => {
+      showToast('Booking restored.', 'success');
+      loadRawBookings();
+      loadBookings();
+    })
+    .catch((err) => {
+      showToast('Restore failed: ' + err.message, 'error');
+      if (btn) btn.disabled = false;
     });
 }
 
