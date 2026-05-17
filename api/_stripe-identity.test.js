@@ -270,6 +270,7 @@ test("create-identity-verification-session creates a Veriff session and persists
   assert.equal(createCall.body?.verification?.vendorData, "app_1");
   assert.equal(createCall.body?.verification?.person?.firstName, "Jane");
   assert.equal(createCall.body?.verification?.person?.lastName, "Driver");
+  assert.equal(createCall.body?.verification?.callback, "https://sly-rides.vercel.app/api/veriff-webhook");
   assert.equal("document" in (createCall.body?.verification || {}), false);
 });
 
