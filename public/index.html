@@ -219,6 +219,21 @@
         <input type="email" id="applyEmail" name="email" placeholder="you@example.com" data-i18n-placeholder="applyModal.placeholderEmail" required autocomplete="email">
       </div>
 
+      <div class="apply-field">
+        <label for="applyDriverLicenseNumber"><span>Driver License Number</span> <span class="apply-required">*</span></label>
+        <input type="text" id="applyDriverLicenseNumber" name="driverLicenseNumber" placeholder="Driver license number" required autocomplete="off">
+      </div>
+
+      <div class="apply-field">
+        <label for="applyDriverLicenseState"><span>Driver License State</span> <span class="apply-required">*</span></label>
+        <input type="text" id="applyDriverLicenseState" name="driverLicenseState" placeholder="CA" maxlength="2" required autocomplete="address-level1">
+      </div>
+
+      <div class="apply-field">
+        <label for="applyZipcode"><span>ZIP Code</span> <span style="font-weight:400;color:#aaa">(optional)</span></label>
+        <input type="text" id="applyZipcode" name="zipcode" placeholder="90001" autocomplete="postal-code">
+      </div>
+
       <!-- Insurance Question -->
       <div class="apply-field">
         <label><span>Do you have personal auto insurance that covers rental vehicles?</span> <span class="apply-required">*</span></label>
@@ -316,6 +331,13 @@
           <a href="https://www.slytrans.com/privacy-policy.html" target="_blank" rel="noopener" class="apply-terms-link">Privacy Policy</a> &nbsp;|&nbsp;
           <a href="https://www.slytrans.com/rental-agreement.html" target="_blank" rel="noopener" class="apply-terms-link">Rental Agreement</a>
         </p>
+      </div>
+
+      <div class="apply-field">
+        <label class="apply-checkbox-label apply-terms-label">
+          <input type="checkbox" id="applyBackgroundCheck" name="backgroundCheck" required>
+          <span>I authorize SLY Transportation Services and its agents to obtain a consumer report (background check, including motor vehicle records) from Checkr, Inc. in connection with my rental application. I have read and acknowledge the <a href="https://www.consumer.ftc.gov/articles/pdf-0096-fair-credit-reporting-act.pdf" target="_blank" rel="noopener" class="apply-terms-link">Summary of Consumer Rights under FCRA</a> and <a href="https://checkr.com/privacy/" target="_blank" rel="noopener" class="apply-terms-link">Checkr&rsquo;s Privacy Policy</a>.</span> <span class="apply-required">*</span>
+        </label>
       </div>
 
       <p id="applyStatus" class="apply-status" role="status"></p>

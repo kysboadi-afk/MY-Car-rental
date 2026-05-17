@@ -29,7 +29,7 @@
 //   successful conditional state write — never on conflict or idempotent replay.
 
 import { isAdminAuthorized } from "./_admin-auth.js";
-import { performReviewAction, fetchReviewApplicationById } from "./_renter-applications.js";
+import { performPreAdverseAction, performReviewAction } from "./_renter-applications.js";
 import { sendReviewDecisionNotifications } from "./_application-notifications.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -72,15 +72,24 @@ export default async function handler(req, res) {
   if (!actionRequestId) return res.status(400).json({ error: "actionRequestId is required." });
 
   // ── Perform conditional review write ───────────────────────────────────────
-  const result = await performReviewAction(
-    applicationId,
-    action,
-    reviewedBy,
-    notes,
-    expectedStatus,
-    expectedReviewVersion,
-    actionRequestId,
-  );
+  const result = action === "pre_adverse"
+    ? await performPreAdverseAction(
+      applicationId,
+      reviewedBy,
+      notes,
+      expectedStatus,
+      expectedReviewVersion,
+      actionRequestId,
+    )
+    : await performReviewAction(
+      applicationId,
+      action,
+      reviewedBy,
+      notes,
+      expectedStatus,
+      expectedReviewVersion,
+      actionRequestId,
+    );
 
   if (!result.ok) {
     if (result.details) console.error("review-application: performReviewAction failed:", result.details);

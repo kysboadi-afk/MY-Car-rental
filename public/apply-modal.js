@@ -143,9 +143,13 @@
     const email      = document.getElementById("applyEmail").value.trim();
     const age        = parseInt(document.getElementById("applyAge").value, 10);
     const experience = document.getElementById("applyExperience").value;
+    const driverLicenseNumber = document.getElementById("applyDriverLicenseNumber").value.trim();
+    const driverLicenseState = document.getElementById("applyDriverLicenseState").value.trim().toUpperCase();
+    const zipcode = document.getElementById("applyZipcode").value.trim();
     const apps       = Array.from(form.querySelectorAll('input[name="apps"]:checked')).map(function (cb) { return cb.value; });
     const agreeTerms      = document.getElementById("applyTerms").checked;
     const agreeSmsConsent = document.getElementById("applySmsConsent").checked;
+    const agreeBackgroundCheck = document.getElementById("applyBackgroundCheck").checked;
 
     // Insurance & protection plan
     const insChecked  = form.querySelector('input[name="applyInsuranceCoverage"]:checked');
@@ -161,6 +165,24 @@
 
     if (apps.length === 0) {
       statusEl.textContent = mt("applyModal.selectApp", "Please select at least one delivery app.");
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!driverLicenseNumber || !/^[A-Z0-9-]{4,64}$/i.test(driverLicenseNumber)) {
+      statusEl.textContent = "Please enter a valid driver license number.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!/^[A-Z]{2}$/.test(driverLicenseState)) {
+      statusEl.textContent = "Please enter a valid 2-letter driver license state.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (zipcode && !/^\d{5}(?:-\d{4})?$/.test(zipcode)) {
+      statusEl.textContent = "Please enter a valid ZIP code.";
       statusEl.className = "apply-status error";
       return;
     }
@@ -195,6 +217,12 @@
       return;
     }
 
+    if (!agreeBackgroundCheck) {
+      statusEl.textContent = "You must authorize the background check disclosure.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
     submitBtn.disabled = true;
     statusEl.textContent = mt("applyModal.submitting", "Submitting your application\u2026");
     statusEl.className = "apply-status sending";
@@ -211,6 +239,10 @@
             email,
             age,
             experience,
+            agreeBackgroundCheck,
+            driverLicenseNumber,
+            driverLicenseState,
+            zipcode,
             apps,
             agreeTerms,
             agreeSmsConsent,
@@ -249,6 +281,10 @@
           email,
           age,
           experience,
+          agreeBackgroundCheck,
+          driverLicenseNumber,
+          driverLicenseState,
+          zipcode,
           apps,
           agreeTerms,
           agreeSmsConsent,
@@ -277,10 +313,14 @@
           name,
           phone,
           email,
+          agreeBackgroundCheck,
           decision: result.decision || null,
           precheckDecision: result.precheckDecision || result.decision || null,
           applicationStatus: result.applicationStatus || "submitted",
           identityStatus: result.identityStatus || "not_started",
+          driverLicenseNumber,
+          driverLicenseState,
+          zipcode,
           hasInsurance,
           protectionPlanPref,
         }));

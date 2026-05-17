@@ -27,6 +27,7 @@ process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
 // ── Mock tracking ────────────────────────────────────────────────────────────
 const calls = {
   performReviewAction: [],
+  performPreAdverseAction: [],
   sendReviewDecisionNotifications: [],
 };
 
@@ -48,11 +49,17 @@ const performReviewAction = mock.fn(async (...args) => {
   return performReviewActionResult;
 });
 
+const performPreAdverseAction = mock.fn(async (...args) => {
+  calls.performPreAdverseAction.push(args);
+  return performReviewActionResult;
+});
+
 const fetchReviewApplicationById = mock.fn(async () => ({ ok: false, status: 404, error: "not used in handler" }));
 
 mock.module("./_renter-applications.js", {
   namedExports: {
     performReviewAction,
+    performPreAdverseAction,
     fetchReviewApplicationById,
     listReviewQueueApplications: mock.fn(async () => ({ ok: true, data: [], total: 0, page: 1, pageSize: 50 })),
     REVIEW_ACTION_MAP: { approved: "approved", rejected: "rejected", needs_info: "needs_info" },
@@ -109,8 +116,10 @@ function validBody(overrides = {}) {
 
 function resetCalls() {
   calls.performReviewAction.length = 0;
+  calls.performPreAdverseAction.length = 0;
   calls.sendReviewDecisionNotifications.length = 0;
   performReviewAction.mock.resetCalls();
+  performPreAdverseAction.mock.resetCalls();
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -163,6 +172,23 @@ test("review-application: needs_info — success 200 + notification sent", async
   assert.equal(res._body.newStatus, "needs_info");
   assert.equal(calls.sendReviewDecisionNotifications.length, 1);
   assert.equal(calls.sendReviewDecisionNotifications[0][1], "needs_info");
+});
+
+test("review-application: pre_adverse — success 200 + notification sent", async () => {
+  resetCalls();
+  performReviewActionResult = {
+    ok: true,
+    data: { id: "app-uuid-1", application_status: "under_review", review_version: 1, reviewed_by: "admin@slytrans.com", reviewed_at: "2026-05-13T12:00:00.000Z" },
+  };
+
+  const res = makeRes();
+  await handler({ method: "POST", headers: {}, body: validBody({ action: "pre_adverse" }) }, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.action, "pre_adverse");
+  assert.equal(calls.performPreAdverseAction.length, 1);
+  assert.equal(calls.sendReviewDecisionNotifications.length, 1);
+  assert.equal(calls.sendReviewDecisionNotifications[0][1], "pre_adverse");
 });
 
 test("review-application: 409 STALE_REVIEW_ACTION — no notification", async () => {

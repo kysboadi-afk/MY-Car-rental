@@ -23,8 +23,41 @@ function cleanApps(value) {
     .slice(0, 30);
 }
 
+function cleanStateCode(value) {
+  const out = cleanText(value, 2);
+  if (!out) return null;
+  return /^[a-z]{2}$/i.test(out) ? out.toUpperCase() : null;
+}
+
+function cleanZipcode(value) {
+  const out = cleanText(value, 10);
+  if (!out) return null;
+  return /^\d{5}(?:-\d{4})?$/.test(out) ? out : null;
+}
+
+function cleanLicenseNumber(value) {
+  const out = cleanText(value, 64);
+  if (!out) return null;
+  return /^[a-z0-9-]{4,64}$/i.test(out) ? out.toUpperCase() : null;
+}
+
+function cleanJsonValue(value) {
+  if (value == null) return null;
+  if (Array.isArray(value) || (typeof value === "object" && value)) {
+    try {
+      JSON.stringify(value);
+      return value;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approved", "rejected", "withdrawn", "expired"];
 const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "failed", "canceled"];
+const CHECKR_REPORT_STATUSES = ["pending", "clear", "consider", "suspended", "disputed", "complete_no_adj", "error"];
+const ADVERSE_ACTION_STEPS = ["pre_notice_sent", "final_notice_sent"];
 
 // Valid manual review actions and the status they produce.
 export const REVIEW_ACTION_MAP = {
@@ -60,6 +93,8 @@ export function mapApplicationRecord(payload = {}) {
   const normalizedPrecheck = cleanText(payload.precheckDecision || payload.decision, 20);
   const identityStatus = cleanText(payload.identityStatus, 30);
   const applicationStatus = cleanText(payload.applicationStatus, 30);
+  const checkrReportStatus = cleanText(payload.checkrReportStatus, 30);
+  const adverseActionStep = cleanText(payload.adverseActionStep, 30);
   const licenseFileName = cleanText(payload.licenseFileName, 255);
   const insuranceFileName = cleanText(payload.insuranceFileName, 255);
   const licenseMimeType = normalizeDocumentMimeType(cleanText(payload.licenseMimeType, 120), licenseFileName, "");
@@ -74,8 +109,12 @@ export function mapApplicationRecord(payload = {}) {
     apps: cleanApps(payload.apps),
     agree_terms: !!payload.agreeTerms,
     agree_sms_consent: !!payload.agreeSmsConsent,
+    agree_background_check: !!payload.agreeBackgroundCheck,
     has_insurance: hasInsurance === "yes" || hasInsurance === "no" ? hasInsurance : null,
     protection_plan_pref: ["basic", "standard", "premium", "none"].includes(protectionPlanPref) ? protectionPlanPref : null,
+    driver_license_number: cleanLicenseNumber(payload.driverLicenseNumber),
+    driver_license_state: cleanStateCode(payload.driverLicenseState),
+    zipcode: cleanZipcode(payload.zipcode),
     license_file_name: licenseFileName,
     license_mime_type: licenseMimeType || null,
     insurance_file_name: insuranceFileName,
@@ -89,6 +128,15 @@ export function mapApplicationRecord(payload = {}) {
     identity_status: IDENTITY_STATUSES.includes(identityStatus)
       ? identityStatus
       : "not_started",
+    checkr_candidate_id: cleanText(payload.checkrCandidateId, 255),
+    checkr_report_id: cleanText(payload.checkrReportId, 255),
+    checkr_report_status: CHECKR_REPORT_STATUSES.includes(checkrReportStatus) ? checkrReportStatus : null,
+    checkr_adjudication: cleanText(payload.checkrAdjudication, 80),
+    checkr_completed_at: cleanIsoDateTime(payload.checkrCompletedAt),
+    checkr_last_error: cleanText(payload.checkrLastError, 2000),
+    checkr_mvr_violations: cleanJsonValue(payload.checkrMvrViolations),
+    adverse_action_step: ADVERSE_ACTION_STEPS.includes(adverseActionStep) ? adverseActionStep : null,
+    adverse_action_sent_at: cleanIsoDateTime(payload.adverseActionSentAt),
   };
 }
 
@@ -101,12 +149,25 @@ export function toClientApplication(record = {}) {
     age: record.age,
     experience: record.experience,
     apps: Array.isArray(record.apps) ? record.apps : [],
+    agreeBackgroundCheck: !!record.agree_background_check,
     hasInsurance: record.has_insurance,
     protectionPlanPref: record.protection_plan_pref,
+    driverLicenseNumber: record.driver_license_number || null,
+    driverLicenseState: record.driver_license_state || null,
+    zipcode: record.zipcode || null,
     precheckDecision: record.precheck_decision,
     decision: record.precheck_decision,
     applicationStatus: record.application_status,
     identityStatus: record.identity_status,
+    checkrCandidateId: record.checkr_candidate_id || null,
+    checkrReportId: record.checkr_report_id || null,
+    checkrReportStatus: record.checkr_report_status || null,
+    checkrAdjudication: record.checkr_adjudication || null,
+    checkrCompletedAt: record.checkr_completed_at || null,
+    checkrLastError: record.checkr_last_error || null,
+    checkrMvrViolations: record.checkr_mvr_violations || null,
+    adverseActionStep: record.adverse_action_step || null,
+    adverseActionSentAt: record.adverse_action_sent_at || null,
     createdAt: record.created_at || null,
     updatedAt: record.updated_at || null,
     submittedAt: record.submitted_at || null,
@@ -152,6 +213,10 @@ export async function patchRenterApplicationById(applicationId, patchPayload = {
     insurance_mime_type: patch.insurance_mime_type,
     precheck_decision: patch.precheck_decision,
   };
+  if ("agreeBackgroundCheck" in patchPayload) allowedPatch.agree_background_check = patch.agree_background_check;
+  if ("driverLicenseNumber" in patchPayload) allowedPatch.driver_license_number = patch.driver_license_number;
+  if ("driverLicenseState" in patchPayload) allowedPatch.driver_license_state = patch.driver_license_state;
+  if ("zipcode" in patchPayload) allowedPatch.zipcode = patch.zipcode;
 
   const { data, error } = await sb
     .from("renter_applications")
@@ -187,6 +252,50 @@ export async function fetchRenterApplicationById(applicationId, sbClient = null)
     return { ok: false, status: 404, error: "Application not found." };
   }
 
+  return { ok: true, data };
+}
+
+export async function fetchRenterApplicationByCheckrCandidateId(candidateId, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const normalized = cleanText(candidateId, 255);
+  if (!normalized) return { ok: false, status: 400, error: "candidateId is required." };
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select("*")
+    .eq("checkr_candidate_id", normalized)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not load application.", details: error.message };
+  }
+  if (!data) {
+    return { ok: false, status: 404, error: "Application not found." };
+  }
+  return { ok: true, data };
+}
+
+export async function fetchRenterApplicationByCheckrReportId(reportId, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const normalized = cleanText(reportId, 255);
+  if (!normalized) return { ok: false, status: 400, error: "reportId is required." };
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select("*")
+    .eq("checkr_report_id", normalized)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not load application.", details: error.message };
+  }
+  if (!data) {
+    return { ok: false, status: 404, error: "Application not found." };
+  }
   return { ok: true, data };
 }
 
@@ -239,6 +348,69 @@ export async function patchRenterApplicationIdentityById(applicationId, patchPay
   }
 
   return { ok: true, data };
+}
+
+export async function patchRenterApplicationCheckrById(applicationId, patchPayload = {}, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const id = cleanText(applicationId, 100);
+  if (!id) return { ok: false, status: 400, error: "applicationId is required." };
+
+  const patch = {};
+  if ("checkrCandidateId" in patchPayload) patch.checkr_candidate_id = cleanText(patchPayload.checkrCandidateId, 255);
+  if ("checkrReportId" in patchPayload) patch.checkr_report_id = cleanText(patchPayload.checkrReportId, 255);
+  if ("checkrReportStatus" in patchPayload) {
+    const status = cleanText(patchPayload.checkrReportStatus, 30);
+    patch.checkr_report_status = CHECKR_REPORT_STATUSES.includes(status) ? status : null;
+  }
+  if ("checkrAdjudication" in patchPayload) patch.checkr_adjudication = cleanText(patchPayload.checkrAdjudication, 80);
+  if ("checkrCompletedAt" in patchPayload) patch.checkr_completed_at = cleanIsoDateTime(patchPayload.checkrCompletedAt);
+  if ("checkrLastError" in patchPayload) patch.checkr_last_error = cleanText(patchPayload.checkrLastError, 2000);
+  if ("checkrMvrViolations" in patchPayload) patch.checkr_mvr_violations = cleanJsonValue(patchPayload.checkrMvrViolations);
+  if ("adverseActionStep" in patchPayload) {
+    const step = cleanText(patchPayload.adverseActionStep, 30);
+    patch.adverse_action_step = ADVERSE_ACTION_STEPS.includes(step) ? step : null;
+  }
+  if ("adverseActionSentAt" in patchPayload) patch.adverse_action_sent_at = cleanIsoDateTime(patchPayload.adverseActionSentAt);
+  if ("reviewedBy" in patchPayload) patch.reviewed_by = cleanText(patchPayload.reviewedBy, 200);
+  if ("reviewedAt" in patchPayload) patch.reviewed_at = cleanIsoDateTime(patchPayload.reviewedAt);
+  if ("lastReviewerNotes" in patchPayload) patch.last_reviewer_notes = cleanText(patchPayload.lastReviewerNotes, 2000);
+
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, status: 400, error: "No valid Checkr patch fields were provided." };
+  }
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not update application.", details: error.message };
+  }
+
+  return { ok: true, data };
+}
+
+function addBusinessDays(startIso, days) {
+  const date = new Date(startIso);
+  if (!Number.isFinite(date.getTime())) return null;
+  let added = 0;
+  while (added < days) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const day = date.getUTCDay();
+    if (day !== 0 && day !== 6) added += 1;
+  }
+  return date.toISOString();
+}
+
+function adverseActionFinalEligible(sentAt) {
+  const readyAt = addBusinessDays(sentAt, 5);
+  if (!readyAt) return { eligible: false, readyAt: null };
+  return { eligible: Date.now() >= new Date(readyAt).getTime(), readyAt };
 }
 
 /**
@@ -305,6 +477,37 @@ export async function performReviewAction(
   const reqId = cleanUuid(actionRequestId);
   if (!reqId) return { ok: false, status: 400, error: "actionRequestId (UUID) is required." };
 
+  const { data: currentApp, error: currentErr } = await sb
+    .from("renter_applications")
+    .select("id, application_status, review_version, checkr_report_status, adverse_action_step, adverse_action_sent_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (currentErr) {
+    return { ok: false, status: 503, error: "Could not load application for review.", details: currentErr.message };
+  }
+  if (!currentApp) {
+    return { ok: false, status: 404, error: "Application not found." };
+  }
+
+  if (normalizedAction === "rejected" && currentApp.checkr_report_status === "consider") {
+    if (currentApp.adverse_action_step !== "pre_notice_sent" || !currentApp.adverse_action_sent_at) {
+      return {
+        ok: false,
+        status: 422,
+        error: "Pre-adverse action notice is required before rejecting a Checkr consider report.",
+      };
+    }
+    const adverseWindow = adverseActionFinalEligible(currentApp.adverse_action_sent_at);
+    if (!adverseWindow.eligible) {
+      return {
+        ok: false,
+        status: 422,
+        error: `Final adverse action is not available until ${adverseWindow.readyAt}.`,
+      };
+    }
+  }
+
   // ── Idempotency check: if this action_request_id was already committed, return the existing result ──
   const { data: existingAudit, error: auditLookupErr } = await sb
     .from("application_review_actions")
@@ -341,6 +544,10 @@ export async function performReviewAction(
     last_reviewer_notes: trimmedNotes,
     updated_at:          now,
   };
+  if (normalizedAction === "rejected" && currentApp.checkr_report_status === "consider") {
+    patch.adverse_action_step = "final_notice_sent";
+    patch.adverse_action_sent_at = now;
+  }
   if (normalizedAction === "needs_info") {
     patch.needs_info_reason = trimmedNotes || null;
   } else {
@@ -405,6 +612,131 @@ export async function performReviewAction(
   return { ok: true, data: updatedApp };
 }
 
+export async function performPreAdverseAction(
+  applicationId,
+  reviewedBy,
+  notes,
+  expectedStatus,
+  expectedReviewVersion,
+  actionRequestId,
+  sbClient = null,
+) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const id = cleanUuid(applicationId);
+  if (!id) return { ok: false, status: 400, error: "applicationId is required." };
+  const reviewer = cleanText(reviewedBy, 200);
+  if (!reviewer) return { ok: false, status: 400, error: "reviewedBy is required." };
+  const trimmedNotes = cleanText(notes, 2000);
+  if (!REVIEWABLE_STATUSES.has(expectedStatus)) {
+    return {
+      ok: false,
+      status: 422,
+      error: `Cannot send pre-adverse action for status "${expectedStatus}". Only under_review and needs_info applications may be acted upon.`,
+    };
+  }
+  const version = typeof expectedReviewVersion === "number" ? expectedReviewVersion : Number(expectedReviewVersion);
+  if (!Number.isFinite(version) || version < 0) {
+    return { ok: false, status: 400, error: "expectedReviewVersion must be a non-negative integer." };
+  }
+  const reqId = cleanUuid(actionRequestId);
+  if (!reqId) return { ok: false, status: 400, error: "actionRequestId (UUID) is required." };
+
+  const { data: existingAudit, error: auditLookupErr } = await sb
+    .from("application_review_actions")
+    .select("id")
+    .eq("application_id", id)
+    .eq("action_request_id", reqId)
+    .maybeSingle();
+  if (auditLookupErr) {
+    return { ok: false, status: 503, error: "Idempotency check failed.", details: auditLookupErr.message };
+  }
+  if (existingAudit) {
+    const { data: appRow, error: fetchErr } = await sb
+      .from("renter_applications")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (fetchErr || !appRow) {
+      return { ok: false, status: 503, error: "Could not re-fetch application after idempotency match." };
+    }
+    return { ok: true, data: appRow, idempotent: true };
+  }
+
+  const { data: current, error: currentErr } = await sb
+    .from("renter_applications")
+    .select("id, application_status, review_version, checkr_report_status, adverse_action_step, adverse_action_sent_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (currentErr) {
+    return { ok: false, status: 503, error: "Could not load application for review.", details: currentErr.message };
+  }
+  if (!current) return { ok: false, status: 404, error: "Application not found." };
+  if (current.checkr_report_status !== "consider") {
+    return { ok: false, status: 422, error: "Pre-adverse action only applies to Checkr consider reports." };
+  }
+
+  const now = new Date().toISOString();
+  const patch = {
+    review_version: version + 1,
+    reviewed_by: reviewer,
+    reviewed_at: now,
+    last_reviewer_notes: trimmedNotes,
+    adverse_action_step: "pre_notice_sent",
+    adverse_action_sent_at: now,
+    updated_at: now,
+  };
+
+  const { data: updatedRows, error: updateErr } = await sb
+    .from("renter_applications")
+    .update(patch)
+    .eq("id", id)
+    .eq("application_status", expectedStatus)
+    .eq("review_version", version)
+    .select("*");
+  if (updateErr) {
+    return { ok: false, status: 503, error: "Could not apply pre-adverse action.", details: updateErr.message };
+  }
+  if (!updatedRows || updatedRows.length === 0) {
+    const { data: stale } = await sb
+      .from("renter_applications")
+      .select("id, application_status, review_version, reviewed_by, reviewed_at")
+      .eq("id", id)
+      .maybeSingle();
+    return {
+      ok: false,
+      status: 409,
+      code: "STALE_REVIEW_ACTION",
+      error: "The application was already updated by another reviewer. Please refresh and try again.",
+      current: stale
+        ? {
+            applicationStatus: stale.application_status,
+            reviewVersion: stale.review_version,
+            reviewedBy: stale.reviewed_by || null,
+            reviewedAt: stale.reviewed_at || null,
+          }
+        : null,
+    };
+  }
+
+  const updatedApp = updatedRows[0];
+  const { error: auditErr } = await sb.from("application_review_actions").insert({
+    application_id: id,
+    action: "pre_adverse",
+    performed_by: reviewer,
+    notes: trimmedNotes,
+    previous_status: expectedStatus,
+    new_status: expectedStatus,
+    action_request_id: reqId,
+  });
+  if (auditErr) {
+    console.error("[performPreAdverseAction] audit insert failed (non-fatal):", auditErr.message);
+  }
+
+  return { ok: true, data: updatedApp };
+}
+
 /**
  * Fetch a page of applications awaiting manual review (under_review or needs_info).
  *
@@ -425,6 +757,7 @@ export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = 
     .select(
       "id, name, phone, email, age, experience, application_status, identity_status, " +
         "review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
+        "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, " +
         "submitted_at, created_at, updated_at",
       { count: "exact" },
     )
