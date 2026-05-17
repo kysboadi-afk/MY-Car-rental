@@ -376,7 +376,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
       `Application ID  : ${ctx.applicationId || "Not available"}`,
       `Phone           : ${ctx.phone}`,
       `Email           : ${ctx.email || "Not provided"}`,
-      `Stripe Session  : ${ctx.identitySessionId || "Not available"}`,
+      `Verification Session  : ${ctx.identitySessionId || "Not available"}`,
       `Verified At     : ${ctx.identityVerifiedAt || "Not available"}`,
       "Lifecycle Stage : identity verified → under review",
       "",
@@ -394,7 +394,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Session ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.identitySessionId || "Not available")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Verification Session ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.identitySessionId || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Verified At</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.identityVerifiedAt || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">identity verified &rarr; under review</td></tr>
       </table>

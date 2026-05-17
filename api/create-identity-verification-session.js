@@ -1,8 +1,8 @@
-import Stripe from "stripe";
 import {
   fetchRenterApplicationById,
   patchRenterApplicationIdentityById,
 } from "./_renter-applications.js";
+import { createVeriffSession, fetchVeriffDecision } from "./_veriff.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
@@ -28,8 +28,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_PUBLISHABLE_KEY) {
-    return res.status(500).json({ error: "Server configuration error: Stripe credentials are not set." });
+  if (!process.env.VERIFF_API_KEY || !process.env.VERIFF_SHARED_SECRET || !process.env.VERIFF_PROJECT_ID) {
+    return res.status(500).json({ error: "Server configuration error: Veriff credentials are not set." });
   }
 
   const applicationId = typeof req.body?.applicationId === "string" ? req.body.applicationId.trim() : "";
@@ -63,23 +63,18 @@ export default async function handler(req, res) {
     });
   }
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-  // ── Session reuse: retrieve existing session before creating a new one ─────────────
-  // If an active session already exists, reuse it to avoid duplicate sessions
-  // and allow applicants to resume from email/SMS links or other devices.
+  // ── Session reuse: retrieve existing decision before creating a new session ─────────
+  // Veriff does not always expose a resumable link for prior sessions, so if the
+  // decision is still actionable we may still create a new session for retries.
   if (application.identity_session_id) {
     try {
-      const existing = await stripe.identity.verificationSessions.retrieve(
-        application.identity_session_id
-      );
-
-      if (existing.status === "verified") {
-        // Stripe session is verified but our DB may not reflect it yet (webhook missed or
+      const existing = await fetchVeriffDecision(application.identity_session_id);
+      if (existing.ok && existing.mappedStatus === "verified") {
+        // Veriff decision is approved but our DB may not reflect it yet (webhook missed or
         // still in-flight). Sync the application state here so it appears in the review queue.
         if (application.identity_status !== "verified") {
           const syncPatch = {
-            identitySessionId: existing.id,
+            identitySessionId: existing.sessionId || application.identity_session_id,
             identityStatus: "verified",
             identityVerifiedAt: new Date().toISOString(),
           };
@@ -106,8 +101,8 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.status === "processing") {
-        // Stripe is processing the submission; no action needed from applicant.
+      if (existing.ok && existing.mappedStatus === "processing") {
+        // Veriff is processing the submission; no action needed from applicant.
         return res.status(200).json({
           success: true,
           processing: true,
@@ -116,24 +111,22 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.status === "requires_input") {
-        // Session is still active and can be resumed. Return the existing
-        // client_secret so the frontend mounts the same verification session.
+      if (existing.ok && existing.mappedStatus === "requires_input" && existing.verificationUrl) {
+        // Existing verification can be resumed via hosted URL.
         return res.status(200).json({
           success: true,
           applicationId,
           identityStatus: "requires_input",
-          verificationSessionId: existing.id,
-          clientSecret: existing.client_secret,
-          publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+          verificationSessionId: existing.sessionId || application.identity_session_id,
+          verificationUrl: existing.verificationUrl,
           sessionReused: true,
         });
       }
 
-      // Status is "canceled" or an unrecognized terminal state — fall through
-      // to create a fresh session below.
+      // If decision is canceled/failed/unknown or lacks reusable URL, fall through
+      // and create a fresh session below for retry/resubmission.
     } catch (retrieveErr) {
-      // Session may have been deleted or Stripe returned an unexpected error.
+      // Session may have been deleted or Veriff returned an unexpected error.
       // Log and fall through to create a new session.
       console.warn(
         "create-identity-verification-session: session retrieve failed, creating new session:",
@@ -144,22 +137,18 @@ export default async function handler(req, res) {
 
   // ── Create a fresh verification session ───────────────────────────────────────────
   try {
-    const session = await stripe.identity.verificationSessions.create({
-      type: "document",
-      metadata: {
-        application_id: applicationId,
-      },
-      options: {
-        document: {
-          require_live_capture: true,
-          require_matching_selfie: true,
-        },
-      },
-      return_url: getReturnUrl(applicationId),
+    const session = await createVeriffSession({
+      applicationId,
+      returnUrl: getReturnUrl(applicationId),
     });
+    if (!session.ok) {
+      return res.status(session.status || 500).json({
+        error: session.error || "Failed to create identity verification session.",
+      });
+    }
 
     const patchResult = await patchRenterApplicationIdentityById(applicationId, {
-      identitySessionId: session.id,
+      identitySessionId: session.sessionId,
       identityStatus: "requires_input",
       identityLastError: null,
     });
@@ -176,9 +165,8 @@ export default async function handler(req, res) {
       success: true,
       applicationId,
       identityStatus: "requires_input",
-      verificationSessionId: session.id,
-      clientSecret: session.client_secret,
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      verificationSessionId: session.sessionId,
+      verificationUrl: session.verificationUrl,
     });
   } catch (err) {
     console.error("create-identity-verification-session failed:", err);
