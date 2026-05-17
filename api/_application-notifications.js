@@ -64,6 +64,10 @@ function getContext(application = {}) {
   const apps = resolveFieldAcrossConventions(application, "apps", "apps", []);
   const hasInsurance = resolveFieldAcrossConventions(application, "hasInsurance", "has_insurance");
   const protectionPlanPref = resolveFieldAcrossConventions(application, "protectionPlanPref", "protection_plan_pref");
+  const agreeBackgroundCheck = !!resolveFieldAcrossConventions(application, "agreeBackgroundCheck", "agree_background_check");
+  const driverLicenseNumber = resolveFieldAcrossConventions(application, "driverLicenseNumber", "driver_license_number");
+  const driverLicenseState = resolveFieldAcrossConventions(application, "driverLicenseState", "driver_license_state");
+  const zipcode = resolveFieldAcrossConventions(application, "zipcode", "zipcode");
   const licenseFileName = resolveFieldAcrossConventions(application, "licenseFileName", "license_file_name");
   const insuranceFileName = resolveFieldAcrossConventions(application, "insuranceFileName", "insurance_file_name");
   const agreeTerms = !!resolveFieldAcrossConventions(application, "agreeTerms", "agree_terms");
@@ -77,6 +81,11 @@ function getContext(application = {}) {
   const identityStatus = resolveFieldAcrossConventions(application, "identityStatus", "identity_status");
   const identitySessionId = resolveFieldAcrossConventions(application, "identitySessionId", "identity_session_id");
   const identityVerifiedAt = resolveFieldAcrossConventions(application, "identityVerifiedAt", "identity_verified_at");
+  const checkrReportStatus = resolveFieldAcrossConventions(application, "checkrReportStatus", "checkr_report_status");
+  const checkrReportId = resolveFieldAcrossConventions(application, "checkrReportId", "checkr_report_id");
+  const checkrAdjudication = resolveFieldAcrossConventions(application, "checkrAdjudication", "checkr_adjudication");
+  const adverseActionStep = resolveFieldAcrossConventions(application, "adverseActionStep", "adverse_action_step");
+  const adverseActionSentAt = resolveFieldAcrossConventions(application, "adverseActionSentAt", "adverse_action_sent_at");
   const applicationId = resolveFieldAcrossConventions(application, "applicationId", "id");
   const hasLicenseUpload = !!resolveFieldAcrossConventions(application, "hasLicenseUpload", "has_license_upload", licenseFileName);
   const hasInsuranceProof = !!resolveFieldAcrossConventions(application, "hasInsuranceProof", "has_insurance_proof", insuranceFileName);
@@ -112,6 +121,10 @@ function getContext(application = {}) {
     appsLabel,
     hasInsuranceLabel: insuranceLabel,
     planLabel: planLabels[protectionPlanPref] || (protectionPlanPref ? String(protectionPlanPref) : "Not specified"),
+    agreeBackgroundCheck,
+    driverLicenseNumber,
+    driverLicenseState,
+    zipcode,
     licenseFileName,
     insuranceFileName,
     agreeTerms,
@@ -123,6 +136,11 @@ function getContext(application = {}) {
     identityStatus,
     identitySessionId,
     identityVerifiedAt,
+    checkrReportStatus,
+    checkrReportId,
+    checkrAdjudication,
+    adverseActionStep,
+    adverseActionSentAt,
     verificationLink,
   };
 }
@@ -177,6 +195,10 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
       `Has Insurance           : ${ctx.hasInsuranceLabel}`,
       `Insurance Proof         : ${ctx.hasInsuranceProof ? ctx.insuranceFileName : "Not uploaded"}`,
       `Protection Plan         : ${ctx.planLabel}`,
+      `Background Check OK     : ${ctx.agreeBackgroundCheck ? "Yes" : "No"}`,
+      `DL Number               : ${ctx.driverLicenseNumber || "Not provided"}`,
+      `DL State                : ${ctx.driverLicenseState || "Not provided"}`,
+      `ZIP Code                : ${ctx.zipcode || "Not provided"}`,
       `Terms Agreed            : ${ctx.agreeTerms ? "Yes" : "No"}`,
       `License Attached        : ${ctx.hasLicenseUpload ? ctx.licenseFileName : "No"}`,
       "Lifecycle Stage         : submitted → identity verification pending",
@@ -196,6 +218,10 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Has Insurance</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.hasInsuranceLabel)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Proof</strong></td><td style="padding:8px;border:1px solid #ddd">${ctx.hasInsuranceProof ? `<em>See attached: ${esc(ctx.insuranceFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.planLabel)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Background Check Consent</strong></td><td style="padding:8px;border:1px solid #ddd">${ctx.agreeBackgroundCheck ? "Yes" : "No"}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver License Number</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.driverLicenseNumber || "Not provided")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver License State</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.driverLicenseState || "Not provided")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>ZIP Code</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.zipcode || "Not provided")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Terms Agreed</strong></td><td style="padding:8px;border:1px solid #ddd">${ctx.agreeTerms ? "Yes" : "No"}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver&#39;s License</strong></td><td style="padding:8px;border:1px solid #ddd">${ctx.hasLicenseUpload ? `<em>See attached: ${esc(ctx.licenseFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">submitted &rarr; identity verification pending</td></tr>
@@ -435,6 +461,91 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
   }, ctx.phone);
 }
 
+export async function sendCheckrInvitationNotifications(application = {}, { invitationUrl, packageSlug } = {}) {
+  const ctx = getContext(application);
+
+  await sendMailIfPossible({
+    to: OWNER_EMAIL,
+    subject: "🧾 Checkr Screening Started",
+    text: [
+      "Checkr Screening Started — Sly Transportation Services LLC",
+      "",
+      `Name            : ${ctx.name}`,
+      `Application ID  : ${ctx.applicationId || "Not available"}`,
+      `Phone           : ${ctx.phone}`,
+      `Email           : ${ctx.email || "Not provided"}`,
+      `Package         : ${packageSlug || "driver_pro"}`,
+      `Invitation URL  : ${invitationUrl || "Not returned"}`,
+      "Lifecycle Stage : checkr_pending",
+    ].join("\n"),
+    html: `
+      <h2>&#x1F9FE; Checkr Screening Started</h2>
+      <table style="border-collapse:collapse;width:100%;max-width:520px">
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(packageSlug || "driver_pro")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Invitation URL</strong></td><td style="padding:8px;border:1px solid #ddd">${invitationUrl ? `<a href="${esc(invitationUrl)}">${esc(invitationUrl)}</a>` : "Not returned"}</td></tr>
+      </table>
+    `,
+  });
+
+  if (isValidEmail(ctx.email)) {
+    await sendMailIfPossible({
+      to: ctx.email,
+      subject: "Complete Your Background Check — SLY Transportation Services",
+      text: [
+        `Hi ${ctx.firstName},`,
+        "",
+        "Your identity verification is complete. The next step is your Checkr background screening.",
+        invitationUrl ? `Complete your Checkr invite here: ${invitationUrl}` : "Our team will send your Checkr invite shortly.",
+        "",
+        "This screening includes a consumer report and motor vehicle record review for your rental application.",
+        "",
+        "— Sly Transportation Services LLC Team",
+      ].join("\n"),
+      html: `
+        <h2>Complete Your Background Check</h2>
+        <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
+        <p>Your identity verification is complete. The next step is your <strong>Checkr background screening</strong>.</p>
+        <p style="background:#eef2ff;padding:10px;border-left:4px solid #6366f1;margin-bottom:16px">
+          ${invitationUrl ? `Complete your Checkr invite here:<br><a href="${esc(invitationUrl)}">${esc(invitationUrl)}</a>` : "Our team will send your Checkr invite shortly."}
+        </p>
+        <p>This screening includes a consumer report and motor vehicle record review for your rental application.</p>
+        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+      `,
+    });
+  }
+}
+
+export async function sendCheckrStatusNotifications(application = {}, { eventType, reportStatus } = {}) {
+  const ctx = getContext(application);
+
+  await sendMailIfPossible({
+    to: OWNER_EMAIL,
+    subject: `🔎 Checkr Update — ${reportStatus || ctx.checkrReportStatus || "pending"}`,
+    text: [
+      "Checkr Update — Sly Transportation Services LLC",
+      "",
+      `Name            : ${ctx.name}`,
+      `Application ID  : ${ctx.applicationId || "Not available"}`,
+      `Checkr Status   : ${reportStatus || ctx.checkrReportStatus || "pending"}`,
+      `Adjudication    : ${ctx.checkrAdjudication || "Not provided"}`,
+      `Report ID       : ${ctx.checkrReportId || "Not provided"}`,
+      `Webhook Event   : ${eventType || "unknown"}`,
+    ].join("\n"),
+    html: `
+      <h2>&#x1F50E; Checkr Update</h2>
+      <table style="border-collapse:collapse;width:100%;max-width:520px">
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reportStatus || ctx.checkrReportStatus || "pending")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Adjudication</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.checkrAdjudication || "Not provided")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Report ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.checkrReportId || "Not provided")}</td></tr>
+      </table>
+    `,
+  });
+}
+
 export async function sendIdentityIssueNotifications(application = {}, kind = "requires_input") {
   const ctx = getContext(application);
   const copy = buildIdentityIssueContent(kind, ctx);
@@ -468,7 +579,7 @@ export async function sendIdentityIssueNotifications(application = {}, kind = "r
  * are sent.  It must only be called after a successful conditional state write.
  *
  * @param {object} application  — full application record (DB row or client shape)
- * @param {"approved"|"rejected"|"needs_info"} action
+ * @param {"approved"|"rejected"|"needs_info"|"pre_adverse"} action
  * @param {{notes?:string}} [options]
  */
 export async function sendReviewDecisionNotifications(application = {}, action, options = {}) {
@@ -540,27 +651,32 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
   }
 
   if (action === "rejected") {
+    const isAdverseFinal = ctx.adverseActionStep === "final_notice_sent";
     await sendMailIfPossible({
       to: OWNER_EMAIL,
-      subject: "❌ Application Rejected",
+      subject: isAdverseFinal ? "⚖️ Final Adverse Action Sent" : "❌ Application Rejected",
       text: [
-        "Application Rejected — Sly Transportation Services LLC",
+        isAdverseFinal
+          ? "Final Adverse Action Sent — Sly Transportation Services LLC"
+          : "Application Rejected — Sly Transportation Services LLC",
         "",
         `Name            : ${ctx.name}`,
         `Application ID  : ${ctx.applicationId || "Not available"}`,
         `Phone           : ${ctx.phone}`,
         `Email           : ${ctx.email || "Not provided"}`,
         `Reviewer Notes  : ${reviewerNotes || "None"}`,
+        `Adverse Action  : ${ctx.adverseActionStep || "Not applicable"}`,
         "Lifecycle Stage : rejected",
       ].join("\n"),
       html: `
-        <h2>&#x274C; Application Rejected</h2>
+        <h2>${isAdverseFinal ? "&#x2696;&#xFE0F; Final Adverse Action Sent" : "&#x274C; Application Rejected"}</h2>
         <table style="border-collapse:collapse;width:100%;max-width:520px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.phone)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.email || "Not provided")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Reviewer Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reviewerNotes || "None")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Adverse Action</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.adverseActionStep || "Not applicable")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Lifecycle Stage</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">rejected</td></tr>
         </table>
       `,
@@ -569,24 +685,36 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
     if (isValidEmail(ctx.email)) {
       await sendMailIfPossible({
         to: ctx.email,
-        subject: "Application Status Update — SLY Transportation Services",
+        subject: isAdverseFinal
+          ? "Final Adverse Action Notice — SLY Transportation Services"
+          : "Application Status Update — SLY Transportation Services",
         text: [
           `Hi ${ctx.firstName},`,
           "",
           "Thank you for applying with Sly Transportation Services LLC.",
-          "After reviewing your application, we're unable to approve it at this time.",
+          isAdverseFinal
+            ? "This email serves as your final adverse action notice regarding your rental application."
+            : "After reviewing your application, we're unable to approve it at this time.",
+          isAdverseFinal ? "Consumer reporting agency: Checkr, Inc., 1 Montgomery Street, Suite 2400, San Francisco, CA 94104." : "",
+          isAdverseFinal ? "Checkr did not make the decision and cannot explain why the decision was made." : "",
           "",
           `If you have questions, please call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
           "",
           "— Sly Transportation Services LLC Team",
         ].join("\n"),
         html: `
-          <h2>Application Status Update</h2>
+          <h2>${isAdverseFinal ? "Final Adverse Action Notice" : "Application Status Update"}</h2>
           <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
           <p>Thank you for applying with <strong>Sly Transportation Services LLC</strong>.</p>
           <p style="background:#f8d7da;padding:10px;border-left:4px solid #dc3545;margin-bottom:16px">
-            After reviewing your application, we&rsquo;re unable to approve it at this time.
+            ${isAdverseFinal
+              ? "This email serves as your final adverse action notice regarding your rental application."
+              : "After reviewing your application, we&rsquo;re unable to approve it at this time."}
           </p>
+          ${isAdverseFinal
+            ? `<p><strong>Consumer reporting agency:</strong> Checkr, Inc., 1 Montgomery Street, Suite 2400, San Francisco, CA 94104.</p>
+               <p>Checkr did not make the decision and cannot explain why the decision was made.</p>`
+            : ""}
           <p>If you have questions, please call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
           <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
         `,
@@ -597,6 +725,65 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       customer_name: ctx.firstName,
       __template_key: "application_denied",
     }, ctx.phone);
+    return;
+  }
+
+  if (action === "pre_adverse") {
+    await sendMailIfPossible({
+      to: OWNER_EMAIL,
+      subject: "⚖️ Pre-Adverse Action Sent",
+      text: [
+        "Pre-Adverse Action Sent — Sly Transportation Services LLC",
+        "",
+        `Name            : ${ctx.name}`,
+        `Application ID  : ${ctx.applicationId || "Not available"}`,
+        `Phone           : ${ctx.phone}`,
+        `Email           : ${ctx.email || "Not provided"}`,
+        `Reviewer Notes  : ${reviewerNotes || "None"}`,
+        `Checkr Status   : ${ctx.checkrReportStatus || "consider"}`,
+        "Lifecycle Stage : pre_notice_sent",
+      ].join("\n"),
+      html: `
+        <h2>&#x2696;&#xFE0F; Pre-Adverse Action Sent</h2>
+        <table style="border-collapse:collapse;width:100%;max-width:520px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Checkr Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.checkrReportStatus || "consider")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Reviewer Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(reviewerNotes || "None")}</td></tr>
+        </table>
+      `,
+    });
+
+    if (isValidEmail(ctx.email)) {
+      await sendMailIfPossible({
+        to: ctx.email,
+        subject: "Pre-Adverse Action Notice — SLY Transportation Services",
+        text: [
+          `Hi ${ctx.firstName},`,
+          "",
+          "We are providing this pre-adverse action notice regarding your rental application.",
+          "The notice is based in whole or in part on information from Checkr, Inc.",
+          "Consumer reporting agency: Checkr, Inc., 1 Montgomery Street, Suite 2400, San Francisco, CA 94104.",
+          "Checkr did not make the decision and cannot explain why the decision may be made.",
+          "You have the right to dispute the accuracy or completeness of the report before any final decision is made.",
+          "",
+          `Questions? Contact us at ${OWNER_EMAIL}.`,
+          "",
+          "— Sly Transportation Services LLC Team",
+        ].join("\n"),
+        html: `
+          <h2>Pre-Adverse Action Notice</h2>
+          <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
+          <p>We are providing this <strong>pre-adverse action notice</strong> regarding your rental application.</p>
+          <p>The notice is based in whole or in part on information from <strong>Checkr, Inc.</strong></p>
+          <p><strong>Consumer reporting agency:</strong> Checkr, Inc., 1 Montgomery Street, Suite 2400, San Francisco, CA 94104.</p>
+          <p>Checkr did not make the decision and cannot explain why the decision may be made.</p>
+          <p>You have the right to dispute the accuracy or completeness of the report before any final decision is made.</p>
+          <p>Questions? Contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        `,
+      });
+    }
     return;
   }
 

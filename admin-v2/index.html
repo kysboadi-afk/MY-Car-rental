@@ -3488,6 +3488,16 @@
       <option value="failed">Failed</option>
       <option value="canceled">Canceled</option>
     </select>
+    <select id="apps-filter-checkr" onchange="appsFilterChange()">
+      <option value="">All Checkr</option>
+      <option value="pending">Pending</option>
+      <option value="clear">Clear</option>
+      <option value="consider">Consider</option>
+      <option value="suspended">Suspended</option>
+      <option value="disputed">Disputed</option>
+      <option value="complete_no_adj">Complete / No Adjudication</option>
+      <option value="error">Error</option>
+    </select>
     <select id="apps-sort-field" onchange="appsFilterChange()">
       <option value="submitted_at">Sort: Submitted</option>
       <option value="updated_at">Sort: Updated</option>
@@ -3567,6 +3577,7 @@
       <div id="app-action-section" class="app-action-controls">
         <div class="app-action-title">Review Decision</div>
         <div class="app-action-btn-row">
+          <button id="app-btn-pre_adverse" class="app-action-btn" onclick="selectAppAction('pre_adverse')">⚖️ Send Pre-Adverse Notice</button>
           <button id="app-btn-approved"   class="app-action-btn" onclick="selectAppAction('approved')">✅ Approve</button>
           <button id="app-btn-rejected"   class="app-action-btn" onclick="selectAppAction('rejected')">❌ Reject</button>
           <button id="app-btn-needs_info" class="app-action-btn" onclick="selectAppAction('needs_info')">⚠️ Request More Info</button>
@@ -12167,6 +12178,7 @@ let appQueuePage      = 1;
 const APP_QUEUE_SIZE  = 50;
 let appFilterStatus   = '';
 let appFilterIdentity = '';
+let appFilterCheckr   = '';
 let appFilterSearch   = '';
 let appSortField      = 'submitted_at';
 let appSortDir        = 'asc';
@@ -12245,6 +12257,34 @@ function identityStatusBadge(status) {
     verified: 'Verified', failed: 'Failed', canceled: 'Canceled',
   };
   return `<span class="app-status-badge id-status-${esc(status || 'not_started')}">${esc(labels[status] || status || '—')}</span>`;
+}
+
+function checkrStatusBadge(status) {
+  const labels = {
+    pending: 'Pending',
+    clear: 'Clear',
+    consider: 'Consider',
+    suspended: 'Suspended',
+    disputed: 'Disputed',
+    complete_no_adj: 'Complete / No Adjudication',
+    error: 'Error',
+  };
+  const colorMap = {
+    pending: '#6b7280',
+    clear: '#15803d',
+    consider: '#b45309',
+    suspended: '#b91c1c',
+    disputed: '#7c3aed',
+    complete_no_adj: '#1d4ed8',
+    error: '#b91c1c',
+  };
+  if (!status) return '<span style="color:var(--text-sub);font-size:11px;font-style:italic;">Pending</span>';
+  return `<span class="app-status-badge" style="background:${colorMap[status] || '#6b7280'}22;color:${colorMap[status] || '#6b7280'};border:1px solid ${colorMap[status] || '#6b7280'}33;">${esc(labels[status] || status)}</span>`;
+}
+
+function checkrReportLink(reportId) {
+  if (!reportId) return '';
+  return `<div style="margin-top:4px;"><a href="https://dashboard.checkr.com/reports/${encodeURIComponent(reportId)}" target="_blank" rel="noopener" style="font-size:11px;">View Report</a></div>`;
 }
 
 function fmtRelativeTime(isoStr) {
@@ -12337,11 +12377,13 @@ function renderAppQueueKpis() {
   const underReview = appQueueData.filter((a) => a.applicationStatus === 'under_review').length;
   const needsInfo   = appQueueData.filter((a) => a.applicationStatus === 'needs_info').length;
   const verified    = appQueueData.filter((a) => a.identityStatus === 'verified').length;
+  const checkrConsider = appQueueData.filter((a) => a.checkrReportStatus === 'consider').length;
   const kpis = [
     { label: 'In Queue (Total)',  value: appQueueTotal, icon: '#6366f1' },
     { label: 'Under Review',      value: underReview,   icon: '#1d4ed8' },
     { label: 'Needs Info',        value: needsInfo,     icon: '#b45309' },
     { label: 'Identity Verified', value: verified,      icon: '#15803d' },
+    { label: 'Checkr Consider',   value: checkrConsider, icon: '#b45309' },
   ];
   container.innerHTML = kpis.map(({ label, value }) => `
     <div class="kpi-card">
@@ -12365,6 +12407,7 @@ function applyAppQueueFilters() {
   }
   if (appFilterStatus)   filtered = filtered.filter((a) => a.applicationStatus === appFilterStatus);
   if (appFilterIdentity) filtered = filtered.filter((a) => a.identityStatus === appFilterIdentity);
+  if (appFilterCheckr)   filtered = filtered.filter((a) => (a.checkrReportStatus || '') === appFilterCheckr);
 
   const mult = appSortDir === 'asc' ? 1 : -1;
   const key  = appSortField === 'updated_at' ? 'updatedAt' : 'submittedAt';
@@ -12417,7 +12460,7 @@ function renderAppQueue() {
       <td>${identityStatusBadge(a.identityStatus)}</td>
       <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
       <td>${latestActivity}</td>
-      <td><span style="color:var(--text-sub);font-size:11px;font-style:italic;">Pending</span></td>
+      <td>${checkrStatusBadge(a.checkrReportStatus)}${checkrReportLink(a.checkrReportId)}</td>
       <td class="td-actions"><button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">Review</button></td>
     </tr>`;
   }).join('');
@@ -12439,6 +12482,7 @@ function appsSearchInput(val) {
 function appsFilterChange() {
   appFilterStatus   = document.getElementById('apps-filter-status')?.value   || '';
   appFilterIdentity = document.getElementById('apps-filter-identity')?.value || '';
+  appFilterCheckr   = document.getElementById('apps-filter-checkr')?.value   || '';
   appSortField      = document.getElementById('apps-sort-field')?.value      || 'submitted_at';
   appSortDir        = document.getElementById('apps-sort-dir')?.value        || 'asc';
   renderAppQueue();
@@ -12522,8 +12566,12 @@ function renderAppDetail(d) {
     ${appDetailRow('Email', esc(d.email || '—'))}
     ${appDetailRow('Age', d.age != null ? esc(String(d.age)) : '—')}
     ${appDetailRow('Experience', esc(d.experience || '—'))}
+    ${appDetailRow('Background Check Consent', d.agreeBackgroundCheck ? '✅ Yes' : '❌ No')}
     ${appDetailRow('Has Insurance', d.hasInsurance != null ? (d.hasInsurance ? '✅ Yes' : '❌ No') : '—')}
     ${appDetailRow('Protection Plan Pref', esc(d.protectionPlanPref || '—'))}
+    ${appDetailRow('Driver License Number', esc(d.driverLicenseNumber || '—'))}
+    ${appDetailRow('Driver License State', esc(d.driverLicenseState || '—'))}
+    ${appDetailRow('ZIP Code', esc(d.zipcode || '—'))}
     ${appDetailRow('License Uploaded', d.hasLicenseUpload ? '✅ Yes' : '❌ No')}
     ${appDetailRow('Insurance Proof', d.hasInsuranceProof ? '✅ Yes' : '❌ No')}
     ${d.licenseFileName  ? appDetailRow('License File',   `<code style="font-size:11px;">${esc(d.licenseFileName)}</code>`)  : ''}
@@ -12581,13 +12629,17 @@ function renderAppDetail(d) {
   }
   html += '</div>';
 
-  // F. Checkr Placeholder
+  // F. Checkr
   html += `<div class="app-detail-section">
     <div class="app-detail-section-title">🔎 Background Check (Checkr)</div>
-    <div class="app-checkr-placeholder">
-      Background check integration is not yet active.<br>
-      <span style="font-size:11px;margin-top:4px;display:block;">This section will display Checkr report status and results in a future phase.</span>
-    </div>
+    ${appDetailRow('Checkr Status', checkrStatusBadge(d.checkrReportStatus))}
+    ${appDetailRow('Checkr Candidate ID', d.checkrCandidateId ? `<code style="font-size:11px;">${esc(d.checkrCandidateId)}</code>` : '—')}
+    ${appDetailRow('Checkr Report ID', d.checkrReportId ? `<code style="font-size:11px;">${esc(d.checkrReportId)}</code>${checkrReportLink(d.checkrReportId)}` : '—')}
+    ${appDetailRow('Adjudication', esc(d.checkrAdjudication || '—'))}
+    ${appDetailRow('Completed At', esc(fmtDateTime(d.checkrCompletedAt)))}
+    ${appDetailRow('Adverse Action Step', esc(d.adverseActionStep || '—'))}
+    ${appDetailRow('Adverse Action Sent', esc(fmtDateTime(d.adverseActionSentAt)))}
+    ${appDetailRow('Last Checkr Error', esc(d.checkrLastError || '—'))}
   </div>`;
 
   document.getElementById('app-detail-body').innerHTML = html;
@@ -12610,23 +12662,25 @@ function renderAppDetail(d) {
 
 function selectAppAction(action) {
   appSelectedAction = action;
-  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
     const btn = document.getElementById(`app-btn-${a}`);
     if (!btn) return;
     btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
     if (a === action) btn.classList.add(`selected-${action}`);
   });
-  const labels = { approved: '✅ Approve', rejected: '❌ Reject', needs_info: '⚠️ Request More Info' };
+  const labels = { pre_adverse: '⚖️ Send Pre-Adverse Notice', approved: '✅ Approve', rejected: '❌ Reject', needs_info: '⚠️ Request More Info' };
   document.getElementById('app-action-selected').textContent = labels[action] ? `Selected: ${labels[action]}` : '';
   const notesLabel = document.getElementById('app-notes-label');
   if (notesLabel) notesLabel.textContent = action === 'needs_info'
     ? 'Reason for more information (required):'
-    : 'Reviewer notes (optional):';
+    : action === 'pre_adverse'
+      ? 'Pre-adverse notes (optional):'
+      : 'Reviewer notes (optional):';
   document.getElementById('app-submit-btn').disabled = false;
 }
 
 function resetAppActionButtons() {
-  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
     const btn = document.getElementById(`app-btn-${a}`);
     if (!btn) return;
     btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
@@ -12653,10 +12707,10 @@ async function submitAppAction() {
   appActionInFlight = true;
   const submitBtn   = document.getElementById('app-submit-btn');
   const conflictBanner = document.getElementById('app-detail-conflict-banner');
-  const actionLabels  = { approved: 'Approving…', rejected: 'Rejecting…', needs_info: 'Sending Request…' };
+  const actionLabels  = { pre_adverse: 'Sending Notice…', approved: 'Approving…', rejected: 'Rejecting…', needs_info: 'Sending Request…' };
   submitBtn.disabled  = true;
   submitBtn.textContent = actionLabels[appSelectedAction] || 'Submitting…';
-  ['approved', 'rejected', 'needs_info'].forEach((a) => {
+  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
     const btn = document.getElementById(`app-btn-${a}`);
     if (btn) btn.disabled = true;
   });
@@ -12681,6 +12735,7 @@ async function submitAppAction() {
       showToast('This decision was already recorded (idempotent replay).', 'warning');
     } else {
       const successLabels = {
+        pre_adverse: '⚖️ Pre-adverse notice sent.',
         approved:   '✅ Application approved.',
         rejected:   '❌ Application rejected.',
         needs_info: '⚠️ More information requested.',
@@ -12696,7 +12751,7 @@ async function submitAppAction() {
     appActionInFlight = false;
     submitBtn.disabled = false;
     submitBtn.textContent = 'Submit Decision';
-    ['approved', 'rejected', 'needs_info'].forEach((a) => {
+    ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
       const btn = document.getElementById(`app-btn-${a}`);
       if (btn) btn.disabled = false;
     });
@@ -13032,12 +13087,15 @@ async function loadApplicationsPage() {
   appQueuePage      = 1;
   appFilterStatus   = '';
   appFilterIdentity = '';
+  appFilterCheckr   = '';
   appFilterSearch   = '';
   const fStatus   = document.getElementById('apps-filter-status');
   const fIdentity = document.getElementById('apps-filter-identity');
+  const fCheckr   = document.getElementById('apps-filter-checkr');
   const fSearch   = document.getElementById('apps-search');
   if (fStatus)   fStatus.value   = '';
   if (fIdentity) fIdentity.value = '';
+  if (fCheckr)   fCheckr.value   = '';
   if (fSearch)   fSearch.value   = '';
   await loadAppQueue();
 }

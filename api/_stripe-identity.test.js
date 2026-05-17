@@ -26,6 +26,7 @@ const calls = {
   sentMails: [],
   sentMessages: [],
   veriffFetches: [],
+  checkrInitiations: [],
 };
 
 let fetchResult = { ok: true, data: { id: "app_1", identity_status: "not_started", application_status: "submitted" } };
@@ -122,6 +123,15 @@ mock.module("./_supabase.js", {
   },
 });
 
+mock.module("./_checkr.js", {
+  namedExports: {
+    initiateCheckrScreening: mock.fn(async (...args) => {
+      calls.checkrInitiations.push(args);
+      return { ok: true, candidateId: "candidate_123", reportStatus: "pending" };
+    }),
+  },
+});
+
 global.fetch = mock.fn(async (url, init = {}) => {
   const method = init.method || "GET";
   let body = null;
@@ -210,6 +220,7 @@ beforeEach(() => {
   calls.sentMails.length = 0;
   calls.sentMessages.length = 0;
   calls.veriffFetches.length = 0;
+  calls.checkrInitiations.length = 0;
   fetchResult = {
     ok: true,
     data: {
@@ -332,6 +343,7 @@ test("stripe-identity-webhook maps approved Veriff decision to verified", async 
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
   assert.equal(calls.sentMails.length, 2);
   assert.equal(calls.sentMessages.length, 1);
+  assert.equal(calls.checkrInitiations.length, 1);
 });
 
 test("stripe-identity-webhook redirects browser GET requests to identity return page", async () => {

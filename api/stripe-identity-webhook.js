@@ -14,6 +14,7 @@ import {
   mapVeriffDecisionToIdentityStatus,
   verifyVeriffWebhookSignature,
 } from "./_veriff.js";
+import { initiateCheckrScreening } from "./_checkr.js";
 
 export const config = {
   api: { bodyParser: false },
@@ -266,6 +267,11 @@ export default async function handler(req, res) {
         await sendIdentityVerifiedNotifications(patchResult.data || current.data || {});
       } catch (notifyErr) {
         console.error("veriff-identity-webhook verified notification failed:", notifyErr);
+      }
+      try {
+        await initiateCheckrScreening(applicationId);
+      } catch (checkrErr) {
+        console.error("veriff-identity-webhook Checkr initiation failed:", checkrErr.message || checkrErr);
       }
     } else if (notificationKind === "requires_input" || notificationKind === "failed" || notificationKind === "canceled") {
       try {
