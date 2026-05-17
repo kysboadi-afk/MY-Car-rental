@@ -367,12 +367,12 @@
       </div>
 
       <div class="id-upload-section">
-        <p class="id-note">Identity verification is completed securely with Stripe. No ID upload is required on this page.</p>
+        <p class="id-note">Step 1: Verify your identity securely with Stripe after clicking confirm. No ID upload is required on this page.</p>
       </div>
 
       <!-- Rental Agreement -->
       <div class="sign-agreement">
-        <p class="sign-agreement-label">📄 Step 1: Read &amp; Sign your Rental Agreement</p>
+        <p class="sign-agreement-label">📄 Step 2: Read &amp; Sign your Rental Agreement</p>
         <p id="slSignAgreementStatus" aria-live="polite"></p>
         <button type="button" id="slSignAgreementBtn" class="sign-agreement-btn">
           ✍ Review &amp; Sign Rental Agreement
@@ -476,14 +476,14 @@
 
       <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
 
-      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Verify Identity &amp; Confirm Reservation</button>
+      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Verify ID, Sign Agreement &amp; Confirm Reservation</button>
       <p class="sl-book-urgency">Limited availability — weekends sell out fast</p>
       <p class="deposit-notice" id="paymentOptionNotice">Rental payment, deposit, and pickup charges are collected in person at pickup.</p>
       <label class="agree" style="margin-top:8px">
         <input type="checkbox" id="slAgree" disabled aria-describedby="slSignAgreementStatus">
         <span>I have read and signed the Rental Agreement &amp; Terms</span>
       </label>
-      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to enable reservation, Stripe identity verification, and agreement signing.</p>
+      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details to start ID verification first, then sign the agreement and confirm reservation.</p>
     </section>
 
     <!-- ── Extend Rental Section ── -->
