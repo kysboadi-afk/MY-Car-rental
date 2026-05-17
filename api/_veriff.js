@@ -149,21 +149,26 @@ export async function createVeriffSession({
     return { ok: false, status: 500, error: "Server configuration error: Veriff credentials are not set." };
   }
 
-  const body = {
-    verification: {
-      vendorData: applicationId,
-      callback: callbackUrl || defaultWebhookUrl(),
-      person: {
-        firstName: pickString(person.firstName) || undefined,
-        lastName: pickString(person.lastName) || undefined,
-      },
-      document: {
-        country: pickString(person.country) || undefined,
-      },
-      url: returnUrl,
-      timestamp: new Date().toISOString(),
-    },
+  const firstName = pickString(person.firstName);
+  const lastName = pickString(person.lastName);
+  const country = pickString(person.country);
+
+  const verification = {
+    vendorData: pickString(applicationId),
+    callback: callbackUrl || defaultWebhookUrl(),
+    timestamp: new Date().toISOString(),
   };
+  if (returnUrl) verification.url = returnUrl;
+  if (firstName || lastName) {
+    verification.person = {};
+    if (firstName) verification.person.firstName = firstName;
+    if (lastName) verification.person.lastName = lastName;
+  }
+  if (country) {
+    verification.document = { country };
+  }
+
+  const body = { verification };
 
   const response = await fetchImpl(`${VERIFF_API_BASE}/sessions`, {
     method: "POST",

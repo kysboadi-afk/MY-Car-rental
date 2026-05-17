@@ -11,6 +11,18 @@ const DEFAULT_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
 // The resolver blocks new session creation for any of these states.
 const TERMINAL_APPLICATION_STATUSES = new Set(["approved", "rejected", "expired", "withdrawn"]);
 
+function buildVeriffPersonFromApplication(application = {}) {
+  const fullName = typeof application.name === "string" ? application.name.trim() : "";
+  if (!fullName) return {};
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  if (!parts.length) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
 function getReturnUrl(applicationId) {
   const u = new URL(DEFAULT_RETURN_URL);
   u.searchParams.set("identity", "return");
@@ -140,6 +152,7 @@ export default async function handler(req, res) {
     const session = await createVeriffSession({
       applicationId,
       returnUrl: getReturnUrl(applicationId),
+      person: buildVeriffPersonFromApplication(application),
     });
     if (!session.ok) {
       return res.status(session.status || 500).json({
