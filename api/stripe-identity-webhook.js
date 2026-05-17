@@ -1,4 +1,3 @@
-import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 import {
   patchRenterApplicationIdentityById,
@@ -8,6 +7,13 @@ import {
   sendIdentityIssueNotifications,
   sendIdentityVerifiedNotifications,
 } from "./_application-notifications.js";
+import {
+  extractVeriffApplicationId,
+  extractVeriffSessionId,
+  extractVeriffStatus,
+  mapVeriffDecisionToIdentityStatus,
+  verifyVeriffWebhookSignature,
+} from "./_veriff.js";
 
 export const config = {
   api: { bodyParser: false },
@@ -22,48 +28,42 @@ function getRawBody(req) {
   });
 }
 
-function mapIdentityUpdate(session = {}) {
-  const status = String(session.status || "").toLowerCase();
-  const err = session.last_error || {};
-
-  if (status === "verified") {
+function mapIdentityUpdate(identityStatus, payload = {}) {
+  const rawStatus = String(extractVeriffStatus(payload) || "");
+  if (identityStatus === "verified") {
     return {
       identityStatus: "verified",
       identityLastError: null,
       identityVerifiedAt: new Date().toISOString(),
       applicationStatus: "under_review",
       reviewedAt: new Date().toISOString(),
-      reviewedBy: "stripe_identity_webhook",
+      reviewedBy: "veriff_identity_webhook",
     };
   }
-  if (status === "requires_input") {
-    const reason = err.code || err.reason || err.type || "requires_input";
+  if (identityStatus === "requires_input") {
     return {
       identityStatus: "requires_input",
-      identityLastError: String(reason).slice(0, 2000),
+      identityLastError: rawStatus.slice(0, 2000) || "requires_input",
     };
   }
-  if (status === "processing") {
+  if (identityStatus === "processing") {
     return {
       identityStatus: "processing",
       identityLastError: null,
     };
   }
-  if (status === "canceled") {
-    const reason = err.code || err.reason || err.type || "canceled";
+  if (identityStatus === "canceled") {
     return {
       identityStatus: "canceled",
-      identityLastError: String(reason).slice(0, 2000),
+      identityLastError: rawStatus.slice(0, 2000) || "canceled",
     };
   }
-  if (status === "failed") {
-    const reason = err.code || err.reason || err.type || "failed";
+  if (identityStatus === "failed") {
     return {
       identityStatus: "failed",
-      identityLastError: String(reason).slice(0, 2000),
+      identityLastError: rawStatus.slice(0, 2000) || "failed",
     };
   }
-
   return null;
 }
 
@@ -71,18 +71,10 @@ function determineNotificationTypeOnTransition(current = {}, nextPatch = {}) {
   const currentIdentity = String(current.identity_status || "");
   const nextIdentity = String(nextPatch.identityStatus || "");
 
-  if (nextIdentity === "verified" && currentIdentity !== "verified") {
-    return "verified";
-  }
-  if (nextIdentity === "requires_input" && currentIdentity !== "requires_input") {
-    return "requires_input";
-  }
-  if (nextIdentity === "failed" && currentIdentity !== "failed") {
-    return "failed";
-  }
-  if (nextIdentity === "canceled" && currentIdentity !== "canceled") {
-    return "canceled";
-  }
+  if (nextIdentity === "verified" && currentIdentity !== "verified") return "verified";
+  if (nextIdentity === "requires_input" && currentIdentity !== "requires_input") return "requires_input";
+  if (nextIdentity === "failed" && currentIdentity !== "failed") return "failed";
+  if (nextIdentity === "canceled" && currentIdentity !== "canceled") return "canceled";
   return null;
 }
 
@@ -91,13 +83,17 @@ function isStaleIdentityUpdate(current = {}, nextPatch = {}) {
   const currentApplication = String(current.application_status || "");
   const nextIdentity = String(nextPatch.identityStatus || "");
 
-  // Once identity is verified we should not regress to a non-verified state, and
-  // once operations has already approved/rejected an application we should ignore
-  // later non-verified webhook states so retries do not reopen the review flow.
   if (!nextIdentity) return false;
   if (currentIdentity === "verified" && nextIdentity !== "verified") return true;
   if (["approved", "rejected"].includes(currentApplication) && nextIdentity !== "verified") return true;
   return false;
+}
+
+function getEventId(payload = {}, sessionId = "", rawStatus = "") {
+  const direct = String(payload?.id || "").trim();
+  if (direct) return direct;
+  const createdAt = String(payload?.createdAt || payload?.created_at || "").trim();
+  return [sessionId || "unknown-session", rawStatus || "unknown-status", createdAt || "unknown-time"].join(":");
 }
 
 async function isDuplicateEvent(sb, stripeEventId) {
@@ -110,15 +106,15 @@ async function isDuplicateEvent(sb, stripeEventId) {
   return !!data?.id;
 }
 
-async function recordEvent(sb, event, applicationId, sessionId) {
+async function recordEvent(sb, eventId, payload, eventType, applicationId, sessionId) {
   const { error } = await sb
     .from("stripe_identity_webhook_events")
     .insert({
-      stripe_event_id: event.id,
-      event_type: event.type,
+      stripe_event_id: eventId,
+      event_type: eventType,
       application_id: applicationId || null,
       identity_session_id: sessionId || null,
-      payload: event.data?.object || {},
+      payload,
     });
   if (error) throw error;
 }
@@ -126,64 +122,76 @@ async function recordEvent(sb, event, applicationId, sessionId) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_IDENTITY_WEBHOOK_SECRET) {
+  if (!process.env.VERIFF_SHARED_SECRET || !process.env.VERIFF_API_KEY || !process.env.VERIFF_PROJECT_ID) {
     return res.status(500).send("Server configuration error");
   }
 
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  const sig = req.headers["stripe-signature"];
-
-  let event;
+  let rawBody;
   try {
-    const rawBody = await getRawBody(req);
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_IDENTITY_WEBHOOK_SECRET);
+    rawBody = await getRawBody(req);
   } catch (err) {
-    console.error("stripe-identity-webhook signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error("veriff-identity-webhook failed to read body:", err);
+    return res.status(400).send("Invalid request body");
   }
 
-  const session = event.data?.object || {};
-  const applicationId = typeof session?.metadata?.application_id === "string"
-    ? session.metadata.application_id.trim()
-    : "";
-  const identitySessionId = typeof session.id === "string" ? session.id : null;
+  if (!verifyVeriffWebhookSignature(rawBody, req.headers, process.env.VERIFF_SHARED_SECRET)) {
+    return res.status(400).send("Webhook Error: signature verification failed");
+  }
+
+  let payload = {};
+  try {
+    payload = JSON.parse(rawBody.toString("utf8") || "{}");
+  } catch (err) {
+    return res.status(400).send("Webhook Error: invalid JSON");
+  }
+
+  const rawStatus = extractVeriffStatus(payload);
+  const mappedStatus = mapVeriffDecisionToIdentityStatus(rawStatus);
+  const applicationId = extractVeriffApplicationId(payload);
+  const identitySessionId = extractVeriffSessionId(payload);
+  const eventId = getEventId(payload, identitySessionId, rawStatus);
+  const eventType = String(rawStatus || payload?.eventType || payload?.event_type || "unknown").slice(0, 200);
 
   const sb = getSupabaseAdmin();
   if (!sb) {
-    console.error("stripe-identity-webhook: Supabase unavailable");
+    console.error("veriff-identity-webhook: Supabase unavailable");
     return res.status(503).json({ error: "Application storage service is not configured." });
   }
 
   try {
-    const duplicate = await isDuplicateEvent(sb, event.id);
+    const duplicate = await isDuplicateEvent(sb, eventId);
     if (duplicate) {
       return res.status(200).json({ received: true, duplicate: true });
     }
   } catch (dupErr) {
-    console.error("stripe-identity-webhook duplicate check failed:", dupErr.message || dupErr);
+    console.error("veriff-identity-webhook duplicate check failed:", dupErr.message || dupErr);
     return res.status(500).json({ error: "Failed to process webhook event." });
   }
 
   try {
-    await recordEvent(sb, event, applicationId || null, identitySessionId);
+    await recordEvent(sb, eventId, payload, eventType, applicationId, identitySessionId);
   } catch (recordErr) {
     const errCode = String(recordErr?.code || "");
     const msg = String(recordErr?.message || "");
     if (errCode === "23505" || /duplicate key|unique/i.test(msg)) {
       return res.status(200).json({ received: true, duplicate: true });
     }
-    console.error("stripe-identity-webhook event record failed:", recordErr);
+    console.error("veriff-identity-webhook event record failed:", recordErr);
     return res.status(500).json({ error: "Failed to process webhook event." });
   }
 
-  const identityPatch = mapIdentityUpdate(session);
+  if (!mappedStatus) {
+    return res.status(200).json({ received: true, ignored: true });
+  }
+
+  const identityPatch = mapIdentityUpdate(mappedStatus, payload);
   if (!identityPatch) {
     return res.status(200).json({ received: true, ignored: true });
   }
 
   if (!applicationId) {
-    console.warn("stripe-identity-webhook: missing metadata.application_id", {
-      eventType: event.type,
+    console.warn("veriff-identity-webhook: missing application id in webhook payload", {
+      eventType,
       sessionId: identitySessionId,
     });
     return res.status(200).json({ received: true, ignored: true });
@@ -192,7 +200,7 @@ export default async function handler(req, res) {
   try {
     const current = await fetchRenterApplicationById(applicationId);
     if (!current.ok) {
-      console.error("stripe-identity-webhook application lookup failed:", current.error, current.details || "");
+      console.error("veriff-identity-webhook application lookup failed:", current.error, current.details || "");
       return res.status(200).json({ received: true, ignored: true });
     }
 
@@ -213,10 +221,10 @@ export default async function handler(req, res) {
 
     const patchResult = await patchRenterApplicationIdentityById(applicationId, {
       ...identityPatch,
-      identitySessionId,
+      identitySessionId: identitySessionId || current.data?.identity_session_id || null,
     });
     if (!patchResult.ok) {
-      console.error("stripe-identity-webhook patch failed:", patchResult.error, patchResult.details || "");
+      console.error("veriff-identity-webhook patch failed:", patchResult.error, patchResult.details || "");
       return res.status(500).json({ error: patchResult.error || "Could not update application." });
     }
 
@@ -224,17 +232,17 @@ export default async function handler(req, res) {
       try {
         await sendIdentityVerifiedNotifications(patchResult.data || current.data || {});
       } catch (notifyErr) {
-        console.error("stripe-identity-webhook verified notification failed:", notifyErr);
+        console.error("veriff-identity-webhook verified notification failed:", notifyErr);
       }
     } else if (notificationKind === "requires_input" || notificationKind === "failed" || notificationKind === "canceled") {
       try {
         await sendIdentityIssueNotifications(patchResult.data || current.data || {}, notificationKind);
       } catch (notifyErr) {
-        console.error("stripe-identity-webhook issue notification failed:", notifyErr);
+        console.error("veriff-identity-webhook issue notification failed:", notifyErr);
       }
     }
   } catch (err) {
-    console.error("stripe-identity-webhook processing failed:", err);
+    console.error("veriff-identity-webhook processing failed:", err);
     return res.status(500).json({ error: "Failed to process webhook event." });
   }
 

@@ -1,18 +1,12 @@
-import Stripe from "stripe";
 import { patchRenterApplicationIdentityById } from "./_renter-applications.js";
 import { sendIdentityVerifiedNotifications } from "./_application-notifications.js";
+import { fetchVeriffDecision } from "./_veriff.js";
 
 const NOTIFIABLE_APPLICATION_STATUSES = ["submitted", "under_review", "needs_info"];
 
-function getStripeClient(existingClient = null) {
-  if (existingClient) return existingClient;
-  if (!process.env.STRIPE_SECRET_KEY) return null;
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
-}
-
 export async function recoverVerifiedApplicationFromStripe(
   application = {},
-  { reviewedBy = "stripe_identity_recovery", stripeClient = null, notify = true } = {},
+  { reviewedBy = "veriff_identity_recovery", notify = true } = {},
 ) {
   const applicationId = typeof application?.id === "string" ? application.id : "";
   const identitySessionId = typeof application?.identity_session_id === "string"
@@ -23,37 +17,29 @@ export async function recoverVerifiedApplicationFromStripe(
     return { ok: true, synced: false, skipped: true, reason: "missing_identity_session" };
   }
 
-  const stripe = getStripeClient(stripeClient);
-  if (!stripe) {
-    return { ok: true, synced: false, skipped: true, reason: "stripe_unconfigured" };
-  }
-
-  let session;
-  try {
-    session = await stripe.identity.verificationSessions.retrieve(identitySessionId);
-  } catch (err) {
+  const decision = await fetchVeriffDecision(identitySessionId);
+  if (!decision.ok) {
     return {
       ok: false,
       synced: false,
-      error: "Could not retrieve Stripe Identity session.",
-      details: err?.message || String(err),
+      error: "Could not retrieve Veriff identity decision.",
+      details: decision.error || decision.details || "",
     };
   }
 
-  const stripeStatus = String(session?.status || "").toLowerCase();
-  if (stripeStatus !== "verified") {
-    return { ok: true, synced: false, stripeStatus };
+  if (decision.mappedStatus !== "verified") {
+    return { ok: true, synced: false, veriffStatus: decision.rawStatus || "unknown" };
   }
 
   if (String(application.identity_status || "").toLowerCase() === "verified") {
-    return { ok: true, synced: false, stripeStatus, alreadyVerified: true };
+    return { ok: true, synced: false, veriffStatus: decision.rawStatus || "approved", alreadyVerified: true };
   }
 
   const applicationStatus = String(application.application_status || "").toLowerCase();
   const shouldNotify = notify && NOTIFIABLE_APPLICATION_STATUSES.includes(applicationStatus);
   const now = new Date().toISOString();
   const patch = {
-    identitySessionId: session.id || identitySessionId,
+    identitySessionId: decision.sessionId || identitySessionId,
     identityStatus: "verified",
     identityVerifiedAt: now,
   };
@@ -85,7 +71,7 @@ export async function recoverVerifiedApplicationFromStripe(
   return {
     ok: true,
     synced: true,
-    stripeStatus,
+    veriffStatus: decision.rawStatus || "approved",
     data: patchResult.data || application,
   };
 }

@@ -56,9 +56,9 @@ export default async function handler(req, res) {
       );
       recoveryResults.forEach((result) => {
         if (result.status === "fulfilled" && !result.value?.ok && result.value?.details) {
-          console.error("admin-review-queue Stripe recovery failed:", result.value.details);
+          console.error("admin-review-queue Veriff recovery failed:", result.value.details);
         } else if (result.status === "rejected") {
-          console.error("admin-review-queue Stripe recovery failed:", result.reason);
+          console.error("admin-review-queue Veriff recovery failed:", result.reason);
         }
       });
     }

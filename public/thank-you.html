@@ -172,7 +172,6 @@
 <script src="site-settings.js"></script>
 <script src="lang.js"></script>
   <script src="chatbot.js"></script>
-  <script src="https://js.stripe.com/v3/"></script>
   <script>
     (function () {
       var API_BASE = window.API_BASE || window.SLY_API_BASE || "https://sly-rides.vercel.app";
@@ -389,15 +388,8 @@
               renderApplyState(processing);
               return;
             }
-            if (!result.clientSecret || !result.publishableKey) {
-              throw new Error("Missing Stripe verification session data.");
-            }
-            if (!window.Stripe) throw new Error("Stripe.js failed to load.");
-
-            var stripe = window.Stripe(result.publishableKey);
-            var verifyResult = await stripe.verifyIdentity(result.clientSecret);
-            if (verifyResult && verifyResult.error) {
-              throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
+            if (!result.verificationUrl) {
+              throw new Error("Missing Veriff verification session data.");
             }
 
             var next = syncLifecycle(snapshot, {
@@ -408,7 +400,8 @@
             });
             writeStored(next);
             statusEl.className = "ty-identity-status success";
-            statusEl.textContent = "Identity verification submitted. Review will continue after processing is complete.";
+            statusEl.textContent = "Redirecting to secure verification…";
+            window.location.assign(result.verificationUrl);
           } catch (err) {
             statusEl.className = "ty-identity-status error";
             statusEl.textContent = err && err.message ? err.message : "Identity verification failed. Please try again.";
@@ -551,7 +544,7 @@
                 applicationId:     result.applicationId,
                 applicationStatus: result.applicationStatus || "submitted",
                 identityStatus:    result.identityStatus    || "not_started",
-                identityResumePending: !!result.clientSecret,
+                identityResumePending: !!result.verificationUrl,
               });
               writeStored(snap);
             }
@@ -577,7 +570,7 @@
             if (result.processing) {
               titleEl.textContent = "⏳ Verification Processing";
               titleEl.style.color = "#4caf50";
-              subEl.textContent = "Your identity submission is being reviewed by Stripe.";
+              subEl.textContent = "Your identity submission is being reviewed by Veriff.";
               setDetailHtml(detailEl,
                 "We'll notify you as soon as the review is complete. There's nothing more to do right now."
               );
@@ -586,7 +579,7 @@
               return;
             }
 
-            if (!result.clientSecret || !result.publishableKey) {
+            if (!result.verificationUrl) {
               titleEl.textContent = "⚠️ Verification Unavailable";
               titleEl.style.color = "#ffb400";
               subEl.textContent = "We couldn't prepare your identity verification session.";
@@ -626,12 +619,6 @@
                 }, {
                   identityResumePending: true,
                 }));
-                if (!window.Stripe) throw new Error("Stripe.js failed to load.");
-                var stripe = window.Stripe(result.publishableKey);
-                var verifyResult = await stripe.verifyIdentity(result.clientSecret);
-                if (verifyResult && verifyResult.error) {
-                  throw new Error(verifyResult.error.message || "Identity verification could not be completed.");
-                }
                 var next = syncLifecycle(readStored(), {
                   applicationId:     result.applicationId,
                   applicationStatus: "submitted",
@@ -640,8 +627,9 @@
                 });
                 writeStored(next);
                 launchStatus.className = "ty-identity-status success";
-                launchStatus.textContent = "Identity verification submitted. Review will continue after processing is complete.";
+                launchStatus.textContent = "Redirecting to secure verification…";
                 launchBtn.style.display = "none";
+                window.location.assign(result.verificationUrl);
               } catch (err) {
                 launchStatus.className = "ty-identity-status error";
                 launchStatus.textContent = (err && err.message) ? err.message : "Identity verification failed. Please try again.";
