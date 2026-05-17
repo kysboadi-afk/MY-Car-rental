@@ -781,8 +781,10 @@ export async function listPendingIdentityRecoveryApplications({ limit = 25 } = {
   const { data, error } = await sb
     .from("renter_applications")
     .select("*")
-    .eq("application_status", "submitted")
-    .in("identity_status", RECOVERABLE_IDENTITY_STATUSES)
+    .or(
+      `and(application_status.eq.submitted,identity_status.in.(${RECOVERABLE_IDENTITY_STATUSES.join(",")})),` +
+      `and(application_status.eq.under_review,identity_status.eq.processing)`,
+    )
     .not("identity_session_id", "is", null)
     .order("submitted_at", { ascending: true })
     .limit(safeLimit);

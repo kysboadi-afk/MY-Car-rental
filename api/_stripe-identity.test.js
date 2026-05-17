@@ -346,6 +346,57 @@ test("stripe-identity-webhook maps approved Veriff decision to verified", async 
   assert.equal(calls.checkrInitiations.length, 1);
 });
 
+test("stripe-identity-webhook advances processing identity to under_review", async () => {
+  const payload = {
+    id: "evt_veriff_processing_1",
+    verification: {
+      id: "vrf_123",
+      status: "submitted",
+      vendorData: "app_1",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.received, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "processing");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.checkrInitiations.length, 0);
+  assert.equal(calls.sentMails.length, 0);
+});
+
+test("create-identity-verification-session syncs processing status and advances to under_review", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_existing",
+    },
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
+
+  const res = makeRes();
+  await createIdentitySessionHandler(makeIdentityCreateReq({ applicationId: "app_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.processing, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "processing");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  const methods = calls.veriffFetches.map((e) => e.method);
+  assert.deepEqual(methods, ["GET"]);
+});
+
 test("stripe-identity-webhook redirects browser GET requests to identity return page", async () => {
   const res = makeRes();
   await identityWebhookHandler({ method: "GET", query: { applicationId: "app_1" } }, res);

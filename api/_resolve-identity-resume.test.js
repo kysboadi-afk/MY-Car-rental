@@ -148,6 +148,28 @@ test("resolve-identity-resume: reuses decision URL when resubmission is requeste
   assert.equal(calls.patched.length, 0);
 });
 
+test("resolve-identity-resume: syncs processing status and advances to under_review when submitted", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: TEST_APP_ID,
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_processing",
+    },
+  };
+  decisionStatus = 200;
+  decisionPayload = { verification: { id: "vrf_processing", status: "submitted" } };
+
+  const res = makeRes();
+  await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.processing, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "processing");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+});
+
 test("resolve-identity-resume: returns processing for submitted decision", async () => {
   fetchResult = {
     ok: true,
@@ -165,6 +187,9 @@ test("resolve-identity-resume: returns processing for submitted decision", async
   await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
   assert.equal(res._status, 200);
   assert.equal(res._body.processing, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "processing");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
 });
 
 test("resolve-identity-resume: syncs verified decision from webhook lag", async () => {
