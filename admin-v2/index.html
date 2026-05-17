@@ -5667,11 +5667,12 @@ function applyBookingFilters() {
     // Derived status: overdue / extended / flagged overlay
     const derived = bookingDerivedStatus(b, now);
     if (sFilter) {
+      if (sFilter === 'active_rental' && !['active_rental', 'overdue', 'extended'].includes(derived)) return false;
       if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
       if (sFilter === 'extended'  && derived !== 'extended')  return false;
       if (sFilter === 'flagged'   && derived !== 'flagged')   return false;
       if (sFilter === 'incomplete_checkout' && !['pending_checkout','upload_failed','payment_failed','abandoned_checkout'].includes(b.status)) return false;
-      if (!['overdue','extended','flagged','incomplete_checkout'].includes(sFilter) && b.status !== sFilter) return false;
+      if (!['active_rental','overdue','extended','flagged','incomplete_checkout'].includes(sFilter) && b.status !== sFilter) return false;
     }
     if (pmFilter && (b.paymentMethod || '').toLowerCase() !== pmFilter) return false;
     if (rFilter  && (b.custRiskFlag  || 'low') !== rFilter)  return false;
@@ -5770,6 +5771,9 @@ function applyBookingFilters() {
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','cancelled_rental',this)">Decline</button>
+          ` : ''}
+          ${b.status === 'booked_paid' ? `
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(actionBookingId)}','active_rental',this)" title="Mark rental as active">▶ Mark Active</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
             ${(() => {
