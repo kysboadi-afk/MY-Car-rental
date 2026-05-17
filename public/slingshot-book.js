@@ -210,10 +210,10 @@ function updateBookBtnLabel() {
   if (!btn) return;
   var details = selectedPackage ? computePaymentDetails(selectedPackage, selectedPaymentOption) : null;
   if (!details) {
-    btn.textContent = "Verify Identity & Confirm Reservation";
+    btn.textContent = "Verify ID, Sign Agreement & Confirm Reservation";
     return;
   }
-  btn.textContent = "Verify Identity & Confirm Reservation";
+  btn.textContent = "Verify ID, Sign Agreement & Confirm Reservation";
 }
 
 /**
@@ -537,11 +537,10 @@ function updateBookBtn() {
   var emailOk  = !!(emailInput && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim()));
   var phoneOk  = !!(phoneInput && phoneInput.value.trim().length >= 7);
   var agreeEl  = document.getElementById("slAgree");
-  var agreeOk  = !!(agreeEl && agreeEl.checked);
   var smsEl    = document.getElementById("smsConsentCheck");
   var smsOk    = !smsEl || smsEl.checked;
 
-  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && agreeOk && smsOk;
+  var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && smsOk;
   btn.disabled = !ready;
   if (hintEl) hintEl.style.display = ready ? "none" : "";
 }
@@ -617,9 +616,6 @@ async function launchSlingshotPayment() {
   if (!name)  { showPayError("Full name is required."); return; }
   if (!email) { showPayError("Email address is required."); return; }
   if (!phone) { showPayError("Phone number is required."); return; }
-  if (!agreementSigned)   { showPayError("Please read and sign the Rental Agreement before booking."); return; }
-  var agreeEl = document.getElementById("slAgree");
-  if (!agreeEl || !agreeEl.checked) { showPayError("Please check the box to confirm you have signed the Rental Agreement."); return; }
   writeBookingDraft({
     vehicleId: vehicleId,
     slingshotPackage: selectedPackage,
@@ -641,6 +637,14 @@ async function launchSlingshotPayment() {
       email: email,
       phone: phone,
     });
+
+    if (!agreementSigned) {
+      throw new Error("ID verified. Please read and sign the Rental Agreement, then click confirm reservation.");
+    }
+    var agreeEl = document.getElementById("slAgree");
+    if (!agreeEl || !agreeEl.checked) {
+      throw new Error("Please check the box to confirm you have signed the Rental Agreement.");
+    }
 
     if (bookBtn) bookBtn.textContent = "Finalizing reservation…";
 
