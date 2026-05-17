@@ -309,6 +309,17 @@ test("stripe-identity-webhook maps approved Veriff decision to verified", async 
   assert.equal(calls.sentMessages.length, 1);
 });
 
+test("stripe-identity-webhook redirects browser GET requests to identity return page", async () => {
+  const res = makeRes();
+  await identityWebhookHandler({ method: "GET", query: { applicationId: "app_1" } }, res);
+
+  assert.equal(res._status, 302);
+  assert.equal(
+    res._headers.Location,
+    "https://www.slytrans.com/thank-you.html?from=apply&identity=return&applicationId=app_1"
+  );
+});
+
 test("stripe-identity-webhook maps resubmission_requested to requires_input", async () => {
   patchResult = {
     ok: true,
