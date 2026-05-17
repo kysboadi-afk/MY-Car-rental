@@ -123,7 +123,11 @@ mock.module("./_supabase.js", {
 
 global.fetch = mock.fn(async (url, init = {}) => {
   const method = init.method || "GET";
-  calls.veriffFetches.push({ url: String(url), method });
+  let body = null;
+  if (typeof init.body === "string") {
+    try { body = JSON.parse(init.body); } catch { body = init.body; }
+  }
+  calls.veriffFetches.push({ url: String(url), method, body });
   if (method === "GET") {
     return {
       ok: veriffDecisionStatus >= 200 && veriffDecisionStatus < 300,
@@ -239,6 +243,12 @@ test("create-identity-verification-session creates a Veriff session and persists
   assert.equal(res._body.verificationUrl, "https://veriff.test/session/vrf_123");
   assert.equal(calls.patched[0].patch.identitySessionId, "vrf_123");
   assert.equal(calls.patched[0].patch.identityStatus, "requires_input");
+  const createCall = calls.veriffFetches.find((entry) => entry.method === "POST");
+  assert.ok(createCall);
+  assert.equal(createCall.body?.verification?.vendorData, "app_1");
+  assert.equal(createCall.body?.verification?.person?.firstName, "Jane");
+  assert.equal(createCall.body?.verification?.person?.lastName, "Driver");
+  assert.equal("document" in (createCall.body?.verification || {}), false);
 });
 
 test("create-identity-verification-session returns alreadyVerified when identity is complete", async () => {
