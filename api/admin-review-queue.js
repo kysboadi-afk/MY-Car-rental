@@ -41,6 +41,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    console.info("admin-review-queue: fetch started", {
+      page: Number(page) || 1,
+      pageSize: Number(pageSize) || 50,
+      recoveryScanLimit: RECOVERY_SCAN_LIMIT,
+    });
+
     const recoveryCandidates = await listPendingIdentityRecoveryApplications({
       limit: RECOVERY_SCAN_LIMIT,
     });
@@ -71,6 +77,13 @@ export default async function handler(req, res) {
     if (result.details) console.error("admin-review-queue:", result.details);
     return res.status(result.status || 500).json({ error: result.error });
   }
+
+  console.info("admin-review-queue: fetch completed", {
+    page: result.page,
+    pageSize: result.pageSize,
+    total: result.total,
+    returned: (result.data || []).length,
+  });
 
   return res.status(200).json({
     success: true,

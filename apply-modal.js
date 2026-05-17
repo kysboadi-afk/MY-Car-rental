@@ -248,6 +248,7 @@
     try {
       let applicationId = null;
       try {
+        console.info("[apply] submitting create-renter-application request");
         const createResp = await fetch(API_BASE + "/api/create-renter-application", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -271,6 +272,12 @@
           }),
         });
         const createResult = await createResp.json().catch(function () { return {}; });
+        console.info("[apply] create-renter-application response", {
+          ok: createResp.ok,
+          status: createResp.status,
+          applicationId: createResult.applicationId || null,
+          error: createResult.error || null,
+        });
         if (createResp.ok && createResult.applicationId) {
           applicationId = createResult.applicationId;
         }
@@ -289,6 +296,9 @@
         });
       }
 
+      console.info("[apply] submitting send-application-email request", {
+        hasApplicationId: !!applicationId,
+      });
       const resp = await fetch(API_BASE + "/api/send-application-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -315,6 +325,14 @@
       });
 
       const result = await resp.json().catch(function () { return {}; });
+      console.info("[apply] send-application-email response", {
+        ok: resp.ok,
+        status: resp.status,
+        applicationId: result.applicationId || applicationId || null,
+        applicationStatus: result.applicationStatus || null,
+        identityStatus: result.identityStatus || null,
+        error: result.error || null,
+      });
       if (!resp.ok) {
         var errMsg = result.error || mt("applyModal.generalError", "Something went wrong. Please try again.");
         throw new Error(errMsg);

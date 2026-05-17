@@ -197,8 +197,19 @@ export async function insertRenterApplication(payload = {}, sbClient = null) {
     .single();
 
   if (error) {
+    console.error("insertRenterApplication: insert failed", {
+      message: error.message,
+      code: error.code || null,
+      details: error.details || null,
+    });
     return { ok: false, status: 503, error: "Could not save application.", details: error.message };
   }
+
+  console.info("insertRenterApplication: insert succeeded", {
+    applicationId: data?.id || null,
+    applicationStatus: data?.application_status || null,
+    identityStatus: data?.identity_status || null,
+  });
 
   return { ok: true, data };
 }
@@ -233,8 +244,20 @@ export async function patchRenterApplicationById(applicationId, patchPayload = {
     .single();
 
   if (error) {
+    console.error("patchRenterApplicationById: update failed", {
+      applicationId: id,
+      message: error.message,
+      code: error.code || null,
+      details: error.details || null,
+    });
     return { ok: false, status: 503, error: "Could not update application.", details: error.message };
   }
+
+  console.info("patchRenterApplicationById: update succeeded", {
+    applicationId: data?.id || id,
+    applicationStatus: data?.application_status || null,
+    identityStatus: data?.identity_status || null,
+  });
 
   return { ok: true, data };
 }
@@ -351,8 +374,26 @@ export async function patchRenterApplicationIdentityById(applicationId, patchPay
     .single();
 
   if (error) {
+    console.error("patchRenterApplicationIdentityById: update failed", {
+      applicationId: id,
+      patch: {
+        identityStatus: patch.identity_status || null,
+        applicationStatus: patch.application_status || null,
+        identitySessionId: patch.identity_session_id || null,
+      },
+      message: error.message,
+      code: error.code || null,
+      details: error.details || null,
+    });
     return { ok: false, status: 503, error: "Could not update application.", details: error.message };
   }
+
+  console.info("patchRenterApplicationIdentityById: update succeeded", {
+    applicationId: data?.id || id,
+    applicationStatus: data?.application_status || null,
+    identityStatus: data?.identity_status || null,
+    identitySessionId: data?.identity_session_id || patch.identity_session_id || null,
+  });
 
   return { ok: true, data };
 }

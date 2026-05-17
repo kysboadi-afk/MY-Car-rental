@@ -188,6 +188,16 @@ export default async function handler(req, res) {
   const identitySessionId = extractVeriffSessionId(payload);
   const eventId = getEventId(payload, identitySessionId, rawStatus);
   const eventType = String(rawStatus || payload?.eventType || payload?.event_type || "unknown").slice(0, 200);
+  let eventLogSkipped = false;
+
+  console.info("veriff-identity-webhook: event received", {
+    eventId,
+    eventType,
+    rawStatus: rawStatus || null,
+    mappedStatus: mappedStatus || null,
+    applicationId: applicationId || null,
+    identitySessionId: identitySessionId || null,
+  });
 
   const sb = getSupabaseAdmin();
   if (!sb) {
@@ -198,11 +208,12 @@ export default async function handler(req, res) {
   try {
     const duplicate = await isDuplicateEvent(sb, eventId);
     if (duplicate) {
+      console.info("veriff-identity-webhook: duplicate event ignored", { eventId, applicationId, identitySessionId });
       return res.status(200).json({ received: true, duplicate: true });
     }
   } catch (dupErr) {
-    console.error("veriff-identity-webhook duplicate check failed:", dupErr.message || dupErr);
-    return res.status(500).json({ error: "Failed to process webhook event." });
+    eventLogSkipped = true;
+    console.error("veriff-identity-webhook duplicate check failed; continuing without dedupe:", dupErr.message || dupErr);
   }
 
   try {
@@ -211,19 +222,20 @@ export default async function handler(req, res) {
     const errCode = String(recordErr?.code || "");
     const msg = String(recordErr?.message || "");
     if (errCode === "23505" || /duplicate key|unique/i.test(msg)) {
+      console.info("veriff-identity-webhook: duplicate event ignored from insert conflict", { eventId, applicationId, identitySessionId });
       return res.status(200).json({ received: true, duplicate: true });
     }
-    console.error("veriff-identity-webhook event record failed:", recordErr);
-    return res.status(500).json({ error: "Failed to process webhook event." });
+    eventLogSkipped = true;
+    console.error("veriff-identity-webhook event record failed; continuing without event log:", recordErr);
   }
 
   if (!mappedStatus) {
-    return res.status(200).json({ received: true, ignored: true });
+    return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
   }
 
   const identityPatch = mapIdentityUpdate(mappedStatus, payload);
   if (!identityPatch) {
-    return res.status(200).json({ received: true, ignored: true });
+    return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
   }
 
   if (!applicationId) {
@@ -231,7 +243,7 @@ export default async function handler(req, res) {
       eventType,
       sessionId: identitySessionId,
     });
-    return res.status(200).json({ received: true, ignored: true });
+    return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
   }
 
   try {
@@ -265,6 +277,15 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: patchResult.error || "Could not update application." });
     }
 
+    console.info("veriff-identity-webhook: application identity updated", {
+      eventId,
+      applicationId,
+      identityStatus: patchResult.data?.identity_status || identityPatch.identityStatus || null,
+      applicationStatus: patchResult.data?.application_status || identityPatch.applicationStatus || null,
+      identitySessionId: patchResult.data?.identity_session_id || identitySessionId || null,
+      eventLogSkipped,
+    });
+
     if (notificationKind === "verified") {
       try {
         await sendIdentityVerifiedNotifications(patchResult.data || current.data || {});
@@ -288,5 +309,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to process webhook event." });
   }
 
-  return res.status(200).json({ received: true });
+  return res.status(200).json({ received: true, eventLogSkipped });
 }
