@@ -3,11 +3,12 @@
 // Supports listing bookings and updating booking status (approve/decline).
 //
 // POST /api/v2-bookings
-// Actions:
-//   list      — { secret, action:"list", vehicleId?, status? }
+    // Actions:
+    //   list      — { secret, action:"list", vehicleId?, status?, include_deleted? }
 //   list_raw  — { secret, action:"list_raw" }  (unfiltered Supabase read — Phase 6)
 //   update    — { secret, action:"update", vehicleId, bookingId, updates:{status,...} }
-//   delete    — { secret, action:"delete", bookingId }
+    //   delete    — { secret, action:"delete", bookingId, reason?, hardDelete? }
+    //   restore   — { secret, action:"restore", bookingId }
 //   create    — { secret, action:"create", ...bookingFields } (manual booking)
 //
 // Booking automation (triggered automatically, non-fatal):
@@ -232,7 +233,8 @@ export default async function handler(req, res) {
     // bookings saved by saveWebhookBookingRecord).  Falls back to bookings.json
     // so the admin always sees data even when Supabase is unreachable.
     if (action === "list" || !action) {
-      const { vehicleId, status, scope } = body;
+      const { vehicleId, status, scope, include_deleted: includeDeletedRaw } = body;
+      const includeDeleted = includeDeletedRaw === true;
 
       // When scope='car' or scope='slingshot' is provided, restrict the vehicle
       // list to the matching fleet type so each admin panel only sees its own
@@ -266,52 +268,102 @@ export default async function handler(req, res) {
       if (sb) {
         // Build the query with filters BEFORE .order() so the chain terminates
         // correctly (the Supabase JS SDK — and our test stubs — resolve on .order()).
-        let q = sb
-          .from("bookings")
-          .select(`
-            id,
-            booking_ref,
-            vehicle_id,
-            pickup_date,
-            return_date,
-            pickup_time,
-            return_time,
-            status,
-            total_price,
-            deposit_paid,
-            remaining_balance,
-            payment_status,
-            payment_method,
-            payment_intent_id,
-            stripe_customer_id,
-            stripe_payment_method_id,
-            extension_stripe_customer_id,
-            extension_stripe_payment_method_id,
-            flagged,
-            risk_score,
-            notes,
-            created_at,
-            updated_at,
-            extension_count,
-            late_fee_amount,
-            late_fee_status,
-            late_fee_approved_at,
-            late_fee_waived,
-            late_fee_waived_amount,
-            extension_risk_override,
-            customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
-          `);
+        const LIST_SELECT_FULL = `
+          id,
+          booking_ref,
+          vehicle_id,
+          pickup_date,
+          return_date,
+          pickup_time,
+          return_time,
+          status,
+          total_price,
+          deposit_paid,
+          remaining_balance,
+          payment_status,
+          payment_method,
+          payment_intent_id,
+          stripe_customer_id,
+          stripe_payment_method_id,
+          extension_stripe_customer_id,
+          extension_stripe_payment_method_id,
+          flagged,
+          risk_score,
+          notes,
+          created_at,
+          updated_at,
+          extension_count,
+          late_fee_amount,
+          late_fee_status,
+          late_fee_approved_at,
+          late_fee_waived,
+          late_fee_waived_amount,
+          deleted_at,
+          deleted_by,
+          deleted_reason,
+          extension_risk_override,
+          customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
+        `;
 
-        if (vehicleId && effectiveVehicles.includes(vehicleId)) {
-          q = q.eq("vehicle_id", vehicleId);
-        } else {
-          q = q.in("vehicle_id", effectiveVehicles);
-        }
-        if (status) {
-          q = q.eq("status", status);
-        }
+        const LIST_SELECT_COMPAT = `
+          id,
+          booking_ref,
+          vehicle_id,
+          pickup_date,
+          return_date,
+          pickup_time,
+          return_time,
+          status,
+          total_price,
+          deposit_paid,
+          remaining_balance,
+          payment_status,
+          payment_method,
+          payment_intent_id,
+          stripe_customer_id,
+          stripe_payment_method_id,
+          extension_stripe_customer_id,
+          extension_stripe_payment_method_id,
+          flagged,
+          risk_score,
+          notes,
+          created_at,
+          updated_at,
+          extension_count,
+          late_fee_amount,
+          late_fee_status,
+          late_fee_approved_at,
+          late_fee_waived,
+          late_fee_waived_amount,
+          deleted_at,
+          deleted_by,
+          deleted_reason,
+          customers ( id, name, phone, email )
+        `;
 
-        const { data: rows, error } = await q.order("created_at", { ascending: false });
+        const buildListQuery = (selectClause, excludeDeleted) => {
+          let q = sb.from("bookings").select(selectClause);
+          if (vehicleId && effectiveVehicles.includes(vehicleId)) {
+            q = q.eq("vehicle_id", vehicleId);
+          } else {
+            q = q.in("vehicle_id", effectiveVehicles);
+          }
+          if (excludeDeleted) {
+            q = q.is("deleted_at", null);
+          }
+          if (status) q = q.eq("status", status);
+          return q;
+        };
+
+        let { data: rows, error } = await buildListQuery(LIST_SELECT_FULL, !includeDeleted).order("created_at", { ascending: false });
+        if (error && isSchemaError(error)) {
+          console.warn("v2-bookings list: schema mismatch on full select, retrying with compatibility columns:", error.message);
+          ({ data: rows, error } = await buildListQuery(LIST_SELECT_COMPAT, !includeDeleted).order("created_at", { ascending: false }));
+        }
+        if (error && isSchemaError(error)) {
+          console.warn("v2-bookings list: retrying legacy query without deleted_at filter:", error.message);
+          ({ data: rows, error } = await buildListQuery(LIST_SELECT_COMPAT, false).order("created_at", { ascending: false }));
+        }
 
         if (!error) {
           // Fetch revenue_records for financial totals (best-effort; non-fatal)
@@ -416,6 +468,9 @@ export default async function handler(req, res) {
               lateFeeApprovedAt: r.late_fee_approved_at || null,
               lateFeeWaived:   r.late_fee_waived || false,
               lateFeeWaivedAmount: r.late_fee_waived_amount != null ? Number(r.late_fee_waived_amount) : null,
+              deletedAt:       r.deleted_at || null,
+              deletedBy:       r.deleted_by || null,
+              deletedReason:   r.deleted_reason || null,
               extensionRiskOverride: r.extension_risk_override || null,
               _source:         "supabase",
             };
@@ -454,7 +509,8 @@ export default async function handler(req, res) {
     // Falls back to the same flat-file data as "list" when Supabase is not
     // configured, so the admin never sees an empty table due to misconfiguration.
     if (action === "list_raw") {
-      const { scope } = body;
+      const { scope, include_deleted: includeDeletedRaw } = body;
+      const includeDeleted = includeDeletedRaw !== false;
 
       // When scope='car' or scope='slingshot' is provided, restrict results to
       // vehicles in the matching fleet so each admin panel only sees its own data.
@@ -480,9 +536,32 @@ export default async function handler(req, res) {
 
       const sb = getSupabaseAdmin();
       if (sb) {
-        let q = sb
-          .from("bookings")
-          .select(`
+        const LIST_RAW_SELECT_FULL = `
+            id,
+            booking_ref,
+            vehicle_id,
+            pickup_date,
+            return_date,
+            pickup_time,
+            return_time,
+            status,
+            total_price,
+            deposit_paid,
+            remaining_balance,
+            payment_status,
+            payment_method,
+            notes,
+            created_at,
+            updated_at,
+            activated_at,
+            completed_at,
+            deleted_at,
+            deleted_by,
+            deleted_reason,
+            customers ( id, name, phone, email )
+          `;
+
+        const LIST_RAW_SELECT_COMPAT = `
             id,
             booking_ref,
             vehicle_id,
@@ -502,13 +581,31 @@ export default async function handler(req, res) {
             activated_at,
             completed_at,
             customers ( id, name, phone, email )
-          `);
+          `;
 
-        if (rawScopedIds && rawScopedIds.length > 0) {
-          q = q.in("vehicle_id", rawScopedIds);
+        const buildRawListQuery = (selectClause, excludeDeleted) => {
+          let q = sb
+          .from("bookings")
+          .select(selectClause);
+
+          if (rawScopedIds && rawScopedIds.length > 0) {
+            q = q.in("vehicle_id", rawScopedIds);
+          }
+          if (excludeDeleted) {
+            q = q.is("deleted_at", null);
+          }
+          return q;
+        };
+
+        let { data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_FULL, !includeDeleted).order("created_at", { ascending: false });
+        if (error && isSchemaError(error)) {
+          console.warn("v2-bookings list_raw: schema mismatch on full select, retrying with compatibility columns:", error.message);
+          ({ data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_COMPAT, !includeDeleted).order("created_at", { ascending: false }));
         }
-
-        const { data: rows, error } = await q.order("created_at", { ascending: false });
+        if (error && isSchemaError(error)) {
+          console.warn("v2-bookings list_raw: retrying legacy query without deleted_at filter:", error.message);
+          ({ data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_COMPAT, false).order("created_at", { ascending: false }));
+        }
 
         if (error) {
           console.error("v2-bookings list_raw Supabase error:", error.message);
@@ -534,6 +631,9 @@ export default async function handler(req, res) {
             createdAt:       r.created_at,
             activatedAt:     r.activated_at  || null,
             completedAt:     r.completed_at  || null,
+            deletedAt:       r.deleted_at || null,
+            deletedBy:       r.deleted_by || null,
+            deletedReason:   r.deleted_reason || null,
             _source:         "supabase",
           }));
           return res.status(200).json({ bookings, source: "supabase", total: bookings.length });
@@ -1185,9 +1285,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, booking: updatedBooking });
     }
 
-    // ── DELETE (hard-delete booking + related records) ───────────────────────
+    // ── DELETE (soft-delete by default; optional hard-delete) ─────────────────
     if (action === "delete") {
-      const { bookingId } = body;
+      const { bookingId, reason, hardDelete } = body;
       if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
 
       let canonicalBookingId = bookingId;
@@ -1195,6 +1295,7 @@ export default async function handler(req, res) {
       let deletePickupDate = null;
       let deleteReturnDate = null;
       let foundInSupabase = false;
+      const doHardDelete = hardDelete === true;
 
       const sbDelete = getSupabaseAdmin();
       if (sbDelete) {
@@ -1202,16 +1303,16 @@ export default async function handler(req, res) {
 
         const { data: byRef, error: byRefErr } = await sbDelete
           .from("bookings")
-          .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date")
-          .eq("booking_ref", bookingId)
-          .maybeSingle();
+            .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, deleted_at")
+            .eq("booking_ref", bookingId)
+            .maybeSingle();
         if (byRefErr && !isSchemaError(byRefErr)) throw byRefErr;
         bookingRow = byRef || null;
 
         if (!bookingRow) {
           const { data: byPi, error: byPiErr } = await sbDelete
             .from("bookings")
-            .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date")
+            .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, deleted_at")
             .eq("payment_intent_id", bookingId)
             .maybeSingle();
           if (byPiErr && !isSchemaError(byPiErr)) throw byPiErr;
@@ -1225,28 +1326,51 @@ export default async function handler(req, res) {
           deletePickupDate = bookingRow.pickup_date || null;
           deleteReturnDate = bookingRow.return_date || null;
 
-          const { error: rrErr } = await sbDelete
-            .from("revenue_records")
-            .delete()
-            .eq("booking_id", canonicalBookingId);
-          if (rrErr && !isSchemaError(rrErr)) throw rrErr;
+          if (doHardDelete) {
+            const { error: rrErr } = await sbDelete
+              .from("revenue_records")
+              .delete()
+              .eq("booking_id", canonicalBookingId);
+            if (rrErr && !isSchemaError(rrErr)) throw rrErr;
 
-          const { error: bdErr } = await sbDelete
-            .from("blocked_dates")
-            .delete()
-            .eq("booking_ref", canonicalBookingId);
-          if (bdErr && !isSchemaError(bdErr)) throw bdErr;
+            const { error: bdErr } = await sbDelete
+              .from("blocked_dates")
+              .delete()
+              .eq("booking_ref", canonicalBookingId);
+            if (bdErr && !isSchemaError(bdErr)) throw bdErr;
 
-          const { error: bookingDelErr } = await sbDelete
-            .from("bookings")
-            .delete()
-            .eq("booking_ref", canonicalBookingId);
-          if (bookingDelErr && !isSchemaError(bookingDelErr)) throw bookingDelErr;
+            const { error: bookingDelErr } = await sbDelete
+              .from("bookings")
+              .delete()
+              .eq("booking_ref", canonicalBookingId);
+            if (bookingDelErr && !isSchemaError(bookingDelErr)) throw bookingDelErr;
+          } else {
+            const archivedAt = new Date().toISOString();
+            const archivePayload = {
+              deleted_at: archivedAt,
+              deleted_by: "admin_panel",
+              deleted_reason: String(reason || "").trim() || "Deleted from admin panel",
+              updated_at: archivedAt,
+            };
+            const { error: archiveErr } = await sbDelete
+              .from("bookings")
+              .update(archivePayload)
+              .eq("booking_ref", canonicalBookingId);
+            if (archiveErr) {
+              if (isSchemaError(archiveErr)) {
+                return res.status(409).json({
+                  error: "Soft delete is unavailable until migration 0162 is applied (missing deleted_at/deleted_by/deleted_reason columns).",
+                });
+              }
+              throw archiveErr;
+            }
+          }
         }
       }
 
       let foundInJson = false;
-      if (process.env.GITHUB_TOKEN) {
+      const shouldDeleteJson = !foundInSupabase || doHardDelete;
+      if (shouldDeleteJson && process.env.GITHUB_TOKEN) {
         await updateJsonFileWithRetry({
           load: loadBookings,
           apply: (data) => {
@@ -1281,10 +1405,69 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: `Booking "${bookingId}" not found` });
       }
 
-      if (deleteVehicleId && deletePickupDate && deleteReturnDate) {
+      if (doHardDelete && deleteVehicleId && deletePickupDate && deleteReturnDate) {
         await unblockBookedDates(deleteVehicleId, deletePickupDate, deleteReturnDate).catch((err) => {
           console.warn("v2-bookings delete: unblockBookedDates failed (non-fatal):", err.message);
         });
+      }
+
+      return res.status(200).json({
+        success: true,
+        bookingId: canonicalBookingId,
+        mode: doHardDelete ? "hard_delete" : "soft_delete",
+      });
+    }
+
+    // ── RESTORE (reverse soft-delete) ─────────────────────────────────────────
+    if (action === "restore") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const sbRestore = getSupabaseAdmin();
+      if (!sbRestore) return res.status(500).json({ error: "Database not configured" });
+
+      let bookingRow = null;
+      const { data: byRef, error: byRefErr } = await sbRestore
+        .from("bookings")
+        .select("booking_ref, payment_intent_id")
+        .eq("booking_ref", bookingId)
+        .maybeSingle();
+      if (byRefErr && !isSchemaError(byRefErr)) throw byRefErr;
+      bookingRow = byRef || null;
+
+      if (!bookingRow) {
+        const { data: byPi, error: byPiErr } = await sbRestore
+          .from("bookings")
+          .select("booking_ref, payment_intent_id")
+          .eq("payment_intent_id", bookingId)
+          .maybeSingle();
+        if (byPiErr && !isSchemaError(byPiErr)) throw byPiErr;
+        bookingRow = byPi || null;
+      }
+
+      if (!bookingRow) {
+        return res.status(404).json({ error: `Booking "${bookingId}" not found` });
+      }
+
+      const canonicalBookingId = bookingRow.booking_ref || bookingId;
+      const restoreAt = new Date().toISOString();
+      const restorePayload = {
+        deleted_at: null,
+        deleted_by: null,
+        deleted_reason: null,
+        updated_at: restoreAt,
+      };
+      const { error: restoreErr } = await sbRestore
+        .from("bookings")
+        .update(restorePayload)
+        .eq("booking_ref", canonicalBookingId);
+      if (restoreErr) {
+        if (isSchemaError(restoreErr)) {
+          return res.status(409).json({
+            error: "Restore is unavailable until migration 0162 is applied (missing deleted_at/deleted_by/deleted_reason columns).",
+          });
+        }
+        throw restoreErr;
       }
 
       return res.status(200).json({ success: true, bookingId: canonicalBookingId });

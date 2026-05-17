@@ -57,6 +57,7 @@ const paymentPlanProgressMockState = {
     remaining_installments: 0,
   },
 };
+const schemaErrorMockState = { forceFalse: false };
 const sentEmails = [];
 const emailMockState = { shouldThrow: false, errorMessage: "SMTP send failed" };
 // Supabase mock — not used by these tests (automation is mocked out)
@@ -213,7 +214,20 @@ mock.module("./_sms-templates.js", {
 mock.module("./_error-helpers.js", {
   namedExports: {
     adminErrorMessage: (err) => err?.message || String(err),
-    isSchemaError:     () => false,
+    isSchemaError:     (err) => {
+      if (schemaErrorMockState.forceFalse) return false;
+      const code = err?.code ? String(err.code) : "";
+      const msg = err?.message ? String(err.message) : "";
+      return (
+        code === "42P01" || code === "42703" ||
+        code === "PGRST204" || code === "PGRST200" ||
+        /relation .* does not exist/i.test(msg) ||
+        /table .* (was )?not found/i.test(msg) ||
+        /column .* does not exist/i.test(msg) ||
+        /Could not find the .* in the schema cache/i.test(msg) ||
+        /42P01|42703/.test(msg)
+      );
+    },
   },
 });
 
@@ -324,6 +338,7 @@ function resetCalls() {
     next_due_date: null,
     remaining_installments: 0,
   };
+  schemaErrorMockState.forceFalse = false;
   supabaseMockState.client = null;
 }
 
@@ -1179,6 +1194,7 @@ test("list: returns Supabase rows when client is available", async () => {
       select() { return this; },
       eq()     { return this; },
       in()     { return this; },
+      is()     { return this; },
       order()  { return Promise.resolve({ data: rows, error: null }); },
     };
     return chain;
@@ -1192,6 +1208,67 @@ test("list: returns Supabase rows when client is available", async () => {
     assert.equal(res._body.bookings[0].bookingId, "wh-abc123");
     assert.equal(res._body.bookings[0].name, "David Agbebaku");
     assert.equal(res._body.bookings[0].pickupTime, "8:38 PM");
+    assert.equal(res._body.bookings[0]._source, "supabase");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
+test("list: retries with compatibility select when Supabase schema is missing newer columns", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-compat-1", booking_ref: "bk-compat-1", vehicle_id: "camry",
+      pickup_date: "2026-05-16", return_date: "2026-05-18",
+      pickup_time: "10:00 AM", return_time: "10:00 AM",
+      status: "active", total_price: 220, deposit_paid: 220,
+      remaining_balance: 0, payment_status: "paid", payment_method: "stripe",
+      payment_intent_id: "pi_compat_1",
+      notes: "compat row", created_at: "2026-05-16T10:00:00.000Z", updated_at: null,
+      customers: { id: "cu-compat-1", name: "Compat Customer", phone: "+15550001111", email: "compat@example.com" },
+    },
+  ];
+
+  let fullSelectAttempts = 0;
+  const makeBookingsChain = () => {
+    const chain = {
+      _select: "",
+      select(clause) { this._select = String(clause || ""); return this; },
+      eq() { return this; },
+      in() { return this; },
+      is() { return this; },
+      order() {
+        if (this._select.includes("extension_risk_override")) {
+          fullSelectAttempts += 1;
+          return Promise.resolve({ data: null, error: { code: "42703", message: "column bookings.extension_risk_override does not exist" } });
+        }
+        return Promise.resolve({ data: fakeRows, error: null });
+      },
+    };
+    return chain;
+  };
+
+  const makeRevenueChain = () => ({
+    select() { return this; },
+    in() { return Promise.resolve({ data: [], error: null }); },
+  });
+
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "bookings") return makeBookingsChain();
+      if (table === "revenue_records_effective") return makeRevenueChain();
+      return makeBookingsChain();
+    },
+  };
+
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(fullSelectAttempts, 1, "full-select query should run once before compatibility retry");
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].bookingId, "bk-compat-1");
+    assert.equal(res._body.bookings[0].status, "active_rental");
     assert.equal(res._body.bookings[0]._source, "supabase");
   } finally {
     supabaseMockState.client = null;
@@ -1240,6 +1317,7 @@ test("list: aggregates revenue rows per booking for total collected display", as
     select() { return this; },
     eq()     { return this; },
     in()     { return this; },
+    is()     { return this; },
     order()  { return Promise.resolve({ data: rows, error: null }); },
   });
 
@@ -1281,6 +1359,7 @@ test("list: falls back to bookings.json when Supabase errors", async () => {
     select() { return this; },
     eq()     { return this; },
     in()     { return this; },
+    is()     { return this; },
     order()  { return Promise.resolve({ data: null, error: { message: "DB down" } }); },
   };
   supabaseMockState.client = { from: () => errChain };
@@ -1316,6 +1395,7 @@ test("list: maps Supabase DB status 'approved' → 'booked_paid' in response", a
       select() { return this; },
       eq()     { return this; },
       in()     { return this; },
+      is()     { return this; },
       order()  { return Promise.resolve({ data: rows, error: null }); },
     };
     return chain;
@@ -1353,6 +1433,7 @@ test("list: maps Supabase DB status 'active' → 'active_rental' in response", a
       select() { return this; },
       eq()     { return this; },
       in()     { return this; },
+      is()     { return this; },
       order()  { return Promise.resolve({ data: rows, error: null }); },
     };
     return chain;
@@ -1429,6 +1510,187 @@ test("delete: returns 400 when bookingId is missing", async () => {
   await handler(makeReq({ secret: "test-admin-secret", action: "delete" }), res);
   assert.equal(res._status, 400);
   assert.match(res._body?.error || "", /bookingId is required/);
+});
+
+test("list: excludes soft-deleted Supabase rows when deleted_at is set", async () => {
+  resetStore(); resetCalls();
+  const rows = [
+    {
+      id: "uuid-live-1",
+      booking_ref: "bk-live-1",
+      vehicle_id: "camry",
+      pickup_date: "2026-05-10",
+      return_date: "2026-05-12",
+      pickup_time: "10:00 AM",
+      return_time: "10:00 AM",
+      status: "active",
+      total_price: 200,
+      deposit_paid: 200,
+      remaining_balance: 0,
+      payment_status: "paid",
+      payment_method: "stripe",
+      payment_intent_id: "pi-live-1",
+      notes: "",
+      created_at: "2026-05-10T10:00:00.000Z",
+      updated_at: null,
+      deleted_at: null,
+      customers: { id: "cu-live-1", name: "Live User", phone: "+15550000001", email: "live@example.com" },
+    },
+    {
+      id: "uuid-arch-1",
+      booking_ref: "bk-arch-1",
+      vehicle_id: "camry",
+      pickup_date: "2026-05-01",
+      return_date: "2026-05-03",
+      pickup_time: "10:00 AM",
+      return_time: "10:00 AM",
+      status: "completed",
+      total_price: 180,
+      deposit_paid: 180,
+      remaining_balance: 0,
+      payment_status: "paid",
+      payment_method: "stripe",
+      payment_intent_id: "pi-arch-1",
+      notes: "",
+      created_at: "2026-05-01T10:00:00.000Z",
+      updated_at: null,
+      deleted_at: "2026-05-04T00:00:00.000Z",
+      customers: { id: "cu-arch-1", name: "Archived User", phone: "+15550000002", email: "arch@example.com" },
+    },
+  ];
+  const makeBookingsChain = () => {
+    const filters = [];
+    const chain = {
+      select() { return this; },
+      eq(column, value) { filters.push((row) => row[column] === value); return this; },
+      in(column, values) { filters.push((row) => values.includes(row[column])); return this; },
+      is(column, value) {
+        if (value === null) filters.push((row) => row[column] == null);
+        return this;
+      },
+      order() {
+        return Promise.resolve({ data: rows.filter((row) => filters.every((fn) => fn(row))), error: null });
+      },
+    };
+    return chain;
+  };
+  const makeRevenueChain = () => ({ select() { return this; }, in() { return Promise.resolve({ data: [], error: null }); } });
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "bookings") return makeBookingsChain();
+      if (table === "revenue_records_effective") return makeRevenueChain();
+      return makeBookingsChain();
+    },
+  };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].bookingId, "bk-live-1");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
+test("delete+restore: soft-delete in Supabase hides booking from list until restored", async () => {
+  resetStore(); resetCalls();
+  const rows = [
+    {
+      id: "uuid-soft-1",
+      booking_ref: "bk-soft-1",
+      payment_intent_id: "pi-soft-1",
+      vehicle_id: "camry",
+      pickup_date: "2026-05-17",
+      return_date: "2026-05-18",
+      pickup_time: "10:00 AM",
+      return_time: "10:00 AM",
+      status: "active",
+      total_price: 120,
+      deposit_paid: 120,
+      remaining_balance: 0,
+      payment_status: "paid",
+      payment_method: "stripe",
+      notes: "",
+      created_at: "2026-05-17T10:00:00.000Z",
+      updated_at: null,
+      deleted_at: null,
+      deleted_by: null,
+      deleted_reason: null,
+      customers: { id: "cu-soft-1", name: "Soft User", phone: "+15550000003", email: "soft@example.com" },
+    },
+  ];
+  const makeBookingsChain = () => {
+    const filters = [];
+    const chain = {
+      _op: "select",
+      _payload: null,
+      select() { this._op = "select"; return this; },
+      update(payload) { this._op = "update"; this._payload = payload || {}; return this; },
+      eq(column, value) {
+        if (this._op === "update") {
+          for (const row of rows) {
+            if (row[column] === value) Object.assign(row, this._payload);
+          }
+          return Promise.resolve({ error: null });
+        }
+        filters.push((row) => row[column] === value);
+        return this;
+      },
+      in(column, values) { filters.push((row) => values.includes(row[column])); return this; },
+      is(column, value) {
+        if (value === null) filters.push((row) => row[column] == null);
+        return this;
+      },
+      maybeSingle() {
+        const found = rows.find((row) => filters.every((fn) => fn(row)));
+        return Promise.resolve({ data: found || null, error: null });
+      },
+      order() {
+        const data = rows.filter((row) => filters.every((fn) => fn(row)));
+        return Promise.resolve({ data, error: null });
+      },
+    };
+    return chain;
+  };
+  const makeRevenueChain = () => ({ select() { return this; }, in() { return Promise.resolve({ data: [], error: null }); } });
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "bookings") return makeBookingsChain();
+      if (table === "revenue_records_effective") return makeRevenueChain();
+      return makeBookingsChain();
+    },
+  };
+
+  try {
+    const listBefore = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listBefore);
+    assert.equal(listBefore._status, 200);
+    assert.equal(listBefore._body.bookings.length, 1);
+
+    const delRes = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "delete", bookingId: "bk-soft-1" }), delRes);
+    assert.equal(delRes._status, 200);
+    assert.equal(delRes._body.mode, "soft_delete");
+
+    const listAfterDelete = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listAfterDelete);
+    assert.equal(listAfterDelete._status, 200);
+    assert.equal(listAfterDelete._body.bookings.length, 0);
+
+    const restoreRes = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "restore", bookingId: "bk-soft-1" }), restoreRes);
+    assert.equal(restoreRes._status, 200);
+    assert.equal(restoreRes._body.success, true);
+
+    const listAfterRestore = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listAfterRestore);
+    assert.equal(listAfterRestore._status, 200);
+    assert.equal(listAfterRestore._body.bookings.length, 1);
+    assert.equal(listAfterRestore._body.bookings[0].bookingId, "bk-soft-1");
+  } finally {
+    supabaseMockState.client = null;
+  }
 });
 
 test("send_payment_link: bookingId path sends deduped SMS with payment-plan context", async () => {
