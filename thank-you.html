@@ -301,11 +301,11 @@
 
       function autoResumeIfPending(snapshot) {
         if (params.get("identity") !== "return") return;
-        window.requestAnimationFrame(function () {
-          window.requestAnimationFrame(function () {
-            if (verifyBtn && !verifyBtn.disabled && isPendingIdentity(snapshot)) verifyBtn.click();
-          });
-        });
+        if (!snapshot || !isPendingIdentity(snapshot)) return;
+        if (statusEl) {
+          statusEl.className = "ty-identity-status";
+          statusEl.textContent = "Identity verification is required before your application can move into review.";
+        }
       }
 
       function updateVerifyControls(snapshot) {

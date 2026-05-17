@@ -286,6 +286,31 @@ test("create-identity-verification-session retries with minimal payload on inval
   assert.equal("url" in (createCalls[1].body?.verification || {}), false);
 });
 
+test("create-identity-verification-session returns processing when existing decision lookup is unavailable", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: "app_1",
+      identity_status: "processing",
+      application_status: "submitted",
+      identity_session_id: "vrf_existing",
+    },
+  };
+  veriffDecisionStatus = 404;
+  veriffDecisionPayload = { message: "Not found" };
+
+  const res = makeRes();
+  await createIdentitySessionHandler(makeIdentityCreateReq({ applicationId: "app_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.processing, true);
+  assert.equal(res._body.decisionUnavailable, true);
+  assert.equal(calls.patched.length, 0);
+  const methods = calls.veriffFetches.map((entry) => entry.method);
+  assert.deepEqual(methods, ["GET"]);
+});
+
 test("stripe-identity-webhook maps approved Veriff decision to verified", async () => {
   const payload = {
     id: "evt_veriff_approved_1",
