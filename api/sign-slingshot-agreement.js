@@ -4,9 +4,16 @@ import { getVehicleById } from "./_vehicles.js";
 import { generateSlingshotRentalAgreementPdf } from "./_slingshot-rental-agreement.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { applySlingshotBookingStatusTransition } from "./_slingshot-booking-status-transitions.js";
+import { isSchemaError } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const SLINGSHOT_DEPOSIT = 500;
+const BOOKING_SELECT_VARIANTS = [
+  "booking_ref, vehicle_id, category, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, identity_session_id, manage_token",
+  "booking_ref, vehicle_id, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, identity_session_id, manage_token",
+  "booking_ref, vehicle_id, category, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, manage_token",
+  "booking_ref, vehicle_id, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, manage_token",
+];
 
 function inferPackage(baseRate) {
   const map = {
@@ -16,6 +23,21 @@ function inferPackage(baseRate) {
     350: "24 Hours",
   };
   return map[Math.round(Number(baseRate || 0))] || "";
+}
+
+async function fetchBookingWithCompatibility(sb, bookingRef) {
+  let schemaError = null;
+  for (const selectClause of BOOKING_SELECT_VARIANTS) {
+    const result = await sb
+      .from("bookings")
+      .select(selectClause)
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+    if (!result.error) return result;
+    if (!isSchemaError(result.error)) return result;
+    schemaError = result.error;
+  }
+  return { data: null, error: schemaError };
 }
 
 export default async function handler(req, res) {
@@ -38,20 +60,22 @@ export default async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(503).json({ error: "Database unavailable. Please try again." });
 
-  const { data: booking, error: bookingErr } = await sb
-    .from("bookings")
-    .select("booking_ref, vehicle_id, category, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, identity_session_id, manage_token")
-    .eq("booking_ref", trimmedBookingId)
-    .maybeSingle();
+  const { data: booking, error: bookingErr } = await fetchBookingWithCompatibility(sb, trimmedBookingId);
 
   if (bookingErr) return res.status(500).json({ error: `Booking lookup failed: ${bookingErr.message}` });
   if (!booking) return res.status(404).json({ error: "Booking not found." });
-  if (String(booking.category || "").toLowerCase() !== "slingshot") {
+  const vehicleData = booking.vehicle_id ? await getVehicleById(booking.vehicle_id).catch(() => null) : null;
+  const category = String(booking.category || "").trim().toLowerCase();
+  if (category && category !== "slingshot") {
+    return res.status(409).json({ error: "This agreement endpoint only supports slingshot bookings." });
+  }
+  if (!category && String(vehicleData?.type || "").toLowerCase() !== "slingshot") {
     return res.status(409).json({ error: "This agreement endpoint only supports slingshot bookings." });
   }
 
-  const currentStatus = String(booking.status || "").trim();
-  const allowedStatuses = new Set(["identity_verified", "pending_checkout", "agreement_pending", "agreement_signed", "pending_manual_payment", "ready_for_pickup"]);
+  const rawCurrentStatus = String(booking.status || "").trim();
+  const currentStatus = rawCurrentStatus === "pending" ? "pending_checkout" : rawCurrentStatus;
+  const allowedStatuses = new Set(["pending", "identity_verified", "pending_checkout", "agreement_pending", "agreement_signed", "pending_manual_payment", "ready_for_pickup"]);
   if (!allowedStatuses.has(currentStatus)) {
     return res.status(409).json({ error: `Booking is not ready for agreement signing (current status: ${currentStatus || "unknown"}).` });
   }
@@ -85,7 +109,6 @@ export default async function handler(req, res) {
     });
   }
 
-  const vehicleData = booking.vehicle_id ? await getVehicleById(booking.vehicle_id).catch(() => null) : null;
   const totalPrice = Number(booking.total_price || 0);
   const baseRate = Math.max(0, totalPrice - SLINGSHOT_DEPOSIT);
   const packageLabel = inferPackage(baseRate);
@@ -136,7 +159,13 @@ export default async function handler(req, res) {
     .update({ manage_token: manageToken, updated_at: new Date().toISOString() })
     .eq("booking_ref", trimmedBookingId);
 
-  let currentBookingState = booking;
+  let currentBookingState = { ...booking, status: currentStatus };
+  if (rawCurrentStatus === "pending") {
+    await sb
+      .from("bookings")
+      .update({ status: "pending_checkout", updated_at: new Date().toISOString() })
+      .eq("booking_ref", trimmedBookingId);
+  }
   if (currentStatus === "identity_verified" || currentStatus === "pending_checkout") {
     currentBookingState = await applySlingshotBookingStatusTransition(sb, currentBookingState, "agreement_pending", {
       changedBy: "slingshot-agreement",
