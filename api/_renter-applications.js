@@ -182,6 +182,13 @@ export async function insertRenterApplication(payload = {}, sbClient = null) {
   if (!row.name || !row.phone || !row.experience) {
     return { ok: false, status: 400, error: "Missing required fields: name, phone, experience." };
   }
+  if (!row.agree_terms || !row.agree_sms_consent || !row.agree_background_check) {
+    return {
+      ok: false,
+      status: 400,
+      error: "All required consents must be accepted: terms, SMS consent, and background check authorization.",
+    };
+  }
 
   const { data, error } = await sb
     .from("renter_applications")

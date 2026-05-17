@@ -15,6 +15,9 @@
   const form       = document.getElementById("applyForm");
   const submitBtn  = document.getElementById("applySubmitBtn");
   const statusEl   = document.getElementById("applyStatus");
+  const termsCheckbox = document.getElementById("applyTerms");
+  const smsConsentCheckbox = document.getElementById("applySmsConsent");
+  const backgroundCheckCheckbox = document.getElementById("applyBackgroundCheck");
 
   let applyInsuranceFile = null;
 
@@ -46,12 +49,27 @@
     document.body.style.overflow = "";
   }
 
+  function allRequiredConsentsChecked() {
+    return !!(termsCheckbox && termsCheckbox.checked)
+      && !!(smsConsentCheckbox && smsConsentCheckbox.checked)
+      && !!(backgroundCheckCheckbox && backgroundCheckCheckbox.checked);
+  }
+
+  function syncSubmitEnabledState() {
+    submitBtn.disabled = !allRequiredConsentsChecked();
+  }
+
   document.getElementById("applyNowBtn").addEventListener("click", openModal);
   closeBtn.addEventListener("click", closeModal);
   document.getElementById("applyBackBtn").addEventListener("click", closeModal);
 
   // Expose openModal globally so other scripts (e.g. chatbot) can trigger it.
   window.openApplyModal = openModal;
+
+  if (termsCheckbox) termsCheckbox.addEventListener("change", syncSubmitEnabledState);
+  if (smsConsentCheckbox) smsConsentCheckbox.addEventListener("change", syncSubmitEnabledState);
+  if (backgroundCheckCheckbox) backgroundCheckCheckbox.addEventListener("change", syncSubmitEnabledState);
+  syncSubmitEnabledState();
 
   // Close when clicking the dark backdrop
   overlay.addEventListener("click", function (e) {
