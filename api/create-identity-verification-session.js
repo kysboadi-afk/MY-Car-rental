@@ -81,6 +81,15 @@ export default async function handler(req, res) {
   if (application.identity_session_id) {
     try {
       const existing = await fetchVeriffDecision(application.identity_session_id);
+      if (!existing.ok) {
+        return res.status(200).json({
+          success: true,
+          processing: true,
+          decisionUnavailable: true,
+          identityStatus: "processing",
+          applicationId,
+        });
+      }
       if (existing.ok && existing.mappedStatus === "verified") {
         // Veriff decision is approved but our DB may not reflect it yet (webhook missed or
         // still in-flight). Sync the application state here so it appears in the review queue.
@@ -113,7 +122,7 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.ok && existing.mappedStatus === "processing") {
+      if (existing.mappedStatus === "processing") {
         // Veriff is processing the submission; no action needed from applicant.
         return res.status(200).json({
           success: true,
@@ -123,7 +132,7 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.ok && existing.mappedStatus === "requires_input" && existing.verificationUrl) {
+      if (existing.mappedStatus === "requires_input" && existing.verificationUrl) {
         // Existing verification can be resumed via hosted URL.
         return res.status(200).json({
           success: true,
@@ -138,12 +147,18 @@ export default async function handler(req, res) {
       // If decision is canceled/failed/unknown or lacks reusable URL, fall through
       // and create a fresh session below for retry/resubmission.
     } catch (retrieveErr) {
-      // Session may have been deleted or Veriff returned an unexpected error.
-      // Log and fall through to create a new session.
+      // Decision retrieval is unavailable; avoid creating duplicate verification loops.
       console.warn(
-        "create-identity-verification-session: session retrieve failed, creating new session:",
+        "create-identity-verification-session: session retrieve failed, returning processing state:",
         retrieveErr.message || retrieveErr
       );
+      return res.status(200).json({
+        success: true,
+        processing: true,
+        decisionUnavailable: true,
+        identityStatus: "processing",
+        applicationId,
+      });
     }
   }
 

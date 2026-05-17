@@ -79,8 +79,17 @@ export default async function handler(req, res) {
   if (application.identity_session_id) {
     try {
       const existing = await fetchVeriffDecision(application.identity_session_id);
+      if (!existing.ok) {
+        return res.status(200).json({
+          success: true,
+          processing: true,
+          decisionUnavailable: true,
+          identityStatus: "processing",
+          applicationId,
+        });
+      }
 
-      if (existing.ok && existing.mappedStatus === "verified") {
+      if (existing.mappedStatus === "verified") {
         if (application.identity_status !== "verified") {
           const syncPatch = {
             identitySessionId: existing.sessionId || application.identity_session_id,
@@ -109,7 +118,7 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.ok && existing.mappedStatus === "processing") {
+      if (existing.mappedStatus === "processing") {
         return res.status(200).json({
           success: true,
           processing: true,
@@ -118,7 +127,7 @@ export default async function handler(req, res) {
         });
       }
 
-      if (existing.ok && existing.mappedStatus === "requires_input" && existing.verificationUrl) {
+      if (existing.mappedStatus === "requires_input" && existing.verificationUrl) {
         return res.status(200).json({
           success: true,
           applicationId,
@@ -130,9 +139,16 @@ export default async function handler(req, res) {
       }
     } catch (retrieveErr) {
       console.warn(
-        "resolve-identity-resume: decision lookup failed, creating new session:",
+        "resolve-identity-resume: decision lookup failed, returning processing state:",
         retrieveErr.message || retrieveErr
       );
+      return res.status(200).json({
+        success: true,
+        processing: true,
+        decisionUnavailable: true,
+        identityStatus: "processing",
+        applicationId,
+      });
     }
   }
 

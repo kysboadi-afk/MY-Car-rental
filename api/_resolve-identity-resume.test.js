@@ -188,6 +188,30 @@ test("resolve-identity-resume: syncs verified decision from webhook lag", async 
   assert.equal(calls.patched[0].patch.identityStatus, "verified");
 });
 
+test("resolve-identity-resume: returns processing when decision lookup is unavailable for existing session", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: TEST_APP_ID,
+      identity_status: "processing",
+      application_status: "submitted",
+      identity_session_id: "vrf_existing",
+    },
+  };
+  decisionStatus = 404;
+  decisionPayload = { message: "Not found" };
+
+  const res = makeRes();
+  await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.processing, true);
+  assert.equal(res._body.decisionUnavailable, true);
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.fetchRequests.length, 1);
+  assert.equal(calls.fetchRequests[0].method, "GET");
+});
+
 test("resolve-identity-resume: creates fresh session when decision is canceled", async () => {
   fetchResult = {
     ok: true,
