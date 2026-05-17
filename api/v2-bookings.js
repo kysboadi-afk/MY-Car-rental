@@ -266,52 +266,89 @@ export default async function handler(req, res) {
       if (sb) {
         // Build the query with filters BEFORE .order() so the chain terminates
         // correctly (the Supabase JS SDK — and our test stubs — resolve on .order()).
-        let q = sb
-          .from("bookings")
-          .select(`
-            id,
-            booking_ref,
-            vehicle_id,
-            pickup_date,
-            return_date,
-            pickup_time,
-            return_time,
-            status,
-            total_price,
-            deposit_paid,
-            remaining_balance,
-            payment_status,
-            payment_method,
-            payment_intent_id,
-            stripe_customer_id,
-            stripe_payment_method_id,
-            extension_stripe_customer_id,
-            extension_stripe_payment_method_id,
-            flagged,
-            risk_score,
-            notes,
-            created_at,
-            updated_at,
-            extension_count,
-            late_fee_amount,
-            late_fee_status,
-            late_fee_approved_at,
-            late_fee_waived,
-            late_fee_waived_amount,
-            extension_risk_override,
-            customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
-          `);
+        const LIST_SELECT_FULL = `
+          id,
+          booking_ref,
+          vehicle_id,
+          pickup_date,
+          return_date,
+          pickup_time,
+          return_time,
+          status,
+          total_price,
+          deposit_paid,
+          remaining_balance,
+          payment_status,
+          payment_method,
+          payment_intent_id,
+          stripe_customer_id,
+          stripe_payment_method_id,
+          extension_stripe_customer_id,
+          extension_stripe_payment_method_id,
+          flagged,
+          risk_score,
+          notes,
+          created_at,
+          updated_at,
+          extension_count,
+          late_fee_amount,
+          late_fee_status,
+          late_fee_approved_at,
+          late_fee_waived,
+          late_fee_waived_amount,
+          extension_risk_override,
+          customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
+        `;
 
-        if (vehicleId && effectiveVehicles.includes(vehicleId)) {
-          q = q.eq("vehicle_id", vehicleId);
-        } else {
-          q = q.in("vehicle_id", effectiveVehicles);
-        }
-        if (status) {
-          q = q.eq("status", status);
-        }
+        const LIST_SELECT_COMPAT = `
+          id,
+          booking_ref,
+          vehicle_id,
+          pickup_date,
+          return_date,
+          pickup_time,
+          return_time,
+          status,
+          total_price,
+          deposit_paid,
+          remaining_balance,
+          payment_status,
+          payment_method,
+          payment_intent_id,
+          stripe_customer_id,
+          stripe_payment_method_id,
+          extension_stripe_customer_id,
+          extension_stripe_payment_method_id,
+          flagged,
+          risk_score,
+          notes,
+          created_at,
+          updated_at,
+          extension_count,
+          late_fee_amount,
+          late_fee_status,
+          late_fee_approved_at,
+          late_fee_waived,
+          late_fee_waived_amount,
+          customers ( id, name, phone, email )
+        `;
 
-        const { data: rows, error } = await q.order("created_at", { ascending: false });
+        const buildListQuery = (selectClause) => {
+          let q = sb.from("bookings").select(selectClause);
+          if (vehicleId && effectiveVehicles.includes(vehicleId)) {
+            q = q.eq("vehicle_id", vehicleId);
+          } else {
+            q = q.in("vehicle_id", effectiveVehicles);
+          }
+          if (status) q = q.eq("status", status);
+          return q;
+        };
+
+        let { data: rows, error } = await buildListQuery(LIST_SELECT_FULL).order("created_at", { ascending: false });
+        if (error && isSchemaError(error)) {
+          console.warn("v2-bookings list: schema mismatch on full select, retrying with compatibility columns:", error.message);
+          ({ data: rows, error } = await buildListQuery(LIST_SELECT_COMPAT).order("created_at", { ascending: false }));
+        }
 
         if (!error) {
           // Fetch revenue_records for financial totals (best-effort; non-fatal)
