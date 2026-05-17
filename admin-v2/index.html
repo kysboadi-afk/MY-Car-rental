@@ -5685,6 +5685,17 @@ function applyBookingFilters() {
     return true;
   });
 
+  // Sort: active/overdue/extended/flagged first, then upcoming, then all others newest-pickup first
+  const _bookingStatusPriority = { active_rental: 0, overdue: 0, extended: 0, flagged: 0, booked_paid: 1, reserved_unpaid: 1 };
+  filtered.sort((a, b) => {
+    const da = bookingDerivedStatus(a, now);
+    const db = bookingDerivedStatus(b, now);
+    const pa = _bookingStatusPriority[da] ?? 2;
+    const pb = _bookingStatusPriority[db] ?? 2;
+    if (pa !== pb) return pa - pb;
+    return (b.pickupDate || '') > (a.pickupDate || '') ? 1 : (b.pickupDate || '') < (a.pickupDate || '') ? -1 : 0;
+  });
+
   if (filtered.length === 0) {
     document.getElementById('bookings-table-wrap').style.display = 'none';
     document.getElementById('bookings-empty').style.display = '';
