@@ -19,6 +19,34 @@ export const config = {
   api: { bodyParser: false },
 };
 
+const DEFAULT_IDENTITY_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
+
+function pickString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function getBrowserReturnUrl(req) {
+  const query = req?.query && typeof req.query === "object" ? req.query : {};
+  const parsedUrl = typeof req?.url === "string" ? new URL(req.url, "https://www.slytrans.com") : null;
+  const applicationId = pickString(
+    query.applicationId,
+    query.application_id,
+    query.vendorData,
+    query.vendor_data,
+    parsedUrl?.searchParams.get("applicationId"),
+    parsedUrl?.searchParams.get("application_id"),
+    parsedUrl?.searchParams.get("vendorData"),
+    parsedUrl?.searchParams.get("vendor_data"),
+  );
+  const redirectUrl = new URL(DEFAULT_IDENTITY_RETURN_URL);
+  redirectUrl.searchParams.set("identity", "return");
+  if (applicationId) redirectUrl.searchParams.set("applicationId", applicationId);
+  return redirectUrl.toString();
+}
+
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -120,6 +148,11 @@ async function recordEvent(sb, eventId, payload, eventType, applicationId, sessi
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Location", getBrowserReturnUrl(req));
+    return res.status(302).send("Redirecting…");
+  }
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   if (!process.env.VERIFF_SHARED_SECRET || !process.env.VERIFF_API_KEY || !process.env.VERIFF_PROJECT_ID) {
