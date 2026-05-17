@@ -63,7 +63,9 @@
     "api/admin-review-queue.js":              { "maxDuration": 20 },
     "api/admin-review-detail.js":             { "maxDuration": 20 },
     "api/review-application.js":              { "maxDuration": 30 },
-    "api/renter-balance-ledger.js":           { "maxDuration": 20 }
+    "api/renter-balance-ledger.js":           { "maxDuration": 20 },
+    "api/create-slingshot-booking.js":        { "maxDuration": 30 },
+    "api/sign-slingshot-agreement.js":        { "maxDuration": 30 }
   },
   "crons": [
     {
