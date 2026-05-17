@@ -62,6 +62,10 @@ function clearPayError() {
   if (el) { el.textContent = ""; el.style.display = "none"; }
 }
 
+function waitMs(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
+}
+
 function normalizeIdentityContext(data) {
   return {
     vehicleId: String((data && data.vehicleId) || vehicleId || "").trim().toLowerCase(),
@@ -648,30 +652,33 @@ async function launchSlingshotPayment() {
 
     if (bookBtn) bookBtn.textContent = "Finalizing reservation…";
 
-    var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        vehicleId,
-        slingshotPackage: selectedPackage,
-        paymentOption:    "deposit",
-        pickupDate:       dateInput.value,
-        pickupTime:       timeSelect.value,
-        name,
-        email,
-        phone,
-        identitySessionId,
-      }),
-    });
+    var data = {};
+    if (!pendingBookingId) {
+      var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vehicleId,
+          slingshotPackage: selectedPackage,
+          paymentOption:    "deposit",
+          pickupDate:       dateInput.value,
+          pickupTime:       timeSelect.value,
+          name,
+          email,
+          phone,
+          identitySessionId,
+        }),
+      });
 
-    var data = await resp.json();
-    if (!resp.ok) {
-      var isDates = resp.status === 409;
-      var err = Object.assign(new Error(data.error || "Server error"), { isDatesError: isDates });
-      throw err;
+      data = await resp.json();
+      if (!resp.ok) {
+        var isDates = resp.status === 409;
+        var err = Object.assign(new Error(data.error || "Server error"), { isDatesError: isDates });
+        throw err;
+      }
+
+      pendingBookingId = data.bookingId;
     }
-
-    pendingBookingId    = data.bookingId;
 
     // Build booking payload for success.html → send-reservation-email
     var details = computePaymentDetails(selectedPackage, "manual");
@@ -713,17 +720,31 @@ async function launchSlingshotPayment() {
 
     // Sign the rental agreement, save booking docs, and redirect to thank-you.
     // Agreement delivery is triggered by admin after in-person payment is received.
-    var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bookingId: pendingBookingId,
-        signature: agreementSignature,
-      }),
-    });
-    var signData = await signResp.json();
-    if (!signResp.ok) {
-      throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
+    var signData = null;
+    var signAttempts = 0;
+    while (signAttempts < 3) {
+      signAttempts += 1;
+      try {
+        var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId: pendingBookingId,
+            signature: agreementSignature,
+          }),
+        });
+        signData = await signResp.json();
+        if (!signResp.ok) {
+          throw new Error((signData && signData.error) || "Agreement signing could not be completed.");
+        }
+        break;
+      } catch (signErr) {
+        if (signErr && signErr.name === "TypeError" && signAttempts < 3) {
+          await waitMs(500 * signAttempts);
+          continue;
+        }
+        throw signErr;
+      }
     }
     clearIdentityState();
     clearBookingDraft();
