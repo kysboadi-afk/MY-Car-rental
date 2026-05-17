@@ -39,6 +39,7 @@ let veriffDecisionStatus = 404;
 let veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
 let veriffCreateStatus = 200;
 let veriffCreatePayload = { verification: { id: "vrf_123", status: "submitted", url: "https://veriff.test/session/vrf_123" } };
+let veriffCreateFailureOnce = null;
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
   calls.fetched.push(applicationId);
@@ -133,6 +134,15 @@ global.fetch = mock.fn(async (url, init = {}) => {
       ok: veriffDecisionStatus >= 200 && veriffDecisionStatus < 300,
       status: veriffDecisionStatus,
       async json() { return veriffDecisionPayload; },
+    };
+  }
+  if (veriffCreateFailureOnce) {
+    const failure = veriffCreateFailureOnce;
+    veriffCreateFailureOnce = null;
+    return {
+      ok: false,
+      status: failure.status || 400,
+      async json() { return failure.payload || { message: "Request includes invalid parameters" }; },
     };
   }
   return {
@@ -231,6 +241,7 @@ beforeEach(() => {
   veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
   veriffCreateStatus = 200;
   veriffCreatePayload = { verification: { id: "vrf_123", status: "submitted", url: "https://veriff.test/session/vrf_123" } };
+  veriffCreateFailureOnce = null;
 });
 
 test("create-identity-verification-session creates a Veriff session and persists linkage", async () => {
@@ -259,6 +270,20 @@ test("create-identity-verification-session returns alreadyVerified when identity
   assert.equal(res._status, 200);
   assert.equal(res._body.alreadyVerified, true);
   assert.equal(calls.veriffFetches.length, 0);
+});
+
+test("create-identity-verification-session retries with minimal payload on invalid parameters", async () => {
+  veriffCreateFailureOnce = { status: 400, payload: { message: "Request includes invalid parameters" } };
+  const res = makeRes();
+  await createIdentitySessionHandler(makeIdentityCreateReq({ applicationId: "app_1" }), res);
+
+  assert.equal(res._status, 200);
+  const createCalls = calls.veriffFetches.filter((entry) => entry.method === "POST");
+  assert.equal(createCalls.length, 2);
+  assert.equal(createCalls[0].body?.verification?.person?.firstName, "Jane");
+  assert.equal("person" in (createCalls[1].body?.verification || {}), false);
+  assert.equal("document" in (createCalls[1].body?.verification || {}), false);
+  assert.equal("url" in (createCalls[1].body?.verification || {}), false);
 });
 
 test("stripe-identity-webhook maps approved Veriff decision to verified", async () => {

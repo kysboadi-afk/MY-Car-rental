@@ -111,6 +111,12 @@ function safeEquals(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
+function isInvalidParametersError(status, payload = {}) {
+  if (Number(status) !== 400) return false;
+  const message = pickString(payload?.message, payload?.error);
+  return /invalid parameters?/i.test(message);
+}
+
 export function verifyVeriffWebhookSignature(rawBody, headers = {}, sharedSecret) {
   if (!rawBody || !sharedSecret) return false;
   const signatureHeader = pickString(
@@ -168,18 +174,34 @@ export async function createVeriffSession({
     verification.document = { country };
   }
 
-  const body = { verification };
+  const requestHeaders = {
+    "Content-Type": "application/json",
+    "X-AUTH-CLIENT": cfg.apiKey,
+    "X-AUTH-CLIENT-PROJECT": cfg.projectId,
+  };
 
-  const response = await fetchImpl(`${VERIFF_API_BASE}/sessions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-AUTH-CLIENT": cfg.apiKey,
-      "X-AUTH-CLIENT-PROJECT": cfg.projectId,
-    },
-    body: JSON.stringify(body),
-  });
-  const payload = await response.json().catch(() => ({}));
+  async function postSession(body) {
+    const response = await fetchImpl(`${VERIFF_API_BASE}/sessions`, {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  }
+
+  let body = { verification };
+  let { response, payload } = await postSession(body);
+  if (!response.ok && isInvalidParametersError(response.status, payload)) {
+    body = {
+      verification: {
+        vendorData: verification.vendorData,
+        callback: verification.callback,
+        timestamp: verification.timestamp,
+      },
+    };
+    ({ response, payload } = await postSession(body));
+  }
 
   if (!response.ok) {
     return {
