@@ -33,12 +33,32 @@ import { createManageToken } from "./_manage-booking-token.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://www.slytrans.com/slingshot-book.html";
 const SLINGSHOT_MANUAL_PAYMENT_ENABLED = /^(true|1|yes|on)$/i.test(String(process.env.SLINGSHOT_NO_PAYMENT || ""));
+const SLINGSHOT_IDENTITY_VERIFY_RETRIES = 5;
+const SLINGSHOT_IDENTITY_VERIFY_RETRY_DELAY_MS = 600;
 
 function buildSlingshotIdentityReturnUrl(vehicleId) {
   const url = new URL(DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL);
   if (vehicleId) url.searchParams.set("vehicle", vehicleId);
   url.searchParams.set("identity", "return");
   return url.toString();
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retrieveVerifiedIdentitySession(stripe, sessionId) {
+  let lastSession = null;
+  for (let attempt = 1; attempt <= SLINGSHOT_IDENTITY_VERIFY_RETRIES; attempt += 1) {
+    lastSession = await stripe.identity.verificationSessions.retrieve(sessionId);
+    const status = String(lastSession?.status || "").toLowerCase();
+    if (status === "verified") return lastSession;
+    if (status !== "processing" || attempt === SLINGSHOT_IDENTITY_VERIFY_RETRIES) {
+      return lastSession;
+    }
+    await sleep(SLINGSHOT_IDENTITY_VERIFY_RETRY_DELAY_MS);
+  }
+  return lastSession;
 }
 
 export default async function handler(req, res) {
@@ -184,7 +204,7 @@ export default async function handler(req, res) {
     }
     let verifiedIdentitySession;
     try {
-      verifiedIdentitySession = await stripe.identity.verificationSessions.retrieve(trimmedIdentitySessionId);
+      verifiedIdentitySession = await retrieveVerifiedIdentitySession(stripe, trimmedIdentitySessionId);
     } catch (identityErr) {
       return res.status(400).json({ error: "Could not verify your identity session. Please try again." });
     }
