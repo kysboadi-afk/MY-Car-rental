@@ -745,7 +745,9 @@ export async function performPreAdverseAction(
 }
 
 /**
- * Fetch a page of applications awaiting manual review (under_review or needs_info).
+ * Fetch a page of applications awaiting manual review.
+ * Includes under_review / needs_info plus submitted rows that already have
+ * processing or verified identity decisions while status promotion catches up.
  *
  * @param {{page?:number, pageSize?:number}} opts
  * @param {object} [sbClient]
@@ -768,7 +770,10 @@ export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = 
         "submitted_at, created_at, updated_at",
       { count: "exact" },
     )
-    .in("application_status", ["under_review", "needs_info"])
+    .or(
+      "application_status.in.(under_review,needs_info)," +
+        "and(application_status.eq.submitted,identity_status.in.(processing,verified))",
+    )
     .order("submitted_at", { ascending: true })
     .range(from, to);
 
