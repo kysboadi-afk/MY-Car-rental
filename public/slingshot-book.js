@@ -66,6 +66,10 @@ function waitMs(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
+function isNetworkFetchError(err) {
+  return !!(err && err.name === "TypeError" && /Failed to fetch/i.test(String(err.message || "")));
+}
+
 function normalizeIdentityContext(data) {
   return {
     vehicleId: String((data && data.vehicleId) || vehicleId || "").trim().toLowerCase(),
@@ -602,6 +606,7 @@ async function ensureSlingshotIdentityVerified(payload) {
 
 async function launchSlingshotPayment() {
   clearPayError();
+  var flowStage = "start";
 
   var dateInput  = document.getElementById("slPickupDate");
   var timeSelect = document.getElementById("slPickupTime");
@@ -635,6 +640,7 @@ async function launchSlingshotPayment() {
   if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Verifying identity…"; }
 
   try {
+    flowStage = "identity_verification";
     var identitySessionId = await ensureSlingshotIdentityVerified({
       vehicleId: vehicleId,
       name: name,
@@ -654,6 +660,7 @@ async function launchSlingshotPayment() {
 
     var data = {};
     if (!pendingBookingId) {
+      flowStage = "create_booking";
       var resp = await fetch(API_BASE + "/api/create-slingshot-booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -725,6 +732,7 @@ async function launchSlingshotPayment() {
     while (signAttempts < 3) {
       signAttempts += 1;
       try {
+        flowStage = "sign_agreement";
         var signResp = await fetch(API_BASE + "/api/sign-slingshot-agreement", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -739,9 +747,12 @@ async function launchSlingshotPayment() {
         }
         break;
       } catch (signErr) {
-        if (signErr && signErr.name === "TypeError" && signAttempts < 3) {
+        if (isNetworkFetchError(signErr) && signAttempts < 3) {
           await waitMs(500 * signAttempts);
           continue;
+        }
+        if (isNetworkFetchError(signErr)) {
+          throw new Error("Network error [SIGN_AGREEMENT_FETCH_FAILED]: Could not reach the agreement service. Please try again.");
         }
         throw signErr;
       }
@@ -763,7 +774,16 @@ async function launchSlingshotPayment() {
 
   } catch (err) {
     console.error("slingshot-book payment error:", err);
-    showPayError(err.message || "Reservation could not be completed. Please try again or call (844) 511-4059.");
+    if (isNetworkFetchError(err)) {
+      var stageCode = (
+        flowStage === "identity_verification" ? "IDENTITY_FETCH_FAILED" :
+        flowStage === "create_booking" ? "CREATE_BOOKING_FETCH_FAILED" :
+        "BOOKING_FLOW_FETCH_FAILED"
+      );
+      showPayError("Network error [" + stageCode + "]: Could not reach the server. Please check your connection and try again.");
+    } else {
+      showPayError(err.message || "Reservation could not be completed. Please try again or call (844) 511-4059.");
+    }
     if (bookBtn) { bookBtn.disabled = false; updateBookBtnLabel(); }
   }
 }
@@ -1040,7 +1060,10 @@ function initBookingForm() {
         slSignStatus.style.color   = "#4caf50";
         slSignStatus.textContent   = "Signed by " + sig + ". Check the box below to confirm.";
       }
-      if (slAgreeCheck) slAgreeCheck.disabled = false;
+      if (slAgreeCheck) {
+        slAgreeCheck.disabled = false;
+        slAgreeCheck.checked = true;
+      }
       updateBookBtn();
     });
   }
