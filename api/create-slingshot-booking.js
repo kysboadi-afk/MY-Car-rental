@@ -296,11 +296,14 @@ export default async function handler(req, res) {
       identity_session_id: trimmedIdentitySessionId,
     };
 
-    const { error: preWriteErr, attemptedRow } = await upsertBookingPrewrite(sb, preWriteRow, {
+    const { error: preWriteErr, attemptedRow, isConflict } = await upsertBookingPrewrite(sb, preWriteRow, {
       context: "SLINGSHOT_BOOKING_PREWRITE",
     });
 
     if (preWriteErr) {
+      if (isConflict) {
+        return res.status(409).json({ error: "This time slot is no longer available. Please select a different time." });
+      }
       console.error("[SLINGSHOT_BOOKING_PREWRITE_FAILED]", {
         bookingId,
         vehicleId,
