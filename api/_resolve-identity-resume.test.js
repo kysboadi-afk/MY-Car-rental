@@ -16,9 +16,9 @@ const calls = {
 
 let fetchResult = { ok: true, data: { id: TEST_APP_ID, identity_status: "not_started", application_status: "submitted" } };
 let patchResult = { ok: true, data: { id: TEST_APP_ID } };
-let createSessionPayload = { verification: { id: "vrf_123", url: "https://veriff.test/session/vrf_123", status: "submitted" } };
+let createSessionPayload = { status: "success", verification: { id: "vrf_123", url: "https://veriff.test/session/vrf_123", status: "created" } };
 let createSessionStatus = 200;
-let decisionPayload = { verification: { id: "vrf_existing", status: "submitted", url: "https://veriff.test/session/vrf_existing" } };
+let decisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted", url: "https://veriff.test/session/vrf_existing" } };
 let decisionStatus = 404;
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
@@ -84,9 +84,9 @@ beforeEach(() => {
   calls.fetchRequests.length = 0;
   fetchResult = { ok: true, data: { id: TEST_APP_ID, identity_status: "not_started", application_status: "submitted" } };
   patchResult = { ok: true, data: { id: TEST_APP_ID } };
-  createSessionPayload = { verification: { id: "vrf_123", url: "https://veriff.test/session/vrf_123", status: "submitted" } };
+  createSessionPayload = { status: "success", verification: { id: "vrf_123", url: "https://veriff.test/session/vrf_123", status: "created" } };
   createSessionStatus = 200;
-  decisionPayload = { verification: { id: "vrf_existing", status: "submitted", url: "https://veriff.test/session/vrf_existing" } };
+  decisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted", url: "https://veriff.test/session/vrf_existing" } };
   decisionStatus = 404;
 });
 
@@ -133,6 +133,7 @@ test("resolve-identity-resume: reuses decision URL when resubmission is requeste
   };
   decisionStatus = 200;
   decisionPayload = {
+    status: "success",
     verification: {
       id: "vrf_existing",
       status: "resubmission_requested",
@@ -159,7 +160,7 @@ test("resolve-identity-resume: syncs processing status and advances to under_rev
     },
   };
   decisionStatus = 200;
-  decisionPayload = { verification: { id: "vrf_processing", status: "submitted" } };
+  decisionPayload = { status: "success", verification: { id: "vrf_processing", status: "submitted" } };
 
   const res = makeRes();
   await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
@@ -181,7 +182,7 @@ test("resolve-identity-resume: returns processing for submitted decision", async
     },
   };
   decisionStatus = 200;
-  decisionPayload = { verification: { id: "vrf_processing", status: "submitted" } };
+  decisionPayload = { status: "success", verification: { id: "vrf_processing", status: "submitted" } };
 
   const res = makeRes();
   await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
@@ -203,7 +204,7 @@ test("resolve-identity-resume: syncs verified decision from webhook lag", async 
     },
   };
   decisionStatus = 200;
-  decisionPayload = { verification: { id: "vrf_done", status: "approved" } };
+  decisionPayload = { status: "success", verification: { id: "vrf_done", status: "approved" } };
 
   const res = makeRes();
   await handler(makeReq(createResumeToken(TEST_APP_ID)), res);
@@ -248,7 +249,7 @@ test("resolve-identity-resume: creates fresh session when decision is canceled",
     },
   };
   decisionStatus = 200;
-  decisionPayload = { verification: { id: "vrf_canceled", status: "canceled" } };
+  decisionPayload = { status: "success", verification: { id: "vrf_canceled", status: "canceled" } };
 
   const res = makeRes();
   await handler(makeReq(createResumeToken(TEST_APP_ID)), res);

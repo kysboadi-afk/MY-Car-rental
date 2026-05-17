@@ -37,9 +37,9 @@ let reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
 let recoveryCandidatesResult = { ok: true, data: [] };
 let reviewDetailResult = { ok: true, data: null, history: [] };
 let veriffDecisionStatus = 404;
-let veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
+let veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
 let veriffCreateStatus = 200;
-let veriffCreatePayload = { verification: { id: "vrf_123", status: "submitted", url: "https://veriff.test/session/vrf_123" } };
+let veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
 let veriffCreateFailureOnce = null;
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
@@ -249,9 +249,9 @@ beforeEach(() => {
   recoveryCandidatesResult = { ok: true, data: [] };
   reviewDetailResult = { ok: true, data: null, history: [] };
   veriffDecisionStatus = 404;
-  veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
   veriffCreateStatus = 200;
-  veriffCreatePayload = { verification: { id: "vrf_123", status: "submitted", url: "https://veriff.test/session/vrf_123" } };
+  veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
   veriffCreateFailureOnce = null;
 });
 
@@ -347,6 +347,29 @@ test("stripe-identity-webhook maps approved Veriff decision to verified", async 
   assert.equal(calls.checkrInitiations.length, 1);
 });
 
+test("stripe-identity-webhook maps approved Veriff decision with status:success envelope to verified", async () => {
+  // Real Veriff decision webhooks wrap the payload with status:"success" at the
+  // top level.  Ensure the envelope field does not shadow verification.status.
+  const payload = {
+    status: "success",
+    verification: {
+      id: "vrf_envelope_1",
+      status: "approved",
+      vendorData: "app_1",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.received, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.checkrInitiations.length, 1);
+});
+
 test("stripe-identity-webhook advances processing identity to under_review", async () => {
   const payload = {
     id: "evt_veriff_processing_1",
@@ -383,7 +406,7 @@ test("create-identity-verification-session syncs processing status and advances 
     },
   };
   veriffDecisionStatus = 200;
-  veriffDecisionPayload = { verification: { id: "vrf_existing", status: "submitted" } };
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
 
   const res = makeRes();
   await createIdentitySessionHandler(makeIdentityCreateReq({ applicationId: "app_1" }), res);
@@ -502,7 +525,7 @@ test("admin-review-queue recovers approved Veriff applications before loading qu
     pageSize: 50,
   };
   veriffDecisionStatus = 200;
-  veriffDecisionPayload = { verification: { id: "vrf_recover_1", status: "approved" } };
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_recover_1", status: "approved" } };
 
   const res = makeRes();
   await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
@@ -543,7 +566,7 @@ test("admin-review-detail recovers approved Veriff application before returning 
   });
   patchResult = { ok: true, data: syncedDetail };
   veriffDecisionStatus = 200;
-  veriffDecisionPayload = { verification: { id: "vrf_detail_sync", status: "approved" } };
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_detail_sync", status: "approved" } };
 
   const res = makeRes();
   await adminReviewDetailHandler(makeAdminGetReq({

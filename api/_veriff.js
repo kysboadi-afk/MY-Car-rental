@@ -46,13 +46,13 @@ export function mapVeriffDecisionToIdentityStatus(rawStatus) {
 
 export function extractVeriffStatus(payload = {}) {
   return pickString(
-    payload?.status,
-    payload?.action,
-    payload?.eventType,
-    payload?.event_type,
     payload?.verification?.status,
     payload?.verification?.state,
     payload?.verification?.decision,
+    payload?.action,
+    payload?.eventType,
+    payload?.event_type,
+    payload?.status,
     payload?.verification?.code,
     payload?.decision,
     payload?.decision?.status,
