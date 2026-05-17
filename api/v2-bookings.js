@@ -254,8 +254,15 @@ export default async function handler(req, res) {
             .map((v) => v.vehicle_id)
             .filter(Boolean);
           if (scopedIds.length > 0) {
-            const scopedSet = new Set(scopedIds);
-            effectiveVehicles = ALLOWED_VEHICLES.filter((id) => scopedSet.has(id));
+            // Use scopedIds directly from vehicles.json rather than intersecting
+            // with ALLOWED_VEHICLES.  ALLOWED_VEHICLES is built from CARS + the
+            // Supabase vehicles table; if a vehicle (e.g. "slingshot") exists in
+            // vehicles.json but hasn't been inserted into the Supabase vehicles
+            // table yet, the intersection would produce an empty list and the
+            // Supabase query would return zero rows.  vehicles.json is the
+            // authoritative source for fleet membership, so using it directly is
+            // both correct and safe on this authenticated admin endpoint.
+            effectiveVehicles = scopedIds;
           }
         } catch (scopeErr) {
           console.warn("v2-bookings list: scope vehicle lookup failed (non-fatal):", scopeErr.message);
