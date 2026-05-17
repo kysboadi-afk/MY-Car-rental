@@ -16,6 +16,13 @@ const SLINGSHOT_LIFECYCLE_STATUSES = new Set([
   "ready_for_pickup",
 ]);
 
+function isBookingConflictTriggerError(err) {
+  if (!err) return false;
+  const code = String(err.code || "");
+  const msg  = String(err.message || "");
+  return code === "P0001" && /booking conflict/i.test(msg);
+}
+
 function isStatusConstraintError(err) {
   if (!err) return false;
   const code = String(err.code || "");
@@ -69,6 +76,13 @@ export async function upsertBookingPrewrite(sb, row, options = {}) {
     const result = await query;
     if (!result.error) {
       return { ...result, attemptedRow, fallbacksApplied };
+    }
+
+    // Conflict trigger (P0001): a confirmed booking already occupies this slot.
+    // Do not retry — this is a real business constraint, not a schema issue.
+    if (isBookingConflictTriggerError(result.error)) {
+      console.warn(`[${context}] booking conflict trigger fired:`, result.error.message);
+      return { ...result, attemptedRow, fallbacksApplied, isConflict: true };
     }
 
     // Schema error: drop the next optional column that is still present in the row.
