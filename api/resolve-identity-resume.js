@@ -119,6 +119,35 @@ export default async function handler(req, res) {
       }
 
       if (existing.mappedStatus === "processing") {
+        // Veriff is processing the submission; advance the application so admin can see it
+        // while awaiting the final decision webhook.
+        if (application.application_status === "submitted") {
+          const syncPatch = {
+            identityStatus: "processing",
+            applicationStatus: "under_review",
+            reviewedAt: new Date().toISOString(),
+            reviewedBy: "resolve_resume_sync",
+          };
+          const syncResult = await patchRenterApplicationIdentityById(applicationId, syncPatch);
+          if (!syncResult.ok) {
+            console.error(
+              "resolve-identity-resume: processing sync failed:",
+              syncResult.error,
+              syncResult.details || ""
+            );
+          }
+        } else if (application.identity_status !== "processing") {
+          const syncResult = await patchRenterApplicationIdentityById(applicationId, {
+            identityStatus: "processing",
+          });
+          if (!syncResult.ok) {
+            console.error(
+              "resolve-identity-resume: processing status sync failed:",
+              syncResult.error,
+              syncResult.details || ""
+            );
+          }
+        }
         return res.status(200).json({
           success: true,
           processing: true,

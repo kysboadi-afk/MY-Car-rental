@@ -79,6 +79,9 @@ function mapIdentityUpdate(identityStatus, payload = {}) {
     return {
       identityStatus: "processing",
       identityLastError: null,
+      applicationStatus: "under_review",
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: "veriff_identity_webhook",
     };
   }
   if (identityStatus === "canceled") {
