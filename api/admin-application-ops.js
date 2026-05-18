@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { extractAdminSecret, isAdminAuthorized } from "./_admin-auth.js";
 import {
   fetchRenterApplicationById,
+  listPendingIdentityRecoveryApplications,
   patchRenterApplicationIdentityById,
   performReviewAction,
 } from "./_renter-applications.js";
@@ -437,6 +438,77 @@ async function handleArchiveTestApplications(reviewer, notes, dryRun, sb) {
   };
 }
 
+async function handleBackfillVeriffApproved(reviewer, notes, dryRun, sb) {
+  const candidatesResult = await listPendingIdentityRecoveryApplications({ limit: 200 }, sb);
+  if (!candidatesResult.ok) {
+    return { ok: false, status: candidatesResult.status || 503, error: candidatesResult.error || "Could not load recovery candidates." };
+  }
+
+  const candidates = candidatesResult.data;
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      count: candidates.length,
+      candidates: candidates.map((row) => ({
+        id: row.id,
+        applicationStatus: row.application_status,
+        identityStatus: row.identity_status,
+        identitySessionId: row.identity_session_id,
+      })),
+    };
+  }
+
+  let synced = 0;
+  let skipped = 0;
+  const failed = [];
+
+  for (const app of candidates) {
+    const result = await recoverApplicationIdentityFromVeriffDecision(app, {
+      reviewedBy: reviewer || "admin_backfill",
+      notify: true,
+    });
+
+    if (!result.ok) {
+      if (result.errorType) {
+        skipped += 1;
+      } else {
+        failed.push({ id: app.id, error: result.error || "Recovery failed." });
+      }
+      continue;
+    }
+
+    if (result.skipped) {
+      skipped += 1;
+      continue;
+    }
+
+    if (result.synced) {
+      synced += 1;
+      const nextStatus = String(result?.data?.application_status || app.application_status);
+      await appendAuditAction(sb, {
+        applicationId: app.id,
+        action: "manual_recovery",
+        performedBy: reviewer,
+        notes: notes || "Backfill: synced approved Veriff identity.",
+        previousStatus: String(app.application_status || ""),
+        newStatus: nextStatus,
+      });
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    dryRun: false,
+    scanned: candidates.length,
+    synced,
+    skipped,
+    failed,
+  };
+}
+
 async function handleClearDeclinedApplications(reviewer, notes, dryRun, sb) {
   const { data, error } = await sb
     .from("renter_applications")
@@ -520,6 +592,8 @@ export default async function handler(req, res) {
       result = await handleArchiveTestApplications(reviewedBy, notes, dryRun, sb);
     } else if (action === "clear_declined_applications") {
       result = await handleClearDeclinedApplications(reviewedBy, notes, dryRun, sb);
+    } else if (action === "backfill_veriff_approved") {
+      result = await handleBackfillVeriffApproved(reviewedBy, notes, dryRun, sb);
     } else {
       if (!applicationId) return res.status(400).json({ error: "applicationId is required." });
       if (action === "resend_verification") {
