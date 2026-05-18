@@ -1,6 +1,6 @@
 import { patchRenterApplicationIdentityById } from "./_renter-applications.js";
 import { sendIdentityVerifiedNotifications } from "./_application-notifications.js";
-import { fetchVeriffDecision } from "./_veriff.js";
+import { fetchVeriffDecision, getVeriffConfig } from "./_veriff.js";
 import { initiateCheckrScreening } from "./_checkr.js";
 
 const NOTIFIABLE_APPLICATION_STATUSES = ["submitted", "under_review", "needs_info"];
@@ -27,11 +27,22 @@ const RECOVERY_COOLDOWN_CACHE = new Map();
 // Module-level auth-failure gate. When auth is broken every Veriff call fails
 // with 401/403, so we suppress all recovery until the cooldown expires.
 let _authFailureCooldownUntil = 0;
+let _authFailureConfigFingerprint = "";
+
+function buildAuthConfigFingerprint() {
+  const cfg = getVeriffConfig();
+  return JSON.stringify({
+    apiKey: String(cfg.apiKey || "").trim(),
+    projectId: String(cfg.projectId || "").trim(),
+    sharedSecret: String(cfg.sharedSecret || "").trim(),
+  });
+}
 
 /** Exported for test isolation — do not call in production code. */
 export function clearRecoveryCooldownCache() {
   RECOVERY_COOLDOWN_CACHE.clear();
   _authFailureCooldownUntil = 0;
+  _authFailureConfigFingerprint = "";
 }
 
 function classifyVeriffHttpError(httpStatus) {
@@ -185,6 +196,24 @@ export async function recoverApplicationIdentityFromVeriffDecision(
     return { ok: true, synced: false, skipped: true, reason: "terminal_application_status" };
   }
 
+  const currentAuthFingerprint = buildAuthConfigFingerprint();
+  if (
+    _authFailureCooldownUntil > 0
+    && _authFailureConfigFingerprint
+    && currentAuthFingerprint
+    && _authFailureConfigFingerprint !== currentAuthFingerprint
+  ) {
+    console.info("veriff-recovery: auth cooldown cleared after credential change", {
+      application_id: applicationId,
+      session_id: identitySessionId,
+    });
+    _authFailureCooldownUntil = 0;
+    _authFailureConfigFingerprint = "";
+  } else if (_authFailureCooldownUntil > 0 && Date.now() >= _authFailureCooldownUntil) {
+    _authFailureCooldownUntil = 0;
+    _authFailureConfigFingerprint = "";
+  }
+
   // Skip if auth is known to be broken (all Veriff calls will fail with 401/403).
   if (Date.now() < _authFailureCooldownUntil) {
     decisionDiagnostics.skipReason = "auth_cooldown";
@@ -218,6 +247,7 @@ export async function recoverApplicationIdentityFromVeriffDecision(
     setSessionCooldown(identitySessionId, cooldownMs);
     if (errorType === "auth_failure") {
       _authFailureCooldownUntil = cooldownUntil;
+      _authFailureConfigFingerprint = currentAuthFingerprint;
     }
 
     const logPayload = {

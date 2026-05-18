@@ -20,18 +20,50 @@ function redactText(value) {
   return `${text.slice(0, 3)}***${text.slice(-2)}`;
 }
 
+function classifyCredentialEnvironment(value) {
+  const text = toLower(value);
+  if (!text) return "missing";
+  if (/test|sandbox|demo/.test(text)) return "sandbox";
+  if (/live|prod|production/.test(text)) return "production";
+  return "unknown";
+}
+
+function buildCredentialEnvironmentDiagnostics(cfg = {}) {
+  const apiKeyEnvironment = classifyCredentialEnvironment(cfg.apiKey);
+  const projectIdEnvironment = classifyCredentialEnvironment(cfg.projectId);
+  const sameCredentialEnvironment = (
+    apiKeyEnvironment !== "missing"
+    && projectIdEnvironment !== "missing"
+    && apiKeyEnvironment === projectIdEnvironment
+  );
+  return {
+    apiKeyEnvironment,
+    projectIdEnvironment,
+    sameCredentialEnvironment,
+  };
+}
+
 function detectLikelyEnvironmentMismatch(cfg = {}) {
   const vercelEnv = toLower(process.env.VERCEL_ENV || process.env.NODE_ENV);
   const key = toLower(cfg.apiKey);
   const project = toLower(cfg.projectId);
+  const envDiag = buildCredentialEnvironmentDiagnostics(cfg);
   if (vercelEnv !== "production") return false;
-  return /test|sandbox|demo/.test(key) || /test|sandbox|demo/.test(project);
+  return (
+    /test|sandbox|demo/.test(key)
+    || /test|sandbox|demo/.test(project)
+    || (envDiag.apiKeyEnvironment !== "missing"
+      && envDiag.projectIdEnvironment !== "missing"
+      && !envDiag.sameCredentialEnvironment)
+  );
 }
 
 function buildVeriffRequestDiagnostics(cfg = {}, endpoint = "", method = "GET", requestHeaders = {}) {
   const headerNames = Object.keys(requestHeaders || {}).map((k) => String(k).toLowerCase());
   const hasClientHeader = headerNames.includes("x-auth-client");
   const hasProjectHeader = headerNames.includes("x-auth-client-project");
+  const hasHmacHeader = headerNames.includes("x-hmac-signature");
+  const credentialEnvironment = buildCredentialEnvironmentDiagnostics(cfg);
   return {
     method,
     endpoint,
@@ -44,11 +76,15 @@ function buildVeriffRequestDiagnostics(cfg = {}, endpoint = "", method = "GET", 
     authHeadersPresent: {
       xAuthClient: hasClientHeader,
       xAuthClientProject: hasProjectHeader,
+      xHmacSignature: hasHmacHeader,
     },
+    authHeaderNamesPresent: headerNames,
     configFingerprints: {
       apiKey: redactText(cfg.apiKey),
       projectId: redactText(cfg.projectId),
+      sharedSecret: redactText(cfg.sharedSecret),
     },
+    credentialEnvironment,
     likelyEnvMismatch: detectLikelyEnvironmentMismatch(cfg),
   };
 }
@@ -356,10 +392,12 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
   }
 
   const endpoint = `${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision`;
+  const hmacSignature = crypto.createHmac("sha256", cfg.sharedSecret).update(sessionId).digest("hex");
   const requestHeaders = {
     "Content-Type": "application/json",
     "X-AUTH-CLIENT": cfg.apiKey,
     "X-AUTH-CLIENT-PROJECT": cfg.projectId,
+    "X-HMAC-SIGNATURE": hmacSignature,
   };
   const requestMeta = buildVeriffRequestDiagnostics(cfg, endpoint, "GET", requestHeaders);
   console.info("veriff:fetch-decision request", requestMeta);
@@ -374,6 +412,10 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
     ok: !!response?.ok,
     error: payload?.message || payload?.error || null,
     body: payload,
+    authHeaderNamesPresent: requestMeta.authHeaderNamesPresent,
+    credentialEnvironment: requestMeta.credentialEnvironment,
+    sameCredentialEnvironment: requestMeta?.credentialEnvironment?.sameCredentialEnvironment ?? null,
+    likelyEnvMismatch: requestMeta.likelyEnvMismatch,
   });
 
   if (!response.ok) {

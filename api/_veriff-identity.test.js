@@ -203,10 +203,13 @@ mock.module("./_checkr.js", {
 global.fetch = mock.fn(async (url, init = {}) => {
   const method = init.method || "GET";
   let body = null;
+  const headers = Object.fromEntries(
+    Object.entries(init.headers || {}).map(([key, value]) => [String(key).toLowerCase(), String(value)])
+  );
   if (typeof init.body === "string") {
     try { body = JSON.parse(init.body); } catch { body = init.body; }
   }
-  calls.veriffFetches.push({ url: String(url), method, body });
+  calls.veriffFetches.push({ url: String(url), method, body, headers });
   if (method === "GET") {
     return {
       ok: veriffDecisionStatus >= 200 && veriffDecisionStatus < 300,
@@ -1105,6 +1108,84 @@ test("admin-review-queue handles session_not_found (404) gracefully and returns 
   assert.equal(calls.veriffFetches.length, 1, "Veriff is called once");
   assert.equal(calls.patched.length, 0, "no patch on 404");
   assert.equal(calls.listedReviewQueue.length, 1);
+});
+
+test("admin-review-queue decision fetch sends Veriff auth headers including x-hmac-signature", async () => {
+  const sessionId = "vrf_auth_headers_q1";
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_auth_headers_q1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: sessionId,
+    }],
+  };
+  veriffDecisionStatus = 401;
+  veriffDecisionPayload = { status: "fail", message: "Unauthorized" };
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.veriffFetches.length, 1);
+  const fetchCall = calls.veriffFetches[0];
+  assert.equal(fetchCall.method, "GET");
+  assert.equal(fetchCall.headers["x-auth-client"], process.env.VERIFF_API_KEY);
+  assert.equal(fetchCall.headers["x-auth-client-project"], process.env.VERIFF_PROJECT_ID);
+  assert.equal(fetchCall.headers["x-hmac-signature"], signPayload(sessionId));
+});
+
+test("admin-review-queue clears auth cooldown after Veriff credential change", async () => {
+  const originalApiKey = process.env.VERIFF_API_KEY;
+  try {
+    recoveryCandidatesResult = {
+      ok: true,
+      data: [{
+        id: "app_auth_cooldown_q1",
+        name: "Jane Driver",
+        phone: "3105550199",
+        email: "jane@example.com",
+        identity_status: "requires_input",
+        application_status: "submitted",
+        identity_session_id: "vrf_auth_cooldown_q1",
+      }],
+    };
+    veriffDecisionStatus = 401;
+    veriffDecisionPayload = { status: "fail", message: "Unauthorized" };
+    reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+
+    const res1 = makeRes();
+    await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res1);
+    assert.equal(res1._status, 200);
+    assert.equal(calls.veriffFetches.length, 1, "Veriff called on first request");
+
+    calls.veriffFetches.length = 0;
+    process.env.VERIFF_API_KEY = `${originalApiKey}_rotated`;
+    recoveryCandidatesResult = {
+      ok: true,
+      data: [{
+        id: "app_auth_cooldown_q2",
+        name: "Jane Driver",
+        phone: "3105550199",
+        email: "jane@example.com",
+        identity_status: "requires_input",
+        application_status: "submitted",
+        identity_session_id: "vrf_auth_cooldown_q2",
+      }],
+    };
+
+    const res2 = makeRes();
+    await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res2);
+    assert.equal(res2._status, 200);
+    assert.equal(calls.veriffFetches.length, 1, "Veriff called again after credential change");
+  } finally {
+    process.env.VERIFF_API_KEY = originalApiKey;
+  }
 });
 
 test("admin-review-queue respects session cooldown after 404 — no repeat Veriff call", async () => {
