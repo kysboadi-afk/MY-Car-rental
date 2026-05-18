@@ -340,6 +340,25 @@
         </label>
       </div>
 
+      <!-- Rideshare Income Verification Upload (required) -->
+      <div class="apply-field">
+        <div class="apply-income-section">
+          <div class="apply-income-section-title">💵 Rideshare Income Verification <span class="apply-required">*</span></div>
+          <p class="apply-income-hint">
+            Upload at least one screenshot or PDF showing your recent Uber, Lyft, DoorDash, or other platform earnings. This is required to complete your application.<br>
+            Accepted: JPG, PNG, WEBP, PDF, HEIC &middot; up to 15&nbsp;MB per file &middot; up to 5 files
+          </p>
+          <label class="apply-file-label" for="applyIncomeUpload" id="applyIncomeUploadLabel">
+            📎 Upload Earnings Proof
+          </label>
+          <input type="file" id="applyIncomeUpload" name="incomeUpload"
+            accept="image/*,application/pdf,.heic,.heif"
+            multiple>
+          <div id="applyIncomeFileList" class="apply-income-file-list"></div>
+          <span id="applyIncomeStatus" class="apply-income-upload-status"></span>
+        </div>
+      </div>
+
       <p id="applyStatus" class="apply-status" role="status"></p>
       <button type="button" id="applyBackBtn" class="apply-back-btn" data-i18n="applyModal.backBtn">&#8592; Back to Home</button>
       <button type="submit" id="applySubmitBtn" class="apply-submit-btn" data-i18n="applyModal.submitBtn">Submit Application</button>
