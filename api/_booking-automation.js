@@ -234,7 +234,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (recordType === "rental") {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
-        .select("id, payment_intent_id, stripe_fee, stripe_net, category")
+        .select("id, booking_id, booking_ref, original_booking_id, payment_intent_id, stripe_fee, stripe_net, return_date, category, is_orphan")
         .eq("booking_id", bookingRef)
         .maybeSingle();
       if (existingByBookingErr) {
@@ -246,7 +246,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (!existingRecord && piId) {
       const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
-        .select("id, stripe_fee, stripe_net, return_date, category")
+        .select("id, booking_id, booking_ref, original_booking_id, stripe_fee, stripe_net, return_date, category, is_orphan")
         .eq("payment_intent_id", piId)
         .maybeSingle();
       if (existingByPIErr) {
@@ -308,12 +308,34 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     };
 
     if (existingRecord?.id) {
+      const existingBookingId = String(existingRecord.booking_id || "").trim();
+      const existingBookingRef = String(existingRecord.booking_ref || "").trim();
+      const needsRelink =
+        existingRecord.is_orphan === true ||
+        !existingBookingId ||
+        !existingBookingRef ||
+        existingBookingId !== bookingRef ||
+        existingBookingRef !== bookingRef;
+
       // SOURCE OF TRUTH RULE: never overwrite gross_amount — the original write
       // is authoritative.  Extension records are deduplicated by payment_intent_id
       // so finding one here means the record is already complete; skip entirely.
       // For rental records, only backfill stripe fee data that was missing on the
       // initial write (e.g. webhook fired before balance_transaction was settled).
       if (recordType === "extension") {
+        const updatePayload = {};
+
+        if (needsRelink) {
+          updatePayload.booking_id = bookingRef;
+          updatePayload.booking_ref = bookingRef;
+          if (record.original_booking_id && !existingRecord.original_booking_id) {
+            updatePayload.original_booking_id = record.original_booking_id;
+          }
+          if (existingRecord.is_orphan === true) {
+            updatePayload.is_orphan = false;
+          }
+        }
+
         // Idempotent: if the record already exists but has a stale return_date
         // (e.g. written by a prior replay before a second extension was applied),
         // correct it so the ledger always reflects bookings.return_date.
@@ -326,19 +348,27 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
             `(id=${existingRecord.id}) for booking ${bookingRef} has stale ` +
             `return_date=${existingReturnDate}, bookings.return_date=${dbReturnDate} — correcting.`,
           );
+          updatePayload.return_date = dbReturnDate;
+        }
+
+        if (record.category && !existingRecord.category) {
+          updatePayload.category = record.category;
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
           const { error: fixErr } = await sb
             .from("revenue_records")
-            .update({ return_date: dbReturnDate, updated_at: new Date().toISOString() })
+            .update({ ...updatePayload, updated_at: new Date().toISOString() })
             .eq("id", existingRecord.id);
           if (fixErr) {
             console.error(
-              `_booking-automation: failed to correct extension return_date for ${bookingRef} ` +
+              `_booking-automation: failed to reconcile existing extension revenue record for ${bookingRef} ` +
               `(id=${existingRecord.id}): ${fixErr.message}`,
             );
           } else {
             console.log(
-              `_booking-automation: corrected extension return_date for booking ${bookingRef} ` +
-              `(id=${existingRecord.id}) from ${existingReturnDate} to ${dbReturnDate}`,
+              `_booking-automation: reconciled existing extension revenue record for booking ${bookingRef} ` +
+              `(id=${existingRecord.id})`,
             );
           }
         } else {
@@ -352,7 +382,14 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
       // Rental: only fill in stripe fee/net and PI id when they were absent.
       // gross_amount is intentionally excluded — it must not be overwritten.
-      const updatePayload = { updated_at: new Date().toISOString() };
+      const updatePayload = {};
+      if (needsRelink) {
+        updatePayload.booking_id = bookingRef;
+        updatePayload.booking_ref = bookingRef;
+        if (existingRecord.is_orphan === true) {
+          updatePayload.is_orphan = false;
+        }
+      }
       if (record.stripe_fee != null && existingRecord.stripe_fee == null) {
         updatePayload.stripe_fee = record.stripe_fee;
       }
@@ -365,10 +402,10 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       if (record.category && !existingRecord.category) {
         updatePayload.category = record.category;
       }
-      if (Object.keys(updatePayload).length > 1) {
+      if (Object.keys(updatePayload).length > 0) {
         const { error } = await sb
           .from("revenue_records")
-          .update(updatePayload)
+          .update({ ...updatePayload, updated_at: new Date().toISOString() })
           .eq("id", existingRecord.id);
         if (error) {
           throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
