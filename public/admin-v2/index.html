@@ -12546,7 +12546,11 @@ function appDetailRow(label, valueHtml) {
 }
 
 function renderAppDetail(d) {
-  const actionable = d.applicationStatus === 'under_review' || d.applicationStatus === 'needs_info';
+  const normalizedAppStatus = String(d.applicationStatus || '').trim().toLowerCase();
+  const actionable =
+    normalizedAppStatus === 'submitted' ||
+    normalizedAppStatus === 'under_review' ||
+    normalizedAppStatus === 'needs_info';
 
   const presence = getAppPresence(d.applicationId);
   const presenceHtml = presence
