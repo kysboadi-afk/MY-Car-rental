@@ -2266,23 +2266,57 @@ async function runReconciliation() {
           try {
             const extMeta = pi.metadata || {};
             const extRef  = extMeta.booking_id || extMeta.original_booking_id || "";
-            // A valid booking_ref starts with "bk-" followed by at least 7 characters (e.g. "bk-9035ea7c4552").
-            if (!extRef || !extRef.startsWith("bk-") || extRef.length < 10) {
-              throw new Error(`missing or non-canonical booking_id in metadata ("${extRef}")`);
+            if (!extRef) {
+              throw new Error(`missing booking_id in metadata ("${extRef}")`);
             }
-            // Confirm the booking row exists in Supabase before writing revenue.
+            // Confirm / resolve the booking_ref in Supabase before writing revenue.
+            // Accept legacy/non-canonical metadata values, but always map to a real
+            // bookings.booking_ref so revenue remains linked to a valid booking row.
             const sbExt = getSupabaseAdmin();
             let resolvedExtRef = null;
             if (sbExt) {
+              // 1) Direct booking_ref match (works for canonical and legacy refs).
               const { data: refRow } = await sbExt
                 .from("bookings")
                 .select("booking_ref")
                 .eq("booking_ref", extRef)
                 .maybeSingle();
               if (refRow?.booking_ref) resolvedExtRef = refRow.booking_ref;
+
+              // 2) Fallback: if metadata accidentally carried a PI ID, resolve via
+              // bookings.payment_intent_id.
+              if (!resolvedExtRef && extRef.startsWith("pi_")) {
+                const { data: byMetaPiRow } = await sbExt
+                  .from("bookings")
+                  .select("booking_ref")
+                  .eq("payment_intent_id", extRef)
+                  .maybeSingle();
+                if (byMetaPiRow?.booking_ref) resolvedExtRef = byMetaPiRow.booking_ref;
+              }
+
+              // 3) Fallback: recover by the current extension PI ID.
+              if (!resolvedExtRef && pi.id) {
+                const { data: byPiRow } = await sbExt
+                  .from("bookings")
+                  .select("booking_ref")
+                  .eq("payment_intent_id", pi.id)
+                  .maybeSingle();
+                if (byPiRow?.booking_ref) resolvedExtRef = byPiRow.booking_ref;
+              }
+
+              // 4) Fallback: recover from booking_extensions if an extension row
+              // already exists for this PI.
+              if (!resolvedExtRef && pi.id) {
+                const { data: extRow } = await sbExt
+                  .from("booking_extensions")
+                  .select("booking_id")
+                  .eq("payment_intent_id", pi.id)
+                  .maybeSingle();
+                if (extRow?.booking_id) resolvedExtRef = extRow.booking_id;
+              }
             }
             if (!resolvedExtRef) {
-              throw new Error(`booking_ref "${extRef}" not found in Supabase`);
+              throw new Error(`booking_ref could not be resolved from metadata booking_id "${extRef}" (pi=${pi.id || "unknown"})`);
             }
             // Resolve Stripe fee (non-blocking — reconcile.js backfills if missing).
             let extFeeFields = { stripeFee: null, stripeNet: null };
@@ -2325,6 +2359,41 @@ async function runReconciliation() {
               type:            "extension",
               ...extFeeFields,
             }, { strict: false, requireStripeFee: false });
+
+            // Keep bookings.return_date in sync for admin visibility when an
+            // extension PI was missed by the primary webhook pipeline.
+            const extNewReturnDate = extMeta.new_return_date
+              ? String(extMeta.new_return_date).split("T")[0]
+              : "";
+            if (sbExt && extNewReturnDate) {
+              try {
+                const { data: currentExtBooking } = await sbExt
+                  .from("bookings")
+                  .select("return_date")
+                  .eq("booking_ref", resolvedExtRef)
+                  .maybeSingle();
+                const currentExtReturnDate = currentExtBooking?.return_date
+                  ? String(currentExtBooking.return_date).split("T")[0]
+                  : "";
+                if (!currentExtReturnDate || extNewReturnDate > currentExtReturnDate) {
+                  await sbExt
+                    .from("bookings")
+                    .update({
+                      return_date: extNewReturnDate,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq("booking_ref", resolvedExtRef);
+                  console.log(
+                    `scheduled-reminders reconciliation: extension booking return_date advanced to ${extNewReturnDate} for ${resolvedExtRef}`
+                  );
+                }
+              } catch (extBookingUpdateErr) {
+                console.warn(
+                  `scheduled-reminders reconciliation: extension booking return_date update failed (non-fatal) for ${resolvedExtRef}:`,
+                  extBookingUpdateErr.message
+                );
+              }
+            }
             repairedPIIds.push(pi.id);
             console.log(`scheduled-reminders reconciliation: extension revenue record recovered for PI ${pi.id} (booking=${resolvedExtRef})`);
           } catch (extRecovErr) {
