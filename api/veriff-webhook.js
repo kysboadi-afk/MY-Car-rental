@@ -130,27 +130,52 @@ function getEventId(payload = {}, sessionId = "", rawStatus = "") {
   return [sessionId || "unknown-session", rawStatus || "unknown-status", createdAt || "unknown-time"].join(":");
 }
 
-async function isDuplicateEvent(sb, stripeEventId) {
-  const { data, error } = await sb
-    .from("stripe_identity_webhook_events")
-    .select("id")
-    .eq("stripe_event_id", stripeEventId)
-    .maybeSingle();
-  if (error) throw error;
-  return !!data?.id;
+const EVENT_LOG_TABLES = [
+  { name: "veriff_webhook_events", eventIdColumn: "event_id" },
+  { name: "stripe_identity_webhook_events", eventIdColumn: "stripe_event_id" },
+];
+
+function isMissingEventLogTableError(err) {
+  const code = String(err?.code || "");
+  const msg = String(err?.message || "");
+  return code === "42P01"
+    || code === "42703"
+    || /relation .* does not exist/i.test(msg)
+    || /column .* does not exist/i.test(msg)
+    || /Unexpected table/i.test(msg);
+}
+
+async function isDuplicateEvent(sb, eventId) {
+  for (const table of EVENT_LOG_TABLES) {
+    const { data, error } = await sb
+      .from(table.name)
+      .select("id")
+      .eq(table.eventIdColumn, eventId)
+      .maybeSingle();
+    if (!error) return !!data?.id;
+    if (isMissingEventLogTableError(error)) continue;
+    throw error;
+  }
+  return false;
 }
 
 async function recordEvent(sb, eventId, payload, eventType, applicationId, sessionId) {
-  const { error } = await sb
-    .from("stripe_identity_webhook_events")
-    .insert({
-      stripe_event_id: eventId,
+  for (const table of EVENT_LOG_TABLES) {
+    const insertPayload = {
       event_type: eventType,
       application_id: applicationId || null,
       identity_session_id: sessionId || null,
       payload,
-    });
-  if (error) throw error;
+    };
+    insertPayload[table.eventIdColumn] = eventId;
+    const { error } = await sb
+      .from(table.name)
+      .insert(insertPayload);
+    if (!error) return;
+    if (isMissingEventLogTableError(error)) continue;
+    throw error;
+  }
+  throw new Error("No veriff webhook event log table is available.");
 }
 
 export default async function handler(req, res) {
