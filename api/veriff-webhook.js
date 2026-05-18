@@ -180,6 +180,26 @@ function isMissingEventLogTableError(err) {
     || /Unexpected table/i.test(msg);
 }
 
+function classifyEventLogFailure(err) {
+  const code = String(err?.code || "");
+  const msg = String(err?.message || "");
+  const text = `${code} ${msg}`.toLowerCase();
+  if (code === "42P01" || code === "42703" || /relation .* does not exist|column .* does not exist/.test(text)) {
+    return "missing_db_migration";
+  }
+  if (code === "42501" || /row-level security|permission denied|not allowed/.test(text)) {
+    return "rls_or_permission";
+  }
+  if (code === "23505" || /duplicate key|unique constraint|already exists/.test(text)) {
+    return "unique_constraint";
+  }
+  if (["22P02", "22023", "23502", "23503", "23514"].includes(code)
+    || /invalid input syntax|malformed|violates .* constraint/.test(text)) {
+    return "malformed_payload_insert";
+  }
+  return "unknown_event_log_failure";
+}
+
 async function isDuplicateEvent(sb, eventId) {
   for (const table of EVENT_LOG_TABLES) {
     const { data, error } = await sb
@@ -303,6 +323,8 @@ export default async function handler(req, res) {
     dbPatchExecuted: false,
     dbPatchOk: null,
     dbPatchError: null,
+    eventLogErrorType: null,
+    eventLogErrorCode: null,
     notificationKind: null,
     eventLogSkipped: false,
     skipReason: null,
@@ -346,14 +368,25 @@ export default async function handler(req, res) {
   } catch (recordErr) {
     const errCode = String(recordErr?.code || "");
     const msg = String(recordErr?.message || "");
+    const classifiedError = classifyEventLogFailure(recordErr);
     if (errCode === "23505" || /duplicate key|unique/i.test(msg)) {
       eventDiagnostics.skipReason = "duplicate_event_conflict";
+      eventDiagnostics.eventLogErrorType = classifiedError;
+      eventDiagnostics.eventLogErrorCode = errCode || null;
       console.info("veriff-identity-webhook: duplicate event ignored from insert conflict", { eventId, applicationId, identitySessionId });
       console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
       return res.status(200).json({ received: true, duplicate: true });
     }
     eventLogSkipped = true;
-    console.error("veriff-identity-webhook event record failed; continuing without event log:", recordErr);
+    eventDiagnostics.eventLogErrorType = classifiedError;
+    eventDiagnostics.eventLogErrorCode = errCode || null;
+    console.error("veriff-identity-webhook event record failed; continuing without event log:", {
+      errorType: classifiedError,
+      code: errCode || null,
+      message: msg || String(recordErr),
+      details: recordErr?.details || null,
+      hint: recordErr?.hint || null,
+    });
   }
 
   if (!mappedStatus) {

@@ -373,9 +373,16 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
     status: Number(response?.status) || null,
     ok: !!response?.ok,
     error: payload?.message || payload?.error || null,
+    body: payload,
   });
 
   if (!response.ok) {
+    console.warn("veriff:fetch-decision failed", {
+      sessionId,
+      endpoint,
+      status: Number(response?.status) || null,
+      body: payload,
+    });
     return {
       ok: false,
       status: response.status || 500,
