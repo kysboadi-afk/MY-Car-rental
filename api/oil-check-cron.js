@@ -26,6 +26,7 @@ import { laHour, isoDateInLA } from "./_time.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import { isSchemaError } from "./_error-helpers.js";
+import { loadNumericSetting } from "./_settings.js";
 import {
   computeSmsScoreWithBreakdown,
   computeEffectiveThreshold,
@@ -78,7 +79,7 @@ const MSG_MAINTENANCE_REQUIRED =
 
 const MIN_RENTAL_DAYS      = 3;    // trigger only for rentals >= 3 days
 const DAYS_SINCE_CHECK     = 5;    // trigger if >= 5 days since last check
-const MILES_SINCE_CHECK    = 500;  // trigger if >= 500 miles since last check
+const DEFAULT_MILES_SINCE_CHECK = 500; // fallback when system_settings row is absent
 const COOLDOWN_HOURS       = 24;   // minimum hours between any two oil check SMS
 const WINDOW_START_HOUR    = 8;    // 8:00 AM LA — start of send window
 const WINDOW_END_HOUR      = 19;   // 7:00 PM LA — end of send window (exclusive)
@@ -223,6 +224,14 @@ export default async function handler(req, res) {
   }
 
   const startedAt = Date.now();
+
+  // Load the configurable mileage threshold from system_settings (admin-editable).
+  // Falls back to DEFAULT_MILES_SINCE_CHECK when Supabase is unavailable or the
+  // key has not been seeded yet so the cron always has a safe value to use.
+  const MILES_SINCE_CHECK = await loadNumericSetting(
+    "oil_check_miles_interval",
+    DEFAULT_MILES_SINCE_CHECK
+  );
 
   const sb = getSupabaseAdmin();
   if (!sb) {

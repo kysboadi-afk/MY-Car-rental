@@ -169,6 +169,20 @@ mock.module("./_error-helpers.js", {
   },
 });
 
+// Return the hard-coded default (500) so tests exercise the cron logic without
+// a live Supabase connection.  Individual tests that need a custom value can
+// override `settingsState.milesInterval` before calling the handler.
+const settingsState = { milesInterval: 500 };
+
+mock.module("./_settings.js", {
+  namedExports: {
+    loadNumericSetting: async (key, defaultVal) => {
+      if (key === "oil_check_miles_interval") return settingsState.milesInterval;
+      return defaultVal;
+    },
+  },
+});
+
 mock.module("./_bouncie.js", {
   namedExports: {
     getBouncieVehicles: async () => bouncieState.bouncieVehicles,
@@ -183,6 +197,7 @@ const { default: bouncieSyncHandler } = await import("./bouncie-sync-cron.js");
 beforeEach(() => {
   sentSms.length = 0;
   currentSupabaseClient = null;
+  settingsState.milesInterval = 500;
 
   oilState.bookingsRows = [];
   oilState.bookingsUpdatePayloads = [];
@@ -334,4 +349,78 @@ test("oil-check-cron does not send an oil-check SMS before 500 miles since last 
   assert.equal(res._body.triggered, 0);
   assert.equal(sentSms.length, 0);
   assert.equal(oilState.bookingsUpdatePayloads.length, 0);
+});
+
+test("oil-check-cron respects admin-configured interval — e.g. 300 miles triggers earlier", async () => {
+  settingsState.milesInterval = 300;
+  currentSupabaseClient = makeOilCheckClient();
+  oilState.bookingsRows = [{
+    id: "booking-4",
+    booking_ref: "bk_admin_300",
+    vehicle_id: "camry",
+    customer_phone: "+15555550126",
+    pickup_date: "2026-05-10T00:00:00.000Z",
+    return_date: "2026-05-20T00:00:00.000Z",
+    return_time: "10:00",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    oil_check_required: false,
+    oil_check_last_request: null,
+    oil_check_missed_count: 0,
+  }];
+  // 350 miles since last check — would NOT trigger at the default 500-mile
+  // threshold but SHOULD trigger when the admin sets it to 300.
+  oilState.vehicleStateRows = [{
+    vehicle_id: "camry",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    last_oil_check_mileage: 30000,
+    current_mileage: 30350,
+  }];
+  oilState.vehicleRows = [{
+    vehicle_id: "camry",
+    mileage: 30350,
+    last_oil_change_mileage: 30250,
+  }];
+
+  const res = makeJsonRes();
+  await oilCheckHandler({ method: "GET", headers: {} }, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.triggered, 1);
+  assert.equal(sentSms.length, 1);
+});
+
+test("oil-check-cron respects admin-configured interval — 350 miles does NOT trigger at default 500", async () => {
+  // settingsState.milesInterval is reset to 500 in beforeEach
+  currentSupabaseClient = makeOilCheckClient();
+  oilState.bookingsRows = [{
+    id: "booking-5",
+    booking_ref: "bk_admin_default",
+    vehicle_id: "camry",
+    customer_phone: "+15555550127",
+    pickup_date: "2026-05-10T00:00:00.000Z",
+    return_date: "2026-05-20T00:00:00.000Z",
+    return_time: "10:00",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    oil_check_required: false,
+    oil_check_last_request: null,
+    oil_check_missed_count: 0,
+  }];
+  oilState.vehicleStateRows = [{
+    vehicle_id: "camry",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    last_oil_check_mileage: 30000,
+    current_mileage: 30350,
+  }];
+  oilState.vehicleRows = [{
+    vehicle_id: "camry",
+    mileage: 30350,
+    last_oil_change_mileage: 30250,
+  }];
+
+  const res = makeJsonRes();
+  await oilCheckHandler({ method: "GET", headers: {} }, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.triggered, 0);
+  assert.equal(sentSms.length, 0);
 });
