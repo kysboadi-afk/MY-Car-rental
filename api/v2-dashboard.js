@@ -23,6 +23,7 @@ import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
+import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -703,6 +704,14 @@ export default async function handler(req, res) {
       ? Math.round(kpiRevenue * 100) / 100
       : Math.round(totalRevenue * 100) / 100;
 
+    const applicationSnapshot = await listApplicationLifecycleSnapshot();
+    const applicationSummary = applicationSnapshot.ok
+      ? applicationSnapshot.summary
+      : null;
+    if (!applicationSnapshot.ok && applicationSnapshot.details) {
+      console.error("v2-dashboard applications:", applicationSnapshot.details);
+    }
+
     return res.status(200)
       .setHeader("Cache-Control", "no-store")
       .json({
@@ -721,12 +730,14 @@ export default async function handler(req, res) {
           overdueCount,
           returnsTodayCount,
           pickupsTodayCount,
+          newApplications: applicationSummary?.newApplications || 0,
         },
         revenueChart,
         bookingsPerVehicle,
         vehicleStats,
         alerts,
         recentBookings,
+        applicationOps: applicationSummary,
       });
   } catch (err) {
     console.error("v2-dashboard error:", err);

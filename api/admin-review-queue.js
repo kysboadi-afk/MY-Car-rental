@@ -1,11 +1,11 @@
 // api/admin-review-queue.js
-// Admin-authenticated endpoint that returns the list of applications awaiting
-// manual review (application_status = "under_review" or "needs_info").
+// Admin-authenticated endpoint that returns the application lifecycle queue
+// used by the admin dashboard and underwriting review page.
 //
 // GET  /api/admin-review-queue?secret=<ADMIN_SECRET>[&page=1&pageSize=50]
 //
 // Response:
-//   { success: true, applications: [...], total, page, pageSize }
+//   { success: true, applications: [...], total, page, pageSize, summary, filters }
 //
 // Each item includes: id, name, phone, email, age, experience,
 //   applicationStatus, identityStatus, reviewVersion, reviewedBy,
@@ -16,7 +16,7 @@
 
 import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import {
-  deriveCheckrPhase,
+  getApplicationAttentionFlags,
   listPendingIdentityRecoveryApplications,
   listReviewQueueApplications,
 } from "./_renter-applications.js";
@@ -36,7 +36,15 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method Not Allowed" });
 
-  const { page, pageSize } = req.query || {};
+  const {
+    page,
+    pageSize,
+    lifecycleFilter,
+    attentionFilter,
+    search,
+    sortField,
+    sortDir,
+  } = req.query || {};
   if (!isAdminAuthorized(extractAdminSecret(req))) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -45,6 +53,8 @@ export default async function handler(req, res) {
     console.info("admin-review-queue: fetch started", {
       page: Number(page) || 1,
       pageSize: Number(pageSize) || 50,
+      lifecycleFilter: lifecycleFilter || "",
+      attentionFilter: attentionFilter || "",
       recoveryScanLimit: RECOVERY_SCAN_LIMIT,
     });
 
@@ -82,7 +92,15 @@ export default async function handler(req, res) {
     console.error("admin-review-queue recovery pass failed:", recoveryErr);
   }
 
-  const result = await listReviewQueueApplications({ page, pageSize });
+  const result = await listReviewQueueApplications({
+    page,
+    pageSize,
+    lifecycleFilter,
+    attentionFilter,
+    search,
+    sortField,
+    sortDir,
+  });
   if (!result.ok) {
     if (result.details) console.error("admin-review-queue:", result.details);
     return res.status(result.status || 500).json({ error: result.error });
@@ -112,21 +130,17 @@ export default async function handler(req, res) {
       needsInfoReason: r.needs_info_reason || null,
       precheckDecision: r.precheck_decision || null,
       checkrReportStatus: r.checkr_report_status || null,
-      checkrPhase: deriveCheckrPhase(r),
-      checkrCandidateId: r.checkr_candidate_id || null,
       checkrReportId: r.checkr_report_id || null,
-      checkrLastError: r.checkr_last_error || null,
-      checkrLastLaunchError: r.checkr_last_launch_error || null,
-      checkrLastLaunchAttemptAt: r.checkr_last_launch_attempt_at || null,
-      checkrLaunchAttemptCount: Number(r.checkr_launch_attempt_count || 0),
-      checkrLastWebhookAt: r.checkr_last_webhook_at || null,
       adverseActionStep: r.adverse_action_step || null,
       adverseActionSentAt: r.adverse_action_sent_at || null,
       submittedAt: r.submitted_at || null,
       updatedAt: r.updated_at || null,
+      attention: getApplicationAttentionFlags(r),
     })),
     total: result.total,
     page: result.page,
     pageSize: result.pageSize,
+    summary: result.summary || null,
+    filters: result.filters || null,
   });
 }

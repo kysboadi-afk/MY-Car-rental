@@ -258,20 +258,32 @@
     .app-status-approved      { background:#f0fdf4; color:#15803d; }
     .app-status-rejected      { background:#fef2f2; color:#b91c1c; }
     .app-status-withdrawn     { background:#faf5ff; color:#6d28d9; }
-    .app-status-expired       { background:#f9fafb; color:#9ca3af; }
+    .app-status-expired       { background:#f3f4f6; color:#6b7280; }
     .id-status-not_started    { background:#f9fafb; color:#6b7280; }
     .id-status-requires_input { background:#fffbeb; color:#b45309; }
     .id-status-processing     { background:#eff6ff; color:#1d4ed8; }
     .id-status-verified       { background:#f0fdf4; color:#15803d; }
     .id-status-failed         { background:#fef2f2; color:#b91c1c; }
     .id-status-canceled       { background:#faf5ff; color:#6d28d9; }
-    .app-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+    .app-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
     .app-filter-bar input, .app-filter-bar select { padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px; background:var(--surface); color:var(--text); font-family:var(--font); }
-    .app-filter-bar input { min-width:220px; }
-    .app-filter-bar select { min-width:130px; }
+    .app-filter-bar input { min-width:220px; flex:1 1 240px; }
+    .app-filter-bar select { min-width:150px; }
+    .app-filter-summary { font-size:12px; color:var(--text-sub); margin-bottom:16px; }
+    .app-queue-kpi { cursor:pointer; text-align:left; border:1px solid transparent; transition:transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
+    .app-queue-kpi:hover { transform:translateY(-1px); box-shadow:var(--shadow-md); }
+    .app-queue-kpi.active { border-color:var(--primary); box-shadow:0 0 0 2px rgba(37,99,235,0.12); }
+    .app-queue-kpi-sub { font-size:11px; color:var(--text-sub); margin-top:6px; }
     .app-conflict-banner { background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:12px 16px; margin-bottom:14px; font-size:13px; color:#991b1b; display:none; }
     .app-conflict-banner.visible { display:block; }
     .app-presence-badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#d97706; font-weight:500; }
+    .app-queue-badge-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+    .app-badge-new { background:#dbeafe; color:#1d4ed8; }
+    .app-badge-urgent { background:#fee2e2; color:#b91c1c; }
+    .app-badge-unread { background:#ecfdf5; color:#047857; }
+    .app-row-fresh-hour td { background:#fff7ed; }
+    .app-row-fresh-day td { background:#fffbeb; }
+    .app-row-unreviewed td:first-child { border-left:3px solid #2563eb; }
     .app-detail-section { border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:14px; }
     .app-detail-section-title { font-size:11px; font-weight:700; color:var(--text-sub); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:10px; }
     .app-detail-row { display:flex; gap:8px; padding:5px 0; font-size:13px; border-bottom:1px solid #f3f4f6; }
@@ -296,7 +308,12 @@
     .app-pagination { display:flex; align-items:center; gap:10px; justify-content:flex-end; margin-top:12px; font-size:13px; }
     .app-pagination button { padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:12px; font-family:var(--font); color:var(--text); }
     .app-pagination button:disabled { opacity:0.4; cursor:not-allowed; }
-    .app-queue-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+    .app-queue-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+    .action-req-tile.pulse { animation: actionReqPulse 1.8s ease-in-out infinite; }
+    @keyframes actionReqPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.18); }
+      50% { box-shadow: 0 0 0 8px rgba(220,38,38,0); }
+    }
     @media (max-width:768px) {
       .app-queue-kpis { grid-template-columns:repeat(2,1fr); }
       .app-filter-bar input { min-width:140px; }
@@ -1279,36 +1296,17 @@
             <div class="card-header">
               <div>
                 <div class="card-title">⚡ Action Required</div>
-                <div class="card-sub">Items needing immediate attention</div>
+                <div class="card-sub">Only newly submitted or still-unreviewed applications surface here.</div>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">Refresh</button>
             </div>
             <div id="action-required-content">
-              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:4px 0;">
-                <div class="action-req-tile" id="ar-incomplete" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='incomplete_checkout';applyBookingFilters()">
-                  <div class="ar-icon">🧾</div>
-                  <div class="ar-count" id="ar-incomplete-count">–</div>
-                  <div class="ar-label">Incomplete Checkouts</div>
-                </div>
-                <div class="action-req-tile" id="ar-pending" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='reserved_unpaid';applyBookingFilters()">
-                  <div class="ar-icon">📋</div>
-                  <div class="ar-count" id="ar-pending-count">–</div>
-                  <div class="ar-label">Unpaid Reservations</div>
-                </div>
-                <div class="action-req-tile" id="ar-pickups" onclick="navigate('bookings')">
-                  <div class="ar-icon">🔑</div>
-                  <div class="ar-count" id="ar-pickups-count">–</div>
-                  <div class="ar-label">Pickups Today</div>
-                </div>
-                <div class="action-req-tile" id="ar-returns" onclick="navigate('bookings')">
-                  <div class="ar-icon">🏁</div>
-                  <div class="ar-count" id="ar-returns-count">–</div>
-                  <div class="ar-label">Returns Today</div>
-                </div>
-                <div class="action-req-tile" id="ar-overdue">
-                  <div class="ar-icon">⚠️</div>
-                  <div class="ar-count" id="ar-overdue-count">–</div>
-                  <div class="ar-label">Overdue</div>
+              <div style="display:grid;grid-template-columns:minmax(220px,320px);gap:12px;padding:4px 0;">
+                <div class="action-req-tile" id="ar-new-applications" onclick="openApplicationQueueWithPreset('submitted','new')">
+                  <div class="ar-icon">🆕</div>
+                  <div class="ar-count" id="ar-new-applications-count">–</div>
+                  <div class="ar-label">New Applications</div>
+                  <div style="font-size:11px;color:var(--text-sub);margin-top:6px;">Submitted in the last 24h or not yet reviewed</div>
                 </div>
               </div>
             </div>
@@ -3460,7 +3458,7 @@
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
     <div style="flex:1;">
       <h2 style="font-size:20px;font-weight:700;">Application Review Queue</h2>
-      <p style="font-size:13px;color:var(--text-sub);margin-top:2px;">Review and action renter applications awaiting manual decision.</p>
+      <p style="font-size:13px;color:var(--text-sub);margin-top:2px;">Monitor the full application lifecycle and prioritize underwriting work.</p>
     </div>
     <button class="btn btn-secondary" onclick="loadAppQueue()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -3478,43 +3476,29 @@
   <div class="app-filter-bar">
     <input type="text" id="apps-search" placeholder="Search name, phone, email, ID…" oninput="appsSearchInput(this.value)">
     <select id="apps-filter-status" onchange="appsFilterChange()">
-      <option value="">All Statuses</option>
+      <option value="">All Lifecycle Stages</option>
       <option value="submitted">Submitted</option>
       <option value="under_review">Under Review</option>
       <option value="needs_info">Needs Info</option>
-    </select>
-    <select id="apps-filter-identity" onchange="appsFilterChange()">
-      <option value="">All Identity</option>
-      <option value="not_started">Not Started</option>
-      <option value="requires_input">Requires Input</option>
-      <option value="processing">Processing</option>
-      <option value="verified">Verified</option>
-      <option value="failed">Failed</option>
-      <option value="canceled">Canceled</option>
-    </select>
-    <select id="apps-filter-checkr" onchange="appsFilterChange()">
-      <option value="">All Checkr</option>
-      <option value="not_started">Not Started</option>
-      <option value="launch_queued">Launch Queued</option>
-      <option value="candidate_created">Candidate Created</option>
-      <option value="invitation_sent">Invitation Sent</option>
-      <option value="pending">Pending</option>
-      <option value="completed">Completed</option>
-      <option value="clear">Clear</option>
-      <option value="consider">Consider</option>
-      <option value="suspended">Suspended</option>
-      <option value="failed">Launch Failed</option>
-      <option value="webhook_missing">Webhook Missing</option>
+      <option value="identity_verified">Identity Verified</option>
+      <option value="checkr_pending">Checkr Pending</option>
+      <option value="checkr_issue">Checkr Issue</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected / Declined</option>
+      <option value="archived">Archived</option>
     </select>
     <select id="apps-sort-field" onchange="appsFilterChange()">
+      <option value="priority">Sort: Operational Priority</option>
       <option value="submitted_at">Sort: Submitted</option>
+      <option value="reviewed_at">Sort: Reviewed</option>
       <option value="updated_at">Sort: Updated</option>
     </select>
     <select id="apps-sort-dir" onchange="appsFilterChange()">
-      <option value="asc">Oldest First</option>
+      <option value="asc">Priority / Oldest First</option>
       <option value="desc">Newest First</option>
     </select>
   </div>
+  <div class="app-filter-summary" id="apps-filter-summary">Full lifecycle view</div>
 
   <!-- Loading indicator -->
   <div id="apps-loading" style="display:none;padding:40px;text-align:center;color:var(--text-sub);">
@@ -7697,48 +7681,15 @@ document.addEventListener('keydown', (e) => {
 
 // ── Action Required helpers (called from renderDashboard) ─────────────────
 function renderActionRequired(data) {
-  // Use dashboard KPIs for accurate pending count; recentBookings for day-of context
-  const kpis     = data.kpis || {};
-  const bookings = data.recentBookings || [];
-
-  const now = new Date();
-  // Use LA wall-clock date so pickup/return date comparisons match stored booking dates
-  // (which are always in America/Los_Angeles, not UTC).
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
-
-  // pendingApprovals from server-side KPI is accurate (covers all bookings)
-  const incomplete = kpis.incompleteCheckouts != null ? kpis.incompleteCheckouts : bookings.filter((b) => ['pending_checkout','upload_failed','payment_failed','abandoned_checkout'].includes(b.status)).length;
-  const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
-  // returnsTodayCount, pickupsTodayCount, and overdueCount from server-side KPI cover ALL bookings
-  // (not just recent 10) and use LA timezone — always prefer over client-side fallback.
-  const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => {
-    if (b.status !== 'active_rental' || b.returnDate !== today) return false;
-    const returnDateTime = bookingReturnDateTime(b);
-    return !returnDateTime || now < returnDateTime;
-  }).length;
-  const overdue  = kpis.overdueCount != null ? kpis.overdueCount : bookings.filter((b) => {
-    if (b.status !== 'active_rental') return false;
-    const returnDateTime = bookingReturnDateTime(b);
-    return !!returnDateTime && now >= returnDateTime;
-  }).length;
-  const pickups  = kpis.pickupsTodayCount != null ? kpis.pickupsTodayCount
-    : bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
-
-  const setTile = (id, count, urgency) => {
-    const el = document.getElementById(id + '-count');
-    if (el) el.textContent = count;
-    const tile = el ? el.closest('.action-req-tile') : null;
-    if (tile) {
-      tile.classList.toggle('has-urgent', urgency && count > 0);
-      tile.classList.toggle('has-items',  !urgency && count > 0);
-    }
-  };
-
-  setTile('ar-incomplete', incomplete, true);
-  setTile('ar-pending',  pending,  false);
-  setTile('ar-pickups',  pickups,  false);
-  setTile('ar-returns',  returns,  false);
-  setTile('ar-overdue',  overdue,  true);
+  const kpis = data.kpis || {};
+  const count = Number(kpis.newApplications || data.applicationOps?.newApplications || 0);
+  const countEl = document.getElementById('ar-new-applications-count');
+  if (countEl) countEl.textContent = count;
+  const tile = document.getElementById('ar-new-applications');
+  if (!tile) return;
+  tile.classList.toggle('has-urgent', count > 0);
+  tile.classList.toggle('has-items', false);
+  tile.classList.toggle('pulse', count > 0);
 }
 
 // Patch renderDashboard to also call renderActionRequired
@@ -12194,179 +12145,151 @@ let appQueueTotal     = 0;
 let appQueuePage      = 1;
 const APP_QUEUE_SIZE  = 50;
 let appFilterStatus   = '';
-let appFilterIdentity = '';
-let appFilterCheckr   = '';
 let appFilterSearch   = '';
-let appSortField      = 'submitted_at';
+let appSortField      = 'priority';
 let appSortDir        = 'asc';
-let appSelectedAction = '';
-let appViewingId      = null;
-let appViewingData    = null;
-let appActionInFlight = false;
+let appQueueSummary   = null;
 
-const APP_PRESENCE_KEY_PREFIX       = 'sly_app_presence_';
-const APP_PRESENCE_TTL_MS           = 45000;
-// Delay before auto-refreshing detail view after a 409 conflict — long enough
-// for the reviewer to read the conflict banner before the view reloads.
-const APP_CONFLICT_REFRESH_DELAY_MS = 1200;
+const APP_QUEUE_STATE_STORAGE_KEY = 'sly_admin_app_queue_state_v1';
+const DEFAULT_APP_QUEUE_STATE = {
+  page: 1,
+  pageSize: APP_QUEUE_SIZE,
+  lifecycleFilter: '',
+  attentionFilter: '',
+  search: '',
+  sortField: 'priority',
+  sortDir: 'asc',
+};
 
-// GET helper for review endpoints — sends Authorization header, no secret in URL
-async function apiGet(path) {
-  if (window.DEMO_MODE) return {};
-  const resp = await fetch(API_BASE + path, {
-    headers: { 'Authorization': 'Bearer ' + adminSecret },
-  });
-  let data = null;
-  try { data = await resp.json(); } catch (err) {
-    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
+function getDefaultAppQueueSort(lifecycleFilter, attentionFilter) {
+  if (attentionFilter === 'new') return { sortField: 'submitted_at', sortDir: 'desc' };
+  if (['approved', 'rejected', 'archived'].includes(lifecycleFilter)) {
+    return { sortField: 'reviewed_at', sortDir: 'desc' };
   }
-  if (resp.status === 401) {
-    if (await shouldForceLogoutAfterUnauthorized(path)) handleUnauthorizedApiResponse();
-    throw new Error(data?.error || 'Unauthorized');
-  }
-  if (!data) {
-    throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab.`);
-  }
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return data;
+  if (lifecycleFilter === 'submitted') return { sortField: 'submitted_at', sortDir: 'desc' };
+  return { sortField: 'priority', sortDir: 'asc' };
 }
 
-// POST with structured 409 detection for review-application
-async function callReviewAction(payload) {
-  const resp = await fetch(API_BASE + '/api/review-application', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(payload),
-  });
-  let data;
-  try { data = await resp.json(); } catch {
-    throw new Error(`Server error (HTTP ${resp.status}).`);
-  }
-  if (resp.status === 409) {
-    const err = new Error(data.error || 'STALE_REVIEW_ACTION');
-    err.isStaleConflict = true;
-    err.conflictData    = data;
-    throw err;
-  }
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return data;
-}
-
-async function callAdminApplicationOp(payload) {
-  const resp = await fetch(API_BASE + '/api/admin-application-ops', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  let data;
-  try { data = await resp.json(); } catch {
-    throw new Error(`Server error (HTTP ${resp.status}).`);
-  }
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return data;
-}
-
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-  });
-}
-
-function appStatusBadge(status) {
-  const labels = {
-    under_review: 'Under Review', needs_info: 'Needs Info', submitted: 'Submitted',
-    approved: 'Approved', rejected: 'Rejected', withdrawn: 'Withdrawn', expired: 'Expired',
+function normalizeAppQueueState(rawState = {}) {
+  const lifecycleFilter = ['submitted', 'under_review', 'needs_info', 'identity_verified', 'checkr_pending', 'checkr_issue', 'approved', 'rejected', 'archived'].includes(rawState.lifecycleFilter)
+    ? rawState.lifecycleFilter
+    : '';
+  const attentionFilter = rawState.attentionFilter === 'new' ? 'new' : '';
+  const defaultSort = getDefaultAppQueueSort(lifecycleFilter, attentionFilter);
+  const sortField = ['priority', 'submitted_at', 'reviewed_at', 'updated_at'].includes(rawState.sortField)
+    ? rawState.sortField
+    : defaultSort.sortField;
+  const sortDir = ['asc', 'desc'].includes(rawState.sortDir)
+    ? rawState.sortDir
+    : defaultSort.sortDir;
+  return {
+    page: Math.max(1, Number(rawState.page) || 1),
+    pageSize: APP_QUEUE_SIZE,
+    lifecycleFilter,
+    attentionFilter,
+    search: String(rawState.search || '').slice(0, 200),
+    sortField,
+    sortDir,
   };
-  return `<span class="app-status-badge app-status-${esc(status || '')}">${esc(labels[status] || status || '—')}</span>`;
 }
 
-function identityStatusBadge(status) {
-  const labels = {
-    not_started: 'Not Started', requires_input: 'Requires Input', processing: 'Processing',
-    verified: 'Verified', failed: 'Failed', canceled: 'Canceled',
-  };
-  return `<span class="app-status-badge id-status-${esc(status || 'not_started')}">${esc(labels[status] || status || '—')}</span>`;
+function syncLegacyAppQueueState() {
+  appQueuePage = appQueueState.page;
+  appFilterStatus = appQueueState.lifecycleFilter;
+  appFilterSearch = appQueueState.search;
+  appSortField = appQueueState.sortField;
+  appSortDir = appQueueState.sortDir;
 }
 
-function checkrStatusBadge(status) {
-  const labels = {
-    not_started: 'Not Started',
-    launch_queued: 'Launch Queued',
-    candidate_created: 'Candidate Created',
-    invitation_sent: 'Invitation Sent',
-    pending: 'Pending',
-    completed: 'Completed',
-    clear: 'Clear',
-    consider: 'Consider',
-    suspended: 'Suspended',
-    failed: 'Launch Failed',
-    webhook_missing: 'Webhook Missing',
-  };
-  const colorMap = {
-    not_started: '#6b7280',
-    launch_queued: '#1d4ed8',
-    candidate_created: '#0369a1',
-    invitation_sent: '#7c3aed',
-    pending: '#6b7280',
-    completed: '#1d4ed8',
-    clear: '#15803d',
-    consider: '#b45309',
-    suspended: '#b91c1c',
-    failed: '#b91c1c',
-    webhook_missing: '#dc2626',
-  };
-  const phase = resolveCheckrPhase(typeof status === 'object' ? status : { checkrPhase: status });
-  return `<span class="app-status-badge" style="background:${colorMap[phase] || '#6b7280'}22;color:${colorMap[phase] || '#6b7280'};border:1px solid ${colorMap[phase] || '#6b7280'}33;">${esc(labels[phase] || phase || 'Not Started')}</span>`;
+function loadPersistedAppQueueState() {
+  try {
+    const raw = localStorage.getItem(APP_QUEUE_STATE_STORAGE_KEY);
+    if (!raw) return normalizeAppQueueState(DEFAULT_APP_QUEUE_STATE);
+    return normalizeAppQueueState({
+      ...DEFAULT_APP_QUEUE_STATE,
+      ...JSON.parse(raw),
+    });
+  } catch (err) {
+    console.warn('App queue state unavailable:', err.message);
+    return normalizeAppQueueState(DEFAULT_APP_QUEUE_STATE);
+  }
 }
 
-function resolveCheckrPhase(item = {}) {
-  const explicit = item.checkrPhase || item.checkrReportStatus || item.checkr_report_status || '';
-  if (explicit) return explicit;
-  const hasCandidate = !!item.checkrCandidateId;
-  const hasReport = !!item.checkrReportId;
-  const hadLaunchAttempt = Number(item.checkrLaunchAttemptCount || 0) > 0
-    || !!item.checkrLastLaunchError
-    || !!item.checkrLastError;
-  if (!hasCandidate && !hasReport) return hadLaunchAttempt ? 'failed' : 'not_started';
-  if (hasCandidate && !hasReport) return 'candidate_created';
-  return 'invitation_sent';
+function persistAppQueueState() {
+  try {
+    localStorage.setItem(APP_QUEUE_STATE_STORAGE_KEY, JSON.stringify(appQueueState));
+  } catch (err) {
+    console.warn('App queue state unavailable:', err.message);
+  }
 }
 
-function isCheckrAttentionPhase(phase = '') {
-  return ['failed', 'not_started', 'webhook_missing'].includes(phase);
+let appQueueState = loadPersistedAppQueueState();
+syncLegacyAppQueueState();
+
+function syncAppQueueControls() {
+  const searchEl = document.getElementById('apps-search');
+  const statusEl = document.getElementById('apps-filter-status');
+  const sortFieldEl = document.getElementById('apps-sort-field');
+  const sortDirEl = document.getElementById('apps-sort-dir');
+  if (searchEl && searchEl.value !== appQueueState.search) searchEl.value = appQueueState.search;
+  if (statusEl) statusEl.value = appQueueState.lifecycleFilter;
+  if (sortFieldEl) sortFieldEl.value = appQueueState.sortField;
+  if (sortDirEl) sortDirEl.value = appQueueState.sortDir;
+
+  const summaryEl = document.getElementById('apps-filter-summary');
+  if (summaryEl) {
+    const labels = {
+      '': 'Full lifecycle view',
+      submitted: 'Submitted applications',
+      under_review: 'Under review applications',
+      needs_info: 'Applications waiting on more info',
+      identity_verified: 'Identity verified applications',
+      checkr_pending: 'Applications pending Checkr',
+      checkr_issue: 'Applications with Checkr issues',
+      approved: 'Approved applications',
+      rejected: 'Rejected / declined applications',
+      archived: 'Archived applications',
+    };
+    const filterLabel = appQueueState.attentionFilter === 'new'
+      ? 'New applications'
+      : (labels[appQueueState.lifecycleFilter] || 'Full lifecycle view');
+    const resultLabel = appQueueTotal
+      ? `${appQueueTotal.toLocaleString()} match${appQueueTotal === 1 ? '' : 'es'}`
+      : 'No matches yet';
+    summaryEl.textContent = `${filterLabel} · ${resultLabel}`;
+  }
 }
 
-function checkrStalenessText(item = {}) {
-  const reference = item.checkrLastWebhookAt || item.checkrLastLaunchAttemptAt;
-  if (!reference) return 'No webhook yet';
-  const ageMs = Date.now() - new Date(reference).getTime();
-  if (!Number.isFinite(ageMs) || ageMs < 0) return 'Unknown';
-  if (ageMs < 60 * 60 * 1000) return 'Fresh';
-  if (ageMs < 6 * 60 * 60 * 1000) return 'Aging';
-  return 'Stale';
+function setAppQueueState(nextState = {}, { load = false, syncControls = true } = {}) {
+  appQueueState = normalizeAppQueueState({ ...appQueueState, ...nextState });
+  syncLegacyAppQueueState();
+  persistAppQueueState();
+  if (syncControls) syncAppQueueControls();
+  if (load) return loadAppQueue();
+  return Promise.resolve();
 }
 
-function checkrReportLink(reportId) {
-  if (!reportId) return '';
-  return `<div style="margin-top:4px;"><a href="https://dashboard.checkr.com/reports/${encodeURIComponent(reportId)}" target="_blank" rel="noopener" style="font-size:11px;">View Report</a></div>`;
-}
-
-function fmtRelativeTime(isoStr) {
-  if (!isoStr) return '—';
-  const diff = Date.now() - new Date(isoStr).getTime();
-  if (diff < 60000)    return 'just now';
-  if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function fmtDateTime(isoStr) {
-  if (!isoStr) return '—';
-  return new Date(isoStr).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+function openApplicationQueueWithPreset(lifecycleFilter = '', attentionFilter = '', sortField = '', sortDir = '') {
+  const fallbackSort = getDefaultAppQueueSort(lifecycleFilter, attentionFilter);
+  setAppQueueState({
+    page: 1,
+    lifecycleFilter,
+    attentionFilter,
+    sortField: sortField || fallbackSort.sortField,
+    sortDir: sortDir || fallbackSort.sortDir,
   });
+  navigate('applications');
+}
+
+function applyAppQueueLifecyclePreset(lifecycleFilter = '', attentionFilter = '') {
+  const fallbackSort = getDefaultAppQueueSort(lifecycleFilter, attentionFilter);
+  return setAppQueueState({
+    page: 1,
+    lifecycleFilter,
+    attentionFilter,
+    sortField: fallbackSort.sortField,
+    sortDir: fallbackSort.sortDir,
+  }, { load: true });
 }
 
 // ── Reviewer presence (non-blocking, localStorage) ────────────────────────────
@@ -12410,13 +12333,28 @@ async function loadAppQueue() {
 
   try {
     const params = new URLSearchParams({
-      page:     appQueuePage,
+      page: appQueueState.page,
       pageSize: APP_QUEUE_SIZE,
+      lifecycleFilter: appQueueState.lifecycleFilter,
+      attentionFilter: appQueueState.attentionFilter,
+      search: appQueueState.search,
+      sortField: appQueueState.sortField,
+      sortDir: appQueueState.sortDir,
     });
     const data = await apiGet(`/api/admin-review-queue?${params}`);
     if (!data.success) throw new Error(data.error || 'Failed to load queue.');
-    appQueueData  = data.applications || [];
+
+    appQueueData = data.applications || [];
     appQueueTotal = data.total || 0;
+    appQueueSummary = data.summary || {};
+    appQueueState = normalizeAppQueueState({
+      ...appQueueState,
+      ...(data.filters || {}),
+      page: data.page || appQueueState.page,
+    });
+    syncLegacyAppQueueState();
+    persistAppQueueState();
+    syncAppQueueControls();
     updateAppsReviewBadge();
     renderAppQueueKpis();
     renderAppQueue();
@@ -12429,9 +12367,10 @@ async function loadAppQueue() {
 function updateAppsReviewBadge() {
   const badge = document.getElementById('apps-review-badge');
   if (!badge) return;
-  if (appQueueTotal > 0) {
+  const visibleCount = Number(appQueueSummary?.reviewQueueTotal || 0);
+  if (visibleCount > 0) {
     badge.style.display = '';
-    badge.textContent   = appQueueTotal > 99 ? '99+' : String(appQueueTotal);
+    badge.textContent = visibleCount > 99 ? '99+' : String(visibleCount);
   } else {
     badge.style.display = 'none';
   }
@@ -12440,53 +12379,26 @@ function updateAppsReviewBadge() {
 function renderAppQueueKpis() {
   const container = document.getElementById('apps-kpi-grid');
   if (!container) return;
-  const underReview = appQueueData.filter((a) => a.applicationStatus === 'under_review').length;
-  const needsInfo   = appQueueData.filter((a) => a.applicationStatus === 'needs_info').length;
-  const verified    = appQueueData.filter((a) => a.identityStatus === 'verified').length;
-  const checkrConsider = appQueueData.filter((a) => resolveCheckrPhase(a) === 'consider').length;
-  const checkrAttention = appQueueData.filter((a) => isCheckrAttentionPhase(resolveCheckrPhase(a))).length;
-  const kpis = [
-    { label: 'In Queue (Total)',  value: appQueueTotal, icon: '#6366f1' },
-    { label: 'Under Review',      value: underReview,   icon: '#1d4ed8' },
-    { label: 'Needs Info',        value: needsInfo,     icon: '#b45309' },
-    { label: 'Identity Verified', value: verified,      icon: '#15803d' },
-    { label: 'Checkr Consider',   value: checkrConsider, icon: '#b45309' },
-    { label: 'Checkr Attention',  value: checkrAttention, icon: '#dc2626' },
+  const summary = appQueueSummary || {};
+  const cards = [
+    { label: 'All Applications', value: Number(summary.total || 0), filter: '', note: 'Full lifecycle queue' },
+    { label: 'Submitted', value: Number(summary.submitted || 0), filter: 'submitted', note: 'Awaiting first touch' },
+    { label: 'Under Review', value: Number(summary.underReview || 0), filter: 'under_review', note: 'Active underwriting' },
+    { label: 'Needs Info', value: Number(summary.needsInfo || 0), filter: 'needs_info', note: 'Waiting on applicant' },
+    { label: 'Approved Applications', value: Number(summary.approved || 0), filter: 'approved', note: 'Newest approved first' },
+    { label: 'Rejected / Declined', value: Number(summary.rejected || 0), filter: 'rejected', note: 'Newest rejected first' },
   ];
-  container.innerHTML = kpis.map(({ label, value }) => `
-    <div class="kpi-card">
-      <div class="kpi-label">${esc(label)}</div>
-      <div class="kpi-value">${value}</div>
-      <div class="kpi-change">this page</div>
-    </div>
-  `).join('');
-}
 
-function applyAppQueueFilters() {
-  let filtered = appQueueData.slice();
-
-  if (appFilterSearch) {
-    const q = appFilterSearch.toLowerCase().replace(/\s+/g, '');
-    filtered = filtered.filter((a) => {
-      const n = (s) => (s || '').toLowerCase().replace(/\s+/g, '');
-      return n(a.name).includes(q) || n(a.phone).includes(q) ||
-             n(a.email).includes(q) || n(a.id).startsWith(appFilterSearch.trim().toLowerCase());
-    });
-  }
-  if (appFilterStatus)   filtered = filtered.filter((a) => a.applicationStatus === appFilterStatus);
-  if (appFilterIdentity) filtered = filtered.filter((a) => a.identityStatus === appFilterIdentity);
-  if (appFilterCheckr)   filtered = filtered.filter((a) => resolveCheckrPhase(a) === appFilterCheckr);
-
-  const mult = appSortDir === 'asc' ? 1 : -1;
-  const key  = appSortField === 'updated_at' ? 'updatedAt' : 'submittedAt';
-  filtered.sort((a, b) => {
-    const pa = isCheckrAttentionPhase(resolveCheckrPhase(a)) ? 0 : 1;
-    const pb = isCheckrAttentionPhase(resolveCheckrPhase(b)) ? 0 : 1;
-    if (pa !== pb) return pa - pb;
-    const va = a[key] || '', vb = b[key] || '';
-    return va < vb ? -mult : va > vb ? mult : 0;
-  });
-  return filtered;
+  container.innerHTML = cards.map((card) => {
+    const active = appQueueState.attentionFilter !== 'new' && appQueueState.lifecycleFilter === card.filter;
+    const allActive = !appQueueState.lifecycleFilter && !appQueueState.attentionFilter && !card.filter;
+    return `
+      <button type="button" class="kpi-card app-queue-kpi ${(active || allActive) ? 'active' : ''}" onclick="applyAppQueueLifecyclePreset('${esc(card.filter)}')">
+        <div class="kpi-label">${esc(card.label)}</div>
+        <div class="kpi-value">${Number(card.value || 0).toLocaleString()}</div>
+        <div class="app-queue-kpi-sub">${esc(card.note)}</div>
+      </button>`;
+  }).join('');
 }
 
 function renderAppQueue() {
@@ -12497,33 +12409,54 @@ function renderAppQueue() {
   const pagInfo = document.getElementById('apps-page-info');
   if (loading) loading.style.display = 'none';
 
-  const filtered = applyAppQueueFilters();
-
-  if (!filtered.length) {
-    if (wrap)  wrap.style.display  = 'none';
+  if (!appQueueData.length) {
+    if (wrap) wrap.style.display = 'none';
     if (empty) empty.style.display = '';
-    if (pagInfo) pagInfo.textContent = '—';
+    if (pagInfo) {
+      const totalUniverse = Number(appQueueSummary?.total || 0);
+      pagInfo.textContent = totalUniverse ? `0 of ${totalUniverse}` : '—';
+    }
     document.getElementById('apps-prev-btn').disabled = true;
     document.getElementById('apps-next-btn').disabled = true;
+    syncAppQueueControls();
     return;
   }
-  if (wrap)  wrap.style.display  = '';
+
+  if (wrap) wrap.style.display = '';
   if (empty) empty.style.display = 'none';
 
-  tbody.innerHTML = filtered.map((a) => {
+  tbody.innerHTML = appQueueData.map((a) => {
     const presence = getAppPresence(a.id);
+    const attention = a.attention || {};
+    const rowClasses = [];
+    if (attention.isRecentHour) rowClasses.push('app-row-fresh-hour');
+    else if (attention.isRecentDay || attention.isNewAttention) rowClasses.push('app-row-fresh-day');
+    if (attention.isUnreviewed) rowClasses.push('app-row-unreviewed');
+
     const presenceHtml = presence
       ? `<br><span class="app-presence-badge" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
       : '';
     const needsInfoHtml = a.needsInfoReason
       ? ` <span title="${esc(a.needsInfoReason)}" style="cursor:help;">⚠️</span>`
       : '';
+
+    const badges = [];
+    if (attention.isRecentHour) badges.push('<span class="app-status-badge app-badge-new app-badge-urgent">NEW · 1h</span>');
+    else if (attention.isRecentDay || attention.isNewAttention) badges.push('<span class="app-status-badge app-badge-new">NEW · 24h</span>');
+    if (attention.isUnreviewed) badges.push('<span class="app-status-badge app-badge-unread">Unread</span>');
+    const badgeHtml = badges.length ? `<div class="app-queue-badge-row">${badges.join('')}</div>` : '';
+
     const latestActivity = a.reviewedBy
       ? `<span style="font-size:12px;">${esc(a.reviewedBy)}</span><br><span style="color:var(--text-sub);font-size:11px;">${fmtRelativeTime(a.reviewedAt)}</span>`
-      : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
-    return `<tr>
+      : '<span style="color:var(--text-sub);font-size:11px;">Unreviewed</span>';
+    const primaryActionLabel = typeof deleteApplicationFromQueue === 'function' ? 'View' : 'Review';
+    const deleteActionHtml = typeof deleteApplicationFromQueue === 'function'
+      ? `<button class="btn btn-danger btn-sm" onclick="deleteApplicationFromQueue('${esc(a.id)}','${esc(a.name)}')">Delete</button>`
+      : '';
+
+    return `<tr class="${rowClasses.join(' ')}">
       <td>
-        <strong style="font-size:13px;">${esc(a.name)}</strong>${needsInfoHtml}${presenceHtml}
+        <strong style="font-size:13px;">${esc(a.name)}</strong>${needsInfoHtml}${presenceHtml}${badgeHtml}
       </td>
       <td style="font-size:12px;">${esc(a.phone)}<br><span style="color:var(--text-sub);">${esc(a.email || '—')}</span></td>
       <td style="font-family:monospace;font-size:11px;color:var(--text-sub);" title="${esc(a.id)}">${esc(a.id.slice(0, 8))}…</td>
@@ -12531,47 +12464,51 @@ function renderAppQueue() {
       <td>${identityStatusBadge(a.identityStatus)}</td>
       <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
       <td>${latestActivity}</td>
-      <td>${checkrStatusBadge(a)}${checkrReportLink(a.checkrReportId)}</td>
-      <td class="td-actions">
-        <button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">View</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteApplicationFromQueue('${esc(a.id)}','${esc(a.name)}')">Delete</button>
-      </td>
+      <td>${checkrStatusBadge(a.checkrReportStatus)}${checkrReportLink(a.checkrReportId)}</td>
+      <td class="td-actions"><button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">${primaryActionLabel}</button>${deleteActionHtml}</td>
     </tr>`;
   }).join('');
 
   if (pagInfo) {
-    const start = (appQueuePage - 1) * APP_QUEUE_SIZE + 1;
-    const end   = Math.min(appQueuePage * APP_QUEUE_SIZE, appQueueTotal);
-    pagInfo.textContent = `${start}–${end} of ${appQueueTotal}`;
+    const start = (appQueueState.page - 1) * APP_QUEUE_SIZE + 1;
+    const end = Math.min(appQueueState.page * APP_QUEUE_SIZE, appQueueTotal);
+    const totalUniverse = Number(appQueueSummary?.total || appQueueTotal || 0);
+    const filteredSuffix = (appQueueState.lifecycleFilter || appQueueState.attentionFilter || appQueueState.search)
+      ? ` filtered · ${totalUniverse.toLocaleString()} total`
+      : '';
+    pagInfo.textContent = `${start}–${end} of ${appQueueTotal.toLocaleString()}${filteredSuffix}`;
   }
-  document.getElementById('apps-prev-btn').disabled = appQueuePage <= 1;
-  document.getElementById('apps-next-btn').disabled = appQueuePage * APP_QUEUE_SIZE >= appQueueTotal;
+
+  document.getElementById('apps-prev-btn').disabled = appQueueState.page <= 1;
+  document.getElementById('apps-next-btn').disabled = appQueueState.page * APP_QUEUE_SIZE >= appQueueTotal;
+  syncAppQueueControls();
 }
 
 function appsSearchInput(val) {
-  appFilterSearch = val;
-  renderAppQueue();
+  setAppQueueState({ search: val, page: 1 }, { load: true, syncControls: false });
 }
 
 function appsFilterChange() {
-  appFilterStatus   = document.getElementById('apps-filter-status')?.value   || '';
-  appFilterIdentity = document.getElementById('apps-filter-identity')?.value || '';
-  appFilterCheckr   = document.getElementById('apps-filter-checkr')?.value   || '';
-  appSortField      = document.getElementById('apps-sort-field')?.value      || 'submitted_at';
-  appSortDir        = document.getElementById('apps-sort-dir')?.value        || 'asc';
-  renderAppQueue();
+  const lifecycleFilter = document.getElementById('apps-filter-status')?.value || '';
+  const sortField = document.getElementById('apps-sort-field')?.value || 'priority';
+  const sortDir = document.getElementById('apps-sort-dir')?.value || 'asc';
+  setAppQueueState({
+    page: 1,
+    lifecycleFilter,
+    attentionFilter: '',
+    sortField,
+    sortDir,
+  }, { load: true, syncControls: false });
 }
 
 function appsPrevPage() {
-  if (appQueuePage <= 1) return;
-  appQueuePage--;
-  loadAppQueue();
+  if (appQueueState.page <= 1) return;
+  setAppQueueState({ page: appQueueState.page - 1 }, { load: true, syncControls: false });
 }
 
 function appsNextPage() {
-  if (appQueuePage * APP_QUEUE_SIZE >= appQueueTotal) return;
-  appQueuePage++;
-  loadAppQueue();
+  if (appQueueState.page * APP_QUEUE_SIZE >= appQueueTotal) return;
+  setAppQueueState({ page: appQueueState.page + 1 }, { load: true, syncControls: false });
 }
 
 // ── Open Application Detail ───────────────────────────────────────────────────
@@ -12601,801 +12538,22 @@ async function openAppDetail(applicationId) {
 
   try {
     const params = new URLSearchParams({ applicationId });
-    const data   = await apiGet(`/api/admin-review-detail?${params}`);
-    if (!data.success) throw new Error(data.error || 'Failed to load application.');
-    appViewingData = data;
-    renderAppDetail(data);
+    const data = await apiGet(`/api/admin-review-detail?${params}`);
+    if (!data.success) throw new Error(data.error || 'Failed to load application detail.');
+    appViewingData = data.application;
+    appViewingData.history = data.history || [];
+    renderAppDetail();
   } catch (err) {
-    document.getElementById('app-detail-body').innerHTML =
-      `<div style="padding:24px;color:var(--danger);">Failed to load: ${esc(err.message)}</div>`;
-  }
-}
-
-function appDetailRow(label, valueHtml) {
-  return `<div class="app-detail-row">
-    <span class="app-detail-label">${esc(label)}</span>
-    <span class="app-detail-value">${valueHtml}</span>
-  </div>`;
-}
-
-function renderAppDetail(d) {
-  const actionable = d.applicationStatus === 'submitted' || d.applicationStatus === 'under_review' || d.applicationStatus === 'needs_info';
-
-  const presence = getAppPresence(d.applicationId);
-  const presenceHtml = presence
-    ? `<span class="app-presence-badge" style="font-size:11px;" title="${esc(presence.reviewer || 'Another reviewer')} is viewing this application (different tab)">${esc(presence.reviewer || 'Reviewer')} active ~${Math.round((Date.now() - presence.ts) / 1000)}s ago</span>`
-    : '';
-
-  document.getElementById('app-detail-title').innerHTML =
-    `${esc(d.name)} ${appStatusBadge(d.applicationStatus)} ${presenceHtml}`;
-  document.getElementById('app-detail-subtitle').textContent = `Application ID: ${d.applicationId}`;
-
-  let html = '';
-
-  // A. Applicant Details
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">👤 Applicant Details</div>
-    ${appDetailRow('Name', esc(d.name))}
-    ${appDetailRow('Phone', esc(d.phone))}
-    ${appDetailRow('Email', esc(d.email || '—'))}
-    ${appDetailRow('Age', d.age != null ? esc(String(d.age)) : '—')}
-    ${appDetailRow('Experience', esc(d.experience || '—'))}
-    ${appDetailRow('Background Check Consent', d.agreeBackgroundCheck ? '✅ Yes' : '❌ No')}
-    ${appDetailRow('Has Insurance', d.hasInsurance != null ? (d.hasInsurance ? '✅ Yes' : '❌ No') : '—')}
-    ${appDetailRow('Protection Plan Pref', esc(d.protectionPlanPref || '—'))}
-    ${appDetailRow('Driver License Number', esc(d.driverLicenseNumber || '—'))}
-    ${appDetailRow('Driver License State', esc(d.driverLicenseState || '—'))}
-    ${appDetailRow('ZIP Code', esc(d.zipcode || '—'))}
-    ${appDetailRow('License Uploaded', d.hasLicenseUpload ? '✅ Yes' : '❌ No')}
-    ${appDetailRow('Insurance Proof', d.hasInsuranceProof ? '✅ Yes' : '❌ No')}
-    ${d.licenseFileName  ? appDetailRow('License File',   `<code style="font-size:11px;">${esc(d.licenseFileName)}</code>`)  : ''}
-    ${d.insuranceFileName? appDetailRow('Insurance File', `<code style="font-size:11px;">${esc(d.insuranceFileName)}</code>`) : ''}
-  </div>`;
-
-  // B. Application Answers (vehicle preferences)
-  if (Array.isArray(d.apps) && d.apps.length) {
-    html += `<div class="app-detail-section">
-      <div class="app-detail-section-title">📋 Vehicle Preferences</div>
-      ${d.apps.map((v, i) => appDetailRow(`Vehicle ${i + 1}`, esc(String(v)))).join('')}
-    </div>`;
-  }
-
-  // C. Stripe Identity Verification
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">🪪 Stripe Identity Verification</div>
-    ${appDetailRow('Identity Status', identityStatusBadge(d.identityStatus))}
-    ${appDetailRow('Stripe Session ID', d.identitySessionId ? `<code style="font-size:11px;">${esc(d.identitySessionId)}</code>` : '—')}
-    ${appDetailRow('Verified At', esc(fmtDateTime(d.identityVerifiedAt)))}
-  </div>`;
-
-  // D. Current Review State
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">🔍 Review State</div>
-    ${appDetailRow('Application Status', appStatusBadge(d.applicationStatus))}
-    ${appDetailRow('Precheck Decision', esc(d.precheckDecision || '—'))}
-    ${appDetailRow('Review Version', esc(String(d.reviewVersion)))}
-    ${appDetailRow('Reviewed By', esc(d.reviewedBy || '—'))}
-    ${appDetailRow('Reviewed At', esc(fmtDateTime(d.reviewedAt)))}
-    ${appDetailRow('Needs Info Reason', esc(d.needsInfoReason || '—'))}
-    ${appDetailRow('Last Reviewer Notes', esc(d.lastReviewerNotes || '—'))}
-    ${appDetailRow('Submitted At', esc(fmtDateTime(d.submittedAt)))}
-    ${appDetailRow('Last Updated', esc(fmtDateTime(d.updatedAt)))}
-  </div>`;
-
-  // E. Audit / Review History
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">📜 Review History (${(d.reviewHistory || []).length} events)</div>`;
-  if (d.reviewHistory && d.reviewHistory.length) {
-    html += d.reviewHistory.map((h) => `
-      <div class="app-history-item">
-        <div style="flex:1;">
-          <div class="app-history-action">${esc(h.action)}</div>
-          <div class="app-history-meta">${esc(h.performedBy || '—')} &middot; ${esc(fmtDateTime(h.createdAt))}</div>
-          ${h.notes ? `<div style="font-size:12px;color:var(--text);margin-top:2px;">${esc(h.notes)}</div>` : ''}
-          <div class="app-history-meta" style="margin-top:2px;">
-            <span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;">${esc(h.previousStatus)}</span>
-            → <span style="background:#f3f4f6;border-radius:4px;padding:1px 5px;">${esc(h.newStatus)}</span>
-          </div>
-        </div>
-      </div>`).join('');
-  } else {
-    html += '<div style="color:var(--text-sub);font-size:13px;font-style:italic;">No review actions yet.</div>';
-  }
-  html += '</div>';
-
-  // F. Checkr
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">🔎 Background Check (Checkr)</div>
-    ${appDetailRow('Checkr Status', checkrStatusBadge(d))}
-    ${appDetailRow('Checkr Candidate ID', d.checkrCandidateId ? `<code style="font-size:11px;">${esc(d.checkrCandidateId)}</code>` : '—')}
-    ${appDetailRow('Checkr Report ID', d.checkrReportId ? `<code style="font-size:11px;">${esc(d.checkrReportId)}</code>${checkrReportLink(d.checkrReportId)}` : '—')}
-    ${appDetailRow('Checkr Phase', esc(resolveCheckrPhase(d)))}
-    ${appDetailRow('Retry Available', ['failed', 'not_started', 'webhook_missing', 'candidate_created', 'invitation_sent'].includes(resolveCheckrPhase(d)) ? 'Yes' : 'No')}
-    ${appDetailRow('Launch Attempt Count', esc(String(d.checkrLaunchAttemptCount || 0)))}
-    ${appDetailRow('Last Launch Attempt', esc(fmtDateTime(d.checkrLastLaunchAttemptAt)))}
-    ${appDetailRow('Last Webhook At', esc(fmtDateTime(d.checkrLastWebhookAt)))}
-    ${appDetailRow('Webhook Freshness', esc(checkrStalenessText(d)))}
-    ${appDetailRow('Adjudication', esc(d.checkrAdjudication || '—'))}
-    ${appDetailRow('Completed At', esc(fmtDateTime(d.checkrCompletedAt)))}
-    ${appDetailRow('Adverse Action Step', esc(d.adverseActionStep || '—'))}
-    ${appDetailRow('Adverse Action Sent', esc(fmtDateTime(d.adverseActionSentAt)))}
-    ${appDetailRow('Last Checkr Error', esc(d.checkrLastError || '—'))}
-    ${appDetailRow('Last Launch Error', esc(d.checkrLastLaunchError || '—'))}
-  </div>`;
-
-  // G. Income Verification Documents
-  const incomeDocs = Array.isArray(d.incomeDocuments) ? d.incomeDocuments : [];
-  html += `<div class="app-detail-section">
-    <div class="app-detail-section-title">💵 Income Verification Documents (${incomeDocs.length})</div>`;
-
-  if (incomeDocs.length === 0) {
-    html += `<div style="color:var(--text-sub);font-size:13px;font-style:italic;padding:8px 0;">
-      No income verification documents uploaded.
-      <span style="color:#b45309;font-size:12px;margin-left:6px;">⚠️ Flag missing if required</span>
-    </div>`;
-  } else {
-    html += `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">` +
-      incomeDocs.map((doc) => {
-        const reviewBadge = {
-          pending:  `<span style="background:#f3f4f6;color:#6b7280;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">Pending</span>`,
-          reviewed: `<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">✅ Reviewed</span>`,
-          flagged:  `<span style="background:#fef9c3;color:#b45309;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">⚠️ Flagged</span>`,
-        }[doc.reviewStatus] || `<span style="font-size:11px;">${esc(doc.reviewStatus || 'pending')}</span>`;
-
-        const isPdf = (doc.mimeType || '').includes('pdf');
-        const isImg = (doc.mimeType || '').startsWith('image/');
-
-        let previewHtml = '';
-        let downloadHtml = '';
-        if (doc.previewUrl) {
-          if (isPdf) {
-            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📄 Open PDF</a>`;
-          } else if (isImg) {
-            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" title="Click to open full size">
-              <img src="${esc(doc.previewUrl)}" alt="${esc(doc.fileName || 'Income document')}"
-                style="max-width:180px;max-height:120px;border-radius:6px;border:1px solid var(--border);display:block;margin-top:6px;cursor:pointer;">
-            </a>`;
-          } else {
-            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📎 Open File</a>`;
-          }
-          downloadHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" download="${esc(doc.fileName || 'income-document')}" style="font-size:12px;color:var(--primary);">⬇️ Download</a>`;
-        }
-
-        const fileSizeStr = doc.fileSize ? ` · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB` : '';
-        const uploadedStr = doc.uploadedAt ? fmtDateTime(doc.uploadedAt) : '—';
-        const reviewedStr = doc.reviewedBy ? ` by ${esc(doc.reviewedBy)} at ${esc(fmtDateTime(doc.reviewedAt))}` : '';
-        const docTypeStr = doc.documentCategory || doc.docType || 'income_verification';
-        const storageMeta = [doc.storageBucket, doc.filePath].filter(Boolean).join(' / ') || '—';
-
-        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
-            <span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(doc.fileName || '')}">
-              ${esc(doc.fileName || 'Document')}
-            </span>
-            <span style="font-size:11px;color:var(--text-sub);">${esc(doc.mimeType || '')}${esc(fileSizeStr)}</span>
-            ${reviewBadge}
-          </div>
-          <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">
-            Uploaded: ${esc(uploadedStr)}${reviewedStr ? ` · Reviewed${esc(reviewedStr)}` : ''}
-          </div>
-          <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">
-            Type: <code>${esc(docTypeStr)}</code>
-            &nbsp;•&nbsp; Storage: <code style="word-break:break-all;">${esc(storageMeta)}</code>
-          </div>
-          ${doc.notes ? `<div style="font-size:12px;color:var(--text);margin-bottom:6px;">${esc(doc.notes)}</div>` : ''}
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">${previewHtml}${downloadHtml}</div>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-            ${doc.reviewStatus !== 'reviewed' ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;" onclick="markIncomeDoc('${esc(doc.id)}','reviewed')">✅ Mark Reviewed</button>` : ''}
-            ${doc.reviewStatus !== 'flagged'  ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#fef9c3;color:#b45309;border:1px solid #fde68a;" onclick="markIncomeDoc('${esc(doc.id)}','flagged')">⚠️ Flag</button>` : ''}
-            ${doc.reviewStatus !== 'pending'  ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;" onclick="markIncomeDoc('${esc(doc.id)}','pending')">↩ Reset</button>` : ''}
-          </div>
-        </div>`;
-      }).join('') +
-    `</div>`;
-  }
-
-  // "Flag missing" shortcut when no docs are present
-  if (incomeDocs.length === 0) {
-    html += `<div style="margin-top:10px;">
-      <button class="btn btn-sm" style="font-size:12px;background:#fef9c3;color:#b45309;border:1px solid #fde68a;" onclick="flagMissingIncomeDocs()">⚠️ Flag Missing Income Docs</button>
-    </div>`;
-  }
-
-  html += `</div>`;
-
-  document.getElementById('app-detail-body').innerHTML = html;
-
-  // Show/hide action section
-  const actionSection = document.getElementById('app-action-section');
-  const staleNotice   = document.getElementById('app-detail-stale-notice');
-  if (actionable) {
-    actionSection.style.display = '';
-    staleNotice.style.display   = 'none';
-  } else {
-    actionSection.style.display = 'none';
-    staleNotice.style.display   = '';
-    staleNotice.textContent     =
-      `This application is in a terminal state (${d.applicationStatus}) and cannot be actioned.`;
-  }
-}
-
-// ── Review Action Controls ────────────────────────────────────────────────────
-
-function selectAppAction(action) {
-  appSelectedAction = action;
-  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
-    const btn = document.getElementById(`app-btn-${a}`);
-    if (!btn) return;
-    btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
-    if (a === action) btn.classList.add(`selected-${action}`);
-  });
-  const labels = { pre_adverse: '⚖️ Send Pre-Adverse Notice', approved: '✅ Approve', rejected: '❌ Reject', needs_info: '⚠️ Request More Info' };
-  document.getElementById('app-action-selected').textContent = labels[action] ? `Selected: ${labels[action]}` : '';
-  const notesLabel = document.getElementById('app-notes-label');
-  if (notesLabel) notesLabel.textContent = action === 'needs_info'
-    ? 'Reason for more information (required):'
-    : action === 'pre_adverse'
-      ? 'Pre-adverse notes (optional):'
-      : 'Reviewer notes (optional):';
-  document.getElementById('app-submit-btn').disabled = false;
-}
-
-function resetAppActionButtons() {
-  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
-    const btn = document.getElementById(`app-btn-${a}`);
-    if (!btn) return;
-    btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info');
-    btn.disabled = false;
-  });
-  appSelectedAction = '';
-  const sel = document.getElementById('app-action-selected');
-  if (sel) sel.textContent = '';
-}
-
-async function submitAppAction() {
-  if (!appViewingData || !appSelectedAction) { showToast('Please select a decision first.', 'error'); return; }
-  if (appActionInFlight) return;
-
-  const notes      = document.getElementById('app-action-notes')?.value.trim()    || '';
-  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim()   || 'Admin';
-
-  if (appSelectedAction === 'needs_info' && !notes) {
-    showToast('Please provide a reason for requesting more information.', 'error');
-    document.getElementById('app-action-notes').focus();
-    return;
-  }
-
-  appActionInFlight = true;
-  const submitBtn   = document.getElementById('app-submit-btn');
-  const conflictBanner = document.getElementById('app-detail-conflict-banner');
-  const actionLabels  = { pre_adverse: 'Sending Notice…', approved: 'Approving…', rejected: 'Rejecting…', needs_info: 'Sending Request…' };
-  submitBtn.disabled  = true;
-  submitBtn.textContent = actionLabels[appSelectedAction] || 'Submitting…';
-  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
-    const btn = document.getElementById(`app-btn-${a}`);
-    if (btn) btn.disabled = true;
-  });
-  conflictBanner.classList.remove('visible');
-  conflictBanner.textContent = '';
-
-  try {
-    const data = await callReviewAction({
-      secret:                adminSecret,
-      applicationId:         appViewingData.applicationId,
-      action:                appSelectedAction,
-      reviewedBy,
-      notes,
-      expectedStatus:        appViewingData.applicationStatus,
-      expectedReviewVersion: appViewingData.reviewVersion,
-      actionRequestId:       generateUUID(),
-    });
-
-    clearAppPresence(appViewingData.applicationId);
-
-    if (data.idempotent) {
-      showToast('This decision was already recorded (idempotent replay).', 'warning');
-    } else {
-      const successLabels = {
-        pre_adverse: '⚖️ Pre-adverse notice sent.',
-        approved:   '✅ Application approved.',
-        rejected:   '❌ Application rejected.',
-        needs_info: '⚠️ More information requested.',
-      };
-      showToast(successLabels[appSelectedAction] || 'Decision recorded.', 'success');
-    }
-
-    closeModal('app-detail-modal');
-    appQueuePage = 1;
-    await loadAppQueue();
-
-  } catch (err) {
-    appActionInFlight = false;
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Submit Decision';
-    ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
-      const btn = document.getElementById(`app-btn-${a}`);
-      if (btn) btn.disabled = false;
-    });
-
-    if (err.isStaleConflict) {
-      conflictBanner.innerHTML =
-        '<strong>⚠️ Concurrency conflict:</strong> Another reviewer has already updated this application. ' +
-        'The view is refreshing with the current state — please review the updated information before deciding.';
-      conflictBanner.classList.add('visible');
-      // Auto-refresh detail after short delay so reviewer sees the conflict message first
-      setTimeout(() => refreshAppDetail(), APP_CONFLICT_REFRESH_DELAY_MS);
-    } else {
-      showToast('Action failed: ' + err.message, 'error');
-    }
-  } finally {
-    appActionInFlight = false;
-  }
-}
-
-async function refreshAppDetail() {
-  if (!appViewingId) return;
-  try {
-    const params = new URLSearchParams({ applicationId: appViewingId });
-    const data   = await apiGet(`/api/admin-review-detail?${params}`);
-    if (!data.success) throw new Error(data.error || 'Failed to refresh.');
-    appViewingData = data;
-    resetAppActionButtons();
-    document.getElementById('app-action-notes').value = '';
-    document.getElementById('app-submit-btn').disabled = true;
-    document.getElementById('app-submit-btn').textContent = 'Submit Decision';
-    renderAppDetail(data);
-    // Also refresh queue silently in background
-    loadAppQueue();
-  } catch (err) {
-    showToast('Failed to refresh application: ' + err.message, 'error');
-  }
-}
-
-async function runAppOperationalAction(action) {
-  if (!appViewingData || !appViewingData.applicationId) {
-    showToast('Open an application first.', 'error');
-    return;
-  }
-  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
-  const notes = document.getElementById('app-action-notes')?.value.trim() || '';
-
-  if (action === 'archive_application') {
-    const ok = window.confirm('Archive this application and remove it from the active queue?');
-    if (!ok) return;
-  }
-
-  try {
-    const result = await callAdminApplicationOp({
-      secret: adminSecret,
-      action,
-      applicationId: appViewingData.applicationId,
-      reviewedBy,
-      notes,
-    });
-
-    if (result.verificationUrl) {
-      showToast('Verification link generated. Copy it from the application detail response/log.', 'success');
-    } else if (action === 'archive_application') {
-      showToast('Application archived.', 'success');
-      closeModal('app-detail-modal');
-    } else if (action === 'move_to_review') {
-      showToast('Application moved to under review.', 'success');
-    } else if (action === 'manual_recovery') {
-      showToast(result.synced ? 'Recovery synced from Veriff.' : 'Recovery completed (no change needed).', 'success');
-    } else if (action === 'retry_checkr') {
-      showToast(result.alreadyStarted ? 'Checkr already started for this application.' : 'Checkr retry triggered.', 'success');
-    } else if (action === 'restart_verification') {
-      showToast('Verification restarted.', 'success');
-    } else if (action === 'resend_verification') {
-      showToast('Verification resend triggered.', 'success');
-    } else {
-      showToast('Operational action completed.', 'success');
-    }
-
-    await loadAppQueue();
-    if (action !== 'archive_application') await refreshAppDetail();
-  } catch (err) {
-    showToast('Operational action failed: ' + err.message, 'error');
-  }
-}
-
-async function deleteApplicationFromQueue(applicationId, applicantName) {
-  if (!applicationId) return;
-  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
-  const ok = window.confirm(`Archive/delete ${applicantName || 'this application'} from the active queue?`);
-  if (!ok) return;
-  try {
-    await callAdminApplicationOp({
-      secret: adminSecret,
-      action: 'archive_application',
-      applicationId,
-      reviewedBy,
-      notes: 'Archived from queue delete button.',
-    });
-    showToast('Application archived.', 'success');
-    if (appViewingId === applicationId) closeModal('app-detail-modal');
-    await loadAppQueue();
-  } catch (err) {
-    showToast('Delete failed: ' + err.message, 'error');
-  }
-}
-
-async function archiveTestApplications() {
-  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
-  try {
-    const preview = await callAdminApplicationOp({
-      secret: adminSecret,
-      action: 'archive_test_applications',
-      reviewedBy,
-      dryRun: true,
-    });
-    const count = Number(preview.count) || 0;
-    if (!count) {
-      showToast('No test/debug applications found to archive.', 'info');
-      return;
-    }
-    const confirmed = window.confirm(`Archive ${count} test/debug application(s) from the queue?`);
-    if (!confirmed) return;
-
-    const result = await callAdminApplicationOp({
-      secret: adminSecret,
-      action: 'archive_test_applications',
-      reviewedBy,
-      dryRun: false,
-      notes: 'Queue reset cleanup of stale test/debug applications.',
-    });
-    showToast(`Archived ${result.archived || 0} application(s).`, 'success');
-    await loadAppQueue();
-  } catch (err) {
-    showToast('Archive test apps failed: ' + err.message, 'error');
-  }
-}
-
-// ── Income Document Review Actions ───────────────────────────────────────────
-
-async function markIncomeDoc(documentId, status) {
-  if (!documentId) return;
-  try {
-    const resp = await fetch(API_BASE + '/api/mark-income-doc-reviewed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret: adminSecret,
-        documentId,
-        status,
-        reviewedBy: document.getElementById('app-reviewer-name')?.value.trim() || 'Admin',
-      }),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-    showToast(`Document marked as ${status}.`, 'success');
-    await refreshAppDetail();
-  } catch (err) {
-    showToast('Failed to update document: ' + err.message, 'error');
-  }
-}
-
-function flagMissingIncomeDocs() {
-  if (!appViewingData) return;
-  // Add a note and set action to needs_info
-  selectAppAction('needs_info');
-  const notesEl = document.getElementById('app-action-notes');
-  if (notesEl && !notesEl.value) {
-    notesEl.value = 'Income verification documents are missing. Please upload screenshots or PDFs of your recent Uber, Lyft, or DoorDash earnings.';
-  }
-  notesEl?.focus();
-  showToast('Action set to "Request More Info" for missing income docs.', 'info');
-}
-
-// ── Balance Ledger Page ────────────────────────────────────────────────────
-
-let currentLedgerBookingId = '';
-let currentLedgerRemainingBalance = 0;
-const _ledgerRowCache = new Map(); // id → row object, populated by renderBalanceHistory
-
-function initBalanceLedgerPage() {
-  // Pre-fill booking ID from URL hash if present (e.g. #balance-ledger:BK-1029)
-  const hash = window.location.hash || '';
-  const m = hash.match(/balance-ledger:([^&]+)/);
-  if (m) {
-    const el = document.getElementById('bl-booking-search');
-    if (el && !el.value) el.value = decodeURIComponent(m[1]);
-    loadBalanceLedger();
-  }
-}
-
-function loadBalanceLedger() {
-  const bookingId = (document.getElementById('bl-booking-search')?.value || '').trim();
-  if (!bookingId) { showToast('Enter a Booking ID first.', 'error'); return; }
-  currentLedgerBookingId = bookingId;
-
-  const loading    = document.getElementById('bl-loading');
-  const tableWrap  = document.getElementById('bl-table-wrap');
-  const empty      = document.getElementById('bl-empty');
-  const placeholder = document.getElementById('bl-placeholder');
-  const summaryRow = document.getElementById('bl-summary-row');
-
-  if (loading)     loading.style.display    = 'flex';
-  if (tableWrap)   tableWrap.style.display  = 'none';
-  if (empty)       empty.style.display      = 'none';
-  if (placeholder) placeholder.style.display = 'none';
-  if (summaryRow)  summaryRow.style.display  = 'none';
-
-  Promise.all([
-    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'summary',  booking_id: bookingId }),
-    apiPost('/api/renter-balance-ledger', { secret: adminSecret, action: 'history',  booking_id: bookingId, limit: 200 }),
-  ])
-    .then(([sumData, histData]) => {
-      if (loading) loading.style.display = 'none';
-      renderBalanceSummary(sumData.summary);
-      renderBalanceHistory(histData.transactions || []);
-    })
-    .catch((err) => {
-      if (loading) loading.style.display = 'none';
-      showToast('Failed to load ledger: ' + err.message, 'error');
-      if (placeholder) placeholder.style.display = '';
-    });
-}
-
-function sendPaymentLinkFromLedger() {
-  const bookingId = (document.getElementById('bl-booking-search')?.value || '').trim() || currentLedgerBookingId;
-  if (!bookingId) {
-    showToast('Load a booking ledger first.', 'error');
-    return;
-  }
-  sendPaymentLinkForBooking(bookingId);
-}
-
-function renderBalanceSummary(summary) {
-  const row = document.getElementById('bl-summary-row');
-  if (!row) return;
-  const fmt = (n) => '$' + Number(n || 0).toFixed(2);
-  document.getElementById('bl-total-charges').textContent = fmt(summary.total_charges);
-  document.getElementById('bl-total-paid').textContent    = fmt(summary.total_paid);
-  document.getElementById('bl-total-waived').textContent  = fmt(summary.total_waived);
-  document.getElementById('bl-remaining').textContent     = fmt(summary.remaining_balance);
-  currentLedgerRemainingBalance = Number(summary.remaining_balance || 0);
-  // Show/hide the "Create Payment Plan" button based on whether there's a balance owed
-  const ppBtn = document.getElementById('bl-create-plan-btn');
-  if (ppBtn) ppBtn.style.display = currentLedgerRemainingBalance > 0 ? '' : 'none';
-  row.style.display = 'flex';
-}
-
-const LEDGER_TYPE_LABELS = {
-  extension: 'Extension', late_fee: 'Late Fee', ticket: 'Ticket',
-  damage: 'Damage', repair: 'Repair', deductible: 'Deductible',
-  smoking: 'Smoking', cleaning: 'Cleaning', towing: 'Towing', misc: 'Misc',
-  payment: 'Payment', refund: 'Refund', waiver: 'Waiver', adjustment: 'Adjustment',
-};
-
-const LEDGER_TYPE_COLORS = {
-  extension: '#7c3aed', late_fee: '#dc2626', ticket: '#b45309',
-  damage: '#dc2626', repair: '#d97706', deductible: '#7c3aed',
-  smoking: '#6b7280', cleaning: '#0891b2', towing: '#b45309', misc: '#6b7280',
-  payment: '#16a34a', refund: '#dc2626', waiver: '#0891b2', adjustment: '#6b7280',
-};
-
-function renderBalanceHistory(transactions) {
-  const wrap  = document.getElementById('bl-table-wrap');
-  const empty = document.getElementById('bl-empty');
-  const tbody = document.getElementById('bl-tbody');
-  if (!tbody) return;
-
-  if (!transactions.length) {
-    if (wrap)  wrap.style.display  = 'none';
-    if (empty) empty.style.display = 'block';
-    return;
-  }
-  if (wrap)  wrap.style.display  = '';
-  if (empty) empty.style.display = 'none';
-
-  const withBalance = [...transactions].map((row) => ({
-    ...row,
-    _running: Number(row.running_balance || row.remaining_balance || 0),
-  }));
-
-  // Populate the row cache so event handlers can safely retrieve full row data.
-  _ledgerRowCache.clear();
-  withBalance.forEach((row) => { if (row.id) _ledgerRowCache.set(String(row.id), row); });
-
-  tbody.innerHTML = withBalance.map((row) => {
-    const date    = row.created_at
-      ? new Date(row.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
-      : '\u2014';
-    const typeLabel = LEDGER_TYPE_LABELS[row.transaction_type] || row.transaction_type;
-    const typeColor = LEDGER_TYPE_COLORS[row.transaction_type] || '#6b7280';
-    const dirLabel = row.direction === 'debit'
-      ? '<span style="color:var(--danger);font-weight:600;">Charge ↑</span>'
-      : '<span style="color:var(--success);font-weight:600;">Credit ↓</span>';
-    const amt = '$' + Number(row.amount || 0).toFixed(2);
-    const runBal = '$' + row._running.toFixed(2);
-    const notes   = row.notes ? esc(row.notes) : '<span style="color:var(--text-sub);">—</span>';
-    const dueDate = row.due_date
-      ? new Date(row.due_date + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
-      : '<span style="color:var(--text-sub);">—</span>';
-    const safeId = esc(String(row.id || ''));
-    return `<tr>
-      <td style="white-space:nowrap;">${date}</td>
-      <td><span style="background:${typeColor}22;color:${typeColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;">${esc(typeLabel)}</span></td>
-      <td>${dirLabel}</td>
-      <td style="font-weight:700;white-space:nowrap;">${esc(amt)}</td>
-      <td style="white-space:nowrap;font-weight:600;color:${row._running > 0 ? 'var(--warning)' : 'var(--success)'};">${esc(runBal)}</td>
-      <td style="max-width:220px;word-break:break-word;">${notes}</td>
-      <td style="font-size:12px;color:var(--text-sub);">${esc(row.created_by || 'system')}</td>
-      <td style="white-space:nowrap;">${dueDate}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn btn-sm bl-edit-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-main);margin-right:4px;" title="Edit entry">✏️ Edit</button>
-        <button class="btn btn-sm bl-delete-btn" data-lid="${safeId}" style="padding:3px 10px;font-size:11px;background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;" title="Delete entry">🗑 Delete</button>
-      </td>
-    </tr>`;
-  }).join('');
-
-  // Attach event listeners after render — avoids any inline JS injection risk.
-  tbody.querySelectorAll('.bl-edit-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const row = _ledgerRowCache.get(btn.dataset.lid);
-      if (row) openEditLedgerModal(row);
-    });
-  });
-  tbody.querySelectorAll('.bl-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const row = _ledgerRowCache.get(btn.dataset.lid);
-      if (row) deleteLedgerEntry(row.id, row.transaction_type, Number(row.amount || 0).toFixed(2));
-    });
-  });
-}
-
-// ── Add Charge Modal ─────────────────────────────────────────────────────────
-
-function openAddChargeModal(prefillBookingId) {
-  ['ac-amount', 'ac-notes', 'ac-due-date'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  const typeEl = document.getElementById('ac-type');
-  if (typeEl) typeEl.value = '';
-
-  const bookingEl = document.getElementById('ac-booking-id');
-  if (bookingEl) {
-    bookingEl.value = prefillBookingId || currentLedgerBookingId || '';
-  }
-  openModal('add-charge-modal');
-}
-
-async function saveCharge() {
-  const btn       = document.getElementById('ac-submit-btn');
-  const bookingId = document.getElementById('ac-booking-id')?.value.trim();
-  const typeVal   = document.getElementById('ac-type')?.value;
-  const amountVal = document.getElementById('ac-amount')?.value;
-  const notes     = document.getElementById('ac-notes')?.value.trim() || '';
-  const dueDate   = document.getElementById('ac-due-date')?.value || '';
-
-  if (!bookingId) { showToast('Booking ID is required.', 'error'); return; }
-  if (!typeVal)   { showToast('Please select a charge category.', 'error'); return; }
-  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
-    showToast('Please enter a valid amount.', 'error'); return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
-
-  // Generate idempotency key for this submission
-  const chargeRequestId = 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-
-  try {
-    const data = await apiPost('/api/renter-balance-ledger', {
-      secret: adminSecret,
-      action: 'add_charge',
-      booking_id: bookingId,
-      transaction_type: typeVal,
-      amount: Number(amountVal),
-      notes: notes || undefined,
-      due_date: dueDate || undefined,
-      charge_request_id: chargeRequestId,
-      created_by: 'admin',
-    });
-
-    closeModal('add-charge-modal');
-    showToast(data.duplicate ? 'Charge already recorded.' : 'Charge added to ledger.', 'success');
-
-    // Refresh ledger view if the booking matches what is currently loaded
-    if (bookingId === currentLedgerBookingId) loadBalanceLedger();
-    else {
-      // Navigate to ledger page for the charged booking
-      currentLedgerBookingId = bookingId;
-      const el = document.getElementById('bl-booking-search');
-      if (el) el.value = bookingId;
-      navigate('balance-ledger');
-      loadBalanceLedger();
-    }
-  } catch (err) {
-    showToast('Failed to add charge: ' + err.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Add Charge'; }
-  }
-}
-
-// ── Edit / Delete Ledger Entry ────────────────────────────────────────────────
-
-function openEditLedgerModal(row) {
-  const idEl     = document.getElementById('el-id');
-  const typeEl   = document.getElementById('el-type');
-  const amtEl    = document.getElementById('el-amount');
-  const notesEl  = document.getElementById('el-notes');
-  const dueDateEl = document.getElementById('el-due-date');
-  if (idEl)      idEl.value      = row.id || '';
-  if (typeEl)    typeEl.value    = row.transaction_type || '';
-  if (amtEl)     amtEl.value     = Number(row.amount || 0).toFixed(2);
-  if (notesEl)   notesEl.value   = row.notes || '';
-  if (dueDateEl) dueDateEl.value = row.due_date ? row.due_date.slice(0, 10) : '';
-  openModal('edit-ledger-modal');
-}
-
-async function saveEditLedger() {
-  const btn      = document.getElementById('el-submit-btn');
-  const id       = document.getElementById('el-id')?.value.trim();
-  const typeVal  = document.getElementById('el-type')?.value;
-  const amountVal = document.getElementById('el-amount')?.value;
-  const notes    = document.getElementById('el-notes')?.value.trim() || '';
-  const dueDate  = document.getElementById('el-due-date')?.value || '';
-
-  if (!id)        { showToast('Ledger entry ID missing.', 'error'); return; }
-  if (!typeVal)   { showToast('Please select a category.', 'error'); return; }
-  if (!amountVal || isNaN(Number(amountVal)) || Number(amountVal) <= 0) {
-    showToast('Please enter a valid amount.', 'error'); return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
-  try {
-    await apiPost('/api/renter-balance-ledger', {
-      secret: adminSecret,
-      action: 'update_transaction',
-      id,
-      transaction_type: typeVal,
-      amount: Number(amountVal),
-      notes: notes || null,
-      due_date: dueDate || null,
-    });
-    closeModal('edit-ledger-modal');
-    showToast('Ledger entry updated.', 'success');
-    if (currentLedgerBookingId) loadBalanceLedger();
-  } catch (err) {
-    showToast('Failed to update entry: ' + err.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
-  }
-}
-
-async function deleteLedgerEntry(id, typeLabel, amount) {
-  if (!confirm(`Delete this ${typeLabel} entry of $${amount}? This cannot be undone.`)) return;
-  try {
-    await apiPost('/api/renter-balance-ledger', {
-      secret: adminSecret,
-      action: 'delete_transaction',
-      id,
-    });
-    showToast('Ledger entry deleted.', 'success');
-    if (currentLedgerBookingId) loadBalanceLedger();
-  } catch (err) {
-    showToast('Failed to delete entry: ' + err.message, 'error');
+    document.getElementById('app-detail-body').innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger);">${esc(err.message)}</div>`;
+    document.getElementById('app-detail-title').textContent = 'Load failed';
   }
 }
 
 async function loadApplicationsPage() {
-  appQueuePage      = 1;
-  appFilterStatus   = '';
-  appFilterIdentity = '';
-  appFilterCheckr   = '';
-  appFilterSearch   = '';
-  const fStatus   = document.getElementById('apps-filter-status');
-  const fIdentity = document.getElementById('apps-filter-identity');
-  const fCheckr   = document.getElementById('apps-filter-checkr');
-  const fSearch   = document.getElementById('apps-search');
-  if (fStatus)   fStatus.value   = '';
-  if (fIdentity) fIdentity.value = '';
-  if (fCheckr)   fCheckr.value   = '';
-  if (fSearch)   fSearch.value   = '';
+  syncAppQueueControls();
   await loadAppQueue();
 }
+
 
 // ── Reconciliation Report ──────────────────────────────────────────────────────
 
