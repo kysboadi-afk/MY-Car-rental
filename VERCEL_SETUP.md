@@ -249,7 +249,7 @@ Without these, renters will see an error when they click "Send Code" on the Appl
 |---|---|
 | `TEXTMAGIC_USERNAME` | Your TextMagic account username |
 | `TEXTMAGIC_API_KEY` | Your TextMagic API key (found in TextMagic dashboard → API settings) |
-| `OTP_SECRET` | A long random string (at least 32 characters) used to sign verification codes — generate one at https://randomkeygen.com |
+| `OTP_SECRET` | A cryptographically secure random string (64+ characters) used to sign verification codes — generate with `openssl rand -hex 32` in a terminal |
 
 ### How to get your TextMagic credentials
 
@@ -267,7 +267,7 @@ Without these, renters will see an error when they click "Send Code" on the Appl
 |---|---|
 | `TEXTMAGIC_USERNAME` | `yourname` |
 | `TEXTMAGIC_API_KEY` | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
-| `OTP_SECRET` | `a3f9k2m7p1q8r4s6t0u5v9w2x7y1z3b8c4d6` (use your own random string) |
+| `OTP_SECRET` | Run `openssl rand -hex 32` and paste the output (64-char hex string) |
 
 4. Click **Save**.
 5. Go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
@@ -494,7 +494,7 @@ The table below lists every environment variable used by the SLY RIDES backend, 
 | `TEXTMAGIC_USERNAME` | SMS / OTP | ✅ Yes | TextMagic account username |
 | `TEXTMAGIC_API_KEY` | SMS / OTP | ✅ Yes | TextMagic → My Account → API → API Keys |
 | `TEXTMAGIC_FROM` | SMS sender ID | ⚠️ Optional | Custom sender name or number (leave blank to use TextMagic default) |
-| `OTP_SECRET` | Phone verification | ✅ Yes | Any long random string (32+ chars) — generate with `openssl rand -hex 32` |
+| `OTP_SECRET` | Phone verification | ✅ Yes | 64-char cryptographically secure random string — generate with `openssl rand -hex 32` |
 | `SUPABASE_URL` | Admin portal / DB | ✅ Yes | Supabase project → Settings → API → Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Admin portal / DB | ✅ Yes | Supabase project → Settings → API → `service_role` key (keep secret!) |
 | `ADMIN_SECRET` | Admin portal auth | ✅ Yes | Choose any strong password — this is your admin login |
