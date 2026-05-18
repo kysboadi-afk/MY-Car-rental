@@ -174,8 +174,8 @@ export default async function handler(req, res) {
         file_name: safeFileName,
         mime_type: normalizedMime,
         file_path: filePath,
-        file_size: decoded.bytes,
-        review_status: "pending",
+        file_size_bytes: decoded.bytes,
+        verification_status: "pending",
       })
       .select("id")
       .single();

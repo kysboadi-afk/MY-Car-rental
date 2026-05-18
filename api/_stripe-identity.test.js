@@ -43,6 +43,7 @@ let veriffDecisionPayload = { status: "success", verification: { id: "vrf_existi
 let veriffCreateStatus = 200;
 let veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
 let veriffCreateFailureOnce = null;
+let missingVeriffEventTable = false;
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
   calls.fetched.push(applicationId);
@@ -106,23 +107,32 @@ mock.module("./_supabase.js", {
   namedExports: {
     getSupabaseAdmin: () => ({
       from(table) {
-        if (table !== "stripe_identity_webhook_events") {
+        if (!["veriff_webhook_events", "stripe_identity_webhook_events"].includes(table)) {
           throw new Error(`Unexpected table ${table}`);
         }
+        const isMissingVeriffTable = missingVeriffEventTable && table === "veriff_webhook_events";
         return {
           select() {
             return {
               eq() {
                 return {
-                  maybeSingle: async () => (duplicateEvent
-                    ? { data: { id: 1 }, error: null }
-                    : { data: null, error: null }),
+                  maybeSingle: async () => {
+                    if (isMissingVeriffTable) {
+                      return { data: null, error: { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' } };
+                    }
+                    return duplicateEvent
+                      ? { data: { id: 1 }, error: null }
+                      : { data: null, error: null };
+                  },
                 };
               },
             };
           },
           insert: async (payload) => {
-            calls.eventInserts.push(payload);
+            if (isMissingVeriffTable) {
+              return { error: { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' } };
+            }
+            calls.eventInserts.push({ table, payload });
             return { error: insertEventError };
           },
         };
@@ -171,7 +181,8 @@ global.fetch = mock.fn(async (url, init = {}) => {
 });
 
 const { default: createIdentitySessionHandler } = await import("./create-identity-verification-session.js");
-const { default: identityWebhookHandler } = await import("./stripe-identity-webhook.js");
+const { default: identityWebhookHandler } = await import("./veriff-webhook.js");
+const { default: deprecatedStripeIdentityWebhookHandler } = await import("./stripe-identity-webhook.js");
 const { default: adminReviewQueueHandler } = await import("./admin-review-queue.js");
 const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
 
@@ -274,6 +285,7 @@ beforeEach(() => {
   veriffCreateStatus = 200;
   veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
   veriffCreateFailureOnce = null;
+  missingVeriffEventTable = false;
 });
 
 test("create-identity-verification-session creates a Veriff session and persists linkage", async () => {
@@ -344,7 +356,7 @@ test("create-identity-verification-session returns processing when existing deci
   assert.deepEqual(methods, ["GET"]);
 });
 
-test("stripe-identity-webhook maps approved Veriff decision to verified", async () => {
+test("veriff-webhook maps approved Veriff decision to verified", async () => {
   const payload = {
     id: "evt_veriff_approved_1",
     verification: {
@@ -368,7 +380,7 @@ test("stripe-identity-webhook maps approved Veriff decision to verified", async 
   assert.equal(calls.checkrInitiations.length, 1);
 });
 
-test("stripe-identity-webhook maps approved Veriff decision with status:success envelope to verified", async () => {
+test("veriff-webhook maps approved Veriff decision with status:success envelope to verified", async () => {
   // Real Veriff decision webhooks wrap the payload with status:"success" at the
   // top level.  Ensure the envelope field does not shadow verification.status.
   const payload = {
@@ -391,7 +403,7 @@ test("stripe-identity-webhook maps approved Veriff decision with status:success 
   assert.equal(calls.checkrInitiations.length, 1);
 });
 
-test("stripe-identity-webhook maps verification.completed decision payload to verified", async () => {
+test("veriff-webhook maps verification.completed decision payload to verified", async () => {
   const payload = {
     id: "evt_veriff_completed_1",
     eventType: "verification.completed",
@@ -413,7 +425,7 @@ test("stripe-identity-webhook maps verification.completed decision payload to ve
   assert.equal(calls.patched[0].applicationId, "app_1");
 });
 
-test("stripe-identity-webhook maps approved by session lookup when vendorData is absent", async () => {
+test("veriff-webhook maps approved by session lookup when vendorData is absent", async () => {
   fetchResult = { ok: false, status: 404, error: "Application not found." };
   fetchBySessionResult = {
     ok: true,
@@ -446,7 +458,7 @@ test("stripe-identity-webhook maps approved by session lookup when vendorData is
   assert.equal(calls.patched[0].patch.identityStatus, "verified");
 });
 
-test("stripe-identity-webhook advances processing identity to under_review", async () => {
+test("veriff-webhook advances processing identity to under_review", async () => {
   const payload = {
     id: "evt_veriff_processing_1",
     verification: {
@@ -497,7 +509,7 @@ test("create-identity-verification-session syncs processing status and advances 
   assert.deepEqual(methods, ["GET"]);
 });
 
-test("stripe-identity-webhook redirects browser GET requests to identity return page", async () => {
+test("veriff-webhook redirects browser GET requests to identity return page", async () => {
   const res = makeRes();
   await identityWebhookHandler({ method: "GET", query: { applicationId: "app_1" } }, res);
 
@@ -508,7 +520,7 @@ test("stripe-identity-webhook redirects browser GET requests to identity return 
   );
 });
 
-test("stripe-identity-webhook maps resubmission_requested to requires_input", async () => {
+test("veriff-webhook maps resubmission_requested to requires_input", async () => {
   patchResult = {
     ok: true,
     data: {
@@ -538,7 +550,7 @@ test("stripe-identity-webhook maps resubmission_requested to requires_input", as
   assert.equal(calls.sentMessages.length, 1);
 });
 
-test("stripe-identity-webhook returns duplicate without patching when event is already processed", async () => {
+test("veriff-webhook returns duplicate without patching when event is already processed", async () => {
   duplicateEvent = true;
   const payload = {
     id: "evt_veriff_duplicate_1",
@@ -556,7 +568,7 @@ test("stripe-identity-webhook returns duplicate without patching when event is a
   assert.equal(calls.patched.length, 0);
 });
 
-test("stripe-identity-webhook continues processing when event logging insert fails", async () => {
+test("veriff-webhook continues processing when event logging insert fails", async () => {
   insertEventError = { message: "relation stripe_identity_webhook_events does not exist", code: "42P01" };
   const payload = {
     id: "evt_veriff_log_fail_1",
@@ -578,7 +590,7 @@ test("stripe-identity-webhook continues processing when event logging insert fai
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
 });
 
-test("stripe-identity-webhook returns 400 when signature verification fails", async () => {
+test("veriff-webhook returns 400 when signature verification fails", async () => {
   const payload = {
     id: "evt_veriff_bad_sig_1",
     verification: { id: "vrf_123", status: "approved", vendorData: "app_1" },
@@ -586,6 +598,38 @@ test("stripe-identity-webhook returns 400 when signature verification fails", as
   const res = makeRes();
   await identityWebhookHandler(makeWebhookReq(payload, { validSignature: false }), res);
   assert.equal(res._status, 400);
+});
+
+test("veriff-webhook logs events in veriff_webhook_events table by default", async () => {
+  const payload = {
+    id: "evt_veriff_table_1",
+    verification: { id: "vrf_123", status: "approved", vendorData: "app_1" },
+  };
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.eventInserts[0]?.table, "veriff_webhook_events");
+});
+
+test("veriff-webhook falls back to stripe_identity_webhook_events when veriff table is missing", async () => {
+  missingVeriffEventTable = true;
+  const payload = {
+    id: "evt_veriff_fallback_1",
+    verification: { id: "vrf_123", status: "approved", vendorData: "app_1" },
+  };
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.eventInserts[0]?.table, "stripe_identity_webhook_events");
+});
+
+test("stripe-identity-webhook endpoint is deprecated", async () => {
+  const res = makeRes();
+  await deprecatedStripeIdentityWebhookHandler(makeAdminGetReq({}), res);
+  assert.equal(res._status, 410);
+  assert.equal(res._body.error, "Deprecated endpoint.");
 });
 
 test("admin-review-queue recovers approved Veriff applications before loading queue", async () => {
@@ -678,6 +722,51 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(res._body.success, true);
   assert.equal(calls.patched[0].patch.identityStatus, "processing");
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
+test("admin-review-queue skips Stripe identity session ids during Veriff recovery", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vs_1TWOMNPo7fICjrtZ2ybppeVC",
+    }],
+  };
+  reviewQueueResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      age: 28,
+      experience: "3 years",
+      application_status: "submitted",
+      identity_status: "requires_input",
+      review_version: 0,
+      reviewed_by: null,
+      reviewed_at: null,
+      submitted_at: "2026-05-14T02:00:00.000Z",
+      updated_at: "2026-05-14T02:00:00.000Z",
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+  };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.veriffFetches.length, 0);
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 

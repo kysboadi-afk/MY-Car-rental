@@ -19,7 +19,7 @@ import {
   listPendingIdentityRecoveryApplications,
   listReviewQueueApplications,
 } from "./_renter-applications.js";
-import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
+import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const RECOVERY_SCAN_LIMIT = 25;
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
       }
     } else {
       const recoveryResults = await Promise.allSettled(
-        (recoveryCandidates.data || []).map((application) => recoverVerifiedApplicationFromStripe(application, {
+        (recoveryCandidates.data || []).map((application) => recoverApplicationIdentityFromVeriffDecision(application, {
           reviewedBy: "admin_review_queue_sync",
         })),
       );

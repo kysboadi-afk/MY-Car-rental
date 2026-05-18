@@ -7,7 +7,7 @@
 
 import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import { fetchReviewApplicationById } from "./_renter-applications.js";
-import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
+import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { INCOME_VERIFICATION_BUCKET, INCOME_VERIFICATION_DOC_TYPE } from "./_income-verification.js";
 
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   let r = result.data;
   let reviewHistory = result.history || [];
   if (r?.identity_session_id && r?.identity_status !== "verified") {
-    const recovery = await recoverVerifiedApplicationFromStripe(r, {
+    const recovery = await recoverApplicationIdentityFromVeriffDecision(r, {
       reviewedBy: "admin_review_detail_sync",
     });
     if (!recovery.ok) {

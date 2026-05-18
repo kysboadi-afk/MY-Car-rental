@@ -59,7 +59,6 @@
     "api/send-application-email.js":          { "maxDuration": 60 },
     "api/create-identity-verification-session.js": { "maxDuration": 30 },
     "api/resolve-identity-resume.js":              { "maxDuration": 30 },
-    "api/stripe-identity-webhook.js":         { "maxDuration": 60 },
     "api/veriff-webhook.js":                  { "maxDuration": 60 },
     "api/admin-review-queue.js":              { "maxDuration": 20 },
     "api/admin-review-detail.js":             { "maxDuration": 20 },
