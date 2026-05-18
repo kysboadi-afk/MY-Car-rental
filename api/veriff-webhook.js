@@ -132,6 +132,11 @@ function getEventId(payload = {}, sessionId = "", rawStatus = "") {
 
 const EVENT_LOG_TABLES = [
   { name: "veriff_webhook_events", eventIdColumn: "event_id" },
+  // Legacy fallback: stripe_identity_webhook_events was the original event log
+  // table created during the Stripe Identity era. It is kept here so that
+  // environments which have not yet run the migration (or which still have the
+  // old table but not the new one) continue to log events without error.
+  // New deployments will use veriff_webhook_events exclusively.
   { name: "stripe_identity_webhook_events", eventIdColumn: "stripe_event_id" },
 ];
 

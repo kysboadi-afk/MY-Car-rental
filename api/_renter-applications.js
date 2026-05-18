@@ -55,7 +55,10 @@ function cleanJsonValue(value) {
 }
 
 const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approved", "rejected", "withdrawn", "expired"];
-const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "failed", "canceled"];
+// Only statuses where a Veriff decision may still arrive and change outcome.
+// "failed" and "canceled" are excluded: they're terminal identity states whose
+// Veriff decision will remain declined, so polling adds noise without value.
+const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing"];
 const CHECKR_REPORT_STATUSES = ["pending", "clear", "consider", "suspended", "disputed", "complete_no_adj", "error"];
 const ADVERSE_ACTION_STEPS = ["pre_notice_sent", "final_notice_sent"];
 

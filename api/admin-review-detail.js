@@ -73,12 +73,21 @@ export default async function handler(req, res) {
 
   let r = result.data;
   let reviewHistory = result.history || [];
-  if (r?.identity_session_id && r?.identity_status !== "verified") {
+  const appStatus = String(r?.application_status || "").toLowerCase();
+  const isRecoverableStatus = ["submitted", "under_review", "needs_info"].includes(appStatus);
+  if (r?.identity_session_id && r?.identity_status !== "verified" && isRecoverableStatus) {
     const recovery = await recoverApplicationIdentityFromVeriffDecision(r, {
       reviewedBy: "admin_review_detail_sync",
     });
     if (!recovery.ok) {
-      if (recovery.details) console.error("admin-review-detail recovery:", recovery.details);
+      // Structured failure details are already logged inside
+      // recoverApplicationIdentityFromVeriffDecision with application_id and
+      // session context.  Only emit an additional error here for unexpected
+      // (non-classified) failures.
+      const { errorType } = recovery;
+      if (!errorType) {
+        console.error("admin-review-detail: unclassified recovery failure:", recovery.details || recovery.error);
+      }
     } else if (recovery.synced) {
       const refreshed = await fetchReviewApplicationById(applicationId.trim());
       if (refreshed.ok) {
@@ -124,6 +133,13 @@ export default async function handler(req, res) {
             };
           })
         );
+        if (incomeDocuments.length > 0) {
+          console.info("admin-review-detail: document preview URLs generated", {
+            application_id: r.id,
+            document_count: incomeDocuments.length,
+            doc_ids: incomeDocuments.map((d) => d.id),
+          });
+        }
       } else if (docsErr) {
         console.warn("admin-review-detail: could not fetch income docs (table may not exist yet):", docsErr.message);
       }

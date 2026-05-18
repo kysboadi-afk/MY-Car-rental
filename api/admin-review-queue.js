@@ -60,11 +60,20 @@ export default async function handler(req, res) {
           reviewedBy: "admin_review_queue_sync",
         })),
       );
+      let authFailureLogged = false;
       recoveryResults.forEach((result) => {
-        if (result.status === "fulfilled" && !result.value?.ok && result.value?.details) {
-          console.error("admin-review-queue Veriff recovery failed:", result.value.details);
+        if (result.status === "fulfilled" && !result.value?.ok) {
+          const { errorType } = result.value || {};
+          // Auth failures already logged inside recovery function; emit one
+          // structured queue-level error the first time so ops can correlate.
+          if (errorType === "auth_failure" && !authFailureLogged) {
+            authFailureLogged = true;
+            console.error("admin-review-queue: Veriff auth failure detected — check VERIFF_API_KEY and VERIFF_PROJECT_ID");
+          }
+          // session_not_found / client_error / transient are logged with full
+          // structured fields inside recoverApplicationIdentityFromVeriffDecision.
         } else if (result.status === "rejected") {
-          console.error("admin-review-queue Veriff recovery failed:", result.reason);
+          console.error("admin-review-queue Veriff recovery exception:", result.reason);
         }
       });
     }

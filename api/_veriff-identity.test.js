@@ -216,6 +216,7 @@ const { default: identityWebhookHandler } = await import("./veriff-webhook.js");
 const { default: deprecatedStripeIdentityWebhookHandler } = await import("./stripe-identity-webhook.js");
 const { default: adminReviewQueueHandler } = await import("./admin-review-queue.js");
 const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
+const { clearRecoveryCooldownCache } = await import("./_veriff-identity-recovery.js");
 
 function makeRes() {
   return {
@@ -261,6 +262,7 @@ function makeAdminGetReq(query = {}) {
 }
 
 beforeEach(() => {
+  clearRecoveryCooldownCache();
   calls.patched.length = 0;
   calls.fetched.length = 0;
   calls.fetchedBySession.length = 0;
@@ -313,6 +315,11 @@ beforeEach(() => {
   reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
   recoveryCandidatesResult = { ok: true, data: [] };
   reviewDetailResult = { ok: true, data: null, history: [] };
+  // Reset any custom mockImplementation set by previous tests.
+  fetchReviewApplicationById.mock.mockImplementation(async (...args) => {
+    calls.fetchedReviewDetail.push(args);
+    return reviewDetailResult;
+  });
   veriffDecisionStatus = 404;
   veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
   veriffCreateStatus = 200;
@@ -646,7 +653,7 @@ test("veriff-webhook logs events in veriff_webhook_events table by default", asy
   assert.equal(calls.eventInserts[0]?.table, "veriff_webhook_events");
 });
 
-test("veriff-webhook falls back to stripe_identity_webhook_events when veriff table is missing", async () => {
+test("veriff-webhook falls back to legacy event log table when veriff_webhook_events is missing", async () => {
   missingVeriffEventTable = true;
   const payload = {
     id: "evt_veriff_fallback_1",
@@ -659,7 +666,7 @@ test("veriff-webhook falls back to stripe_identity_webhook_events when veriff ta
   assert.equal(calls.eventInserts[0]?.table, "stripe_identity_webhook_events");
 });
 
-test("stripe-identity-webhook endpoint is deprecated", async () => {
+test("legacy stripe-identity-webhook endpoint is deprecated (410)", async () => {
   const res = makeRes();
   await deprecatedStripeIdentityWebhookHandler(makeAdminGetReq({}), res);
   assert.equal(res._status, 410);
@@ -759,7 +766,7 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
-test("admin-review-queue skips Stripe identity session ids during Veriff recovery", async () => {
+test("admin-review-queue skips legacy (non-Veriff) session ids during recovery", async () => {
   recoveryCandidatesResult = {
     ok: true,
     data: [{
@@ -900,4 +907,152 @@ test("admin-review-detail falls back across legacy income document columns", asy
   assert.match(calls.incomeDocSelects[1], /file_size:file_size_bytes/);
   assert.match(calls.incomeDocSelects[3], /review_status:verification_status/);
   assert.equal(calls.signedUrlRequests.length, 1);
+});
+
+test("admin-review-queue skips Veriff recovery for terminal application status", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_rejected_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "rejected",
+      identity_session_id: "vrf_terminal_q1",
+    }],
+  };
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff API call for rejected application");
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
+test("admin-review-queue handles session_not_found (404) gracefully and returns 200", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_stale_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_stale_404_q1",
+    }],
+  };
+  veriffDecisionStatus = 404;
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.veriffFetches.length, 1, "Veriff is called once");
+  assert.equal(calls.patched.length, 0, "no patch on 404");
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
+test("admin-review-queue respects session cooldown after 404 — no repeat Veriff call", async () => {
+  const candidate = {
+    id: "app_cooldown_q1",
+    name: "Jane Driver",
+    phone: "3105550199",
+    email: "jane@example.com",
+    identity_status: "requires_input",
+    application_status: "submitted",
+    identity_session_id: "vrf_cooldown_q1",
+  };
+  recoveryCandidatesResult = { ok: true, data: [candidate] };
+  veriffDecisionStatus = 404;
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+
+  // First request — sets cooldown for vrf_cooldown_q1
+  const res1 = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res1);
+  assert.equal(res1._status, 200);
+  assert.equal(calls.veriffFetches.length, 1, "Veriff called on first request");
+
+  // Reset tracking state only (not the module-level cooldown cache).
+  calls.veriffFetches.length = 0;
+  calls.patched.length = 0;
+  calls.listedReviewQueue.length = 0;
+  calls.listedRecoveryCandidates.length = 0;
+
+  // Second request — same session must be skipped due to cooldown.
+  recoveryCandidatesResult = { ok: true, data: [candidate] };
+  reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
+  const res2 = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret" }), res2);
+
+  assert.equal(res2._status, 200);
+  assert.equal(calls.veriffFetches.length, 0, "Veriff NOT called again — cooldown active");
+});
+
+test("admin-review-detail skips Veriff recovery for terminal application status", async () => {
+  reviewDetailResult = {
+    ok: true,
+    data: {
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      application_status: "rejected",
+      identity_status: "requires_input",
+      identity_session_id: "vrf_terminal_d1",
+      review_version: 0,
+    },
+    history: [],
+  };
+
+  const res = makeRes();
+  await adminReviewDetailHandler(makeAdminGetReq({
+    secret: "test-admin-secret",
+    applicationId: "11111111-1111-1111-1111-111111111111",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff API call for rejected application");
+  assert.equal(calls.patched.length, 0);
+});
+
+test("admin-review-detail skips Veriff recovery when session is in cooldown", async () => {
+  const appId = "22222222-2222-2222-2222-222222222222";
+  const appData = {
+    id: appId,
+    name: "Jane Driver",
+    phone: "3105550199",
+    email: "jane@example.com",
+    application_status: "submitted",
+    identity_status: "requires_input",
+    identity_session_id: "vrf_cooldown_d1",
+    review_version: 0,
+  };
+
+  // First detail load — triggers a 404 → sets cooldown.
+  reviewDetailResult = { ok: true, data: appData, history: [] };
+  veriffDecisionStatus = 404;
+  let res1 = makeRes();
+  await adminReviewDetailHandler(makeAdminGetReq({ secret: "test-admin-secret", applicationId: appId }), res1);
+  assert.equal(res1._status, 200);
+  assert.equal(calls.veriffFetches.length, 1, "Veriff called on first load");
+
+  // Reset tracking only (not the cooldown cache).
+  calls.veriffFetches.length = 0;
+  calls.patched.length = 0;
+
+  // Second detail load — same session must be skipped.
+  reviewDetailResult = { ok: true, data: appData, history: [] };
+  let res2 = makeRes();
+  await adminReviewDetailHandler(makeAdminGetReq({ secret: "test-admin-secret", applicationId: appId }), res2);
+
+  assert.equal(res2._status, 200);
+  assert.equal(calls.veriffFetches.length, 0, "Veriff NOT called again — cooldown active");
 });
