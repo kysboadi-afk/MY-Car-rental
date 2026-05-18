@@ -13,6 +13,46 @@ function toLower(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function redactText(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length <= 6) return `${text.slice(0, 1)}***`;
+  return `${text.slice(0, 3)}***${text.slice(-2)}`;
+}
+
+function detectLikelyEnvironmentMismatch(cfg = {}) {
+  const vercelEnv = toLower(process.env.VERCEL_ENV || process.env.NODE_ENV);
+  const key = toLower(cfg.apiKey);
+  const project = toLower(cfg.projectId);
+  if (vercelEnv !== "production") return false;
+  return /test|sandbox|demo/.test(key) || /test|sandbox|demo/.test(project);
+}
+
+function buildVeriffRequestDiagnostics(cfg = {}, endpoint = "", method = "GET", requestHeaders = {}) {
+  const headerNames = Object.keys(requestHeaders || {}).map((k) => String(k).toLowerCase());
+  const hasClientHeader = headerNames.includes("x-auth-client");
+  const hasProjectHeader = headerNames.includes("x-auth-client-project");
+  return {
+    method,
+    endpoint,
+    env: process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown",
+    configPresent: {
+      apiKey: !!cfg.apiKey,
+      projectId: !!cfg.projectId,
+      sharedSecret: !!cfg.sharedSecret,
+    },
+    authHeadersPresent: {
+      xAuthClient: hasClientHeader,
+      xAuthClientProject: hasProjectHeader,
+    },
+    configFingerprints: {
+      apiKey: redactText(cfg.apiKey),
+      projectId: redactText(cfg.projectId),
+    },
+    likelyEnvMismatch: detectLikelyEnvironmentMismatch(cfg),
+  };
+}
+
 export function getVeriffConfig() {
   const apiKey = pickString(process.env.VERIFF_API_KEY);
   const sharedSecret = pickString(process.env.VERIFF_SHARED_SECRET);
@@ -186,12 +226,21 @@ export async function createVeriffSession({
   };
 
   async function postSession(body) {
-    const response = await fetchImpl(`${VERIFF_API_BASE}/sessions`, {
+    const endpoint = `${VERIFF_API_BASE}/sessions`;
+    const requestMeta = buildVeriffRequestDiagnostics(cfg, endpoint, "POST", requestHeaders);
+    console.info("veriff:create-session request", requestMeta);
+    const response = await fetchImpl(endpoint, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(body),
     });
     const payload = await response.json().catch(() => ({}));
+    console.info("veriff:create-session response", {
+      endpoint,
+      status: Number(response?.status) || null,
+      ok: !!response?.ok,
+      error: payload?.message || payload?.error || null,
+    });
     return { response, payload };
   }
 
@@ -245,15 +294,25 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
     return { ok: false, status: 400, error: "sessionId is required." };
   }
 
-  const response = await fetchImpl(`${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision`, {
+  const endpoint = `${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision`;
+  const requestHeaders = {
+    "Content-Type": "application/json",
+    "X-AUTH-CLIENT": cfg.apiKey,
+    "X-AUTH-CLIENT-PROJECT": cfg.projectId,
+  };
+  const requestMeta = buildVeriffRequestDiagnostics(cfg, endpoint, "GET", requestHeaders);
+  console.info("veriff:fetch-decision request", requestMeta);
+  const response = await fetchImpl(endpoint, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "X-AUTH-CLIENT": cfg.apiKey,
-      "X-AUTH-CLIENT-PROJECT": cfg.projectId,
-    },
+    headers: requestHeaders,
   });
   const payload = await response.json().catch(() => ({}));
+  console.info("veriff:fetch-decision response", {
+    endpoint,
+    status: Number(response?.status) || null,
+    ok: !!response?.ok,
+    error: payload?.message || payload?.error || null,
+  });
 
   if (!response.ok) {
     return {

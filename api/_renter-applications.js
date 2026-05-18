@@ -788,7 +788,8 @@ export async function performPreAdverseAction(
 /**
  * Fetch a page of applications awaiting manual review.
  * Includes under_review / needs_info plus submitted rows that already have
- * processing or verified identity decisions while status promotion catches up.
+ * an identity session. This keeps in-flight identity applications visible
+ * even when Veriff decision recovery is temporarily unavailable.
  *
  * @param {{page?:number, pageSize?:number}} opts
  * @param {object} [sbClient]
@@ -813,7 +814,7 @@ export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = 
     )
     .or(
       "application_status.in.(under_review,needs_info)," +
-        "and(application_status.eq.submitted,identity_status.in.(processing,verified))",
+        "and(application_status.eq.submitted,identity_session_id.not.is.null)",
     )
     .order("submitted_at", { ascending: true })
     .range(from, to);

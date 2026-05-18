@@ -57,14 +57,36 @@ function buildApiHeaders(apiKey) {
   };
 }
 
+function redactId(value) {
+  const text = pickString(value);
+  if (!text) return null;
+  if (text.length <= 8) return `${text.slice(0, 2)}***`;
+  return `${text.slice(0, 4)}***${text.slice(-3)}`;
+}
+
 async function postJson(path, body, fetchImpl = fetch) {
   const cfg = getCheckrConfig();
-  const response = await fetchImpl(`${CHECKR_API_BASE}${path}`, {
+  const endpoint = `${CHECKR_API_BASE}${path}`;
+  const headers = buildApiHeaders(cfg.apiKey);
+  console.info("checkr:request", {
     method: "POST",
-    headers: buildApiHeaders(cfg.apiKey),
+    endpoint,
+    authHeaderPresent: !!headers.Authorization,
+    packageSlug: cfg.packageSlug || null,
+  });
+  const response = await fetchImpl(endpoint, {
+    method: "POST",
+    headers,
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
+  console.info("checkr:response", {
+    method: "POST",
+    endpoint,
+    status: Number(response?.status) || null,
+    ok: !!response?.ok,
+    error: payload?.error || payload?.message || null,
+  });
   return { response, payload };
 }
 
@@ -137,8 +159,20 @@ export async function createCheckrCandidate(application = {}, fetchImpl = fetch)
   }
 
   const body = buildCheckrCandidatePayload(application);
+  console.info("checkr:candidate create request", {
+    applicationId: pickString(application?.id) || null,
+    hasEmail: !!pickString(body.email),
+    hasPhone: !!pickString(body.phone),
+    hasDriverLicense: !!pickString(body.driver_license_number),
+    hasLicenseState: !!pickString(body.driver_license_state),
+  });
   const { response, payload } = await postJson("/candidates", body, fetchImpl);
   if (!response.ok) {
+    console.error("checkr:candidate create failed", {
+      applicationId: pickString(application?.id) || null,
+      status: Number(response?.status) || null,
+      error: payload?.error || payload?.message || "Failed to create Checkr candidate.",
+    });
     return {
       ok: false,
       status: response.status || 500,
@@ -147,6 +181,10 @@ export async function createCheckrCandidate(application = {}, fetchImpl = fetch)
     };
   }
 
+  console.info("checkr:candidate create succeeded", {
+    applicationId: pickString(application?.id) || null,
+    candidateId: redactId(payload?.id),
+  });
   return {
     ok: true,
     candidateId: pickString(payload?.id),
@@ -166,8 +204,17 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
     package: packageSlug || cfg.packageSlug,
     work_locations: [{ country: "US" }],
   };
+  console.info("checkr:invitation create request", {
+    candidateId: redactId(candidateId),
+    packageSlug: body.package || null,
+  });
   const { response, payload } = await postJson("/invitations", body, fetchImpl);
   if (!response.ok) {
+    console.error("checkr:invitation create failed", {
+      candidateId: redactId(candidateId),
+      status: Number(response?.status) || null,
+      error: payload?.error || payload?.message || "Failed to create Checkr invitation.",
+    });
     return {
       ok: false,
       status: response.status || 500,
@@ -175,6 +222,12 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
       details: payload,
     };
   }
+  console.info("checkr:invitation create succeeded", {
+    candidateId: redactId(candidateId),
+    invitationId: redactId(payload?.id),
+    reportId: redactId(payload?.report_id),
+    packageSlug: body.package || null,
+  });
   return {
     ok: true,
     invitationId: pickString(payload?.id),
@@ -216,6 +269,13 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
   const appResult = await fetchRenterApplicationById(applicationId);
   if (!appResult.ok) return appResult;
   const application = appResult.data || {};
+  console.info("checkr:screening initiation started", {
+    applicationId,
+    identityStatus: application.identity_status || null,
+    applicationStatus: application.application_status || null,
+    existingCandidateId: redactId(application.checkr_candidate_id),
+    existingReportStatus: application.checkr_report_status || null,
+  });
 
   if (application.identity_status !== "verified") {
     return { ok: false, status: 409, error: "Identity must be verified before Checkr screening can start." };
@@ -227,6 +287,12 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
     return { ok: false, status: 422, error: "Driver license number and state are required before Checkr screening can start." };
   }
   if (application.checkr_candidate_id && application.checkr_report_status && application.checkr_report_status !== "error") {
+    console.info("checkr:screening already started", {
+      applicationId,
+      candidateId: redactId(application.checkr_candidate_id),
+      reportId: redactId(application.checkr_report_id),
+      reportStatus: application.checkr_report_status,
+    });
     return {
       ok: true,
       alreadyStarted: true,
@@ -242,6 +308,11 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
       checkrReportStatus: "error",
       checkrLastError: candidateResult.error,
     }).catch(() => {});
+    console.error("checkr:screening failed during candidate creation", {
+      applicationId,
+      error: candidateResult.error || null,
+      status: Number(candidateResult.status) || null,
+    });
     return candidateResult;
   }
 
@@ -255,6 +326,12 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
       checkrReportStatus: "error",
       checkrLastError: invitationResult.error,
     }).catch(() => {});
+    console.error("checkr:screening failed during invitation creation", {
+      applicationId,
+      candidateId: redactId(candidateResult.candidateId),
+      error: invitationResult.error || null,
+      status: Number(invitationResult.status) || null,
+    });
     return invitationResult;
   }
 
@@ -265,6 +342,12 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
     checkrLastError: null,
   });
   if (!patchResult.ok) return patchResult;
+  console.info("checkr:screening state persisted", {
+    applicationId,
+    candidateId: redactId(candidateResult.candidateId),
+    reportId: redactId(invitationResult.reportId),
+    reportStatus: "pending",
+  });
 
   try {
     await sendCheckrInvitationNotifications(

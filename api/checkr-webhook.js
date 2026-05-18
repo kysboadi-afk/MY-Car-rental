@@ -26,6 +26,13 @@ function getRawBody(req) {
   });
 }
 
+function redactId(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (text.length <= 8) return `${text.slice(0, 2)}***`;
+  return `${text.slice(0, 4)}***${text.slice(-3)}`;
+}
+
 async function findApplicationForPayload(payload = {}) {
   const report = extractCheckrReport(payload);
   const candidate = extractCheckrCandidate(payload);
@@ -69,9 +76,17 @@ export default async function handler(req, res) {
   }
 
   const eventType = extractCheckrEventType(payload);
+  console.info("checkr-webhook: event received", {
+    eventType: eventType || null,
+    eventId: payload?.id || null,
+  });
   if (!eventType) return res.status(200).json({ received: true, ignored: true });
 
   if (eventType === "candidate.created" || eventType === "invitation.completed") {
+    console.info("checkr-webhook: non-terminal event acknowledged", {
+      eventType,
+      eventId: payload?.id || null,
+    });
     return res.status(200).json({ received: true, logged: true });
   }
 
@@ -101,11 +116,28 @@ export default async function handler(req, res) {
       patchPayload.checkrReportStatus = "disputed";
     }
 
+    console.info("checkr-webhook: applying status update", {
+      applicationId: appResult.data?.id || null,
+      eventType,
+      previousStatus: appResult.data?.checkr_report_status || null,
+      nextStatus: patchPayload.checkrReportStatus || null,
+      reportId: redactId(patchPayload.checkrReportId),
+      candidateId: redactId(patchPayload.checkrCandidateId),
+    });
+
     const patchResult = await patchRenterApplicationCheckrById(appResult.data.id, patchPayload);
     if (!patchResult.ok) {
       console.error("checkr-webhook patch failed:", patchResult.error, patchResult.details || "");
       return res.status(200).json({ received: true, ignored: true });
     }
+    console.info("checkr-webhook: status update persisted", {
+      applicationId: patchResult.data?.id || appResult.data?.id || null,
+      eventType,
+      checkrReportStatus: patchResult.data?.checkr_report_status || patchPayload.checkrReportStatus || null,
+      applicationStatus: patchResult.data?.application_status || appResult.data?.application_status || null,
+      reportId: redactId(patchResult.data?.checkr_report_id || patchPayload.checkrReportId),
+      candidateId: redactId(patchResult.data?.checkr_candidate_id || patchPayload.checkrCandidateId),
+    });
 
     if (["report.completed", "report.suspended", "report.disputed"].includes(eventType)) {
       try {

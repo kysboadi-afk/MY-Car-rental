@@ -19,11 +19,17 @@ export async function recoverVerifiedApplicationFromStripe(
 
   const decision = await fetchVeriffDecision(identitySessionId);
   if (!decision.ok) {
+    const status = Number(decision.status) || null;
+    const detailText = typeof decision.error === "string" && decision.error
+      ? decision.error
+      : (typeof decision.details === "string" ? decision.details : "");
     return {
       ok: false,
       synced: false,
       error: "Could not retrieve Veriff identity decision.",
-      details: decision.error || decision.details || "",
+      details: status
+        ? `Veriff decision lookup failed (status ${status}): ${detailText}`.trim()
+        : (detailText || ""),
     };
   }
 
