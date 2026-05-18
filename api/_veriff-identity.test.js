@@ -77,6 +77,12 @@ const fetchReviewApplicationById = mock.fn(async (...args) => {
   calls.fetchedReviewDetail.push(args);
   return reviewDetailResult;
 });
+const getApplicationAttentionFlags = mock.fn(() => ({
+  isRecentHour: false,
+  isRecentDay: false,
+  isUnreviewed: false,
+  isNewAttention: false,
+}));
 
 mock.module("./_renter-applications.js", {
   namedExports: {
@@ -86,6 +92,7 @@ mock.module("./_renter-applications.js", {
     listReviewQueueApplications,
     listPendingIdentityRecoveryApplications,
     fetchReviewApplicationById,
+    getApplicationAttentionFlags,
   },
 });
 
