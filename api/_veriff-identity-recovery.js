@@ -1,6 +1,7 @@
 import { patchRenterApplicationIdentityById } from "./_renter-applications.js";
 import { sendIdentityVerifiedNotifications } from "./_application-notifications.js";
 import { fetchVeriffDecision } from "./_veriff.js";
+import { initiateCheckrScreening } from "./_checkr.js";
 
 const NOTIFIABLE_APPLICATION_STATUSES = ["submitted", "under_review", "needs_info"];
 
@@ -53,6 +54,34 @@ function setSessionCooldown(sessionId, cooldownMs) {
     for (const [key, until] of RECOVERY_COOLDOWN_CACHE) {
       if (now >= until) RECOVERY_COOLDOWN_CACHE.delete(key);
     }
+  }
+}
+
+async function tryLaunchCheckrAfterVerified(application = {}) {
+  const applicationId = typeof application?.id === "string" ? application.id : "";
+  if (!applicationId) return;
+  try {
+    const result = await initiateCheckrScreening(applicationId);
+    if (!result?.ok) {
+      console.warn("veriff-recovery: checkr launch did not start", {
+        application_id: applicationId,
+        error: result?.error || null,
+        status: Number(result?.status) || null,
+      });
+      return;
+    }
+    console.info("veriff-recovery: checkr launch attempted", {
+      application_id: applicationId,
+      already_started: !!result?.alreadyStarted,
+      report_status: result?.reportStatus || null,
+      report_id: result?.reportId || null,
+      candidate_id: result?.candidateId || null,
+    });
+  } catch (err) {
+    console.error("veriff-recovery: checkr launch failed", {
+      application_id: applicationId,
+      error: err?.message || String(err),
+    });
   }
 }
 
@@ -138,6 +167,9 @@ export async function recoverApplicationIdentityFromVeriffDecision(
 
   const currentIdentityStatus = String(application.identity_status || "").toLowerCase();
   if (currentIdentityStatus === recoveredIdentityStatus) {
+    if (recoveredIdentityStatus === "verified") {
+      await tryLaunchCheckrAfterVerified(application);
+    }
     return {
       ok: true,
       synced: false,
@@ -180,6 +212,10 @@ export async function recoverApplicationIdentityFromVeriffDecision(
     }
   }
 
+  if (recoveredIdentityStatus === "verified") {
+    await tryLaunchCheckrAfterVerified(patchResult.data || application);
+  }
+
   return {
     ok: true,
     synced: true,
@@ -187,4 +223,3 @@ export async function recoverApplicationIdentityFromVeriffDecision(
     data: patchResult.data || application,
   };
 }
-

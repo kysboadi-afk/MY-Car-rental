@@ -3601,6 +3601,15 @@
           <button id="app-btn-rejected"   class="app-action-btn" onclick="selectAppAction('rejected')">❌ Reject</button>
           <button id="app-btn-needs_info" class="app-action-btn" onclick="selectAppAction('needs_info')">⚠️ Request More Info</button>
         </div>
+        <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--text-sub);">Operational Actions</div>
+        <div class="app-action-btn-row" style="margin-bottom:8px;">
+          <button class="app-action-btn" onclick="runAppOperationalAction('resend_verification')">📨 Resend Verification</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('restart_verification')">♻️ Restart Verification</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('move_to_review')">🧭 Move to Review</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('manual_recovery')">🛠️ Trigger Recovery</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('retry_checkr')">🔁 Retry Checkr</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('archive_application')" style="border-color:#fecaca;color:#b91c1c;">🗑️ Delete (Archive)</button>
+        </div>
         <div id="app-action-selected" style="font-size:12px;color:var(--text-sub);margin-bottom:8px;min-height:16px;"></div>
         <label id="app-notes-label" style="display:block;font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:4px;">Reviewer notes (optional):</label>
         <textarea id="app-action-notes" class="app-notes-area" placeholder="Add reviewer notes here…"></textarea>
