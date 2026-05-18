@@ -1296,12 +1296,37 @@
             <div class="card-header">
               <div>
                 <div class="card-title">⚡ Action Required</div>
-                <div class="card-sub">Only newly submitted or still-unreviewed applications surface here.</div>
+                <div class="card-sub">Items needing immediate attention</div>
               </div>
               <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">Refresh</button>
             </div>
             <div id="action-required-content">
-              <div style="display:grid;grid-template-columns:minmax(220px,320px);gap:12px;padding:4px 0;">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:4px 0;">
+                <div class="action-req-tile" id="ar-incomplete" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='incomplete_checkout';applyBookingFilters()">
+                  <div class="ar-icon">🧾</div>
+                  <div class="ar-count" id="ar-incomplete-count">–</div>
+                  <div class="ar-label">Incomplete Checkouts</div>
+                </div>
+                <div class="action-req-tile" id="ar-pending" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='reserved_unpaid';applyBookingFilters()">
+                  <div class="ar-icon">📋</div>
+                  <div class="ar-count" id="ar-pending-count">–</div>
+                  <div class="ar-label">Unpaid Reservations</div>
+                </div>
+                <div class="action-req-tile" id="ar-pickups" onclick="navigate('bookings')">
+                  <div class="ar-icon">🔑</div>
+                  <div class="ar-count" id="ar-pickups-count">–</div>
+                  <div class="ar-label">Pickups Today</div>
+                </div>
+                <div class="action-req-tile" id="ar-returns" onclick="navigate('bookings')">
+                  <div class="ar-icon">🏁</div>
+                  <div class="ar-count" id="ar-returns-count">–</div>
+                  <div class="ar-label">Returns Today</div>
+                </div>
+                <div class="action-req-tile" id="ar-overdue">
+                  <div class="ar-icon">⚠️</div>
+                  <div class="ar-count" id="ar-overdue-count">–</div>
+                  <div class="ar-label">Overdue</div>
+                </div>
                 <div class="action-req-tile" id="ar-new-applications" onclick="openApplicationQueueWithPreset('submitted','new')">
                   <div class="ar-icon">🆕</div>
                   <div class="ar-count" id="ar-new-applications-count">–</div>
@@ -3474,14 +3499,16 @@
     <input type="text" id="apps-search" placeholder="Search name, phone, email, ID…" oninput="appsSearchInput(this.value)">
     <select id="apps-filter-status" onchange="appsFilterChange()">
       <option value="">All Lifecycle Stages</option>
+      <option value="review_queue">In Queue</option>
       <option value="submitted">Submitted</option>
       <option value="under_review">Under Review</option>
       <option value="needs_info">Needs Info</option>
       <option value="identity_verified">Identity Verified</option>
+      <option value="checkr_consider">Checkr Consider</option>
       <option value="checkr_pending">Checkr Pending</option>
       <option value="checkr_issue">Checkr Issue</option>
       <option value="approved">Approved</option>
-      <option value="rejected">Rejected / Declined</option>
+      <option value="rejected">Declined</option>
       <option value="archived">Archived</option>
     </select>
     <select id="apps-sort-field" onchange="appsFilterChange()">
@@ -7669,15 +7696,45 @@ document.addEventListener('keydown', (e) => {
 
 // ── Action Required helpers (called from renderDashboard) ─────────────────
 function renderActionRequired(data) {
-  const kpis = data.kpis || {};
-  const count = Number(kpis.newApplications || data.applicationOps?.newApplications || 0);
-  const countEl = document.getElementById('ar-new-applications-count');
-  if (countEl) countEl.textContent = count;
-  const tile = document.getElementById('ar-new-applications');
-  if (!tile) return;
-  tile.classList.toggle('has-urgent', count > 0);
-  tile.classList.toggle('has-items', false);
-  tile.classList.toggle('pulse', count > 0);
+  const kpis     = data.kpis || {};
+  const bookings = data.recentBookings || [];
+
+  const now = new Date();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
+
+  const incomplete = kpis.incompleteCheckouts != null ? kpis.incompleteCheckouts : bookings.filter((b) => ['pending_checkout','upload_failed','payment_failed','abandoned_checkout'].includes(b.status)).length;
+  const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
+  const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => {
+    if (b.status !== 'active_rental' || b.returnDate !== today) return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !returnDateTime || now < returnDateTime;
+  }).length;
+  const overdue  = kpis.overdueCount != null ? kpis.overdueCount : bookings.filter((b) => {
+    if (b.status !== 'active_rental') return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !!returnDateTime && now >= returnDateTime;
+  }).length;
+  const pickups  = kpis.pickupsTodayCount != null ? kpis.pickupsTodayCount
+    : bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
+  const newApplications = Number(kpis.newApplications || data.applicationOps?.newApplications || 0);
+
+  const setTile = (id, count, urgency, { pulse = false } = {}) => {
+    const el = document.getElementById(id + '-count');
+    if (el) el.textContent = count;
+    const tile = el ? el.closest('.action-req-tile') : null;
+    if (tile) {
+      tile.classList.toggle('has-urgent', urgency && count > 0);
+      tile.classList.toggle('has-items', !urgency && count > 0);
+      tile.classList.toggle('pulse', pulse && count > 0);
+    }
+  };
+
+  setTile('ar-incomplete', incomplete, true);
+  setTile('ar-pending', pending, false);
+  setTile('ar-pickups', pickups, false);
+  setTile('ar-returns', returns, false);
+  setTile('ar-overdue', overdue, true);
+  setTile('ar-new-applications', newApplications, true, { pulse: true });
 }
 
 // Patch renderDashboard to also call renderActionRequired
@@ -12137,6 +12194,13 @@ let appFilterSearch   = '';
 let appSortField      = 'priority';
 let appSortDir        = 'asc';
 let appQueueSummary   = null;
+let appSelectedAction = '';
+let appViewingId      = null;
+let appViewingData    = null;
+let appActionInFlight = false;
+
+const APP_PRESENCE_KEY_PREFIX = 'sly_app_presence_';
+const APP_PRESENCE_TTL_MS = 45000;
 
 const APP_QUEUE_STATE_STORAGE_KEY = 'sly_admin_app_queue_state_v1';
 const DEFAULT_APP_QUEUE_STATE = {
@@ -12159,7 +12223,7 @@ function getDefaultAppQueueSort(lifecycleFilter, attentionFilter) {
 }
 
 function normalizeAppQueueState(rawState = {}) {
-  const lifecycleFilter = ['submitted', 'under_review', 'needs_info', 'identity_verified', 'checkr_pending', 'checkr_issue', 'approved', 'rejected', 'archived'].includes(rawState.lifecycleFilter)
+  const lifecycleFilter = ['review_queue', 'submitted', 'under_review', 'needs_info', 'identity_verified', 'checkr_consider', 'checkr_pending', 'checkr_issue', 'approved', 'rejected', 'archived'].includes(rawState.lifecycleFilter)
     ? rawState.lifecycleFilter
     : '';
   const attentionFilter = rawState.attentionFilter === 'new' ? 'new' : '';
@@ -12228,10 +12292,12 @@ function syncAppQueueControls() {
   if (summaryEl) {
     const labels = {
       '': 'Full lifecycle view',
+      review_queue: 'Applications currently in queue',
       submitted: 'Submitted applications',
       under_review: 'Under review applications',
       needs_info: 'Applications waiting on more info',
       identity_verified: 'Identity verified applications',
+      checkr_consider: 'Applications with Checkr consider reports',
       checkr_pending: 'Applications pending Checkr',
       checkr_issue: 'Applications with Checkr issues',
       approved: 'Approved applications',
@@ -12278,6 +12344,26 @@ function applyAppQueueLifecyclePreset(lifecycleFilter = '', attentionFilter = ''
     sortField: fallbackSort.sortField,
     sortDir: fallbackSort.sortDir,
   }, { load: true });
+}
+
+async function apiGet(path) {
+  if (window.DEMO_MODE) return {};
+  const resp = await fetch(API_BASE + path, {
+    headers: { Authorization: 'Bearer ' + adminSecret },
+  });
+  let data = null;
+  try { data = await resp.json(); } catch (err) {
+    console.warn('apiGet: failed to parse JSON response (non-fatal):', err?.message || err);
+  }
+  if (resp.status === 401) {
+    if (await shouldForceLogoutAfterUnauthorized(path)) handleUnauthorizedApiResponse();
+    throw new Error(data?.error || 'Unauthorized');
+  }
+  if (!data) {
+    throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab.`);
+  }
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
 }
 
 // ── Reviewer presence (non-blocking, localStorage) ────────────────────────────
@@ -12369,12 +12455,13 @@ function renderAppQueueKpis() {
   if (!container) return;
   const summary = appQueueSummary || {};
   const cards = [
-    { label: 'All Applications', value: Number(summary.total || 0), filter: '', note: 'Full lifecycle queue' },
-    { label: 'Submitted', value: Number(summary.submitted || 0), filter: 'submitted', note: 'Awaiting first touch' },
+    { label: 'In Queue', value: Number(summary.reviewQueueTotal || 0), filter: 'review_queue', note: 'Submitted, under review, and needs info' },
     { label: 'Under Review', value: Number(summary.underReview || 0), filter: 'under_review', note: 'Active underwriting' },
     { label: 'Needs Info', value: Number(summary.needsInfo || 0), filter: 'needs_info', note: 'Waiting on applicant' },
+    { label: 'Identity Verified', value: Number(summary.identityVerified || 0), filter: 'identity_verified', note: 'Ready for next review step' },
+    { label: 'Checkr Consider', value: Number(summary.checkrConsider || 0), filter: 'checkr_consider', note: 'Requires underwriting attention' },
     { label: 'Approved Applications', value: Number(summary.approved || 0), filter: 'approved', note: 'Newest approved first' },
-    { label: 'Rejected / Declined', value: Number(summary.rejected || 0), filter: 'rejected', note: 'Newest rejected first' },
+    { label: 'Declined Applications', value: Number(summary.rejected || 0), filter: 'rejected', note: 'Newest declined first' },
   ];
 
   container.innerHTML = cards.map((card) => {
