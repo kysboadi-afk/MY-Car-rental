@@ -67,7 +67,7 @@ export const REVIEW_ACTION_MAP = {
 };
 
 // Which source statuses may be acted upon by a manual reviewer.
-const REVIEWABLE_STATUSES = new Set(["under_review", "needs_info"]);
+const REVIEWABLE_STATUSES = new Set(["submitted", "under_review", "needs_info"]);
 
 // Normalise a UUID-shaped string or return null.
 function cleanUuid(value) {
@@ -273,6 +273,29 @@ export async function fetchRenterApplicationById(applicationId, sbClient = null)
     .from("renter_applications")
     .select("*")
     .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not load application.", details: error.message };
+  }
+  if (!data) {
+    return { ok: false, status: 404, error: "Application not found." };
+  }
+
+  return { ok: true, data };
+}
+
+export async function fetchRenterApplicationByIdentitySessionId(identitySessionId, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const normalized = cleanText(identitySessionId, 255);
+  if (!normalized) return { ok: false, status: 400, error: "identitySessionId is required." };
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select("*")
+    .eq("identity_session_id", normalized)
     .maybeSingle();
 
   if (error) {
@@ -513,7 +536,7 @@ export async function performReviewAction(
     return {
       ok: false,
       status: 422,
-      error: `Cannot review an application with status "${expectedStatus}". Only under_review and needs_info applications may be acted upon.`,
+      error: `Cannot review an application with status "${expectedStatus}". Only submitted, under_review, and needs_info applications may be acted upon.`,
     };
   }
 
@@ -681,7 +704,7 @@ export async function performPreAdverseAction(
     return {
       ok: false,
       status: 422,
-      error: `Cannot send pre-adverse action for status "${expectedStatus}". Only under_review and needs_info applications may be acted upon.`,
+      error: `Cannot send pre-adverse action for status "${expectedStatus}". Only submitted, under_review, and needs_info applications may be acted upon.`,
     };
   }
   const version = typeof expectedReviewVersion === "number" ? expectedReviewVersion : Number(expectedReviewVersion);

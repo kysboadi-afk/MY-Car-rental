@@ -19,6 +19,7 @@ process.env.TEXTMAGIC_API_KEY = "test-api-key-00000000000000000000000";
 const calls = {
   patched: [],
   fetched: [],
+  fetchedBySession: [],
   listedReviewQueue: [],
   listedRecoveryCandidates: [],
   fetchedReviewDetail: [],
@@ -30,6 +31,7 @@ const calls = {
 };
 
 let fetchResult = { ok: true, data: { id: "app_1", identity_status: "not_started", application_status: "submitted" } };
+let fetchBySessionResult = { ok: true, data: { id: "app_1", identity_status: "not_started", application_status: "submitted" } };
 let patchResult = { ok: true, data: { id: "app_1" } };
 let duplicateEvent = false;
 let insertEventError = null;
@@ -45,6 +47,11 @@ let veriffCreateFailureOnce = null;
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
   calls.fetched.push(applicationId);
   return fetchResult;
+});
+
+const fetchRenterApplicationByIdentitySessionId = mock.fn(async (identitySessionId) => {
+  calls.fetchedBySession.push(identitySessionId);
+  return fetchBySessionResult;
 });
 
 const patchRenterApplicationIdentityById = mock.fn(async (applicationId, patch) => {
@@ -70,6 +77,7 @@ const fetchReviewApplicationById = mock.fn(async (...args) => {
 mock.module("./_renter-applications.js", {
   namedExports: {
     fetchRenterApplicationById,
+    fetchRenterApplicationByIdentitySessionId,
     patchRenterApplicationIdentityById,
     listReviewQueueApplications,
     listPendingIdentityRecoveryApplications,
@@ -213,6 +221,7 @@ function makeAdminGetReq(query = {}) {
 beforeEach(() => {
   calls.patched.length = 0;
   calls.fetched.length = 0;
+  calls.fetchedBySession.length = 0;
   calls.listedReviewQueue.length = 0;
   calls.listedRecoveryCandidates.length = 0;
   calls.fetchedReviewDetail.length = 0;
@@ -230,6 +239,18 @@ beforeEach(() => {
       email: "jane@example.com",
       identity_status: "not_started",
       application_status: "submitted",
+    },
+  };
+  fetchBySessionResult = {
+    ok: true,
+    data: {
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "not_started",
+      application_status: "submitted",
+      identity_session_id: "vrf_123",
     },
   };
   patchResult = {
@@ -368,6 +389,61 @@ test("stripe-identity-webhook maps approved Veriff decision with status:success 
   assert.equal(calls.patched[0].patch.identityStatus, "verified");
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
   assert.equal(calls.checkrInitiations.length, 1);
+});
+
+test("stripe-identity-webhook maps verification.completed decision payload to verified", async () => {
+  const payload = {
+    id: "evt_veriff_completed_1",
+    eventType: "verification.completed",
+    verification: {
+      id: "vrf_123",
+      vendorData: "app_1",
+    },
+    decision: {
+      status: "approved",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].applicationId, "app_1");
+});
+
+test("stripe-identity-webhook maps approved by session lookup when vendorData is absent", async () => {
+  fetchResult = { ok: false, status: 404, error: "Application not found." };
+  fetchBySessionResult = {
+    ok: true,
+    data: {
+      id: "app_session_match",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_session_lookup",
+    },
+  };
+  const payload = {
+    id: "evt_veriff_session_lookup_1",
+    verification: {
+      id: "vrf_session_lookup",
+      status: "approved",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.fetchedBySession.length, 1);
+  assert.equal(calls.fetchedBySession[0], "vrf_session_lookup");
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].applicationId, "app_session_match");
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
 });
 
 test("stripe-identity-webhook advances processing identity to under_review", async () => {

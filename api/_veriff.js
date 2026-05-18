@@ -89,14 +89,14 @@ export function extractVeriffStatus(payload = {}) {
     payload?.verification?.status,
     payload?.verification?.state,
     payload?.verification?.decision,
+    payload?.verification?.decision?.status,
+    payload?.decision?.status,
+    payload?.decision,
+    payload?.status,
     payload?.action,
     payload?.eventType,
     payload?.event_type,
-    payload?.status,
     payload?.verification?.code,
-    payload?.decision,
-    payload?.decision?.status,
-    payload?.verification?.decision?.status,
   );
 }
 

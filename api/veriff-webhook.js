@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import {
   patchRenterApplicationIdentityById,
   fetchRenterApplicationById,
+  fetchRenterApplicationByIdentitySessionId,
 } from "./_renter-applications.js";
 import {
   sendIdentityIssueNotifications,
@@ -13,6 +14,7 @@ import {
   extractVeriffStatus,
   mapVeriffDecisionToIdentityStatus,
   verifyVeriffWebhookSignature,
+  fetchVeriffDecision,
 } from "./_veriff.js";
 import { initiateCheckrScreening } from "./_checkr.js";
 
@@ -183,18 +185,28 @@ export default async function handler(req, res) {
   }
 
   const rawStatus = extractVeriffStatus(payload);
-  const mappedStatus = mapVeriffDecisionToIdentityStatus(rawStatus);
+  const decisionStatus = pickString(
+    payload?.verification?.decision?.status,
+    payload?.decision?.status,
+    payload?.decision,
+  );
+  const initialMappedStatus = mapVeriffDecisionToIdentityStatus(decisionStatus || rawStatus);
   const applicationId = extractVeriffApplicationId(payload);
   const identitySessionId = extractVeriffSessionId(payload);
+  const webhookEventType = pickString(payload?.eventType, payload?.event_type, payload?.action, rawStatus) || "unknown";
   const eventId = getEventId(payload, identitySessionId, rawStatus);
-  const eventType = String(rawStatus || payload?.eventType || payload?.event_type || "unknown").slice(0, 200);
+  const eventType = String(webhookEventType).slice(0, 200);
   let eventLogSkipped = false;
+  let mappedStatus = initialMappedStatus;
+  let matchedApplicationId = applicationId;
 
   console.info("veriff-identity-webhook: event received", {
     eventId,
     eventType,
+    finalDecision: decisionStatus || null,
     rawStatus: rawStatus || null,
     mappedStatus: mappedStatus || null,
+    vendorData: applicationId || null,
     applicationId: applicationId || null,
     identitySessionId: identitySessionId || null,
   });
@@ -230,7 +242,29 @@ export default async function handler(req, res) {
   }
 
   if (!mappedStatus) {
-    return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
+    if (identitySessionId) {
+      try {
+        const decision = await fetchVeriffDecision(identitySessionId);
+        if (decision.ok && decision.mappedStatus) {
+          mappedStatus = decision.mappedStatus;
+          matchedApplicationId = matchedApplicationId || decision.applicationId || "";
+          console.info("veriff-identity-webhook: mapped status recovered from decision lookup", {
+            eventId,
+            eventType,
+            sessionId: identitySessionId,
+            decisionStatus: decision.rawStatus || null,
+            mappedStatus,
+            vendorData: applicationId || null,
+            matchedApplicationId: matchedApplicationId || null,
+          });
+        }
+      } catch (decisionErr) {
+        console.warn("veriff-identity-webhook decision lookup failed:", decisionErr?.message || decisionErr);
+      }
+    }
+    if (!mappedStatus) {
+      return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
+    }
   }
 
   const identityPatch = mapIdentityUpdate(mappedStatus, payload);
@@ -238,19 +272,29 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
   }
 
-  if (!applicationId) {
-    console.warn("veriff-identity-webhook: missing application id in webhook payload", {
-      eventType,
-      sessionId: identitySessionId,
-    });
-    return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
-  }
-
   try {
-    const current = await fetchRenterApplicationById(applicationId);
-    if (!current.ok) {
-      console.error("veriff-identity-webhook application lookup failed:", current.error, current.details || "");
-      return res.status(200).json({ received: true, ignored: true });
+    let current = null;
+    if (matchedApplicationId) {
+      current = await fetchRenterApplicationById(matchedApplicationId);
+    }
+    if ((!current || !current.ok) && identitySessionId) {
+      const bySession = await fetchRenterApplicationByIdentitySessionId(identitySessionId);
+      if (bySession.ok) {
+        current = bySession;
+        matchedApplicationId = bySession.data?.id || matchedApplicationId;
+      }
+    }
+    if (!current || !current.ok) {
+      console.error("veriff-identity-webhook application lookup failed:", {
+        eventId,
+        eventType,
+        vendorData: applicationId || null,
+        sessionId: identitySessionId || null,
+        matchedApplicationId: matchedApplicationId || null,
+        error: current?.error || "Application not found for webhook mapping.",
+        details: current?.details || "",
+      });
+      return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
     }
 
     if (isStaleIdentityUpdate(current.data || {}, identityPatch)) {
@@ -268,7 +312,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const patchResult = await patchRenterApplicationIdentityById(applicationId, {
+    const patchResult = await patchRenterApplicationIdentityById(matchedApplicationId, {
       ...identityPatch,
       identitySessionId: identitySessionId || current.data?.identity_session_id || null,
     });
@@ -279,10 +323,14 @@ export default async function handler(req, res) {
 
     console.info("veriff-identity-webhook: application identity updated", {
       eventId,
-      applicationId,
+      eventType,
+      finalDecision: decisionStatus || null,
+      vendorData: applicationId || null,
+      matchedApplicationId,
       identityStatus: patchResult.data?.identity_status || identityPatch.identityStatus || null,
       applicationStatus: patchResult.data?.application_status || identityPatch.applicationStatus || null,
       identitySessionId: patchResult.data?.identity_session_id || identitySessionId || null,
+      patchOk: true,
       eventLogSkipped,
     });
 
@@ -293,9 +341,9 @@ export default async function handler(req, res) {
         console.error("veriff-identity-webhook verified notification failed:", notifyErr);
       }
       try {
-        const checkrResult = await initiateCheckrScreening(applicationId);
+        const checkrResult = await initiateCheckrScreening(matchedApplicationId);
         console.info("veriff-identity-webhook: Checkr initiation result", {
-          applicationId,
+          matchedApplicationId,
           ok: !!checkrResult?.ok,
           alreadyStarted: !!checkrResult?.alreadyStarted,
           candidateId: checkrResult?.candidateId || null,
