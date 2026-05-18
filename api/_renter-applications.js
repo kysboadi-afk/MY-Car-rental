@@ -60,6 +60,19 @@ const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approv
 // Veriff decision will remain declined, so polling adds noise without value.
 const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing"];
 const CHECKR_REPORT_STATUSES = ["pending", "clear", "consider", "suspended", "disputed", "complete_no_adj", "error"];
+const CHECKR_PHASES = new Set([
+  "not_started",
+  "launch_queued",
+  "candidate_created",
+  "invitation_sent",
+  "pending",
+  "completed",
+  "clear",
+  "consider",
+  "suspended",
+  "failed",
+  "webhook_missing",
+]);
 const ADVERSE_ACTION_STEPS = ["pre_notice_sent", "final_notice_sent"];
 
 // Valid manual review actions and the status they produce.
@@ -97,6 +110,34 @@ function cleanIsoDateTime(value) {
   const d = new Date(String(value));
   if (!Number.isFinite(d.getTime())) return null;
   return d.toISOString();
+}
+
+function normalizeCheckrPhaseValue(value) {
+  const raw = cleanText(value, 40)?.toLowerCase() || "";
+  if (!raw) return null;
+  if (CHECKR_PHASES.has(raw)) return raw;
+  if (raw === "error") return "failed";
+  if (raw === "complete_no_adj") return "completed";
+  if (raw === "disputed") return "suspended";
+  return null;
+}
+
+export function deriveCheckrPhase(record = {}) {
+  const explicitPhase = normalizeCheckrPhaseValue(record.checkr_phase);
+  if (explicitPhase) return explicitPhase;
+
+  const reportStatusPhase = normalizeCheckrPhaseValue(record.checkr_report_status);
+  if (reportStatusPhase) return reportStatusPhase;
+
+  if (record.checkr_completed_at) return "completed";
+  if (record.checkr_report_id) return "invitation_sent";
+  if (record.checkr_candidate_id) return "candidate_created";
+
+  const launchAttempts = Number(record.checkr_launch_attempt_count || 0);
+  if (launchAttempts > 0 || record.checkr_last_launch_attempt_at) {
+    return record.checkr_last_launch_error ? "failed" : "launch_queued";
+  }
+  return "not_started";
 }
 
 function normalizeApplicationStatusValue(value) {
