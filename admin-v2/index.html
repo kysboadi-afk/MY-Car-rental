@@ -3466,6 +3466,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       Refresh
     </button>
+    <button class="btn btn-secondary" onclick="archiveTestApplications()">
+      🧹 Archive Test Apps
+    </button>
   </div>
 
   <!-- KPI grid -->
@@ -3582,6 +3585,15 @@
           <button id="app-btn-approved"   class="app-action-btn" onclick="selectAppAction('approved')">✅ Approve</button>
           <button id="app-btn-rejected"   class="app-action-btn" onclick="selectAppAction('rejected')">❌ Reject</button>
           <button id="app-btn-needs_info" class="app-action-btn" onclick="selectAppAction('needs_info')">⚠️ Request More Info</button>
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--text-sub);">Operational Actions</div>
+        <div class="app-action-btn-row" style="margin-bottom:8px;">
+          <button class="app-action-btn" onclick="runAppOperationalAction('resend_verification')">📨 Resend Verification</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('restart_verification')">♻️ Restart Verification</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('move_to_review')">🧭 Move to Review</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('manual_recovery')">🛠️ Trigger Recovery</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('retry_checkr')">🔁 Retry Checkr</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('archive_application')" style="border-color:#fecaca;color:#b91c1c;">🗑️ Delete (Archive)</button>
         </div>
         <div id="app-action-selected" style="font-size:12px;color:var(--text-sub);margin-bottom:8px;min-height:16px;"></div>
         <label id="app-notes-label" style="display:block;font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:4px;">Reviewer notes (optional):</label>
@@ -12236,6 +12248,20 @@ async function callReviewAction(payload) {
   return data;
 }
 
+async function callAdminApplicationOp(payload) {
+  const resp = await fetch(API_BASE + '/api/admin-application-ops', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let data;
+  try { data = await resp.json(); } catch {
+    throw new Error(`Server error (HTTP ${resp.status}).`);
+  }
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
 function generateUUID() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -12462,7 +12488,10 @@ function renderAppQueue() {
       <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
       <td>${latestActivity}</td>
       <td>${checkrStatusBadge(a.checkrReportStatus)}${checkrReportLink(a.checkrReportId)}</td>
-      <td class="td-actions"><button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">Review</button></td>
+      <td class="td-actions">
+        <button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">View</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteApplicationFromQueue('${esc(a.id)}','${esc(a.name)}')">Delete</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -12860,6 +12889,106 @@ async function refreshAppDetail() {
     loadAppQueue();
   } catch (err) {
     showToast('Failed to refresh application: ' + err.message, 'error');
+  }
+}
+
+async function runAppOperationalAction(action) {
+  if (!appViewingData || !appViewingData.applicationId) {
+    showToast('Open an application first.', 'error');
+    return;
+  }
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
+  const notes = document.getElementById('app-action-notes')?.value.trim() || '';
+
+  if (action === 'archive_application') {
+    const ok = window.confirm('Archive this application and remove it from the active queue?');
+    if (!ok) return;
+  }
+
+  try {
+    const result = await callAdminApplicationOp({
+      secret: adminSecret,
+      action,
+      applicationId: appViewingData.applicationId,
+      reviewedBy,
+      notes,
+    });
+
+    if (result.verificationUrl) {
+      showToast('Verification link generated. Copy it from the application detail response/log.', 'success');
+    } else if (action === 'archive_application') {
+      showToast('Application archived.', 'success');
+      closeModal('app-detail-modal');
+    } else if (action === 'move_to_review') {
+      showToast('Application moved to under review.', 'success');
+    } else if (action === 'manual_recovery') {
+      showToast(result.synced ? 'Recovery synced from Veriff.' : 'Recovery completed (no change needed).', 'success');
+    } else if (action === 'retry_checkr') {
+      showToast(result.alreadyStarted ? 'Checkr already started for this application.' : 'Checkr retry triggered.', 'success');
+    } else if (action === 'restart_verification') {
+      showToast('Verification restarted.', 'success');
+    } else if (action === 'resend_verification') {
+      showToast('Verification resend triggered.', 'success');
+    } else {
+      showToast('Operational action completed.', 'success');
+    }
+
+    await loadAppQueue();
+    if (action !== 'archive_application') await refreshAppDetail();
+  } catch (err) {
+    showToast('Operational action failed: ' + err.message, 'error');
+  }
+}
+
+async function deleteApplicationFromQueue(applicationId, applicantName) {
+  if (!applicationId) return;
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
+  const ok = window.confirm(`Archive/delete ${applicantName || 'this application'} from the active queue?`);
+  if (!ok) return;
+  try {
+    await callAdminApplicationOp({
+      secret: adminSecret,
+      action: 'archive_application',
+      applicationId,
+      reviewedBy,
+      notes: 'Archived from queue delete button.',
+    });
+    showToast('Application archived.', 'success');
+    if (appViewingId === applicationId) closeModal('app-detail-modal');
+    await loadAppQueue();
+  } catch (err) {
+    showToast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+async function archiveTestApplications() {
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value.trim() || 'Admin';
+  try {
+    const preview = await callAdminApplicationOp({
+      secret: adminSecret,
+      action: 'archive_test_applications',
+      reviewedBy,
+      dryRun: true,
+    });
+    const count = Number(preview.count) || 0;
+    if (!count) {
+      showToast('No test/debug applications found to archive.', 'info');
+      return;
+    }
+    const confirmed = window.confirm(`Archive ${count} test/debug application(s) from the queue?`);
+    if (!confirmed) return;
+
+    const result = await callAdminApplicationOp({
+      secret: adminSecret,
+      action: 'archive_test_applications',
+      reviewedBy,
+      dryRun: false,
+      notes: 'Queue reset cleanup of stale test/debug applications.',
+    });
+    showToast(`Archived ${result.archived || 0} application(s).`, 'success');
+    await loadAppQueue();
+  } catch (err) {
+    showToast('Archive test apps failed: ' + err.message, 'error');
   }
 }
 
