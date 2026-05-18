@@ -293,7 +293,17 @@ export default async function handler(req, res) {
         console.error("veriff-identity-webhook verified notification failed:", notifyErr);
       }
       try {
-        await initiateCheckrScreening(applicationId);
+        const checkrResult = await initiateCheckrScreening(applicationId);
+        console.info("veriff-identity-webhook: Checkr initiation result", {
+          applicationId,
+          ok: !!checkrResult?.ok,
+          alreadyStarted: !!checkrResult?.alreadyStarted,
+          candidateId: checkrResult?.candidateId || null,
+          reportId: checkrResult?.reportId || null,
+          reportStatus: checkrResult?.reportStatus || null,
+          error: checkrResult?.ok ? null : (checkrResult?.error || null),
+          status: checkrResult?.ok ? null : (Number(checkrResult?.status) || null),
+        });
       } catch (checkrErr) {
         console.error("veriff-identity-webhook Checkr initiation failed:", checkrErr.message || checkrErr);
       }
