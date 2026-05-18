@@ -464,6 +464,45 @@ function addDaysToDate(date, extraDays) {
   return dt.toISOString().split("T")[0];
 }
 
+async function resolveCanonicalExtensionBookingRef(booking = {}) {
+  const rawRef = booking.bookingId || booking.paymentIntentId || "";
+  if (!rawRef) return "";
+  const sb = getSupabaseAdmin();
+  if (!sb) return rawRef;
+
+  try {
+    const { data: byRef } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("booking_ref", rawRef)
+      .maybeSingle();
+    if (byRef?.booking_ref) return byRef.booking_ref;
+
+    if (rawRef.startsWith("pi_")) {
+      const { data: byRawPi } = await sb
+        .from("bookings")
+        .select("booking_ref")
+        .eq("payment_intent_id", rawRef)
+        .maybeSingle();
+      if (byRawPi?.booking_ref) return byRawPi.booking_ref;
+    }
+
+    const bookingPi = booking.paymentIntentId || "";
+    if (bookingPi) {
+      const { data: byBookingPi } = await sb
+        .from("bookings")
+        .select("booking_ref")
+        .eq("payment_intent_id", bookingPi)
+        .maybeSingle();
+      if (byBookingPi?.booking_ref) return byBookingPi.booking_ref;
+    }
+  } catch (err) {
+    console.warn("receive-textmagic-sms: canonical extension booking_ref lookup failed (non-fatal):", err.message);
+  }
+
+  return rawRef;
+}
+
 /**
  * Create a Stripe PaymentIntent for the extension charge.
  * @param {string} vehicleId        - vehicle being extended
@@ -477,6 +516,7 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
   if (!process.env.STRIPE_SECRET_KEY) return null;
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   try {
+    const canonicalBookingRef = await resolveCanonicalExtensionBookingRef(booking);
     const pi = await stripe.paymentIntents.create({
       amount:   Math.round(amount * 100),
       currency: "usd",
@@ -487,7 +527,8 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
         // "payment_type" is kept for backward compatibility with reconcile / scheduled-reminders.
         type:         "rental_extension",
         payment_type: "rental_extension",
-        booking_id:   booking.bookingId || booking.paymentIntentId || "",
+        booking_id:   canonicalBookingRef,
+        original_booking_id: canonicalBookingRef,
         vehicle_id:          vehicleId,
         vehicle_name:        booking.vehicleName || vehicleId || "",
         renter_name:         booking.name  || "",

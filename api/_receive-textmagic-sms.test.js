@@ -82,13 +82,40 @@ mock.module("./_supabase.js", {
   namedExports: {
     getSupabaseAdmin: () => {
       if (!Array.isArray(supabaseRows)) return null;
+      const bookingRows = supabaseRows;
+      const makeSelectBuilder = () => {
+        let filtered = bookingRows.slice();
+        return {
+          in: (column, values) => {
+            filtered = filtered.filter((row) => values.includes(row[column]));
+            return makeSelectBuilderFromFiltered(filtered);
+          },
+          eq: (column, value) => {
+            filtered = filtered.filter((row) => row[column] === value);
+            return makeSelectBuilderFromFiltered(filtered);
+          },
+          order: async () => ({ data: filtered.slice(), error: null }),
+          maybeSingle: async () => ({ data: filtered[0] || null, error: null }),
+        };
+      };
+      const makeSelectBuilderFromFiltered = (rows) => {
+        let filtered = rows.slice();
+        return {
+          in: (column, values) => {
+            filtered = filtered.filter((row) => values.includes(row[column]));
+            return makeSelectBuilderFromFiltered(filtered);
+          },
+          eq: (column, value) => {
+            filtered = filtered.filter((row) => row[column] === value);
+            return makeSelectBuilderFromFiltered(filtered);
+          },
+          order: async () => ({ data: filtered.slice(), error: null }),
+          maybeSingle: async () => ({ data: filtered[0] || null, error: null }),
+        };
+      };
       return {
         from: () => ({
-          select: () => ({
-            in: () => ({
-              order: async () => ({ data: supabaseRows, error: null }),
-            }),
-          }),
+          select: () => makeSelectBuilder(),
           update: () => ({
             eq: async () => ({ data: null, error: null }),
           }),
@@ -219,6 +246,45 @@ test("receive-textmagic-sms: accepts form-encoded day selection and returns paym
   assert.equal(createdPaymentIntent?.metadata?.booking_id, "bk_ext_2");
   assert.equal(savedBookings.camry[0].extendPending, false);
   assert.equal(savedBookings.camry[0].extensionPendingPayment.paymentLink, "https://www.slytrans.com/balance.html?ext=1&cs=cs_ext_test&piId=pi_ext_test");
+});
+
+test("receive-textmagic-sms: extension PI metadata uses canonical Supabase booking_ref when booking JSON ID is legacy", async () => {
+  resetState();
+  bookingsData = {
+    camry: [{
+      bookingId: "69469e1be334f50b",
+      paymentIntentId: "pi_legacy_booking_origin",
+      phone: "+13105550100",
+      status: "active_rental",
+      vehicleName: "Camry 2012",
+      returnDate: "2026-05-20",
+      returnTime: "10:00 AM",
+      extendPending: true,
+      extendAvailMinutes: Infinity,
+    }],
+  };
+  supabaseRows = [{
+    booking_ref: "bk_canonical_ext_1",
+    payment_intent_id: "pi_legacy_booking_origin",
+    vehicle_id: "camry",
+    customer_name: "Legacy Booking Renter",
+    customer_phone: "+13105550100",
+    renter_phone: "+13105550100",
+    pickup_date: "2026-05-18",
+    pickup_time: "10:00",
+    return_date: "2026-05-20",
+    return_time: "10:00",
+    status: "active_rental",
+    extend_pending: true,
+    balance_payment_link: "",
+  }];
+
+  const res = makeRes();
+  await handler(makeReq("from=%2B13105550100&text=3+days"), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(createdPaymentIntent?.metadata?.booking_id, "bk_canonical_ext_1");
+  assert.equal(createdPaymentIntent?.metadata?.original_booking_id, "bk_canonical_ext_1");
 });
 
 test("receive-textmagic-sms: uses Supabase booking snapshot when bookings.json is stale", async () => {
