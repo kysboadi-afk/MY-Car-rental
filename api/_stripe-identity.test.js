@@ -23,6 +23,8 @@ const calls = {
   listedReviewQueue: [],
   listedRecoveryCandidates: [],
   fetchedReviewDetail: [],
+  incomeDocSelects: [],
+  signedUrlRequests: [],
   eventInserts: [],
   sentMails: [],
   sentMessages: [],
@@ -44,6 +46,7 @@ let veriffCreateStatus = 200;
 let veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
 let veriffCreateFailureOnce = null;
 let missingVeriffEventTable = false;
+let incomeDocumentsResponses = [];
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
   calls.fetched.push(applicationId);
@@ -107,6 +110,24 @@ mock.module("./_supabase.js", {
   namedExports: {
     getSupabaseAdmin: () => ({
       from(table) {
+        if (table === "application_documents") {
+          return {
+            select(columns) {
+              calls.incomeDocSelects.push(columns);
+              return {
+                eq() {
+                  return {
+                    eq() {
+                      return {
+                        order: async () => incomeDocumentsResponses.shift() || { data: [], error: null },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        }
         if (!["veriff_webhook_events", "stripe_identity_webhook_events"].includes(table)) {
           throw new Error(`Unexpected table ${table}`);
         }
@@ -136,6 +157,16 @@ mock.module("./_supabase.js", {
             return { error: insertEventError };
           },
         };
+      },
+      storage: {
+        from(bucket) {
+          return {
+            createSignedUrl: async (path, expiresIn) => {
+              calls.signedUrlRequests.push({ bucket, path, expiresIn });
+              return { data: { signedUrl: `https://signed.test/${encodeURIComponent(path)}` } };
+            },
+          };
+        },
       },
     }),
   },
@@ -236,6 +267,8 @@ beforeEach(() => {
   calls.listedReviewQueue.length = 0;
   calls.listedRecoveryCandidates.length = 0;
   calls.fetchedReviewDetail.length = 0;
+  calls.incomeDocSelects.length = 0;
+  calls.signedUrlRequests.length = 0;
   calls.eventInserts.length = 0;
   calls.sentMails.length = 0;
   calls.sentMessages.length = 0;
@@ -286,6 +319,7 @@ beforeEach(() => {
   veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
   veriffCreateFailureOnce = null;
   missingVeriffEventTable = false;
+  incomeDocumentsResponses = [];
 });
 
 test("create-identity-verification-session creates a Veriff session and persists linkage", async () => {
@@ -812,4 +846,58 @@ test("admin-review-detail recovers approved Veriff application before returning 
   assert.equal(res._body.success, true);
   assert.equal(res._body.identityStatus, "verified");
   assert.equal(detailFetchCount, 2);
+});
+
+test("admin-review-detail falls back across legacy income document columns", async () => {
+  reviewDetailResult = {
+    ok: true,
+    data: {
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      application_status: "under_review",
+      identity_status: "verified",
+      identity_session_id: "vrf_detail_sync",
+      review_version: 2,
+    },
+    history: [],
+  };
+  incomeDocumentsResponses = [
+    { data: null, error: { code: "42703", message: "column application_documents.file_size does not exist" } },
+    { data: null, error: { code: "42703", message: "column application_documents.review_status does not exist" } },
+    { data: null, error: { code: "42703", message: "column application_documents.file_size does not exist" } },
+    {
+      data: [{
+        id: "doc_1",
+        doc_type: "income_verification",
+        file_name: "weekly-summary.pdf",
+        mime_type: "application/pdf",
+        file_path: "income/app_1/weekly-summary.pdf",
+        file_size: 2048,
+        review_status: "pending",
+        reviewed_by: null,
+        reviewed_at: null,
+        notes: null,
+        created_at: "2026-05-14T03:00:00.000Z",
+      }],
+      error: null,
+    },
+  ];
+
+  const res = makeRes();
+  await adminReviewDetailHandler(makeAdminGetReq({
+    secret: "test-admin-secret",
+    applicationId: "11111111-1111-1111-1111-111111111111",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.incomeDocuments.length, 1);
+  assert.equal(res._body.incomeDocuments[0].fileSize, 2048);
+  assert.equal(res._body.incomeDocuments[0].reviewStatus, "pending");
+  assert.equal(calls.incomeDocSelects.length, 4);
+  assert.match(calls.incomeDocSelects[1], /file_size:file_size_bytes/);
+  assert.match(calls.incomeDocSelects[3], /review_status:verification_status/);
+  assert.equal(calls.signedUrlRequests.length, 1);
 });

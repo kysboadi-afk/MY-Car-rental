@@ -12,6 +12,38 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { INCOME_VERIFICATION_BUCKET, INCOME_VERIFICATION_DOC_TYPE } from "./_income-verification.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const INCOME_DOCUMENT_SELECT_VARIANTS = [
+  "id, doc_type, file_name, mime_type, file_path, file_size, review_status, reviewed_by, reviewed_at, notes, created_at",
+  "id, doc_type, file_name, mime_type, file_path, file_size:file_size_bytes, review_status, reviewed_by, reviewed_at, notes, created_at",
+  "id, doc_type, file_name, mime_type, file_path, file_size, review_status:verification_status, reviewed_by, reviewed_at, notes, created_at",
+  "id, doc_type, file_name, mime_type, file_path, file_size:file_size_bytes, review_status:verification_status, reviewed_by, reviewed_at, notes, created_at",
+];
+
+function isMissingColumnError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return error?.code === "42703" || (message.includes("column") && message.includes("does not exist"));
+}
+
+async function fetchIncomeDocuments(sb, applicationId) {
+  let lastError = null;
+  for (const selectClause of INCOME_DOCUMENT_SELECT_VARIANTS) {
+    const { data, error } = await sb
+      .from("application_documents")
+      .select(selectClause)
+      .eq("application_id", applicationId)
+      .eq("doc_type", INCOME_VERIFICATION_DOC_TYPE)
+      .order("created_at", { ascending: true });
+
+    if (!error) {
+      return { docs: Array.isArray(data) ? data : [], error: null };
+    }
+    if (!isMissingColumnError(error)) {
+      return { docs: [], error };
+    }
+    lastError = error;
+  }
+  return { docs: [], error: lastError };
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -61,12 +93,7 @@ export default async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (sb) {
     try {
-      const { data: docs, error: docsErr } = await sb
-        .from("application_documents")
-        .select("id, doc_type, file_name, mime_type, file_path, file_size, review_status, reviewed_by, reviewed_at, notes, created_at")
-        .eq("application_id", r.id)
-        .eq("doc_type", INCOME_VERIFICATION_DOC_TYPE)
-        .order("created_at", { ascending: true });
+      const { docs, error: docsErr } = await fetchIncomeDocuments(sb, r.id);
 
       if (!docsErr && Array.isArray(docs)) {
         // Generate short-lived signed URLs for admin preview
@@ -84,7 +111,7 @@ export default async function handler(req, res) {
               docType: doc.doc_type,
               fileName: doc.file_name || null,
               mimeType: doc.mime_type || null,
-              fileSize: doc.file_size || null,
+              fileSize: doc.file_size ?? null,
               reviewStatus: doc.review_status || "pending",
               reviewedBy: doc.reviewed_by || null,
               reviewedAt: doc.reviewed_at || null,
