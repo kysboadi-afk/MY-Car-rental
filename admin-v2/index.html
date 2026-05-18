@@ -12210,6 +12210,7 @@ let appSelectedAction = '';
 let appViewingId      = null;
 let appViewingData    = null;
 let appActionInFlight = false;
+let appQueueEventsBound = false;
 
 const APP_PRESENCE_KEY_PREFIX = 'sly_app_presence_';
 const APP_PRESENCE_TTL_MS = 45000;
@@ -12407,6 +12408,21 @@ function clearAppPresence(appId) {
   try { localStorage.removeItem(APP_PRESENCE_KEY_PREFIX + appId); } catch (err) { console.warn('App presence tracking unavailable (clearAppPresence):', err.message); }
 }
 
+function bindAppQueueRowActions() {
+  if (appQueueEventsBound) return;
+  const tbody = document.getElementById('apps-tbody');
+  if (!tbody) return;
+  tbody.addEventListener('click', (event) => {
+    const reviewBtn = event.target.closest('[data-open-app-detail]');
+    if (!reviewBtn) return;
+    const applicationId = reviewBtn.getAttribute('data-open-app-detail');
+    if (!applicationId) return;
+    event.preventDefault();
+    openAppDetail(applicationId);
+  });
+  appQueueEventsBound = true;
+}
+
 // ── Load queue from API ───────────────────────────────────────────────────────
 
 async function loadAppQueue() {
@@ -12575,6 +12591,7 @@ function fmtRelativeTime(value) {
 }
 
 function renderAppQueue() {
+  bindAppQueueRowActions();
   const loading = document.getElementById('apps-loading');
   const wrap    = document.getElementById('apps-table-wrap');
   const empty   = document.getElementById('apps-empty');
@@ -12638,7 +12655,7 @@ function renderAppQueue() {
       <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
       <td>${latestActivity}</td>
       <td>${checkrStatusBadge(a.checkrReportStatus)}${checkrReportLink(a.checkrReportId)}</td>
-      <td class="td-actions"><button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">${primaryActionLabel}</button>${deleteActionHtml}</td>
+      <td class="td-actions"><button class="btn btn-primary btn-sm" type="button" data-open-app-detail="${esc(a.id)}">${primaryActionLabel}</button>${deleteActionHtml}</td>
     </tr>`;
   }).join('');
 
