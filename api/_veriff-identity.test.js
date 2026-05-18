@@ -653,7 +653,7 @@ test("veriff-webhook logs events in veriff_webhook_events table by default", asy
   assert.equal(calls.eventInserts[0]?.table, "veriff_webhook_events");
 });
 
-test("veriff-webhook falls back to stripe_identity_webhook_events when veriff table is missing", async () => {
+test("veriff-webhook falls back to legacy event log table when veriff_webhook_events is missing", async () => {
   missingVeriffEventTable = true;
   const payload = {
     id: "evt_veriff_fallback_1",
@@ -666,7 +666,7 @@ test("veriff-webhook falls back to stripe_identity_webhook_events when veriff ta
   assert.equal(calls.eventInserts[0]?.table, "stripe_identity_webhook_events");
 });
 
-test("stripe-identity-webhook endpoint is deprecated", async () => {
+test("legacy stripe-identity-webhook endpoint is deprecated (410)", async () => {
   const res = makeRes();
   await deprecatedStripeIdentityWebhookHandler(makeAdminGetReq({}), res);
   assert.equal(res._status, 410);
@@ -766,7 +766,7 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
-test("admin-review-queue skips Stripe identity session ids during Veriff recovery", async () => {
+test("admin-review-queue skips legacy (non-Veriff) session ids during recovery", async () => {
   recoveryCandidatesResult = {
     ok: true,
     data: [{

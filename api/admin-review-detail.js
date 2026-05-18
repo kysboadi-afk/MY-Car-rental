@@ -80,11 +80,13 @@ export default async function handler(req, res) {
       reviewedBy: "admin_review_detail_sync",
     });
     if (!recovery.ok) {
-      const { errorType, details } = recovery;
-      if (errorType === "session_not_found" || errorType === "client_error") {
-        if (details) console.warn("admin-review-detail recovery (permanent):", details);
-      } else if (details) {
-        console.error("admin-review-detail recovery:", details);
+      // Structured failure details are already logged inside
+      // recoverApplicationIdentityFromVeriffDecision with application_id and
+      // session context.  Only emit an additional error here for unexpected
+      // (non-classified) failures.
+      const { errorType } = recovery;
+      if (!errorType) {
+        console.error("admin-review-detail: unclassified recovery failure:", recovery.details || recovery.error);
       }
     } else if (recovery.synced) {
       const refreshed = await fetchReviewApplicationById(applicationId.trim());
@@ -131,6 +133,13 @@ export default async function handler(req, res) {
             };
           })
         );
+        if (incomeDocuments.length > 0) {
+          console.info("admin-review-detail: document preview URLs generated", {
+            application_id: r.id,
+            document_count: incomeDocuments.length,
+            doc_ids: incomeDocuments.map((d) => d.id),
+          });
+        }
       } else if (docsErr) {
         console.warn("admin-review-detail: could not fetch income docs (table may not exist yet):", docsErr.message);
       }

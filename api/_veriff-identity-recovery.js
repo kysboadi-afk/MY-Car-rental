@@ -14,6 +14,13 @@ const COOLDOWN_AUTH_MS = 60 * 60 * 1000;            // 1 h   — 401/403
 
 // In-memory cache: sessionId → cooldownUntil (ms epoch).
 // Warm lambda invocations share this state across requests.
+//
+// IMPORTANT: This cache is per-container/lambda instance and is reset on cold
+// starts. Parallel lambda instances do not share state, so in the worst case a
+// newly cold instance may issue one redundant Veriff call per session before
+// re-populating its own cooldown cache.  This is acceptable: the cooldown is an
+// optimisation, not a hard rate-limit.  A future iteration can migrate to a
+// shared store (Redis/Upstash, Supabase KV) if duplicate calls become a concern.
 const RECOVERY_COOLDOWN_CACHE = new Map();
 
 // Module-level auth-failure gate. When auth is broken every Veriff call fails
@@ -62,7 +69,7 @@ export async function recoverApplicationIdentityFromVeriffDecision(
     return { ok: true, synced: false, skipped: true, reason: "missing_identity_session" };
   }
   if (identitySessionId.startsWith("vs_")) {
-    return { ok: true, synced: false, skipped: true, reason: "stripe_identity_session" };
+    return { ok: true, synced: false, skipped: true, reason: "legacy_session_id" };
   }
 
   // Skip terminal application statuses — recovery cannot promote these.
@@ -88,10 +95,29 @@ export async function recoverApplicationIdentityFromVeriffDecision(
       ? decision.error
       : (typeof decision.details === "string" ? decision.details : "");
     const { errorType, cooldownMs } = classifyVeriffHttpError(status);
+    const cooldownUntil = Date.now() + cooldownMs;
 
     setSessionCooldown(identitySessionId, cooldownMs);
     if (errorType === "auth_failure") {
-      _authFailureCooldownUntil = Date.now() + COOLDOWN_AUTH_MS;
+      _authFailureCooldownUntil = cooldownUntil;
+    }
+
+    const logPayload = {
+      application_id: applicationId,
+      session_id: identitySessionId,
+      app_status: applicationStatus,
+      error_type: errorType,
+      http_status: status || null,
+      cooldown_until: new Date(cooldownUntil).toISOString(),
+    };
+    if (errorType === "auth_failure") {
+      // Log only the first auth failure per cooldown window — the module gate
+      // ensures subsequent calls are skipped before reaching this point.
+      console.error("veriff-recovery: auth/config failure — recovery suspended", logPayload);
+    } else if (errorType === "session_not_found" || errorType === "client_error") {
+      console.warn("veriff-recovery: permanent session failure — cooldown set", logPayload);
+    } else {
+      console.warn("veriff-recovery: transient failure — will retry after cooldown", logPayload);
     }
 
     return {

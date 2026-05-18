@@ -63,17 +63,17 @@ export default async function handler(req, res) {
       let authFailureLogged = false;
       recoveryResults.forEach((result) => {
         if (result.status === "fulfilled" && !result.value?.ok) {
-          const { errorType, details } = result.value || {};
+          const { errorType } = result.value || {};
+          // Auth failures already logged inside recovery function; emit one
+          // structured queue-level error the first time so ops can correlate.
           if (errorType === "auth_failure" && !authFailureLogged) {
             authFailureLogged = true;
-            console.error("admin-review-queue Veriff recovery: auth/config failure — check VERIFF_API_KEY and VERIFF_PROJECT_ID");
-          } else if (errorType === "session_not_found" || errorType === "client_error") {
-            if (details) console.warn("admin-review-queue Veriff recovery skipped (permanent):", details);
-          } else if (errorType !== "auth_failure") {
-            if (details) console.warn("admin-review-queue Veriff recovery transient failure:", details);
+            console.error("admin-review-queue: Veriff auth failure detected — check VERIFF_API_KEY and VERIFF_PROJECT_ID");
           }
+          // session_not_found / client_error / transient are logged with full
+          // structured fields inside recoverApplicationIdentityFromVeriffDecision.
         } else if (result.status === "rejected") {
-          console.error("admin-review-queue Veriff recovery failed:", result.reason);
+          console.error("admin-review-queue Veriff recovery exception:", result.reason);
         }
       });
     }
