@@ -12539,6 +12539,29 @@ function checkrReportLink(reportId) {
   return `<br><span style="font-size:11px;color:var(--text-sub);font-family:monospace;">${esc(text.slice(0, 12))}${text.length > 12 ? '…' : ''}</span>`;
 }
 
+function fmtRelativeTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const diffMs = date.getTime() - Date.now();
+  const absMs = Math.abs(diffMs);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const week = 7 * day;
+  const month = 30 * day;
+  const year = 365 * day;
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+  if (absMs < minute) return rtf.format(Math.round(diffMs / 1000), 'second');
+  if (absMs < hour) return rtf.format(Math.round(diffMs / minute), 'minute');
+  if (absMs < day) return rtf.format(Math.round(diffMs / hour), 'hour');
+  if (absMs < week) return rtf.format(Math.round(diffMs / day), 'day');
+  if (absMs < month) return rtf.format(Math.round(diffMs / week), 'week');
+  if (absMs < year) return rtf.format(Math.round(diffMs / month), 'month');
+  return rtf.format(Math.round(diffMs / year), 'year');
+}
+
 function renderAppQueue() {
   const loading = document.getElementById('apps-loading');
   const wrap    = document.getElementById('apps-table-wrap');
