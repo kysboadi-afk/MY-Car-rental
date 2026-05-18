@@ -9,7 +9,7 @@
 // Logic per active booking:
 //   1. Look up the vehicle's vehicle_state for current mileage and last check info.
 //   2. Compute days_since_check and miles_since_check.
-//   3. Trigger if: rental_duration >= 3 days AND (days_since_check >= 5 OR miles_since_check >= 1200)
+//   3. Trigger if: rental_duration >= 3 days AND (days_since_check >= 5 OR miles_since_check >= 500)
 //   4. Anti-spam: max 1 SMS per booking per 24 h.
 //   5. Escalation:
 //        oil_check_missed_count = 0 + no reply after 24 h → send 24h reminder, set missed_count = 1
@@ -78,7 +78,7 @@ const MSG_MAINTENANCE_REQUIRED =
 
 const MIN_RENTAL_DAYS      = 3;    // trigger only for rentals >= 3 days
 const DAYS_SINCE_CHECK     = 5;    // trigger if >= 5 days since last check
-const MILES_SINCE_CHECK    = 1200; // trigger if >= 1200 miles since last check
+const MILES_SINCE_CHECK    = 500;  // trigger if >= 500 miles since last check
 const COOLDOWN_HOURS       = 24;   // minimum hours between any two oil check SMS
 const WINDOW_START_HOUR    = 8;    // 8:00 AM LA — start of send window
 const WINDOW_END_HOUR      = 19;   // 7:00 PM LA — end of send window (exclusive)

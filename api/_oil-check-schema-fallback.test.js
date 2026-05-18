@@ -8,6 +8,7 @@ const sentSms = [];
 const oilState = {
   bookingsRows: [],
   bookingsUpdatePayloads: [],
+  vehicleStateRows: [],
   vehicleStateError: null,
   vehicleRows: [],
   tripsRows: [],
@@ -52,7 +53,7 @@ function makeOilCheckClient() {
       if (table === "vehicle_state") {
         return {
           select() { return this; },
-          in() { return Promise.resolve({ data: null, error: oilState.vehicleStateError }); },
+          in() { return Promise.resolve({ data: oilState.vehicleStateRows, error: oilState.vehicleStateError }); },
         };
       }
 
@@ -185,6 +186,7 @@ beforeEach(() => {
 
   oilState.bookingsRows = [];
   oilState.bookingsUpdatePayloads = [];
+  oilState.vehicleStateRows = [];
   oilState.vehicleStateError = null;
   oilState.vehicleRows = [];
   oilState.tripsRows = [];
@@ -259,4 +261,77 @@ test("bouncie-sync-cron falls back to vehicles.mileage when vehicle_state is mis
     value: "camry",
     payload: { mileage: 22222 },
   });
+});
+
+test("oil-check-cron sends an oil-check SMS once mileage since last check reaches 500 miles", async () => {
+  currentSupabaseClient = makeOilCheckClient();
+  oilState.bookingsRows = [{
+    id: "booking-2",
+    booking_ref: "bk_500",
+    vehicle_id: "camry2013",
+    customer_phone: "+15555550124",
+    pickup_date: "2026-05-10T00:00:00.000Z",
+    return_date: "2026-05-20T00:00:00.000Z",
+    return_time: "10:00",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    oil_check_required: false,
+    oil_check_last_request: null,
+    oil_check_missed_count: 0,
+  }];
+  oilState.vehicleStateRows = [{
+    vehicle_id: "camry2013",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    last_oil_check_mileage: 10000,
+    current_mileage: 10500,
+  }];
+  oilState.vehicleRows = [{
+    vehicle_id: "camry2013",
+    mileage: 10500,
+    last_oil_change_mileage: 10250,
+  }];
+
+  const res = makeJsonRes();
+  await oilCheckHandler({ method: "GET", headers: {} }, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.triggered, 1);
+  assert.equal(sentSms.length, 1);
+  assert.equal(oilState.bookingsUpdatePayloads.length, 1);
+  assert.equal(oilState.bookingsUpdatePayloads[0].oil_check_required, true);
+});
+
+test("oil-check-cron does not send an oil-check SMS before 500 miles since last check", async () => {
+  currentSupabaseClient = makeOilCheckClient();
+  oilState.bookingsRows = [{
+    id: "booking-3",
+    booking_ref: "bk_499",
+    vehicle_id: "future-car",
+    customer_phone: "+15555550125",
+    pickup_date: "2026-05-10T00:00:00.000Z",
+    return_date: "2026-05-20T00:00:00.000Z",
+    return_time: "10:00",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    oil_check_required: false,
+    oil_check_last_request: null,
+    oil_check_missed_count: 0,
+  }];
+  oilState.vehicleStateRows = [{
+    vehicle_id: "future-car",
+    last_oil_check_at: "2026-05-16T00:00:00.000Z",
+    last_oil_check_mileage: 20000,
+    current_mileage: 20499,
+  }];
+  oilState.vehicleRows = [{
+    vehicle_id: "future-car",
+    mileage: 20499,
+    last_oil_change_mileage: 20250,
+  }];
+
+  const res = makeJsonRes();
+  await oilCheckHandler({ method: "GET", headers: {} }, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.triggered, 0);
+  assert.equal(sentSms.length, 0);
+  assert.equal(oilState.bookingsUpdatePayloads.length, 0);
 });
