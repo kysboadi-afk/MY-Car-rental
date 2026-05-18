@@ -16,6 +16,9 @@ export async function recoverVerifiedApplicationFromStripe(
   if (!applicationId || !identitySessionId) {
     return { ok: true, synced: false, skipped: true, reason: "missing_identity_session" };
   }
+  if (identitySessionId.startsWith("vs_")) {
+    return { ok: true, synced: false, skipped: true, reason: "stripe_identity_session" };
+  }
 
   const decision = await fetchVeriffDecision(identitySessionId);
   if (!decision.ok) {

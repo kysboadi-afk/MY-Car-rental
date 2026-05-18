@@ -681,6 +681,51 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
+test("admin-review-queue skips Stripe identity session ids during Veriff recovery", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vs_1TWOMNPo7fICjrtZ2ybppeVC",
+    }],
+  };
+  reviewQueueResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      age: 28,
+      experience: "3 years",
+      application_status: "submitted",
+      identity_status: "requires_input",
+      review_version: 0,
+      reviewed_by: null,
+      reviewed_at: null,
+      submitted_at: "2026-05-14T02:00:00.000Z",
+      updated_at: "2026-05-14T02:00:00.000Z",
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+  };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.veriffFetches.length, 0);
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
 test("admin-review-detail recovers approved Veriff application before returning detail", async () => {
   const submittedDetail = {
     id: "11111111-1111-1111-1111-111111111111",
