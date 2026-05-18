@@ -2005,14 +2005,16 @@ export default async function handler(req, res) {
       // created before extend-rental.js was updated to emit booking_id.
       const bookingRef = meta_booking_id || original_booking_id;
 
-      // HARD RULE: booking_id must start with 'bk-'.
-      // Reject any extension PI whose booking reference is a Stripe PI ID or
-      // any other non-canonical format — these cannot be reliably matched to a
-      // bookings row and must never produce a revenue record.
-      if (!bookingRef || !bookingRef.startsWith("bk-")) {
+      // booking_id must be present and must NOT be a Stripe PI ID.
+      // Accept both canonical bk-... refs (new bookings) and legacy hex refs
+      // (old bookings created before the bk- prefix was introduced) — both are
+      // valid booking_ref values stored in Supabase and can be resolved by
+      // resolveBookingId().  Only Stripe PI IDs (pi_...) are invalid here
+      // because a PI ID can never be a booking_ref.
+      if (!bookingRef || bookingRef.startsWith("pi_")) {
         console.error(
           `stripe-webhook: rental_extension rejected — booking_id "${bookingRef || "<missing>"}" ` +
-          `does not start with 'bk-' for PI ${paymentIntent.id}`
+          `is not a valid booking reference for PI ${paymentIntent.id}`
         );
         return res.status(200).json({ received: true });
       }
