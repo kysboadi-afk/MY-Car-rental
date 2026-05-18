@@ -666,6 +666,24 @@ test("veriff-webhook logs events in veriff_webhook_events table by default", asy
   assert.equal(calls.eventInserts[0]?.table, "veriff_webhook_events");
 });
 
+test("veriff-webhook event id includes status metadata when payload id equals session id", async () => {
+  const payload = {
+    id: "319b4473-9b2f-4c08-9e89-9f95a97c7973",
+    action: "submitted",
+    attemptId: "3d934df3-5e01-48f7-b903-ee4b760be098",
+    verification: {
+      id: "319b4473-9b2f-4c08-9e89-9f95a97c7973",
+      status: "submitted",
+    },
+  };
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.eventInserts[0]?.table, "veriff_webhook_events");
+  assert.equal(calls.eventInserts[0]?.payload.event_id, "319b4473-9b2f-4c08-9e89-9f95a97c7973:submitted:3d934df3-5e01-48f7-b903-ee4b760be098:unknown-time");
+});
+
 test("veriff-webhook falls back to legacy event log table when veriff_webhook_events is missing", async () => {
   missingVeriffEventTable = true;
   const payload = {
