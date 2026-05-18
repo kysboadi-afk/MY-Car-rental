@@ -82,12 +82,310 @@ function cleanUuid(value) {
   return trimmed;
 }
 const IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "verified", "failed", "canceled"];
+const ARCHIVED_APPLICATION_STATUSES = new Set(["withdrawn", "expired"]);
+const ACTIVE_APPLICATION_STATUSES = new Set(["submitted", "under_review", "needs_info"]);
+const CHECKR_ISSUE_STATUSES = new Set(["consider", "suspended", "disputed", "error"]);
+const CHECKR_PENDING_STATUSES = new Set(["pending"]);
+const APPLICATION_QUEUE_SELECT = "id, name, phone, email, age, experience, application_status, identity_status, " +
+  "identity_session_id, review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
+  "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, submitted_at, created_at, updated_at";
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function cleanIsoDateTime(value) {
   if (value == null || value === "") return null;
   const d = new Date(String(value));
   if (!Number.isFinite(d.getTime())) return null;
   return d.toISOString();
+}
+
+function normalizeApplicationStatusValue(value) {
+  return cleanText(value, 40)?.toLowerCase() || "";
+}
+
+function normalizeApplicationLifecycleFilter(value) {
+  const normalized = normalizeApplicationStatusValue(value);
+  if (!normalized) return "";
+  if (normalized === "declined") return "rejected";
+  if ([
+    "submitted",
+    "under_review",
+    "needs_info",
+    "identity_verified",
+    "checkr_pending",
+    "checkr_issue",
+    "approved",
+    "rejected",
+    "archived",
+  ].includes(normalized)) {
+    return normalized;
+  }
+  return "";
+}
+
+function normalizeApplicationAttentionFilter(value) {
+  return normalizeApplicationStatusValue(value) === "new" ? "new" : "";
+}
+
+function getApplicationSubmittedIso(record = {}) {
+  return record.submitted_at || record.created_at || null;
+}
+
+function getIsoTimeValue(value) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function getApplicationAttentionFlags(record = {}, now = Date.now()) {
+  const submittedTime = getIsoTimeValue(getApplicationSubmittedIso(record));
+  const reviewedTime = getIsoTimeValue(record.reviewed_at);
+  const isRecentHour = submittedTime > 0 && (now - submittedTime) <= ONE_HOUR_MS;
+  const isRecentDay = submittedTime > 0 && (now - submittedTime) <= ONE_DAY_MS;
+  const isUnreviewed = !reviewedTime;
+  const applicationStatus = normalizeApplicationStatusValue(record.application_status);
+  const isNewAttention = applicationStatus === "submitted" && (isRecentDay || isUnreviewed);
+  return {
+    isRecentHour,
+    isRecentDay,
+    isUnreviewed,
+    isNewAttention,
+  };
+}
+
+function isApplicationArchived(record = {}) {
+  return ARCHIVED_APPLICATION_STATUSES.has(normalizeApplicationStatusValue(record.application_status));
+}
+
+function isApplicationTerminal(record = {}) {
+  const status = normalizeApplicationStatusValue(record.application_status);
+  return status === "approved" || status === "rejected" || isApplicationArchived(record);
+}
+
+export function matchesApplicationLifecycleFilter(record = {}, lifecycleFilter = "") {
+  const filter = normalizeApplicationLifecycleFilter(lifecycleFilter);
+  if (!filter) return true;
+
+  const applicationStatus = normalizeApplicationStatusValue(record.application_status);
+  const identityStatus = normalizeApplicationStatusValue(record.identity_status);
+  const checkrStatus = normalizeApplicationStatusValue(record.checkr_report_status);
+
+  switch (filter) {
+    case "submitted":
+    case "under_review":
+    case "needs_info":
+    case "approved":
+    case "rejected":
+      return applicationStatus === filter;
+    case "archived":
+      return isApplicationArchived(record);
+    case "identity_verified":
+      return !isApplicationTerminal(record) && identityStatus === "verified";
+    case "checkr_pending":
+      return !isApplicationTerminal(record) && CHECKR_PENDING_STATUSES.has(checkrStatus);
+    case "checkr_issue":
+      return !isApplicationTerminal(record) && CHECKR_ISSUE_STATUSES.has(checkrStatus);
+    default:
+      return true;
+  }
+}
+
+function matchesApplicationAttentionFilter(record = {}, attentionFilter = "", now = Date.now()) {
+  const filter = normalizeApplicationAttentionFilter(attentionFilter);
+  if (!filter) return true;
+  return getApplicationAttentionFlags(record, now).isNewAttention;
+}
+
+function matchesApplicationSearch(record = {}, rawSearch = "") {
+  const normalizedSearch = cleanText(rawSearch, 200);
+  if (!normalizedSearch) return true;
+  const query = normalizedSearch.toLowerCase().replace(/\s+/g, "");
+  const normalizeValue = (value) => String(value || "").toLowerCase().replace(/\s+/g, "");
+  return normalizeValue(record.name).includes(query) ||
+    normalizeValue(record.phone).includes(query) ||
+    normalizeValue(record.email).includes(query) ||
+    normalizeValue(record.id).startsWith(query);
+}
+
+export function getApplicationQueuePriority(record = {}) {
+  const applicationStatus = normalizeApplicationStatusValue(record.application_status);
+  if (applicationStatus === "under_review") return 0;
+  if (applicationStatus === "submitted") return 1;
+  if (applicationStatus === "needs_info") return 2;
+  if (matchesApplicationLifecycleFilter(record, "checkr_issue")) return 3;
+  if (matchesApplicationLifecycleFilter(record, "identity_verified")) return 4;
+  if (matchesApplicationLifecycleFilter(record, "checkr_pending")) return 5;
+  if (applicationStatus === "approved") return 6;
+  if (applicationStatus === "rejected") return 7;
+  if (isApplicationArchived(record)) return 8;
+  return 9;
+}
+
+export function getDefaultApplicationQueueSort(lifecycleFilter = "", attentionFilter = "") {
+  const normalizedFilter = normalizeApplicationLifecycleFilter(lifecycleFilter);
+  const normalizedAttention = normalizeApplicationAttentionFilter(attentionFilter);
+  if (normalizedAttention === "new") {
+    return { sortField: "submitted_at", sortDir: "desc" };
+  }
+  if (normalizedFilter === "approved" || normalizedFilter === "rejected" || normalizedFilter === "archived") {
+    return { sortField: "reviewed_at", sortDir: "desc" };
+  }
+  if (normalizedFilter === "submitted") {
+    return { sortField: "submitted_at", sortDir: "desc" };
+  }
+  return { sortField: "priority", sortDir: "asc" };
+}
+
+function normalizeApplicationQueueSort({ lifecycleFilter = "", attentionFilter = "", sortField = "", sortDir = "" } = {}) {
+  const defaultSort = getDefaultApplicationQueueSort(lifecycleFilter, attentionFilter);
+  const normalizedField = normalizeApplicationStatusValue(sortField);
+  const normalizedDir = normalizeApplicationStatusValue(sortDir);
+  const allowedFields = new Set(["priority", "submitted_at", "reviewed_at", "updated_at"]);
+  return {
+    sortField: allowedFields.has(normalizedField) ? normalizedField : defaultSort.sortField,
+    sortDir: normalizedDir === "desc" || normalizedDir === "asc" ? normalizedDir : defaultSort.sortDir,
+  };
+}
+
+export function compareApplicationQueueRecords(a = {}, b = {}, { sortField = "priority", sortDir = "asc" } = {}) {
+  if (sortField === "priority") {
+    const priorityDiff = getApplicationQueuePriority(a) - getApplicationQueuePriority(b);
+    if (priorityDiff !== 0) return priorityDiff;
+    const submittedDiff = getIsoTimeValue(getApplicationSubmittedIso(b)) - getIsoTimeValue(getApplicationSubmittedIso(a));
+    if (submittedDiff !== 0) return submittedDiff;
+    const updatedDiff = getIsoTimeValue(b.updated_at) - getIsoTimeValue(a.updated_at);
+    if (updatedDiff !== 0) return updatedDiff;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+
+  const leftTime = getIsoTimeValue(
+    sortField === "reviewed_at"
+      ? (a.reviewed_at || a.updated_at || getApplicationSubmittedIso(a))
+      : sortField === "updated_at"
+        ? (a.updated_at || getApplicationSubmittedIso(a))
+        : getApplicationSubmittedIso(a),
+  );
+  const rightTime = getIsoTimeValue(
+    sortField === "reviewed_at"
+      ? (b.reviewed_at || b.updated_at || getApplicationSubmittedIso(b))
+      : sortField === "updated_at"
+        ? (b.updated_at || getApplicationSubmittedIso(b))
+        : getApplicationSubmittedIso(b),
+  );
+
+  const direction = sortDir === "asc" ? 1 : -1;
+  if (leftTime !== rightTime) {
+    return (leftTime - rightTime) * direction;
+  }
+
+  const priorityDiff = getApplicationQueuePriority(a) - getApplicationQueuePriority(b);
+  if (priorityDiff !== 0) return priorityDiff;
+  return String(a.id || "").localeCompare(String(b.id || ""));
+}
+
+export function buildApplicationLifecycleSummary(records = [], now = Date.now()) {
+  const summary = {
+    total: records.length,
+    reviewQueueTotal: 0,
+    submitted: 0,
+    underReview: 0,
+    needsInfo: 0,
+    identityVerified: 0,
+    checkrPending: 0,
+    checkrIssue: 0,
+    approved: 0,
+    rejected: 0,
+    archived: 0,
+    newApplications: 0,
+    analytics: {
+      approvalRate: null,
+      rejectionRate: null,
+      avgReviewTimeHours: null,
+      checkrFailureRate: null,
+      veriffCompletionRate: null,
+      funnel: {
+        submitted: 0,
+        identityVerified: 0,
+        checkrPending: 0,
+        approved: 0,
+        rejected: 0,
+        archived: 0,
+      },
+    },
+  };
+
+  const reviewDurations = [];
+  let identityResolved = 0;
+  let identityStarted = 0;
+  let checkrObserved = 0;
+
+  records.forEach((record) => {
+    if (matchesApplicationLifecycleFilter(record, "submitted")) summary.submitted += 1;
+    if (matchesApplicationLifecycleFilter(record, "under_review")) summary.underReview += 1;
+    if (matchesApplicationLifecycleFilter(record, "needs_info")) summary.needsInfo += 1;
+    if (matchesApplicationLifecycleFilter(record, "identity_verified")) summary.identityVerified += 1;
+    if (matchesApplicationLifecycleFilter(record, "checkr_pending")) summary.checkrPending += 1;
+    if (matchesApplicationLifecycleFilter(record, "checkr_issue")) summary.checkrIssue += 1;
+    if (matchesApplicationLifecycleFilter(record, "approved")) summary.approved += 1;
+    if (matchesApplicationLifecycleFilter(record, "rejected")) summary.rejected += 1;
+    if (matchesApplicationLifecycleFilter(record, "archived")) summary.archived += 1;
+    if (matchesApplicationAttentionFilter(record, "new", now)) summary.newApplications += 1;
+
+    const applicationStatus = normalizeApplicationStatusValue(record.application_status);
+    if (ACTIVE_APPLICATION_STATUSES.has(applicationStatus)) summary.reviewQueueTotal += 1;
+
+    const identityStatus = normalizeApplicationStatusValue(record.identity_status);
+    if (identityStatus && identityStatus !== "not_started") identityStarted += 1;
+    if (["verified", "failed", "canceled"].includes(identityStatus)) identityResolved += 1;
+
+    const checkrStatus = normalizeApplicationStatusValue(record.checkr_report_status);
+    if (checkrStatus) checkrObserved += 1;
+
+    const submittedTime = getIsoTimeValue(getApplicationSubmittedIso(record));
+    const reviewedTime = getIsoTimeValue(record.reviewed_at);
+    if (submittedTime > 0 && reviewedTime > submittedTime && (applicationStatus === "approved" || applicationStatus === "rejected")) {
+      reviewDurations.push(reviewedTime - submittedTime);
+    }
+  });
+
+  const decisioned = summary.approved + summary.rejected;
+  summary.analytics.approvalRate = decisioned > 0 ? summary.approved / decisioned : null;
+  summary.analytics.rejectionRate = decisioned > 0 ? summary.rejected / decisioned : null;
+  summary.analytics.avgReviewTimeHours = reviewDurations.length
+    ? reviewDurations.reduce((sum, value) => sum + value, 0) / reviewDurations.length / (60 * 60 * 1000)
+    : null;
+  summary.analytics.checkrFailureRate = checkrObserved > 0 ? summary.checkrIssue / checkrObserved : null;
+  summary.analytics.veriffCompletionRate = identityStarted > 0 ? identityResolved / identityStarted : null;
+  summary.analytics.funnel = {
+    submitted: summary.submitted,
+    identityVerified: summary.identityVerified,
+    checkrPending: summary.checkrPending,
+    approved: summary.approved,
+    rejected: summary.rejected,
+    archived: summary.archived,
+  };
+
+  return summary;
+}
+
+export async function listApplicationLifecycleSnapshot(sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
+
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select(APPLICATION_QUEUE_SELECT);
+
+  if (error) {
+    return { ok: false, status: 503, error: "Could not load applications.", details: error.message };
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  return {
+    ok: true,
+    data: rows,
+    summary: buildApplicationLifecycleSummary(rows),
+  };
 }
 
 export function mapApplicationRecord(payload = {}) {
@@ -811,45 +1109,55 @@ export async function performPreAdverseAction(
   return { ok: true, data: updatedApp };
 }
 
-/**
- * Fetch a page of applications awaiting manual review.
- * Includes under_review / needs_info plus submitted rows that already have
- * an identity session. This keeps in-flight identity applications visible
- * even when Veriff decision recovery is temporarily unavailable.
- *
- * @param {{page?:number, pageSize?:number}} opts
- * @param {object} [sbClient]
- */
-export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = {}, sbClient = null) {
-  const sb = sbClient || getSupabaseAdmin();
-  if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
-
+export async function listReviewQueueApplications({
+  page = 1,
+  pageSize = 50,
+  lifecycleFilter = "",
+  attentionFilter = "",
+  search = "",
+  sortField = "",
+  sortDir = "",
+} = {}, sbClient = null) {
   const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 50));
   const safePage = Math.max(1, Number(page) || 1);
   const from = (safePage - 1) * safePageSize;
-  const to = from + safePageSize - 1;
-
-  const { data, error, count } = await sb
-    .from("renter_applications")
-    .select(
-      "id, name, phone, email, age, experience, application_status, identity_status, " +
-        "review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
-        "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, " +
-        "submitted_at, created_at, updated_at",
-      { count: "exact" },
-    )
-    .or(
-      "application_status.in.(under_review,needs_info)," +
-        "and(application_status.eq.submitted,identity_session_id.not.is.null)",
-    )
-    .order("submitted_at", { ascending: true })
-    .range(from, to);
-
-  if (error) {
-    return { ok: false, status: 503, error: "Could not load review queue.", details: error.message };
+  const snapshot = await listApplicationLifecycleSnapshot(sbClient);
+  if (!snapshot.ok) {
+    return { ok: false, status: snapshot.status || 503, error: snapshot.error, details: snapshot.details };
   }
 
-  return { ok: true, data: data || [], total: count ?? 0, page: safePage, pageSize: safePageSize };
+  const normalizedLifecycleFilter = normalizeApplicationLifecycleFilter(lifecycleFilter);
+  const normalizedAttentionFilter = normalizeApplicationAttentionFilter(attentionFilter);
+  const normalizedSearch = cleanText(search, 200) || "";
+  const normalizedSort = normalizeApplicationQueueSort({
+    lifecycleFilter: normalizedLifecycleFilter,
+    attentionFilter: normalizedAttentionFilter,
+    sortField,
+    sortDir,
+  });
+
+  const filtered = snapshot.data
+    .filter((record) => matchesApplicationLifecycleFilter(record, normalizedLifecycleFilter))
+    .filter((record) => matchesApplicationAttentionFilter(record, normalizedAttentionFilter))
+    .filter((record) => matchesApplicationSearch(record, normalizedSearch))
+    .sort((left, right) => compareApplicationQueueRecords(left, right, normalizedSort));
+
+  const pageData = filtered.slice(from, from + safePageSize);
+  return {
+    ok: true,
+    data: pageData,
+    total: filtered.length,
+    page: safePage,
+    pageSize: safePageSize,
+    summary: snapshot.summary,
+    filters: {
+      lifecycleFilter: normalizedLifecycleFilter,
+      attentionFilter: normalizedAttentionFilter,
+      search: normalizedSearch,
+      sortField: normalizedSort.sortField,
+      sortDir: normalizedSort.sortDir,
+    },
+  };
 }
 
 export async function listPendingIdentityRecoveryApplications({ limit = 25 } = {}, sbClient = null) {
