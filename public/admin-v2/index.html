@@ -12202,6 +12202,7 @@ let appQueueEventsBound = false;
 
 const APP_PRESENCE_KEY_PREFIX = 'sly_app_presence_';
 const APP_PRESENCE_TTL_MS = 45000;
+const TAB_ID = Date.now() + '-' + Math.random().toString(36).slice(2);
 
 const APP_QUEUE_STATE_STORAGE_KEY = 'sly_admin_app_queue_state_v1';
 const DEFAULT_APP_QUEUE_STATE = {
@@ -12718,8 +12719,8 @@ async function openAppDetail(applicationId) {
     const params = new URLSearchParams({ applicationId });
     const data = await apiGet(`/api/admin-review-detail?${params}`);
     if (!data.success) throw new Error(data.error || 'Failed to load application detail.');
-    appViewingData = data.application;
-    appViewingData.history = data.history || [];
+    appViewingData = data;
+    appViewingData.history = data.reviewHistory || [];
     renderAppDetail();
   } catch (err) {
     document.getElementById('app-detail-body').innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger);">${esc(err.message)}</div>`;
@@ -12732,6 +12733,236 @@ async function loadApplicationsPage() {
   await loadAppQueue();
 }
 
+async function refreshAppDetail() {
+  if (appViewingId) await openAppDetail(appViewingId);
+}
+
+// ── Application Detail Render ─────────────────────────────────────────────────
+
+function renderAppDetail() {
+  const d = appViewingData;
+  if (!d) return;
+
+  const titleEl = document.getElementById('app-detail-title');
+  if (titleEl) titleEl.innerHTML = esc(d.name || '—') + ' ' + appStatusBadge(d.applicationStatus);
+
+  const subtitleEl = document.getElementById('app-detail-subtitle');
+  if (subtitleEl) subtitleEl.textContent = d.applicationId || '';
+
+  const actionableStatuses = ['submitted', 'under_review', 'needs_info'];
+  const isActionable = actionableStatuses.includes(String(d.applicationStatus || '').toLowerCase());
+
+  const actionSection = document.getElementById('app-action-section');
+  const staleNotice = document.getElementById('app-detail-stale-notice');
+  if (actionSection) actionSection.style.display = isActionable ? '' : 'none';
+  if (staleNotice) {
+    if (!isActionable) {
+      staleNotice.style.display = '';
+      staleNotice.textContent = 'This application is ' + (d.applicationStatus || 'unknown') + ' and cannot be reviewed.';
+    } else {
+      staleNotice.style.display = 'none';
+    }
+  }
+
+  const presence = getAppPresence(d.applicationId);
+  const conflictBanner = document.getElementById('app-detail-conflict-banner');
+  if (conflictBanner && presence) {
+    conflictBanner.textContent = '⚠️ ' + (presence.reviewer || 'Another reviewer') + ' is also viewing this application.';
+    conflictBanner.classList.add('visible');
+  }
+
+  const row = (label, value) =>
+    `<tr><td style="font-size:12px;font-weight:600;color:var(--text-sub);width:160px;padding:6px 8px;vertical-align:top;">${esc(label)}</td><td style="font-size:13px;padding:6px 8px;">${value}</td></tr>`;
+  const sectionBlock = (title, content) =>
+    `<div style="margin-bottom:20px;"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-sub);letter-spacing:.06em;margin-bottom:8px;">${esc(title)}</div>${content}</div>`;
+  const tableWrap = (inner) =>
+    `<table style="width:100%;border-collapse:collapse;border:1px solid var(--border);border-radius:8px;overflow:hidden;">${inner}</table>`;
+
+  const applicantRows = [
+    row('Name',        esc(d.name || '—')),
+    row('Phone',       esc(d.phone || '—')),
+    row('Email',       esc(d.email || '—')),
+    row('Age',         esc(d.age != null ? String(d.age) : '—')),
+    row('Experience',  esc(d.experience || '—')),
+    row('Zip Code',    esc(d.zipcode || '—')),
+    row('Submitted',   d.submittedAt ? new Date(d.submittedAt).toLocaleString() : '—'),
+  ].join('');
+
+  const identityRows = [
+    row('Identity Status',  identityStatusBadge(d.identityStatus)),
+    row('Verified At',      d.identityVerifiedAt ? new Date(d.identityVerifiedAt).toLocaleString() : '—'),
+    row('Checkr Phase',     appStatusBadge(d.checkrPhase || 'not_started')),
+    row('Checkr Report',    esc(d.checkrReportStatus || '—')),
+    row('Report ID',        d.checkrReportId ? `<code style="font-size:11px;">${esc(d.checkrReportId)}</code>` : '—'),
+    row('Adjudication',     esc(d.checkrAdjudication || '—')),
+  ].join('');
+
+  const docRows = [
+    row('License Upload',      d.hasLicenseUpload ? '✅ ' + esc(d.licenseFileName || 'Uploaded') : '❌ Not uploaded'),
+    row('Insurance Proof',     d.hasInsuranceProof ? '✅ ' + esc(d.insuranceFileName || 'Uploaded') : '❌ Not uploaded'),
+    row('DL Number',           esc(d.driverLicenseNumber || '—')),
+    row('DL State',            esc(d.driverLicenseState || '—')),
+    row('Background Check',    d.agreeBackgroundCheck ? '✅ Agreed' : '❌ Not agreed'),
+  ].join('');
+
+  let incomeSection = '';
+  if (d.incomeDocuments && d.incomeDocuments.length > 0) {
+    const items = d.incomeDocuments.map((doc) => {
+      const link = doc.previewUrl
+        ? `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="color:var(--info);">${esc(doc.fileName || 'View Document')}</a>`
+        : esc(doc.fileName || 'Uploaded');
+      const badge = appStatusBadge(doc.reviewStatus || 'pending');
+      return `<li style="padding:4px 0;">${link} ${badge}</li>`;
+    }).join('');
+    incomeSection = sectionBlock('Income Documents', `<ul style="margin:0;padding:0 0 0 16px;">${items}</ul>`);
+  }
+
+  let adverseSection = '';
+  if (d.adverseActionStep) {
+    adverseSection = sectionBlock('Adverse Action', tableWrap([
+      row('Step',    esc(d.adverseActionStep)),
+      row('Sent At', d.adverseActionSentAt ? new Date(d.adverseActionSentAt).toLocaleString() : '—'),
+    ].join('')));
+  }
+
+  let notesSection = '';
+  if (d.needsInfoReason || d.lastReviewerNotes) {
+    notesSection = sectionBlock('Previous Reviewer Notes',
+      `<div style="font-size:13px;color:var(--text-sub);font-style:italic;">${esc(d.needsInfoReason || d.lastReviewerNotes || '')}</div>`);
+  }
+
+  let historySection = '';
+  if (d.history && d.history.length > 0) {
+    const items = d.history.map((h) =>
+      `<div class="app-history-item">
+        <div class="app-history-action">${esc(h.action || '—')}</div>
+        <div class="app-history-meta">By ${esc(h.performedBy || '—')} · ${h.createdAt ? new Date(h.createdAt).toLocaleString() : '—'}${h.notes ? `<br><em>${esc(h.notes)}</em>` : ''}</div>
+      </div>`
+    ).join('');
+    historySection = sectionBlock('Review History', `<div class="app-history-list">${items}</div>`);
+  }
+
+  document.getElementById('app-detail-body').innerHTML = [
+    sectionBlock('Applicant Information',       tableWrap(applicantRows)),
+    sectionBlock('Identity & Background Check', tableWrap(identityRows)),
+    sectionBlock('Documents',                   tableWrap(docRows)),
+    incomeSection,
+    adverseSection,
+    notesSection,
+    historySection,
+  ].join('');
+}
+
+// ── Application Action Buttons ────────────────────────────────────────────────
+
+function resetAppActionButtons() {
+  ['pre_adverse', 'approved', 'rejected', 'needs_info'].forEach((a) => {
+    const btn = document.getElementById('app-btn-' + a);
+    if (btn) btn.classList.remove('selected-approved', 'selected-rejected', 'selected-needs_info', 'selected-pre_adverse');
+  });
+}
+
+function selectAppAction(action) {
+  if (appActionInFlight) return;
+  appSelectedAction = action;
+  resetAppActionButtons();
+  const btn = document.getElementById('app-btn-' + action);
+  if (btn) {
+    const cls = action === 'approved' ? 'selected-approved'
+              : action === 'rejected' ? 'selected-rejected'
+              : action === 'needs_info' ? 'selected-needs_info'
+              : 'selected-pre_adverse';
+    btn.classList.add(cls);
+  }
+  const labels = { approved: '✅ Approve', rejected: '❌ Reject', needs_info: '⚠️ Request More Info', pre_adverse: '⚖️ Send Pre-Adverse Notice' };
+  const selectedEl = document.getElementById('app-action-selected');
+  if (selectedEl) selectedEl.textContent = (labels[action] || action) + ' — selected';
+  const submitBtn = document.getElementById('app-submit-btn');
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Decision'; }
+}
+
+async function submitAppAction() {
+  if (!appViewingData || !appSelectedAction || appActionInFlight) return;
+  const submitBtn  = document.getElementById('app-submit-btn');
+  const notes      = document.getElementById('app-action-notes')?.value?.trim() || '';
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value?.trim() || 'Admin';
+
+  appActionInFlight = true;
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
+
+  try {
+    const result = await apiPost('/api/review-application', {
+      secret:                adminSecret,
+      applicationId:         appViewingData.applicationId,
+      action:                appSelectedAction,
+      reviewedBy,
+      notes,
+      expectedStatus:        appViewingData.applicationStatus,
+      expectedReviewVersion: appViewingData.reviewVersion,
+      actionRequestId:       crypto.randomUUID(),
+    });
+    if (!result.success) throw new Error(result.error || 'Submission failed.');
+    showToast('Decision submitted: ' + appSelectedAction.replace(/_/g, ' '), 'success');
+    closeModal('app-detail-modal');
+    clearAppPresence(appViewingId);
+    await loadAppQueue();
+  } catch (err) {
+    const is409 = err?.status === 409 || String(err?.message || '').includes('409') || String(err?.message || '').toLowerCase().includes('stale');
+    if (is409) {
+      const banner = document.getElementById('app-detail-conflict-banner');
+      if (banner) {
+        banner.textContent = '⚠️ This application was updated by another reviewer. Please refresh to see the latest state.';
+        banner.classList.add('visible');
+      }
+    } else {
+      showToast('Submission failed: ' + (err?.message || 'Unknown error'), 'error');
+    }
+  } finally {
+    appActionInFlight = false;
+    if (submitBtn) { submitBtn.disabled = !appSelectedAction; submitBtn.textContent = 'Submit Decision'; }
+  }
+}
+
+async function runAppOperationalAction(action) {
+  if (!appViewingData || appActionInFlight) return;
+  const notes      = document.getElementById('app-action-notes')?.value?.trim() || '';
+  const reviewedBy = document.getElementById('app-reviewer-name')?.value?.trim() || 'Admin';
+
+  const confirmMessages = {
+    archive_application:  'Archive (delete) this application? This cannot be undone.',
+    restart_verification: 'Restart verification and issue a new session link?',
+    manual_recovery:      'Trigger manual Veriff recovery check for this application?',
+  };
+  if (confirmMessages[action] && !confirm(confirmMessages[action])) return;
+
+  appActionInFlight = true;
+  const allBtns = document.querySelectorAll('#app-action-section .app-action-btn');
+  allBtns.forEach((b) => { b.disabled = true; });
+
+  try {
+    const result = await apiPost('/api/admin-application-ops', {
+      secret:        adminSecret,
+      action,
+      applicationId: appViewingData.applicationId,
+      notes,
+      reviewedBy,
+    });
+    if (!result.success) throw new Error(result.error || 'Operation failed.');
+    showToast('Done: ' + action.replace(/_/g, ' '), 'success');
+    if (action === 'archive_application') {
+      closeModal('app-detail-modal');
+      clearAppPresence(appViewingId);
+      await loadAppQueue();
+    } else {
+      await refreshAppDetail();
+    }
+  } catch (err) {
+    showToast('Action failed: ' + (err?.message || 'Unknown error'), 'error');
+  } finally {
+    appActionInFlight = false;
+    allBtns.forEach((b) => { b.disabled = false; });
+  }
+}
 
 // ── Reconciliation Report ──────────────────────────────────────────────────────
 
