@@ -43,6 +43,35 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_CHUNK_SIZE = 50;
 const MAX_CHUNK_SIZE = 200;
 
+function normalizedLength(value) {
+  if (typeof value !== "string") return 0;
+  return value.trim().length;
+}
+
+function detectSecretSource(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
+  if (authHeader.startsWith("Bearer ")) return "authorization_bearer";
+  if (authHeader) return "authorization_non_bearer";
+  if (req.query?.secret) return "query.secret";
+  if (req.body?.secret) return "body.secret";
+  return "none";
+}
+
+function logAdminAuthDiagnostics(req, suppliedSecret, isAuthorized) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
+  console.info("backfill-income-documents auth diagnostics", {
+    admin_secret_configured: Boolean(normalizedLength(process.env.ADMIN_SECRET)),
+    admin_secret_length: normalizedLength(process.env.ADMIN_SECRET),
+    admin_password_configured: Boolean(normalizedLength(process.env.ADMIN_PASSWORD)),
+    admin_password_length: normalizedLength(process.env.ADMIN_PASSWORD),
+    auth_header_present: Boolean(authHeader),
+    auth_header_uses_bearer: authHeader.startsWith("Bearer "),
+    secret_source: detectSecretSource(req),
+    supplied_secret_length: normalizedLength(suppliedSecret),
+    comparison_passed: Boolean(isAuthorized),
+  });
+}
+
 // Extension → MIME fallback (kept local to avoid server-side DOM dep)
 const EXT_TO_MIME = {
   jpg:  "image/jpeg",
@@ -132,7 +161,10 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
-  if (!isAdminAuthorized(extractAdminSecret(req))) {
+  const suppliedSecret = extractAdminSecret(req);
+  const isAuthorized = isAdminAuthorized(suppliedSecret);
+  logAdminAuthDiagnostics(req, suppliedSecret, isAuthorized);
+  if (!isAuthorized) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
