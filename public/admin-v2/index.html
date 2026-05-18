@@ -12647,6 +12647,72 @@ function renderAppDetail(d) {
     ${appDetailRow('Last Checkr Error', esc(d.checkrLastError || '—'))}
   </div>`;
 
+  // G. Income Verification Documents
+  const incomeDocs = Array.isArray(d.incomeDocuments) ? d.incomeDocuments : [];
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">💵 Income Verification Documents (${incomeDocs.length})</div>`;
+
+  if (incomeDocs.length === 0) {
+    html += `<div style="color:var(--text-sub);font-size:13px;font-style:italic;padding:8px 0;">
+      No income verification documents uploaded.
+    </div>`;
+  } else {
+    html += `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">` +
+      incomeDocs.map((doc) => {
+        const reviewBadge = {
+          pending:  `<span style="background:#f3f4f6;color:#6b7280;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">Pending</span>`,
+          reviewed: `<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">✅ Reviewed</span>`,
+          flagged:  `<span style="background:#fef9c3;color:#b45309;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">⚠️ Flagged</span>`,
+        }[doc.reviewStatus] || `<span style="font-size:11px;">${esc(doc.reviewStatus || 'pending')}</span>`;
+
+        const isPdf = (doc.mimeType || '').includes('pdf');
+        const isImg = (doc.mimeType || '').startsWith('image/');
+        let previewHtml = '';
+        let downloadHtml = '';
+        if (doc.previewUrl) {
+          if (isPdf) {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📄 Open PDF</a>`;
+          } else if (isImg) {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" title="Click to open full size">
+              <img src="${esc(doc.previewUrl)}" alt="${esc(doc.fileName || 'Income document')}"
+                style="max-width:180px;max-height:120px;border-radius:6px;border:1px solid var(--border);display:block;margin-top:6px;cursor:pointer;">
+            </a>`;
+          } else {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📎 Open File</a>`;
+          }
+          downloadHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" download="${esc(doc.fileName || 'income-document')}" style="font-size:12px;color:var(--primary);">⬇️ Download</a>`;
+        }
+
+        const fileSizeStr = doc.fileSize ? ` · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB` : '';
+        const uploadedStr = doc.uploadedAt ? fmtDateTime(doc.uploadedAt) : '—';
+        const reviewedStr = doc.reviewedBy ? ` by ${esc(doc.reviewedBy)} at ${esc(fmtDateTime(doc.reviewedAt))}` : '';
+        const docTypeStr = doc.documentCategory || doc.docType || 'income_verification';
+        const storageMeta = [doc.storageBucket, doc.filePath].filter(Boolean).join(' / ') || '—';
+
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(doc.fileName || '')}">
+              ${esc(doc.fileName || 'Document')}
+            </span>
+            <span style="font-size:11px;color:var(--text-sub);">${esc(doc.mimeType || '')}${esc(fileSizeStr)}</span>
+            ${reviewBadge}
+          </div>
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">
+            Uploaded: ${esc(uploadedStr)}${reviewedStr ? ` · Reviewed${esc(reviewedStr)}` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">
+            Type: <code>${esc(docTypeStr)}</code>
+            &nbsp;•&nbsp; Storage: <code style="word-break:break-all;">${esc(storageMeta)}</code>
+          </div>
+          ${doc.notes ? `<div style="font-size:12px;color:var(--text);margin-bottom:6px;">${esc(doc.notes)}</div>` : ''}
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">${previewHtml}${downloadHtml}</div>
+        </div>`;
+      }).join('') +
+    `</div>`;
+  }
+
+  html += `</div>`;
+
   document.getElementById('app-detail-body').innerHTML = html;
 
   // Show/hide action section

@@ -109,9 +109,12 @@ export default async function handler(req, res) {
             return {
               id: doc.id,
               docType: doc.doc_type,
+              documentCategory: doc.doc_type,
               fileName: doc.file_name || null,
               mimeType: doc.mime_type || null,
               fileSize: doc.file_size ?? null,
+              filePath: doc.file_path || null,
+              storageBucket: INCOME_VERIFICATION_BUCKET,
               reviewStatus: doc.review_status || "pending",
               reviewedBy: doc.reviewed_by || null,
               reviewedAt: doc.reviewed_at || null,
