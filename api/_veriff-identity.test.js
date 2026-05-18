@@ -494,6 +494,30 @@ test("veriff-webhook maps verification.completed decision payload to verified", 
   assert.equal(calls.patched[0].applicationId, "app_1");
 });
 
+test("veriff-webhook maps terminal eventType when payload status is success and decision fields are absent", async () => {
+  veriffDecisionStatus = 404;
+  const payload = {
+    id: "evt_veriff_declined_event_type_1",
+    status: "success",
+    eventType: "verification.declined",
+    verification: {
+      id: "vrf_declined_1",
+      vendorData: "app_1",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.received, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "failed");
+  assert.equal(calls.checkrInitiations.length, 0);
+  const methods = calls.veriffFetches.map((entry) => entry.method);
+  assert.deepEqual(methods, []);
+});
+
 test("veriff-webhook maps approved by session lookup when vendorData is absent", async () => {
   fetchResult = { ok: false, status: 404, error: "Application not found." };
   fetchBySessionResult = {
