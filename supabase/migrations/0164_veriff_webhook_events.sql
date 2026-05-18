@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS veriff_webhook_events (
   id                  bigserial   PRIMARY KEY,
   event_id            text        NOT NULL UNIQUE,
   event_type          text        NOT NULL,
-  application_id      uuid        REFERENCES renter_applications(id) ON DELETE SET NULL,
+  application_id      uuid        REFERENCES public.renter_applications(id) ON DELETE SET NULL,
   identity_session_id text,
   payload             jsonb       NOT NULL DEFAULT '{}'::jsonb,
   processed_at        timestamptz NOT NULL DEFAULT now(),
@@ -37,4 +37,3 @@ BEGIN
     WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
-

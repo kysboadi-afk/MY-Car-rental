@@ -168,9 +168,11 @@ async function recordEvent(sb, eventId, payload, eventType, applicationId, sessi
       payload,
     };
     insertPayload[table.eventIdColumn] = eventId;
-    const { error } = await sb
-      .from(table.name)
-      .insert(insertPayload);
+    const tableClient = sb.from(table.name);
+    const write = typeof tableClient?.upsert === "function"
+      ? tableClient.upsert(insertPayload, { onConflict: table.eventIdColumn, ignoreDuplicates: true })
+      : tableClient.insert(insertPayload);
+    const { error } = await write;
     if (!error) return;
     if (isMissingEventLogTableError(error)) continue;
     throw error;
