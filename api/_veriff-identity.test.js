@@ -99,6 +99,7 @@ mock.module("./_renter-applications.js", {
     listPendingIdentityRecoveryApplications,
     fetchReviewApplicationById,
     getApplicationAttentionFlags,
+    performReviewAction: mock.fn(async () => ({ ok: true, data: {} })),
   },
 });
 
@@ -139,6 +140,11 @@ mock.module("./_supabase.js", {
                 },
               };
             },
+          };
+        }
+        if (table === "application_review_actions") {
+          return {
+            insert: async () => ({ error: null }),
           };
         }
         if (!["veriff_webhook_events", "stripe_identity_webhook_events"].includes(table)) {
@@ -229,6 +235,7 @@ const { default: identityWebhookHandler } = await import("./veriff-webhook.js");
 const { default: deprecatedStripeIdentityWebhookHandler } = await import("./stripe-identity-webhook.js");
 const { default: adminReviewQueueHandler } = await import("./admin-review-queue.js");
 const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
+const { default: adminApplicationOpsHandler } = await import("./admin-application-ops.js");
 const { clearRecoveryCooldownCache } = await import("./_veriff-identity-recovery.js");
 
 function makeRes() {
@@ -271,6 +278,14 @@ function makeAdminGetReq(query = {}) {
     method: "GET",
     headers: { origin: "https://www.slytrans.com" },
     query,
+  };
+}
+
+function makeAdminPostReq(body = {}) {
+  return {
+    method: "POST",
+    headers: { origin: "https://www.slytrans.com" },
+    body: { reviewedBy: "test-admin", secret: "test-admin-secret", ...body },
   };
 }
 
@@ -1091,4 +1106,146 @@ test("admin-review-detail skips Veriff recovery when session is in cooldown", as
 
   assert.equal(res2._status, 200);
   assert.equal(calls.veriffFetches.length, 0, "Veriff NOT called again — cooldown active");
+});
+
+test("backfill_veriff_approved dry run returns candidate count without patching", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [
+      {
+        id: "app_bf_1",
+        name: "Alice Renter",
+        phone: "3105550111",
+        email: "alice@example.com",
+        identity_status: "requires_input",
+        application_status: "submitted",
+        identity_session_id: "vrf_bf_session_1",
+      },
+      {
+        id: "app_bf_2",
+        name: "Bob Renter",
+        phone: "3105550222",
+        email: "bob@example.com",
+        identity_status: "processing",
+        application_status: "under_review",
+        identity_session_id: "vrf_bf_session_2",
+      },
+    ],
+  };
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({ action: "backfill_veriff_approved" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.dryRun, true);
+  assert.equal(res._body.count, 2);
+  assert.equal(res._body.candidates.length, 2);
+  assert.equal(calls.patched.length, 0, "no patch in dry run");
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff calls in dry run");
+});
+
+test("backfill_veriff_approved syncs approved applications and launches Checkr", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_bf_3",
+      name: "Carol Renter",
+      phone: "3105550333",
+      email: "carol@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_bf_approved_1",
+    }],
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_bf_approved_1", status: "approved" } };
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({ action: "backfill_veriff_approved", dryRun: false }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.dryRun, false);
+  assert.equal(res._body.synced, 1);
+  assert.equal(res._body.skipped, 0);
+  assert.equal(res._body.failed.length, 0);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.checkrInitiations.length, 1);
+});
+
+test("backfill_veriff_approved skips legacy session IDs", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_bf_4",
+      name: "Dave Renter",
+      phone: "3105550444",
+      email: "dave@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vs_legacy_stripe_session",
+    }],
+  };
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({ action: "backfill_veriff_approved", dryRun: false }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.synced, 0);
+  assert.equal(res._body.skipped, 1);
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff call for legacy session");
+  assert.equal(calls.patched.length, 0);
+});
+
+test("backfill_veriff_approved handles 404 session not found gracefully", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_bf_5",
+      name: "Eve Renter",
+      phone: "3105550555",
+      email: "eve@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_bf_stale_404",
+    }],
+  };
+  veriffDecisionStatus = 404;
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({ action: "backfill_veriff_approved", dryRun: false }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.synced, 0);
+  assert.equal(res._body.skipped, 1, "404 is classified as skipped (errorType set)");
+  assert.equal(res._body.failed.length, 0);
+  assert.equal(calls.patched.length, 0);
+});
+
+test("backfill_veriff_approved skips already-synced verified applications but attempts Checkr", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_bf_6",
+      name: "Frank Renter",
+      phone: "3105550666",
+      email: "frank@example.com",
+      identity_status: "verified",
+      application_status: "under_review",
+      identity_session_id: "vrf_bf_already_verified",
+    }],
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_bf_already_verified", status: "approved" } };
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({ action: "backfill_veriff_approved", dryRun: false }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.synced, 0);
+  assert.equal(res._body.skipped, 1, "already verified counts as skipped");
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.checkrInitiations.length, 1, "Checkr still attempted for already-verified");
 });
