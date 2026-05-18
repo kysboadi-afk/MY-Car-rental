@@ -237,6 +237,7 @@ const { default: adminReviewQueueHandler } = await import("./admin-review-queue.
 const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
 const { default: adminApplicationOpsHandler } = await import("./admin-application-ops.js");
 const { clearRecoveryCooldownCache } = await import("./_veriff-identity-recovery.js");
+const { mapVeriffDecisionToIdentityStatus } = await import("./_veriff.js");
 
 function makeRes() {
   return {
@@ -643,6 +644,21 @@ test("veriff-webhook maps resubmission_requested to requires_input", async () =>
   assert.equal(calls.sentMessages.length, 1);
 });
 
+test("mapVeriffDecisionToIdentityStatus handles production decision payload objects", () => {
+  assert.equal(
+    mapVeriffDecisionToIdentityStatus({
+      status: "success",
+      verification: {
+        status: "submitted",
+        decision: {
+          status: "declined",
+        },
+      },
+    }),
+    "failed"
+  );
+});
+
 test("veriff-webhook returns duplicate without patching when event is already processed", async () => {
   duplicateEvent = true;
   const payload = {
@@ -835,6 +851,63 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(res._body.success, true);
   assert.equal(calls.patched[0].patch.identityStatus, "processing");
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.checkrInitiations.length, 0);
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
+test("admin-review-queue finalizes declined Veriff decisions without launching Checkr", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_declined_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "processing",
+      application_status: "under_review",
+      identity_session_id: "vrf_recover_declined_1",
+    }],
+  };
+  reviewQueueResult = {
+    ok: true,
+    data: [{
+      id: "app_declined_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      age: 28,
+      experience: "3 years",
+      application_status: "under_review",
+      identity_status: "failed",
+      review_version: 0,
+      reviewed_by: "admin_review_queue_sync",
+      reviewed_at: "2026-05-14T03:00:00.000Z",
+      submitted_at: "2026-05-14T02:00:00.000Z",
+      updated_at: "2026-05-14T03:00:00.000Z",
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = {
+    status: "success",
+    verification: {
+      id: "vrf_recover_declined_1",
+      status: "submitted",
+      decision: {
+        status: "declined",
+      },
+    },
+  };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.patched[0].patch.identityStatus, "failed");
+  assert.equal(calls.patched[0].patch.identityLastError, "declined");
   assert.equal(calls.checkrInitiations.length, 0);
   assert.equal(calls.listedReviewQueue.length, 1);
 });

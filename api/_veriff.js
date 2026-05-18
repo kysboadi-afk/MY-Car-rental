@@ -72,15 +72,55 @@ function defaultWebhookUrl() {
 }
 
 export function mapVeriffDecisionToIdentityStatus(rawStatus) {
-  const status = toLower(rawStatus);
-  if (!status) return null;
-  if (status.includes("approved")) return "verified";
-  if (status.includes("declined") || status.includes("rejected")) return "failed";
-  if (status.includes("resubmission") || status.includes("request_input") || status.includes("requires_input")) {
-    return "requires_input";
+  const candidates = [];
+  if (rawStatus && typeof rawStatus === "object") {
+    candidates.push(
+      rawStatus?.verification?.decision?.status,
+      rawStatus?.verification?.decision?.label,
+      rawStatus?.verification?.decision?.code,
+      rawStatus?.verification?.decision?.decision,
+      rawStatus?.decision?.status,
+      rawStatus?.decision?.label,
+      rawStatus?.decision?.code,
+      rawStatus?.decision?.decision,
+      rawStatus?.verification?.status,
+      rawStatus?.verification?.state,
+      rawStatus?.verification?.decision,
+      rawStatus?.eventType,
+      rawStatus?.event_type,
+      rawStatus?.action,
+      rawStatus?.verification?.code,
+      rawStatus?.decision,
+      rawStatus?.status,
+    );
+  } else {
+    candidates.push(rawStatus);
   }
-  if (status.includes("pending") || status.includes("review") || status.includes("submitted")) return "processing";
-  if (status.includes("canceled") || status.includes("cancelled") || status.includes("expired")) return "canceled";
+
+  for (const candidate of candidates) {
+    const status = toLower(candidate);
+    if (!status) continue;
+    if (status.includes("approved")) return "verified";
+    if (status.includes("declined") || status.includes("rejected") || status.includes("denied")) return "failed";
+    if (
+      status.includes("resubmission")
+      || status.includes("request_input")
+      || status.includes("requires_input")
+      || status.includes("needs_input")
+    ) {
+      return "requires_input";
+    }
+    if (
+      status.includes("pending")
+      || status.includes("review")
+      || status.includes("submitted")
+      || status.includes("in_progress")
+      || status.includes("waiting")
+    ) {
+      return "processing";
+    }
+    if (status.includes("canceled") || status.includes("cancelled") || status.includes("expired")) return "canceled";
+  }
   return null;
 }
 
@@ -103,6 +143,21 @@ export function extractVeriffStatus(payload = {}) {
     payload?.verification?.code,
     payload?.decision,
     payload?.status,
+  );
+}
+
+export function extractVeriffDecisionStatus(payload = {}, fallbackStatus = "") {
+  return pickString(
+    payload?.verification?.decision?.status,
+    payload?.verification?.decision?.label,
+    payload?.verification?.decision?.code,
+    payload?.verification?.decision?.decision,
+    payload?.decision?.status,
+    payload?.decision?.label,
+    payload?.decision?.code,
+    payload?.decision?.decision,
+    payload?.decision,
+    fallbackStatus,
   );
 }
 
@@ -330,11 +385,22 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
   }
 
   const rawStatus = extractVeriffStatus(payload);
+  const decisionStatus = extractVeriffDecisionStatus(payload, rawStatus);
+  const mappedStatus = mapVeriffDecisionToIdentityStatus(payload)
+    || mapVeriffDecisionToIdentityStatus(decisionStatus || rawStatus);
+  console.info("veriff:fetch-decision parsed", {
+    sessionId,
+    rawStatus: rawStatus || null,
+    decisionStatus: decisionStatus || null,
+    mappedStatus: mappedStatus || null,
+    rawDecisionPayload: payload,
+  });
   return {
     ok: true,
     payload,
     rawStatus,
-    mappedStatus: mapVeriffDecisionToIdentityStatus(rawStatus),
+    decisionStatus,
+    mappedStatus,
     sessionId: extractVeriffSessionId(payload) || sessionId,
     verificationUrl: extractVeriffVerificationUrl(payload),
     applicationId: extractVeriffApplicationId(payload),

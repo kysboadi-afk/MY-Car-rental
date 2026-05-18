@@ -59,7 +59,9 @@ function setSessionCooldown(sessionId, cooldownMs) {
 
 async function tryLaunchCheckrAfterVerified(application = {}) {
   const applicationId = typeof application?.id === "string" ? application.id : "";
-  if (!applicationId) return;
+  if (!applicationId) {
+    return { executed: false, ok: false, skippedReason: "missing_application_id" };
+  }
   try {
     const result = await initiateCheckrScreening(applicationId);
     if (!result?.ok) {
@@ -68,7 +70,12 @@ async function tryLaunchCheckrAfterVerified(application = {}) {
         error: result?.error || null,
         status: Number(result?.status) || null,
       });
-      return;
+      return {
+        executed: true,
+        ok: false,
+        skippedReason: result?.error || "checkr_launch_failed",
+        result,
+      };
     }
     console.info("veriff-recovery: checkr launch attempted", {
       application_id: applicationId,
@@ -77,11 +84,22 @@ async function tryLaunchCheckrAfterVerified(application = {}) {
       report_id: result?.reportId || null,
       candidate_id: result?.candidateId || null,
     });
+    return {
+      executed: true,
+      ok: true,
+      skippedReason: null,
+      result,
+    };
   } catch (err) {
     console.error("veriff-recovery: checkr launch failed", {
       application_id: applicationId,
       error: err?.message || String(err),
     });
+    return {
+      executed: true,
+      ok: false,
+      skippedReason: err?.message || "checkr_launch_exception",
+    };
   }
 }
 
@@ -93,31 +111,68 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   const identitySessionId = typeof application?.identity_session_id === "string"
     ? application.identity_session_id
     : "";
+  const applicationStatus = String(application.application_status || "").toLowerCase();
+  const currentIdentityStatus = String(application.identity_status || "").toLowerCase();
+  const decisionDiagnostics = {
+    applicationId: applicationId || null,
+    identitySessionId: identitySessionId || null,
+    rawDecisionPayload: null,
+    rawStatus: null,
+    decisionStatus: null,
+    mappedStatus: null,
+    identityBefore: currentIdentityStatus || null,
+    identityAfter: currentIdentityStatus || null,
+    finalizationLogicExecuted: false,
+    dbPatchOk: null,
+    checkrLaunchExecuted: false,
+    checkrLaunchOk: null,
+    skipReason: null,
+  };
+
+  function logDecisionDiagnostics(extra = {}) {
+    console.info("veriff-recovery: decision diagnostics", {
+      ...decisionDiagnostics,
+      ...extra,
+    });
+  }
 
   if (!applicationId || !identitySessionId) {
+    decisionDiagnostics.skipReason = "missing_identity_session";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, skipped: true, reason: "missing_identity_session" };
   }
   if (identitySessionId.startsWith("vs_")) {
+    decisionDiagnostics.skipReason = "legacy_session_id";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, skipped: true, reason: "legacy_session_id" };
   }
 
   // Skip terminal application statuses — recovery cannot promote these.
-  const applicationStatus = String(application.application_status || "").toLowerCase();
   if (TERMINAL_APPLICATION_STATUSES.has(applicationStatus)) {
+    decisionDiagnostics.skipReason = "terminal_application_status";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, skipped: true, reason: "terminal_application_status" };
   }
 
   // Skip if auth is known to be broken (all Veriff calls will fail with 401/403).
   if (Date.now() < _authFailureCooldownUntil) {
+    decisionDiagnostics.skipReason = "auth_cooldown";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, skipped: true, reason: "auth_cooldown" };
   }
 
   // Skip sessions whose last lookup recently failed — avoids hammering Veriff.
   if (isSessionInCooldown(identitySessionId)) {
+    decisionDiagnostics.skipReason = "cooldown";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, skipped: true, reason: "cooldown" };
   }
 
   const decision = await fetchVeriffDecision(identitySessionId);
+  decisionDiagnostics.rawDecisionPayload = decision?.payload || null;
+  decisionDiagnostics.rawStatus = decision?.rawStatus || null;
+  decisionDiagnostics.decisionStatus = decision?.decisionStatus || null;
+  decisionDiagnostics.mappedStatus = decision?.mappedStatus || null;
   if (!decision.ok) {
     const status = Number(decision.status) || 0;
     const detailText = typeof decision.error === "string" && decision.error
@@ -161,15 +216,24 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   }
 
   const recoveredIdentityStatus = decision.mappedStatus;
-  if (!["verified", "processing"].includes(recoveredIdentityStatus)) {
+  if (!["verified", "processing", "failed", "requires_input", "canceled"].includes(recoveredIdentityStatus)) {
+    decisionDiagnostics.skipReason = "unmapped_decision_status";
+    logDecisionDiagnostics();
     return { ok: true, synced: false, veriffStatus: decision.rawStatus || "unknown" };
   }
+  decisionDiagnostics.finalizationLogicExecuted = ["verified", "failed", "requires_input", "canceled"].includes(
+    recoveredIdentityStatus
+  );
 
-  const currentIdentityStatus = String(application.identity_status || "").toLowerCase();
   if (currentIdentityStatus === recoveredIdentityStatus) {
     if (recoveredIdentityStatus === "verified") {
-      await tryLaunchCheckrAfterVerified(application);
+      const checkrLaunch = await tryLaunchCheckrAfterVerified(application);
+      decisionDiagnostics.checkrLaunchExecuted = !!checkrLaunch?.executed;
+      decisionDiagnostics.checkrLaunchOk = checkrLaunch?.ok ?? null;
     }
+    decisionDiagnostics.identityAfter = recoveredIdentityStatus;
+    decisionDiagnostics.skipReason = "already_synced";
+    logDecisionDiagnostics();
     return {
       ok: true,
       synced: false,
@@ -186,16 +250,25 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   };
   if (recoveredIdentityStatus === "verified") {
     patch.identityVerifiedAt = now;
+    patch.identityLastError = null;
+  } else if (recoveredIdentityStatus === "processing") {
+    patch.identityLastError = null;
+  } else {
+    patch.identityLastError = String(decision.decisionStatus || decision.rawStatus || recoveredIdentityStatus).slice(0, 2000);
   }
 
-  if (applicationStatus === "submitted") {
+  if (applicationStatus === "submitted" && ["verified", "processing"].includes(recoveredIdentityStatus)) {
     patch.applicationStatus = "under_review";
     patch.reviewedAt = now;
     patch.reviewedBy = reviewedBy;
   }
 
   const patchResult = await patchRenterApplicationIdentityById(applicationId, patch);
+  decisionDiagnostics.dbPatchOk = !!patchResult?.ok;
   if (!patchResult.ok) {
+    decisionDiagnostics.identityAfter = recoveredIdentityStatus;
+    decisionDiagnostics.skipReason = "identity_patch_failed";
+    logDecisionDiagnostics();
     return {
       ok: false,
       synced: false,
@@ -203,6 +276,7 @@ export async function recoverApplicationIdentityFromVeriffDecision(
       details: patchResult.details || "",
     };
   }
+  decisionDiagnostics.identityAfter = patchResult.data?.identity_status || recoveredIdentityStatus;
 
   if (shouldNotify) {
     try {
@@ -213,8 +287,11 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   }
 
   if (recoveredIdentityStatus === "verified") {
-    await tryLaunchCheckrAfterVerified(patchResult.data || application);
+    const checkrLaunch = await tryLaunchCheckrAfterVerified(patchResult.data || application);
+    decisionDiagnostics.checkrLaunchExecuted = !!checkrLaunch?.executed;
+    decisionDiagnostics.checkrLaunchOk = checkrLaunch?.ok ?? null;
   }
+  logDecisionDiagnostics();
 
   return {
     ok: true,

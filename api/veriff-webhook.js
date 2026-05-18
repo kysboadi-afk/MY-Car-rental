@@ -283,6 +283,9 @@ export default async function handler(req, res) {
     clientId: clientId || null,
     decisionLookupExecuted: false,
     decisionLookupOk: null,
+    decisionLookupPayload: null,
+    decisionLookupRawStatus: null,
+    decisionLookupDecisionStatus: null,
     lookupByApplicationIdExecuted: false,
     lookupBySessionIdExecuted: false,
     lookupMatchedBy: null,
@@ -359,6 +362,9 @@ export default async function handler(req, res) {
       try {
         const decision = await fetchVeriffDecision(identitySessionId);
         eventDiagnostics.decisionLookupOk = bool(decision?.ok);
+        eventDiagnostics.decisionLookupPayload = decision?.payload || null;
+        eventDiagnostics.decisionLookupRawStatus = decision?.rawStatus || null;
+        eventDiagnostics.decisionLookupDecisionStatus = decision?.decisionStatus || null;
         if (decision.ok && decision.mappedStatus) {
           mappedStatus = decision.mappedStatus;
           matchedApplicationId = matchedApplicationId || decision.applicationId || "";
