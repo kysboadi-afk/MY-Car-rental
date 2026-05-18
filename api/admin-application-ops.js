@@ -420,6 +420,61 @@ async function handleArchiveTestApplications(reviewer, notes, dryRun, sb) {
   };
 }
 
+async function handleClearDeclinedApplications(reviewer, notes, dryRun, sb) {
+  const { data, error } = await sb
+    .from("renter_applications")
+    .select("id, application_status")
+    .eq("application_status", "rejected")
+    .order("reviewed_at", { ascending: true, nullsFirst: false })
+    .limit(1000);
+  if (error) {
+    return { ok: false, status: 503, error: "Could not load declined applications.", details: error.message };
+  }
+
+  const declined = (data || []).filter((row) => String(row.application_status || "").toLowerCase() === "rejected");
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      count: declined.length,
+      candidates: declined.map((row) => ({ id: row.id })),
+    };
+  }
+
+  let archived = 0;
+  const failed = [];
+  const now = new Date().toISOString();
+  for (const row of declined) {
+    const patchResult = await patchRenterApplicationIdentityById(row.id, {
+      applicationStatus: "withdrawn",
+      reviewedBy: reviewer,
+      reviewedAt: now,
+    });
+    if (!patchResult.ok) {
+      failed.push({ id: row.id, error: patchResult.error || "Could not clear declined application." });
+      continue;
+    }
+    archived += 1;
+    await appendAuditAction(sb, {
+      applicationId: row.id,
+      action: "clear_declined",
+      performedBy: reviewer,
+      notes: notes || "Bulk-cleared declined applications.",
+      previousStatus: "rejected",
+      newStatus: "withdrawn",
+    });
+  }
+
+  return {
+    ok: true,
+    dryRun: false,
+    archived,
+    failed,
+    scanned: (data || []).length,
+    count: declined.length,
+  };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -446,6 +501,8 @@ export default async function handler(req, res) {
     let result = null;
     if (action === "archive_test_applications") {
       result = await handleArchiveTestApplications(reviewedBy, notes, dryRun, sb);
+    } else if (action === "clear_declined_applications") {
+      result = await handleClearDeclinedApplications(reviewedBy, notes, dryRun, sb);
     } else {
       if (!applicationId) return res.status(400).json({ error: "applicationId is required." });
       if (action === "resend_verification") {
