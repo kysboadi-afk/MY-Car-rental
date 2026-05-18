@@ -29,6 +29,12 @@ let patchCheckrResult;
 
 mock.module("./_renter-applications.js", {
   namedExports: {
+    deriveCheckrPhase: mock.fn((record = {}) => {
+      if (record.checkr_report_status) return record.checkr_report_status;
+      if (record.checkr_report_id) return "invitation_sent";
+      if (record.checkr_candidate_id) return "candidate_created";
+      return "not_started";
+    }),
     fetchRenterApplicationById: mock.fn(async (...args) => {
       calls.fetchById.push(args);
       return applicationByIdResult;
@@ -149,8 +155,8 @@ test("mapCheckrReportStatus maps adjudication and lifecycle states", () => {
   assert.equal(mapCheckrReportStatus("complete", "clear"), "clear");
   assert.equal(mapCheckrReportStatus("complete", "consider"), "consider");
   assert.equal(mapCheckrReportStatus("suspended", null), "suspended");
-  assert.equal(mapCheckrReportStatus("disputed", null), "disputed");
-  assert.equal(mapCheckrReportStatus("complete", null), "complete_no_adj");
+  assert.equal(mapCheckrReportStatus("disputed", null), "suspended");
+  assert.equal(mapCheckrReportStatus("complete", null), "completed");
 });
 
 test("verifyCheckrWebhookSignature validates HMAC", () => {
@@ -160,13 +166,15 @@ test("verifyCheckrWebhookSignature validates HMAC", () => {
   assert.equal(verifyCheckrWebhookSignature(body, { "x-checkr-signature": "bad" }, process.env.CHECKR_WEBHOOK_SECRET), false);
 });
 
-test("initiateCheckrScreening creates candidate + invitation and persists pending state", async () => {
+test("initiateCheckrScreening creates candidate + invitation and persists invitation_sent state", async () => {
   const result = await initiateCheckrScreening("app_1");
   assert.equal(result.ok, true);
   assert.equal(result.candidateId, "candidate_123");
   assert.equal(result.reportId, "report_123");
-  assert.equal(calls.patchCheckr.length, 1);
-  assert.equal(calls.patchCheckr[0][1].checkrReportStatus, "pending");
+  assert.equal(calls.patchCheckr.length, 3);
+  assert.equal(calls.patchCheckr[0][1].checkrReportStatus, "launch_queued");
+  assert.equal(calls.patchCheckr[1][1].checkrReportStatus, "candidate_created");
+  assert.equal(calls.patchCheckr[2][1].checkrReportStatus, "invitation_sent");
   assert.equal(calls.invitationNotifications.length, 1);
 });
 
