@@ -729,6 +729,8 @@ test("admin-review-queue recovers approved Veriff applications before loading qu
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
   assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.checkrInitiations.length, 1);
+  assert.deepEqual(calls.checkrInitiations[0], ["app_1"]);
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
@@ -776,6 +778,7 @@ test("admin-review-queue recovers processing Veriff applications before loading 
   assert.equal(res._body.success, true);
   assert.equal(calls.patched[0].patch.identityStatus, "processing");
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.checkrInitiations.length, 0);
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
@@ -865,6 +868,8 @@ test("admin-review-detail recovers approved Veriff application before returning 
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
   assert.equal(res._body.identityStatus, "verified");
+  assert.equal(calls.checkrInitiations.length, 1);
+  assert.deepEqual(calls.checkrInitiations[0], ["11111111-1111-1111-1111-111111111111"]);
   assert.equal(detailFetchCount, 2);
 });
 
