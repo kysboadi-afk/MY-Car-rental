@@ -18,6 +18,7 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isSchemaError } from "./_error-helpers.js";
 
 // Disable Vercel body parser so we can read the raw JSON body.
 export const config = {
@@ -187,27 +188,46 @@ export default async function handler(req, res) {
 
   // ── Update vehicle_state ──────────────────────────────────────────────────
   // Read current_mileage from vehicle_state (may be null for new vehicles).
-  const { data: vState } = await sb
+  let skipVehicleStateWrite = false;
+  let currentMileage = null;
+  const { data: vState, error: vStateReadErr } = await sb
     .from("vehicle_state")
     .select("current_mileage")
     .eq("vehicle_id", vehicleId)
     .maybeSingle();
 
-  const { error: vsErr } = await sb
-    .from("vehicle_state")
-    .upsert(
-      {
-        vehicle_id:             vehicleId,
-        last_oil_check_at:      nowTs,
-        last_oil_status:        keyword,
-        last_oil_check_mileage: vState?.current_mileage ?? null,
-        updated_at:             nowTs,
-      },
-      { onConflict: "vehicle_id" }
-    );
+  if (vStateReadErr) {
+    if (isSchemaError(vStateReadErr)) {
+      skipVehicleStateWrite = true;
+      console.warn("sms-webhook: vehicle_state unavailable, skipping per-vehicle oil state update");
+    } else {
+      console.error("sms-webhook: vehicle_state read error:", vStateReadErr.message);
+    }
+  } else {
+    currentMileage = vState?.current_mileage ?? null;
+  }
 
-  if (vsErr) {
-    console.error("sms-webhook: vehicle_state upsert error:", vsErr.message);
+  if (!skipVehicleStateWrite) {
+    const { error: vsErr } = await sb
+      .from("vehicle_state")
+      .upsert(
+        {
+          vehicle_id:             vehicleId,
+          last_oil_check_at:      nowTs,
+          last_oil_status:        keyword,
+          last_oil_check_mileage: currentMileage,
+          updated_at:             nowTs,
+        },
+        { onConflict: "vehicle_id" }
+      );
+
+    if (vsErr) {
+      if (isSchemaError(vsErr)) {
+        console.warn("sms-webhook: vehicle_state unavailable, skipping per-vehicle oil state update");
+      } else {
+        console.error("sms-webhook: vehicle_state upsert error:", vsErr.message);
+      }
+    }
   }
 
   // ── Send reply SMS ────────────────────────────────────────────────────────

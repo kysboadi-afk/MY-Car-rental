@@ -25,6 +25,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { laHour, isoDateInLA } from "./_time.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
+import { isSchemaError } from "./_error-helpers.js";
 import {
   computeSmsScoreWithBreakdown,
   computeEffectiveThreshold,
@@ -238,7 +239,7 @@ export default async function handler(req, res) {
     .select(
       "id, booking_ref, vehicle_id, customer_phone, " +
       "pickup_date, return_date, return_time, " +
-      "oil_check_required, oil_check_last_request, oil_check_missed_count"
+      "last_oil_check_at, oil_check_required, oil_check_last_request, oil_check_missed_count"
     )
     .in("status", ["active", "active_rental"])
     .not("customer_phone", "is", null);
@@ -269,13 +270,17 @@ export default async function handler(req, res) {
     .select("vehicle_id, last_oil_check_at, last_oil_check_mileage, current_mileage")
     .in("vehicle_id", vehicleIds);
 
+  const missingVehicleStateSchema = !!vsErr && isSchemaError(vsErr);
   if (vsErr) {
-    console.error("oil-check-cron: vehicle_state query failed:", vsErr.message);
-    return res.status(200).json({
-      skipped:     true,
-      reason:      vsErr.message,
-      duration_ms: Date.now() - startedAt,
-    });
+    if (!missingVehicleStateSchema) {
+      console.error("oil-check-cron: vehicle_state query failed:", vsErr.message);
+      return res.status(200).json({
+        skipped:     true,
+        reason:      vsErr.message,
+        duration_ms: Date.now() - startedAt,
+      });
+    }
+    console.warn("oil-check-cron: vehicle_state unavailable, falling back to bookings.last_oil_check_at and vehicles.mileage");
   }
 
   const stateByVehicle = {};
@@ -294,6 +299,14 @@ export default async function handler(req, res) {
   const vehicleByVehicle = {};
   for (const v of vehicleRows || []) {
     vehicleByVehicle[v.vehicle_id] = v;
+    if (missingVehicleStateSchema && !stateByVehicle[v.vehicle_id]) {
+      stateByVehicle[v.vehicle_id] = {
+        vehicle_id: v.vehicle_id,
+        current_mileage: v.mileage ?? null,
+        last_oil_check_at: null,
+        last_oil_check_mileage: null,
+      };
+    }
   }
 
   // ── Load start_mileage for open trips (mileage-based trigger) ────────────
@@ -335,6 +348,7 @@ export default async function handler(req, res) {
       pickup_date:            pickupDate,
       return_date:            returnDate,
       return_time:            returnTime,
+      last_oil_check_at:      bookingLastOilCheckAt,
       oil_check_required:     oilCheckRequired,
       oil_check_last_request: lastRequest,
       oil_check_missed_count: missedCount,
@@ -446,7 +460,7 @@ export default async function handler(req, res) {
 
     // ── Initial trigger path ──────────────────────────────────────────────
     // Compute days and miles since last oil check (from vehicle_state)
-    const lastCheckAt      = vs?.last_oil_check_at      || null;
+    const lastCheckAt      = vs?.last_oil_check_at      || bookingLastOilCheckAt || null;
     const lastCheckMileage = vs?.last_oil_check_mileage  ?? null;
     const currentMileage   = vs?.current_mileage         ?? null;
 
