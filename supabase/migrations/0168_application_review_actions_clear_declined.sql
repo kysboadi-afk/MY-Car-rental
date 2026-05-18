@@ -1,11 +1,7 @@
 -- Migration 0168: allow clear_declined admin audit action
 
-DO $$
-BEGIN
-  ALTER TABLE application_review_actions
-    DROP CONSTRAINT IF EXISTS application_review_actions_action_check;
-EXCEPTION WHEN undefined_object THEN NULL;
-END $$;
+ALTER TABLE application_review_actions
+  DROP CONSTRAINT IF EXISTS application_review_actions_action_check;
 
 ALTER TABLE application_review_actions
   ADD CONSTRAINT application_review_actions_action_check
