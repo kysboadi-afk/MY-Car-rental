@@ -12476,6 +12476,69 @@ function renderAppQueueKpis() {
   }).join('');
 }
 
+function appStatusBadge(status) {
+  const key = String(status || '').toLowerCase();
+  const map = {
+    review_queue: { label: 'In Queue', cls: 'submitted' },
+    submitted: { label: 'Submitted', cls: 'submitted' },
+    under_review: { label: 'Under Review', cls: 'under_review' },
+    needs_info: { label: 'Needs Info', cls: 'needs_info' },
+    identity_verified: { label: 'Identity Verified', cls: 'submitted' },
+    checkr_consider: { label: 'Checkr Consider', cls: 'needs_info' },
+    checkr_pending: { label: 'Checkr Pending', cls: 'submitted' },
+    checkr_issue: { label: 'Checkr Issue', cls: 'needs_info' },
+    approved: { label: 'Approved', cls: 'approved' },
+    rejected: { label: 'Declined', cls: 'rejected' },
+    declined: { label: 'Declined', cls: 'rejected' },
+    withdrawn: { label: 'Withdrawn', cls: 'withdrawn' },
+    expired: { label: 'Expired', cls: 'expired' },
+    archived: { label: 'Archived', cls: 'expired' },
+  };
+  const resolved = map[key] || { label: key ? key.replace(/_/g, ' ') : 'Unknown', cls: 'submitted' };
+  return `<span class="app-status-badge app-status-${resolved.cls}">${esc(resolved.label)}</span>`;
+}
+
+function identityStatusBadge(status) {
+  const key = String(status || '').toLowerCase();
+  const map = {
+    verified: { label: 'Verified', cls: 'approved' },
+    approved: { label: 'Verified', cls: 'approved' },
+    passed: { label: 'Verified', cls: 'approved' },
+    pending: { label: 'Pending', cls: 'submitted' },
+    processing: { label: 'Processing', cls: 'submitted' },
+    requires_input: { label: 'Needs Input', cls: 'needs_info' },
+    failed: { label: 'Failed', cls: 'rejected' },
+    declined: { label: 'Declined', cls: 'rejected' },
+    expired: { label: 'Expired', cls: 'expired' },
+    not_started: { label: 'Not Started', cls: 'submitted' },
+  };
+  const resolved = map[key] || { label: key ? key.replace(/_/g, ' ') : 'Unknown', cls: 'submitted' };
+  return `<span class="app-status-badge app-status-${resolved.cls}">${esc(resolved.label)}</span>`;
+}
+
+function checkrStatusBadge(status) {
+  const key = String(status || '').toLowerCase();
+  const map = {
+    clear: { label: 'Clear', cls: 'approved' },
+    consider: { label: 'Consider', cls: 'needs_info' },
+    pending: { label: 'Pending', cls: 'submitted' },
+    in_progress: { label: 'In Progress', cls: 'submitted' },
+    suspended: { label: 'Suspended', cls: 'needs_info' },
+    failed: { label: 'Failed', cls: 'rejected' },
+    canceled: { label: 'Canceled', cls: 'expired' },
+    complete: { label: 'Complete', cls: 'approved' },
+    completed: { label: 'Complete', cls: 'approved' },
+  };
+  const resolved = map[key] || { label: key ? key.replace(/_/g, ' ') : 'Unknown', cls: 'submitted' };
+  return `<span class="app-status-badge app-status-${resolved.cls}">${esc(resolved.label)}</span>`;
+}
+
+function checkrReportLink(reportId) {
+  if (!reportId) return '';
+  const text = String(reportId);
+  return `<br><span style="font-size:11px;color:var(--text-sub);font-family:monospace;">${esc(text.slice(0, 12))}${text.length > 12 ? '…' : ''}</span>`;
+}
+
 function renderAppQueue() {
   const loading = document.getElementById('apps-loading');
   const wrap    = document.getElementById('apps-table-wrap');
