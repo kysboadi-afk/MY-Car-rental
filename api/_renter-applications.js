@@ -59,7 +59,19 @@ const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approv
 // "failed" and "canceled" are excluded: they're terminal identity states whose
 // Veriff decision will remain declined, so polling adds noise without value.
 const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing"];
-const CHECKR_REPORT_STATUSES = ["pending", "clear", "consider", "suspended", "disputed", "complete_no_adj", "error"];
+const CHECKR_REPORT_STATUSES = [
+  "not_started",
+  "launch_queued",
+  "candidate_created",
+  "invitation_sent",
+  "pending",
+  "completed",
+  "clear",
+  "consider",
+  "suspended",
+  "failed",
+  "webhook_missing",
+];
 const ADVERSE_ACTION_STEPS = ["pre_notice_sent", "final_notice_sent"];
 
 // Valid manual review actions and the status they produce.
@@ -90,13 +102,51 @@ function cleanIsoDateTime(value) {
   return d.toISOString();
 }
 
+function normalizeCheckrPhase(value) {
+  const raw = cleanText(value, 40);
+  if (!raw) return null;
+  if (CHECKR_REPORT_STATUSES.includes(raw)) return raw;
+  if (raw === "error") return "failed";
+  if (raw === "complete_no_adj") return "completed";
+  if (raw === "disputed") return "suspended";
+  return null;
+}
+
+export function deriveCheckrPhase(record = {}) {
+  const explicit = normalizeCheckrPhase(record.checkr_phase || record.checkrReportStatus || record.checkr_report_status);
+  const lastLaunchAttemptAt = cleanIsoDateTime(record.checkr_last_launch_attempt_at || record.checkrLastLaunchAttemptAt);
+  const lastWebhookAt = cleanIsoDateTime(record.checkr_last_webhook_at || record.checkrLastWebhookAt);
+  if (explicit) {
+    const staleWithoutWebhook = (explicit === "invitation_sent" || explicit === "pending")
+      && !!lastLaunchAttemptAt
+      && !lastWebhookAt
+      && (Date.now() - new Date(lastLaunchAttemptAt).getTime()) > (60 * 60 * 1000);
+    if (staleWithoutWebhook) return "webhook_missing";
+    return explicit;
+  }
+
+  const hasCandidate = !!cleanText(record.checkr_candidate_id || record.checkrCandidateId, 255);
+  const hasReport = !!cleanText(record.checkr_report_id || record.checkrReportId, 255);
+  const launchError = cleanText(record.checkr_last_launch_error || record.checkrLastLaunchError, 2000)
+    || cleanText(record.checkr_last_error || record.checkrLastError, 2000);
+  const attempts = Number(record.checkr_launch_attempt_count ?? record.checkrLaunchAttemptCount);
+
+  if (!hasCandidate && !hasReport) {
+    if (launchError || (Number.isFinite(attempts) && attempts > 0)) return "failed";
+    return "not_started";
+  }
+  if (hasCandidate && !hasReport) return "candidate_created";
+  return "invitation_sent";
+}
+
 export function mapApplicationRecord(payload = {}) {
   const hasInsurance = cleanText(payload.hasInsurance, 10);
   const protectionPlanPref = cleanText(payload.protectionPlanPref, 20);
   const normalizedPrecheck = cleanText(payload.precheckDecision || payload.decision, 20);
   const identityStatus = cleanText(payload.identityStatus, 30);
   const applicationStatus = cleanText(payload.applicationStatus, 30);
-  const checkrReportStatus = cleanText(payload.checkrReportStatus, 30);
+  const checkrReportStatus = normalizeCheckrPhase(payload.checkrReportStatus);
+  const checkrPhase = normalizeCheckrPhase(payload.checkrPhase);
   const adverseActionStep = cleanText(payload.adverseActionStep, 30);
   const licenseFileName = cleanText(payload.licenseFileName, 255);
   const insuranceFileName = cleanText(payload.insuranceFileName, 255);
@@ -133,10 +183,17 @@ export function mapApplicationRecord(payload = {}) {
       : "not_started",
     checkr_candidate_id: cleanText(payload.checkrCandidateId, 255),
     checkr_report_id: cleanText(payload.checkrReportId, 255),
-    checkr_report_status: CHECKR_REPORT_STATUSES.includes(checkrReportStatus) ? checkrReportStatus : null,
+    checkr_report_status: checkrReportStatus,
+    checkr_phase: checkrPhase || checkrReportStatus || null,
     checkr_adjudication: cleanText(payload.checkrAdjudication, 80),
     checkr_completed_at: cleanIsoDateTime(payload.checkrCompletedAt),
     checkr_last_error: cleanText(payload.checkrLastError, 2000),
+    checkr_last_launch_error: cleanText(payload.checkrLastLaunchError, 2000),
+    checkr_last_launch_attempt_at: cleanIsoDateTime(payload.checkrLastLaunchAttemptAt),
+    checkr_launch_attempt_count: Number.isFinite(Number(payload.checkrLaunchAttemptCount))
+      ? Math.max(0, Number(payload.checkrLaunchAttemptCount))
+      : 0,
+    checkr_last_webhook_at: cleanIsoDateTime(payload.checkrLastWebhookAt),
     checkr_mvr_violations: cleanJsonValue(payload.checkrMvrViolations),
     adverse_action_step: ADVERSE_ACTION_STEPS.includes(adverseActionStep) ? adverseActionStep : null,
     adverse_action_sent_at: cleanIsoDateTime(payload.adverseActionSentAt),
@@ -144,6 +201,7 @@ export function mapApplicationRecord(payload = {}) {
 }
 
 export function toClientApplication(record = {}) {
+  const checkrPhase = deriveCheckrPhase(record);
   return {
     applicationId: record.id,
     name: record.name,
@@ -164,10 +222,15 @@ export function toClientApplication(record = {}) {
     identityStatus: record.identity_status,
     checkrCandidateId: record.checkr_candidate_id || null,
     checkrReportId: record.checkr_report_id || null,
-    checkrReportStatus: record.checkr_report_status || null,
+    checkrReportStatus: normalizeCheckrPhase(record.checkr_report_status) || null,
+    checkrPhase,
     checkrAdjudication: record.checkr_adjudication || null,
     checkrCompletedAt: record.checkr_completed_at || null,
     checkrLastError: record.checkr_last_error || null,
+    checkrLastLaunchError: record.checkr_last_launch_error || null,
+    checkrLastLaunchAttemptAt: record.checkr_last_launch_attempt_at || null,
+    checkrLaunchAttemptCount: Number(record.checkr_launch_attempt_count || 0),
+    checkrLastWebhookAt: record.checkr_last_webhook_at || null,
     checkrMvrViolations: record.checkr_mvr_violations || null,
     adverseActionStep: record.adverse_action_step || null,
     adverseActionSentAt: record.adverse_action_sent_at || null,
@@ -434,13 +497,18 @@ export async function patchRenterApplicationCheckrById(applicationId, patchPaylo
   const patch = {};
   if ("checkrCandidateId" in patchPayload) patch.checkr_candidate_id = cleanText(patchPayload.checkrCandidateId, 255);
   if ("checkrReportId" in patchPayload) patch.checkr_report_id = cleanText(patchPayload.checkrReportId, 255);
-  if ("checkrReportStatus" in patchPayload) {
-    const status = cleanText(patchPayload.checkrReportStatus, 30);
-    patch.checkr_report_status = CHECKR_REPORT_STATUSES.includes(status) ? status : null;
-  }
+  if ("checkrReportStatus" in patchPayload) patch.checkr_report_status = normalizeCheckrPhase(patchPayload.checkrReportStatus);
+  if ("checkrPhase" in patchPayload) patch.checkr_phase = normalizeCheckrPhase(patchPayload.checkrPhase);
   if ("checkrAdjudication" in patchPayload) patch.checkr_adjudication = cleanText(patchPayload.checkrAdjudication, 80);
   if ("checkrCompletedAt" in patchPayload) patch.checkr_completed_at = cleanIsoDateTime(patchPayload.checkrCompletedAt);
   if ("checkrLastError" in patchPayload) patch.checkr_last_error = cleanText(patchPayload.checkrLastError, 2000);
+  if ("checkrLastLaunchError" in patchPayload) patch.checkr_last_launch_error = cleanText(patchPayload.checkrLastLaunchError, 2000);
+  if ("checkrLastLaunchAttemptAt" in patchPayload) patch.checkr_last_launch_attempt_at = cleanIsoDateTime(patchPayload.checkrLastLaunchAttemptAt);
+  if ("checkrLaunchAttemptCount" in patchPayload) {
+    const count = Number(patchPayload.checkrLaunchAttemptCount);
+    patch.checkr_launch_attempt_count = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
+  }
+  if ("checkrLastWebhookAt" in patchPayload) patch.checkr_last_webhook_at = cleanIsoDateTime(patchPayload.checkrLastWebhookAt);
   if ("checkrMvrViolations" in patchPayload) patch.checkr_mvr_violations = cleanJsonValue(patchPayload.checkrMvrViolations);
   if ("adverseActionStep" in patchPayload) {
     const step = cleanText(patchPayload.adverseActionStep, 30);
@@ -834,7 +902,7 @@ export async function listReviewQueueApplications({ page = 1, pageSize = 50 } = 
     .select(
       "id, name, phone, email, age, experience, application_status, identity_status, " +
         "review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
-        "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, " +
+        "checkr_candidate_id, checkr_report_status, checkr_phase, checkr_report_id, checkr_completed_at, checkr_last_error, checkr_last_launch_error, checkr_last_launch_attempt_at, checkr_launch_attempt_count, checkr_last_webhook_at, adverse_action_step, adverse_action_sent_at, " +
         "submitted_at, created_at, updated_at",
       { count: "exact" },
     )

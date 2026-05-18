@@ -3,6 +3,7 @@ import {
   extractCheckrEventType,
   extractCheckrMvrViolations,
   extractCheckrReport,
+  logCheckrEvent,
   mapCheckrReportStatus,
   verifyCheckrWebhookSignature,
 } from "./_checkr.js";
@@ -76,13 +77,34 @@ export default async function handler(req, res) {
   }
 
   const eventType = extractCheckrEventType(payload);
+  const eventAt = new Date().toISOString();
   console.info("checkr-webhook: event received", {
     eventType: eventType || null,
     eventId: payload?.id || null,
   });
   if (!eventType) return res.status(200).json({ received: true, ignored: true });
 
+  await logCheckrEvent({
+    eventId: pickEventId(payload, eventType),
+    eventType: `webhook.${eventType}`,
+    applicationId: null,
+    candidateId: extractCheckrCandidate(payload)?.id || null,
+    reportId: extractCheckrReport(payload)?.id || null,
+    phase: null,
+    payload,
+  });
+
   if (eventType === "candidate.created" || eventType === "invitation.completed") {
+    const appResult = await findApplicationForPayload(payload);
+    if (appResult.ok) {
+      await patchRenterApplicationCheckrById(appResult.data.id, {
+        checkrCandidateId: extractCheckrCandidate(payload)?.id || appResult.data?.checkr_candidate_id || null,
+        checkrReportId: extractCheckrReport(payload)?.id || appResult.data?.checkr_report_id || null,
+        checkrReportStatus: eventType === "candidate.created" ? "candidate_created" : "pending",
+        checkrPhase: eventType === "candidate.created" ? "candidate_created" : "pending",
+        checkrLastWebhookAt: eventAt,
+      }).catch(() => {});
+    }
     console.info("checkr-webhook: non-terminal event acknowledged", {
       eventType,
       eventId: payload?.id || null,
@@ -105,15 +127,20 @@ export default async function handler(req, res) {
       checkrAdjudication: report?.adjudication || null,
       checkrCompletedAt: report?.completed_at || payload?.created_at || new Date().toISOString(),
       checkrReportStatus: reportStatus,
-      checkrLastError: reportStatus === "error" ? eventType : null,
+      checkrPhase: reportStatus,
+      checkrLastError: reportStatus === "failed" ? eventType : null,
       checkrMvrViolations: extractCheckrMvrViolations(report),
+      checkrLastWebhookAt: eventAt,
     };
 
     if (eventType === "report.suspended") {
       patchPayload.checkrReportStatus = "suspended";
+      patchPayload.checkrPhase = "suspended";
       patchPayload.checkrLastError = report?.status || eventType;
     } else if (eventType === "report.disputed") {
-      patchPayload.checkrReportStatus = "disputed";
+      patchPayload.checkrReportStatus = "suspended";
+      patchPayload.checkrPhase = "suspended";
+      patchPayload.checkrLastError = eventType;
     }
 
     console.info("checkr-webhook: applying status update", {
@@ -128,6 +155,15 @@ export default async function handler(req, res) {
     const patchResult = await patchRenterApplicationCheckrById(appResult.data.id, patchPayload);
     if (!patchResult.ok) {
       console.error("checkr-webhook patch failed:", patchResult.error, patchResult.details || "");
+      await logCheckrEvent({
+        eventId: `${pickEventId(payload, eventType)}:patch-failed`,
+        eventType: "webhook.patch_failed",
+        applicationId: appResult.data.id,
+        candidateId: patchPayload.checkrCandidateId,
+        reportId: patchPayload.checkrReportId,
+        phase: "failed",
+        payload: { error: patchResult.error || null, details: patchResult.details || null, eventType },
+      });
       return res.status(200).json({ received: true, ignored: true });
     }
     console.info("checkr-webhook: status update persisted", {
@@ -137,6 +173,15 @@ export default async function handler(req, res) {
       applicationStatus: patchResult.data?.application_status || appResult.data?.application_status || null,
       reportId: redactId(patchResult.data?.checkr_report_id || patchPayload.checkrReportId),
       candidateId: redactId(patchResult.data?.checkr_candidate_id || patchPayload.checkrCandidateId),
+    });
+    await logCheckrEvent({
+      eventId: `${pickEventId(payload, eventType)}:patched`,
+      eventType: "webhook.patched",
+      applicationId: patchResult.data?.id || appResult.data?.id || null,
+      candidateId: patchResult.data?.checkr_candidate_id || patchPayload.checkrCandidateId || null,
+      reportId: patchResult.data?.checkr_report_id || patchPayload.checkrReportId || null,
+      phase: patchPayload.checkrReportStatus,
+      payload: { eventType, reportStatus: patchPayload.checkrReportStatus },
     });
 
     if (["report.completed", "report.suspended", "report.disputed"].includes(eventType)) {
@@ -154,4 +199,18 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ received: true });
+}
+
+function pickEventId(payload = {}, eventType = "") {
+  const direct = String(payload?.id || "").trim();
+  if (direct) return direct;
+  const report = extractCheckrReport(payload);
+  const candidate = extractCheckrCandidate(payload);
+  const createdAt = String(payload?.created_at || payload?.createdAt || "").trim();
+  return [
+    eventType || "unknown-event",
+    String(report?.id || payload?.report_id || "").trim() || "no-report",
+    String(report?.candidate_id || candidate?.id || payload?.candidate_id || "").trim() || "no-candidate",
+    createdAt || "no-time",
+  ].join(":");
 }

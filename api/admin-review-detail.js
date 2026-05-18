@@ -6,7 +6,7 @@
 // GET /api/admin-review-detail?secret=<ADMIN_SECRET>&applicationId=<uuid>
 
 import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
-import { fetchReviewApplicationById } from "./_renter-applications.js";
+import { deriveCheckrPhase, fetchReviewApplicationById } from "./_renter-applications.js";
 import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { INCOME_VERIFICATION_BUCKET, INCOME_VERIFICATION_DOC_TYPE } from "./_income-verification.js";
@@ -172,12 +172,17 @@ export default async function handler(req, res) {
     identityStatus: r.identity_status,
     identitySessionId: r.identity_session_id || null,
     identityVerifiedAt: r.identity_verified_at || null,
+    checkrPhase: deriveCheckrPhase(r),
     checkrCandidateId: r.checkr_candidate_id || null,
     checkrReportId: r.checkr_report_id || null,
     checkrReportStatus: r.checkr_report_status || null,
     checkrAdjudication: r.checkr_adjudication || null,
     checkrCompletedAt: r.checkr_completed_at || null,
     checkrLastError: r.checkr_last_error || null,
+    checkrLastLaunchError: r.checkr_last_launch_error || null,
+    checkrLastLaunchAttemptAt: r.checkr_last_launch_attempt_at || null,
+    checkrLaunchAttemptCount: Number(r.checkr_launch_attempt_count || 0),
+    checkrLastWebhookAt: r.checkr_last_webhook_at || null,
     checkrMvrViolations: r.checkr_mvr_violations || null,
     adverseActionStep: r.adverse_action_step || null,
     adverseActionSentAt: r.adverse_action_sent_at || null,

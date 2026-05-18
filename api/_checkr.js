@@ -1,14 +1,29 @@
 import crypto from "node:crypto";
 import {
+  deriveCheckrPhase,
   fetchRenterApplicationById,
   patchRenterApplicationCheckrById,
 } from "./_renter-applications.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import {
   sendCheckrInvitationNotifications,
 } from "./_application-notifications.js";
 
 const CHECKR_API_BASE = "https://api.checkr.com/v1";
 const DEFAULT_PACKAGE = "driver_pro";
+const CHECKR_PHASES = [
+  "not_started",
+  "launch_queued",
+  "candidate_created",
+  "invitation_sent",
+  "pending",
+  "completed",
+  "clear",
+  "consider",
+  "suspended",
+  "failed",
+  "webhook_missing",
+];
 
 function pickString(...values) {
   for (const value of values) {
@@ -19,6 +34,76 @@ function pickString(...values) {
 
 function cleanObject(value) {
   return value && typeof value === "object" ? value : {};
+}
+
+function cleanIsoDateTime(value) {
+  if (value == null || value === "") return null;
+  const d = new Date(String(value));
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function buildCheckrIdempotencyKey(parts = []) {
+  return crypto
+    .createHash("sha256")
+    .update(parts.map((part) => pickString(part)).join("|"))
+    .digest("hex")
+    .slice(0, 64);
+}
+
+function normalizeCheckrPhase(value) {
+  const raw = pickString(value);
+  if (!raw) return null;
+  if (CHECKR_PHASES.includes(raw)) return raw;
+  if (raw === "error") return "failed";
+  if (raw === "complete_no_adj") return "completed";
+  if (raw === "disputed") return "suspended";
+  return null;
+}
+
+function isMissingCheckrEventTableError(err) {
+  const code = String(err?.code || "");
+  const msg = String(err?.message || "");
+  return code === "42P01"
+    || code === "42703"
+    || /relation .* does not exist/i.test(msg)
+    || /column .* does not exist/i.test(msg)
+    || /checkr_screening_events/i.test(msg);
+}
+
+export async function logCheckrEvent({
+  eventId,
+  eventType,
+  applicationId = null,
+  candidateId = null,
+  reportId = null,
+  phase = null,
+  payload = {},
+} = {}, sbClient = null) {
+  const sb = sbClient || getSupabaseAdmin();
+  if (!sb) return { ok: false, skipped: true, reason: "supabase_unavailable" };
+
+  const id = pickString(eventId) || `generated:${crypto.randomUUID()}`;
+  const normalizedPhase = normalizeCheckrPhase(phase);
+  const insertPayload = {
+    event_id: id,
+    event_type: pickString(eventType) || "unknown",
+    application_id: pickString(applicationId) || null,
+    checkr_candidate_id: pickString(candidateId) || null,
+    checkr_report_id: pickString(reportId) || null,
+    phase: normalizedPhase,
+    payload: cleanObject(payload),
+  };
+  const table = sb.from("checkr_screening_events");
+  const write = typeof table?.upsert === "function"
+    ? table.upsert(insertPayload, { onConflict: "event_id", ignoreDuplicates: true })
+    : table.insert(insertPayload);
+  const { error } = await write;
+  if (!error) return { ok: true, eventId: id };
+  if (isMissingCheckrEventTableError(error)) {
+    return { ok: false, skipped: true, reason: "table_unavailable", details: error.message };
+  }
+  return { ok: false, skipped: false, reason: "write_failed", details: error.message };
 }
 
 function getAuthHeader(apiKey) {
@@ -64,10 +149,10 @@ function redactId(value) {
   return `${text.slice(0, 4)}***${text.slice(-3)}`;
 }
 
-async function postJson(path, body, fetchImpl = fetch) {
+async function postJson(path, body, fetchImpl = fetch, extraHeaders = {}) {
   const cfg = getCheckrConfig();
   const endpoint = `${CHECKR_API_BASE}${path}`;
-  const headers = buildApiHeaders(cfg.apiKey);
+  const headers = { ...buildApiHeaders(cfg.apiKey), ...cleanObject(extraHeaders) };
   console.info("checkr:request", {
     method: "POST",
     endpoint,
@@ -107,13 +192,13 @@ export function mapCheckrReportStatus(status, adjudication) {
   const normalizedAdjudication = String(adjudication || "").trim().toLowerCase();
   if (normalizedStatus === "pending") return "pending";
   if (normalizedStatus === "suspended") return "suspended";
-  if (normalizedStatus === "disputed") return "disputed";
+  if (normalizedStatus === "disputed") return "suspended";
   if (normalizedStatus === "complete" || normalizedStatus === "completed") {
     if (normalizedAdjudication === "clear") return "clear";
     if (normalizedAdjudication === "consider") return "consider";
-    return "complete_no_adj";
+    return "completed";
   }
-  return "error";
+  return "failed";
 }
 
 export function verifyCheckrWebhookSignature(rawBody, headers = {}, webhookSecret) {
@@ -166,7 +251,18 @@ export async function createCheckrCandidate(application = {}, fetchImpl = fetch)
     hasDriverLicense: !!pickString(body.driver_license_number),
     hasLicenseState: !!pickString(body.driver_license_state),
   });
-  const { response, payload } = await postJson("/candidates", body, fetchImpl);
+  const idempotencyKey = buildCheckrIdempotencyKey([
+    "candidate",
+    application?.id,
+    body.first_name,
+    body.last_name,
+    body.email,
+    body.driver_license_number,
+    body.driver_license_state,
+  ]);
+  const { response, payload } = await postJson("/candidates", body, fetchImpl, {
+    "Idempotency-Key": idempotencyKey,
+  });
   if (!response.ok) {
     console.error("checkr:candidate create failed", {
       applicationId: pickString(application?.id) || null,
@@ -208,7 +304,14 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
     candidateId: redactId(candidateId),
     packageSlug: body.package || null,
   });
-  const { response, payload } = await postJson("/invitations", body, fetchImpl);
+  const idempotencyKey = buildCheckrIdempotencyKey([
+    "invitation",
+    candidateId,
+    body.package,
+  ]);
+  const { response, payload } = await postJson("/invitations", body, fetchImpl, {
+    "Idempotency-Key": idempotencyKey,
+  });
   if (!response.ok) {
     console.error("checkr:invitation create failed", {
       candidateId: redactId(candidateId),
@@ -269,12 +372,20 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
   const appResult = await fetchRenterApplicationById(applicationId);
   if (!appResult.ok) return appResult;
   const application = appResult.data || {};
+  const currentPhase = deriveCheckrPhase(application);
+  const nowIso = new Date().toISOString();
+  const nextAttemptCount = Math.max(0, Number(application.checkr_launch_attempt_count || 0)) + 1;
+  const candidateIdFromRecord = pickString(application.checkr_candidate_id);
+  const reportIdFromRecord = pickString(application.checkr_report_id);
   console.info("checkr:screening initiation started", {
     applicationId,
     identityStatus: application.identity_status || null,
     applicationStatus: application.application_status || null,
-    existingCandidateId: redactId(application.checkr_candidate_id),
+    existingCandidateId: redactId(candidateIdFromRecord),
+    existingReportId: redactId(reportIdFromRecord),
     existingReportStatus: application.checkr_report_status || null,
+    existingPhase: currentPhase || null,
+    nextAttemptCount,
   });
 
   if (application.identity_status !== "verified") {
@@ -286,49 +397,129 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
   if (!application.driver_license_number || !application.driver_license_state) {
     return { ok: false, status: 422, error: "Driver license number and state are required before Checkr screening can start." };
   }
-  if (application.checkr_candidate_id && application.checkr_report_status && application.checkr_report_status !== "error") {
+  if (
+    reportIdFromRecord
+    && ["invitation_sent", "pending", "completed", "clear", "consider", "suspended"].includes(currentPhase)
+  ) {
     console.info("checkr:screening already started", {
       applicationId,
-      candidateId: redactId(application.checkr_candidate_id),
-      reportId: redactId(application.checkr_report_id),
+      candidateId: redactId(candidateIdFromRecord),
+      reportId: redactId(reportIdFromRecord),
       reportStatus: application.checkr_report_status,
+      phase: currentPhase,
     });
     return {
       ok: true,
       alreadyStarted: true,
-      candidateId: application.checkr_candidate_id,
-      reportId: application.checkr_report_id || null,
-      reportStatus: application.checkr_report_status,
+      candidateId: candidateIdFromRecord || null,
+      reportId: reportIdFromRecord || null,
+      reportStatus: currentPhase || application.checkr_report_status || null,
     };
   }
 
-  const candidateResult = await createCheckrCandidate(application, fetchImpl);
-  if (!candidateResult.ok) {
+  await patchRenterApplicationCheckrById(applicationId, {
+    checkrReportStatus: "launch_queued",
+    checkrPhase: "launch_queued",
+    checkrLastLaunchAttemptAt: nowIso,
+    checkrLaunchAttemptCount: nextAttemptCount,
+    checkrLastLaunchError: null,
+  }).catch(() => {});
+  await logCheckrEvent({
+    eventId: `launch:${applicationId}:${nextAttemptCount}`,
+    eventType: "launch.attempted",
+    applicationId,
+    candidateId: candidateIdFromRecord,
+    reportId: reportIdFromRecord,
+    phase: "launch_queued",
+    payload: {
+      attempt: nextAttemptCount,
+      packageSlug: cfg.packageSlug,
+      triggeredBy: "checkr_initiate",
+    },
+  });
+
+  let candidateId = candidateIdFromRecord;
+  if (!candidateId) {
+    const candidateResult = await createCheckrCandidate(application, fetchImpl);
+    if (!candidateResult.ok) {
+      await patchRenterApplicationCheckrById(applicationId, {
+        checkrReportStatus: "failed",
+        checkrPhase: "failed",
+        checkrLastError: candidateResult.error,
+        checkrLastLaunchError: candidateResult.error,
+      }).catch(() => {});
+      await logCheckrEvent({
+        eventId: `candidate-failed:${applicationId}:${nextAttemptCount}`,
+        eventType: "candidate.create_failed",
+        applicationId,
+        phase: "failed",
+        payload: {
+          status: Number(candidateResult.status) || null,
+          error: candidateResult.error || null,
+          details: candidateResult.details || null,
+        },
+      });
+      console.error("checkr:screening failed during candidate creation", {
+        applicationId,
+        error: candidateResult.error || null,
+        status: Number(candidateResult.status) || null,
+      });
+      return candidateResult;
+    }
+    candidateId = candidateResult.candidateId;
     await patchRenterApplicationCheckrById(applicationId, {
-      checkrReportStatus: "error",
-      checkrLastError: candidateResult.error,
+      checkrCandidateId: candidateId,
+      checkrReportStatus: "candidate_created",
+      checkrPhase: "candidate_created",
+      checkrLastLaunchError: null,
     }).catch(() => {});
-    console.error("checkr:screening failed during candidate creation", {
+    await logCheckrEvent({
+      eventId: `candidate-created:${applicationId}:${candidateId}`,
+      eventType: "candidate.created",
       applicationId,
-      error: candidateResult.error || null,
-      status: Number(candidateResult.status) || null,
+      candidateId,
+      phase: "candidate_created",
+      payload: candidateResult.payload || {},
     });
-    return candidateResult;
+  }
+
+  if (reportIdFromRecord) {
+    return {
+      ok: true,
+      alreadyStarted: true,
+      candidateId,
+      reportId: reportIdFromRecord,
+      reportStatus: currentPhase || "invitation_sent",
+    };
   }
 
   const invitationResult = await createCheckrInvitation({
-    candidateId: candidateResult.candidateId,
+    candidateId,
     packageSlug: cfg.packageSlug,
   }, fetchImpl);
   if (!invitationResult.ok) {
     await patchRenterApplicationCheckrById(applicationId, {
-      checkrCandidateId: candidateResult.candidateId,
-      checkrReportStatus: "error",
+      checkrCandidateId: candidateId,
+      checkrReportStatus: "failed",
+      checkrPhase: "failed",
       checkrLastError: invitationResult.error,
+      checkrLastLaunchError: invitationResult.error,
     }).catch(() => {});
+    await logCheckrEvent({
+      eventId: `invitation-failed:${applicationId}:${nextAttemptCount}`,
+      eventType: "invitation.create_failed",
+      applicationId,
+      candidateId,
+      phase: "failed",
+      payload: {
+        status: Number(invitationResult.status) || null,
+        error: invitationResult.error || null,
+        details: invitationResult.details || null,
+      },
+    });
     console.error("checkr:screening failed during invitation creation", {
       applicationId,
-      candidateId: redactId(candidateResult.candidateId),
+      candidateId: redactId(candidateId),
       error: invitationResult.error || null,
       status: Number(invitationResult.status) || null,
     });
@@ -336,17 +527,28 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
   }
 
   const patchResult = await patchRenterApplicationCheckrById(applicationId, {
-    checkrCandidateId: candidateResult.candidateId,
+    checkrCandidateId: candidateId,
     checkrReportId: invitationResult.reportId || null,
-    checkrReportStatus: "pending",
+    checkrReportStatus: "invitation_sent",
+    checkrPhase: "invitation_sent",
     checkrLastError: null,
+    checkrLastLaunchError: null,
   });
   if (!patchResult.ok) return patchResult;
+  await logCheckrEvent({
+    eventId: `invitation-created:${applicationId}:${invitationResult.invitationId || invitationResult.reportId || nextAttemptCount}`,
+    eventType: "invitation.created",
+    applicationId,
+    candidateId,
+    reportId: invitationResult.reportId || null,
+    phase: "invitation_sent",
+    payload: invitationResult.payload || {},
+  });
   console.info("checkr:screening state persisted", {
     applicationId,
-    candidateId: redactId(candidateResult.candidateId),
+    candidateId: redactId(candidateId),
     reportId: redactId(invitationResult.reportId),
-    reportStatus: "pending",
+    reportStatus: "invitation_sent",
   });
 
   try {
@@ -366,10 +568,10 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
 
   return {
     ok: true,
-    candidateId: candidateResult.candidateId,
+    candidateId,
     invitationId: invitationResult.invitationId,
     invitationUrl: invitationResult.invitationUrl,
     reportId: invitationResult.reportId || null,
-    reportStatus: "pending",
+    reportStatus: "invitation_sent",
   };
 }

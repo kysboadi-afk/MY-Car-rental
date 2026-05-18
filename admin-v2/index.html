@@ -3494,13 +3494,17 @@
     </select>
     <select id="apps-filter-checkr" onchange="appsFilterChange()">
       <option value="">All Checkr</option>
+      <option value="not_started">Not Started</option>
+      <option value="launch_queued">Launch Queued</option>
+      <option value="candidate_created">Candidate Created</option>
+      <option value="invitation_sent">Invitation Sent</option>
       <option value="pending">Pending</option>
+      <option value="completed">Completed</option>
       <option value="clear">Clear</option>
       <option value="consider">Consider</option>
       <option value="suspended">Suspended</option>
-      <option value="disputed">Disputed</option>
-      <option value="complete_no_adj">Complete / No Adjudication</option>
-      <option value="error">Error</option>
+      <option value="failed">Launch Failed</option>
+      <option value="webhook_missing">Webhook Missing</option>
     </select>
     <select id="apps-sort-field" onchange="appsFilterChange()">
       <option value="submitted_at">Sort: Submitted</option>
@@ -12288,25 +12292,60 @@ function identityStatusBadge(status) {
 
 function checkrStatusBadge(status) {
   const labels = {
+    not_started: 'Not Started',
+    launch_queued: 'Launch Queued',
+    candidate_created: 'Candidate Created',
+    invitation_sent: 'Invitation Sent',
     pending: 'Pending',
+    completed: 'Completed',
     clear: 'Clear',
     consider: 'Consider',
     suspended: 'Suspended',
-    disputed: 'Disputed',
-    complete_no_adj: 'Complete / No Adjudication',
-    error: 'Error',
+    failed: 'Launch Failed',
+    webhook_missing: 'Webhook Missing',
   };
   const colorMap = {
+    not_started: '#6b7280',
+    launch_queued: '#1d4ed8',
+    candidate_created: '#0369a1',
+    invitation_sent: '#7c3aed',
     pending: '#6b7280',
+    completed: '#1d4ed8',
     clear: '#15803d',
     consider: '#b45309',
     suspended: '#b91c1c',
-    disputed: '#7c3aed',
-    complete_no_adj: '#1d4ed8',
-    error: '#b91c1c',
+    failed: '#b91c1c',
+    webhook_missing: '#dc2626',
   };
-  if (!status) return '<span style="color:var(--text-sub);font-size:11px;font-style:italic;">Pending</span>';
-  return `<span class="app-status-badge" style="background:${colorMap[status] || '#6b7280'}22;color:${colorMap[status] || '#6b7280'};border:1px solid ${colorMap[status] || '#6b7280'}33;">${esc(labels[status] || status)}</span>`;
+  const phase = resolveCheckrPhase(typeof status === 'object' ? status : { checkrPhase: status });
+  return `<span class="app-status-badge" style="background:${colorMap[phase] || '#6b7280'}22;color:${colorMap[phase] || '#6b7280'};border:1px solid ${colorMap[phase] || '#6b7280'}33;">${esc(labels[phase] || phase || 'Not Started')}</span>`;
+}
+
+function resolveCheckrPhase(item = {}) {
+  const explicit = item.checkrPhase || item.checkrReportStatus || item.checkr_report_status || '';
+  if (explicit) return explicit;
+  const hasCandidate = !!item.checkrCandidateId;
+  const hasReport = !!item.checkrReportId;
+  const hadLaunchAttempt = Number(item.checkrLaunchAttemptCount || 0) > 0
+    || !!item.checkrLastLaunchError
+    || !!item.checkrLastError;
+  if (!hasCandidate && !hasReport) return hadLaunchAttempt ? 'failed' : 'not_started';
+  if (hasCandidate && !hasReport) return 'candidate_created';
+  return 'invitation_sent';
+}
+
+function isCheckrAttentionPhase(phase = '') {
+  return ['failed', 'not_started', 'webhook_missing'].includes(phase);
+}
+
+function checkrStalenessText(item = {}) {
+  const reference = item.checkrLastWebhookAt || item.checkrLastLaunchAttemptAt;
+  if (!reference) return 'No webhook yet';
+  const ageMs = Date.now() - new Date(reference).getTime();
+  if (!Number.isFinite(ageMs) || ageMs < 0) return 'Unknown';
+  if (ageMs < 60 * 60 * 1000) return 'Fresh';
+  if (ageMs < 6 * 60 * 60 * 1000) return 'Aging';
+  return 'Stale';
 }
 
 function checkrReportLink(reportId) {
@@ -12404,13 +12443,15 @@ function renderAppQueueKpis() {
   const underReview = appQueueData.filter((a) => a.applicationStatus === 'under_review').length;
   const needsInfo   = appQueueData.filter((a) => a.applicationStatus === 'needs_info').length;
   const verified    = appQueueData.filter((a) => a.identityStatus === 'verified').length;
-  const checkrConsider = appQueueData.filter((a) => a.checkrReportStatus === 'consider').length;
+  const checkrConsider = appQueueData.filter((a) => resolveCheckrPhase(a) === 'consider').length;
+  const checkrAttention = appQueueData.filter((a) => isCheckrAttentionPhase(resolveCheckrPhase(a))).length;
   const kpis = [
     { label: 'In Queue (Total)',  value: appQueueTotal, icon: '#6366f1' },
     { label: 'Under Review',      value: underReview,   icon: '#1d4ed8' },
     { label: 'Needs Info',        value: needsInfo,     icon: '#b45309' },
     { label: 'Identity Verified', value: verified,      icon: '#15803d' },
     { label: 'Checkr Consider',   value: checkrConsider, icon: '#b45309' },
+    { label: 'Checkr Attention',  value: checkrAttention, icon: '#dc2626' },
   ];
   container.innerHTML = kpis.map(({ label, value }) => `
     <div class="kpi-card">
@@ -12434,11 +12475,14 @@ function applyAppQueueFilters() {
   }
   if (appFilterStatus)   filtered = filtered.filter((a) => a.applicationStatus === appFilterStatus);
   if (appFilterIdentity) filtered = filtered.filter((a) => a.identityStatus === appFilterIdentity);
-  if (appFilterCheckr)   filtered = filtered.filter((a) => (a.checkrReportStatus || '') === appFilterCheckr);
+  if (appFilterCheckr)   filtered = filtered.filter((a) => resolveCheckrPhase(a) === appFilterCheckr);
 
   const mult = appSortDir === 'asc' ? 1 : -1;
   const key  = appSortField === 'updated_at' ? 'updatedAt' : 'submittedAt';
   filtered.sort((a, b) => {
+    const pa = isCheckrAttentionPhase(resolveCheckrPhase(a)) ? 0 : 1;
+    const pb = isCheckrAttentionPhase(resolveCheckrPhase(b)) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
     const va = a[key] || '', vb = b[key] || '';
     return va < vb ? -mult : va > vb ? mult : 0;
   });
@@ -12487,7 +12531,7 @@ function renderAppQueue() {
       <td>${identityStatusBadge(a.identityStatus)}</td>
       <td style="font-size:12px;">${fmtRelativeTime(a.submittedAt)}<br><span style="color:var(--text-sub);font-size:11px;">upd: ${fmtRelativeTime(a.updatedAt)}</span></td>
       <td>${latestActivity}</td>
-      <td>${checkrStatusBadge(a.checkrReportStatus)}${checkrReportLink(a.checkrReportId)}</td>
+      <td>${checkrStatusBadge(a)}${checkrReportLink(a.checkrReportId)}</td>
       <td class="td-actions">
         <button class="btn btn-primary btn-sm" onclick="openAppDetail('${esc(a.id)}')">View</button>
         <button class="btn btn-danger btn-sm" onclick="deleteApplicationFromQueue('${esc(a.id)}','${esc(a.name)}')">Delete</button>
@@ -12662,14 +12706,21 @@ function renderAppDetail(d) {
   // F. Checkr
   html += `<div class="app-detail-section">
     <div class="app-detail-section-title">🔎 Background Check (Checkr)</div>
-    ${appDetailRow('Checkr Status', checkrStatusBadge(d.checkrReportStatus))}
+    ${appDetailRow('Checkr Status', checkrStatusBadge(d))}
     ${appDetailRow('Checkr Candidate ID', d.checkrCandidateId ? `<code style="font-size:11px;">${esc(d.checkrCandidateId)}</code>` : '—')}
     ${appDetailRow('Checkr Report ID', d.checkrReportId ? `<code style="font-size:11px;">${esc(d.checkrReportId)}</code>${checkrReportLink(d.checkrReportId)}` : '—')}
+    ${appDetailRow('Checkr Phase', esc(resolveCheckrPhase(d)))}
+    ${appDetailRow('Retry Available', ['failed', 'not_started', 'webhook_missing', 'candidate_created', 'invitation_sent'].includes(resolveCheckrPhase(d)) ? 'Yes' : 'No')}
+    ${appDetailRow('Launch Attempt Count', esc(String(d.checkrLaunchAttemptCount || 0)))}
+    ${appDetailRow('Last Launch Attempt', esc(fmtDateTime(d.checkrLastLaunchAttemptAt)))}
+    ${appDetailRow('Last Webhook At', esc(fmtDateTime(d.checkrLastWebhookAt)))}
+    ${appDetailRow('Webhook Freshness', esc(checkrStalenessText(d)))}
     ${appDetailRow('Adjudication', esc(d.checkrAdjudication || '—'))}
     ${appDetailRow('Completed At', esc(fmtDateTime(d.checkrCompletedAt)))}
     ${appDetailRow('Adverse Action Step', esc(d.adverseActionStep || '—'))}
     ${appDetailRow('Adverse Action Sent', esc(fmtDateTime(d.adverseActionSentAt)))}
     ${appDetailRow('Last Checkr Error', esc(d.checkrLastError || '—'))}
+    ${appDetailRow('Last Launch Error', esc(d.checkrLastLaunchError || '—'))}
   </div>`;
 
   // G. Income Verification Documents
