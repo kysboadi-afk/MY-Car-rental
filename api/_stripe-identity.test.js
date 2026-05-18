@@ -480,6 +480,28 @@ test("stripe-identity-webhook returns duplicate without patching when event is a
   assert.equal(calls.patched.length, 0);
 });
 
+test("stripe-identity-webhook continues processing when event logging insert fails", async () => {
+  insertEventError = { message: "relation stripe_identity_webhook_events does not exist", code: "42P01" };
+  const payload = {
+    id: "evt_veriff_log_fail_1",
+    verification: {
+      id: "vrf_777",
+      status: "approved",
+      vendorData: "app_1",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.received, true);
+  assert.equal(res._body.eventLogSkipped, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+});
+
 test("stripe-identity-webhook returns 400 when signature verification fails", async () => {
   const payload = {
     id: "evt_veriff_bad_sig_1",

@@ -14,11 +14,28 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   try {
+    const payload = req.body || {};
+    console.info("create-renter-application: submit received", {
+      hasName: !!payload.name,
+      hasPhone: !!payload.phone,
+      hasExperience: !!payload.experience,
+      hasEmail: !!payload.email,
+      hasAgreeTerms: !!payload.agreeTerms,
+      hasAgreeSmsConsent: !!payload.agreeSmsConsent,
+      hasAgreeBackgroundCheck: !!payload.agreeBackgroundCheck,
+    });
+
     const result = await insertRenterApplication(req.body || {});
     if (!result.ok) {
       if (result.details) console.error("create-renter-application failed:", result.details);
       return res.status(result.status || 500).json({ error: result.error || "Failed to create application." });
     }
+
+    console.info("create-renter-application: submit stored", {
+      applicationId: result.data?.id || null,
+      applicationStatus: result.data?.application_status || null,
+      identityStatus: result.data?.identity_status || null,
+    });
 
     return res.status(200).json({
       success: true,

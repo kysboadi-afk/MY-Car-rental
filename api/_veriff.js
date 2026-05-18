@@ -164,6 +164,11 @@ export async function createVeriffSession({
     callback: callbackUrl || defaultWebhookUrl(),
     timestamp: new Date().toISOString(),
   };
+  console.info("createVeriffSession: creating session", {
+    applicationId: verification.vendorData || null,
+    callbackUrl: verification.callback,
+    hasReturnUrl: !!returnUrl,
+  });
   if (returnUrl) verification.url = returnUrl;
   if (firstName || lastName) {
     verification.person = {};

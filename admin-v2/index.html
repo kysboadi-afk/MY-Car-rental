@@ -12643,6 +12643,78 @@ function renderAppDetail(d) {
     ${appDetailRow('Last Checkr Error', esc(d.checkrLastError || '—'))}
   </div>`;
 
+  // G. Income Verification Documents
+  const incomeDocs = Array.isArray(d.incomeDocuments) ? d.incomeDocuments : [];
+  html += `<div class="app-detail-section">
+    <div class="app-detail-section-title">💵 Income Verification Documents (${incomeDocs.length})</div>`;
+
+  if (incomeDocs.length === 0) {
+    html += `<div style="color:var(--text-sub);font-size:13px;font-style:italic;padding:8px 0;">
+      No income verification documents uploaded.
+      <span style="color:#b45309;font-size:12px;margin-left:6px;">⚠️ Flag missing if required</span>
+    </div>`;
+  } else {
+    html += `<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">` +
+      incomeDocs.map((doc) => {
+        const reviewBadge = {
+          pending:  `<span style="background:#f3f4f6;color:#6b7280;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">Pending</span>`,
+          reviewed: `<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">✅ Reviewed</span>`,
+          flagged:  `<span style="background:#fef9c3;color:#b45309;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600;">⚠️ Flagged</span>`,
+        }[doc.reviewStatus] || `<span style="font-size:11px;">${esc(doc.reviewStatus || 'pending')}</span>`;
+
+        const isPdf = (doc.mimeType || '').includes('pdf');
+        const isImg = (doc.mimeType || '').startsWith('image/');
+
+        let previewHtml = '';
+        if (doc.previewUrl) {
+          if (isPdf) {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📄 Open PDF</a>`;
+          } else if (isImg) {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" title="Click to open full size">
+              <img src="${esc(doc.previewUrl)}" alt="${esc(doc.fileName || 'Income document')}"
+                style="max-width:180px;max-height:120px;border-radius:6px;border:1px solid var(--border);display:block;margin-top:6px;cursor:pointer;">
+            </a>`;
+          } else {
+            previewHtml = `<a href="${esc(doc.previewUrl)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">📎 Open File</a>`;
+          }
+        }
+
+        const fileSizeStr = doc.fileSize ? ` · ${(doc.fileSize / 1024 / 1024).toFixed(1)} MB` : '';
+        const uploadedStr = doc.uploadedAt ? fmtDateTime(doc.uploadedAt) : '—';
+        const reviewedStr = doc.reviewedBy ? ` by ${esc(doc.reviewedBy)} at ${esc(fmtDateTime(doc.reviewedAt))}` : '';
+
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <span style="font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(doc.fileName || '')}">
+              ${esc(doc.fileName || 'Document')}
+            </span>
+            <span style="font-size:11px;color:var(--text-sub);">${esc(doc.mimeType || '')}${esc(fileSizeStr)}</span>
+            ${reviewBadge}
+          </div>
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">
+            Uploaded: ${esc(uploadedStr)}${reviewedStr ? ` · Reviewed${esc(reviewedStr)}` : ''}
+          </div>
+          ${doc.notes ? `<div style="font-size:12px;color:var(--text);margin-bottom:6px;">${esc(doc.notes)}</div>` : ''}
+          ${previewHtml}
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            ${doc.reviewStatus !== 'reviewed' ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;" onclick="markIncomeDoc('${esc(doc.id)}','reviewed')">✅ Mark Reviewed</button>` : ''}
+            ${doc.reviewStatus !== 'flagged'  ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;background:#fef9c3;color:#b45309;border:1px solid #fde68a;" onclick="markIncomeDoc('${esc(doc.id)}','flagged')">⚠️ Flag</button>` : ''}
+            ${doc.reviewStatus !== 'pending'  ? `<button class="btn btn-sm" style="font-size:11px;padding:4px 10px;" onclick="markIncomeDoc('${esc(doc.id)}','pending')">↩ Reset</button>` : ''}
+          </div>
+        </div>`;
+      }).join('') +
+    `</div>`;
+  }
+
+  // "Flag missing" shortcut when no docs are present
+  if (incomeDocs.length === 0) {
+    html += `<div style="margin-top:10px;">
+      <button class="btn btn-sm" style="font-size:12px;background:#fef9c3;color:#b45309;border:1px solid #fde68a;" onclick="flagMissingIncomeDocs()">⚠️ Flag Missing Income Docs</button>
+    </div>`;
+  }
+
+  html += `</div>`;
+
   document.getElementById('app-detail-body').innerHTML = html;
 
   // Show/hide action section
@@ -12789,6 +12861,42 @@ async function refreshAppDetail() {
   } catch (err) {
     showToast('Failed to refresh application: ' + err.message, 'error');
   }
+}
+
+// ── Income Document Review Actions ───────────────────────────────────────────
+
+async function markIncomeDoc(documentId, status) {
+  if (!documentId) return;
+  try {
+    const resp = await fetch(API_BASE + '/api/mark-income-doc-reviewed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: adminSecret,
+        documentId,
+        status,
+        reviewedBy: document.getElementById('app-reviewer-name')?.value.trim() || 'Admin',
+      }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    showToast(`Document marked as ${status}.`, 'success');
+    await refreshAppDetail();
+  } catch (err) {
+    showToast('Failed to update document: ' + err.message, 'error');
+  }
+}
+
+function flagMissingIncomeDocs() {
+  if (!appViewingData) return;
+  // Add a note and set action to needs_info
+  selectAppAction('needs_info');
+  const notesEl = document.getElementById('app-action-notes');
+  if (notesEl && !notesEl.value) {
+    notesEl.value = 'Income verification documents are missing. Please upload screenshots or PDFs of your recent Uber, Lyft, or DoorDash earnings.';
+  }
+  notesEl?.focus();
+  showToast('Action set to "Request More Info" for missing income docs.', 'info');
 }
 
 // ── Balance Ledger Page ────────────────────────────────────────────────────
