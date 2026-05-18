@@ -14,6 +14,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getBouncieVehicles } from "./_bouncie.js";
+import { isSchemaError } from "./_error-helpers.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
@@ -86,6 +87,7 @@ export default async function handler(req, res) {
   const synced = [];
   const errors = [];
   const nowIso = new Date().toISOString();
+  let fallbackToVehiclesMileage = false;
 
   for (const bv of bouncieVehicles) {
     const { imei, stats } = bv;
@@ -98,19 +100,33 @@ export default async function handler(req, res) {
     if (!odometer || odometer <= 0) continue;
 
     try {
-      // Upsert vehicle_state.current_mileage
-      const { error } = await sb
-        .from("vehicle_state")
-        .upsert(
-          {
-            vehicle_id:      tracked.vehicle_id,
-            current_mileage: odometer,
-            updated_at:      nowIso,
-          },
-          { onConflict: "vehicle_id" }
-        );
+      if (!fallbackToVehiclesMileage) {
+        // Upsert vehicle_state.current_mileage
+        const { error } = await sb
+          .from("vehicle_state")
+          .upsert(
+            {
+              vehicle_id:      tracked.vehicle_id,
+              current_mileage: odometer,
+              updated_at:      nowIso,
+            },
+            { onConflict: "vehicle_id" }
+          );
 
-      if (error) throw new Error(error.message);
+        if (error) {
+          if (!isSchemaError(error)) throw new Error(error.message);
+          fallbackToVehiclesMileage = true;
+          console.warn("bouncie-sync-cron: vehicle_state unavailable, falling back to vehicles.mileage");
+        }
+      }
+
+      if (fallbackToVehiclesMileage) {
+        const { error: vehicleErr } = await sb
+          .from("vehicles")
+          .update({ mileage: odometer })
+          .eq("vehicle_id", tracked.vehicle_id);
+        if (vehicleErr) throw new Error(vehicleErr.message);
+      }
 
       synced.push({ vehicleId: tracked.vehicle_id, imei, odometer });
     } catch (err) {
@@ -122,6 +138,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     synced_count: synced.length,
     error_count:  errors.length,
+    fallback_to_vehicle_mileage: fallbackToVehiclesMileage,
     duration_ms:  Date.now() - startedAt,
     synced,
     errors,

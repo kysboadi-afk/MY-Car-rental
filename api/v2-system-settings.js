@@ -74,6 +74,8 @@ const DEFAULT_SETTINGS = [
   { key: "extension_risk_abnormal_frequency_count",          value: 4,     description: "Extension frequency threshold that should trigger abnormal-frequency alerts", category: "extension_automation" },
   { key: "extension_risk_override_alert_threshold",          value: 3,     description: "Override-usage threshold that should trigger repeated-override alerts", category: "extension_automation" },
   { key: "extension_risk_excessive_stack_count",             value: 4,     description: "Extension stacking threshold that should recommend restricted-extension handling", category: "extension_automation" },
+  // Maintenance / oil-check compliance
+  { key: "oil_check_miles_interval",  value: 500,   description: "Miles driven since last oil check before an oil-check SMS is sent to the active renter (default: 500)", category: "maintenance" },
 ];
 
 export default async function handler(req, res) {
