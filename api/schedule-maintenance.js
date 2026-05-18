@@ -84,6 +84,12 @@ function htmlPage(title, color, heading, body) {
 const APPROVAL_TTL_MS = 48 * 60 * 60 * 1000;
 
 function getSecret() {
+  if (!process.env.OTP_SECRET) {
+    console.warn(
+      "[schedule-maintenance.js] WARNING: OTP_SECRET is not set. " +
+        "Using insecure fallback — set it in your Vercel project settings."
+    );
+  }
   return process.env.OTP_SECRET || "sly-rides-otp-dev-secret-change-in-production";
 }
 
