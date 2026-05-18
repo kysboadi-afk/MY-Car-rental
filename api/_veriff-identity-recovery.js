@@ -41,6 +41,33 @@ function classifyVeriffHttpError(httpStatus) {
   return { errorType: "transient", cooldownMs: COOLDOWN_TRANSIENT_MS };
 }
 
+function classifySessionSource(identitySessionId = "") {
+  const normalized = String(identitySessionId || "").trim();
+  if (!normalized) return "missing_session_id";
+  if (normalized.startsWith("vs_")) return "legacy_stripe_identity";
+  if (/^vrf_/i.test(normalized)) return "veriff_prefixed";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+    return "veriff_uuid";
+  }
+  return "unknown_format";
+}
+
+function classifyDecisionFailureHint(decision = {}) {
+  const detailText = String(decision?.error || "").toLowerCase();
+  const detailsJson = JSON.stringify(decision?.details || {}).toLowerCase();
+  const combined = `${detailText} ${detailsJson}`;
+  if (/workspace|project|x-auth-client-project|client project|wrong project/.test(combined)) {
+    return "workspace_or_project_mismatch";
+  }
+  if (/not found|unknown session|session .* does not exist|no such session|invalid session/.test(combined)) {
+    return "deleted_or_restarted_or_legacy_session";
+  }
+  if (/auth|unauthorized|forbidden|credential|token|signature/.test(combined)) {
+    return "auth_or_config_failure";
+  }
+  return null;
+}
+
 function isSessionInCooldown(sessionId) {
   const until = RECOVERY_COOLDOWN_CACHE.get(sessionId);
   return !!until && Date.now() < until;
@@ -116,10 +143,14 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   const decisionDiagnostics = {
     applicationId: applicationId || null,
     identitySessionId: identitySessionId || null,
+    sessionSource: classifySessionSource(identitySessionId),
     rawDecisionPayload: null,
     rawStatus: null,
     decisionStatus: null,
     mappedStatus: null,
+    decisionHttpStatus: null,
+    decisionError: null,
+    decisionFailureHint: null,
     identityBefore: currentIdentityStatus || null,
     identityAfter: currentIdentityStatus || null,
     finalizationLogicExecuted: false,
@@ -173,6 +204,9 @@ export async function recoverApplicationIdentityFromVeriffDecision(
   decisionDiagnostics.rawStatus = decision?.rawStatus || null;
   decisionDiagnostics.decisionStatus = decision?.decisionStatus || null;
   decisionDiagnostics.mappedStatus = decision?.mappedStatus || null;
+  decisionDiagnostics.decisionHttpStatus = Number(decision?.status) || null;
+  decisionDiagnostics.decisionError = decision?.error || null;
+  decisionDiagnostics.decisionFailureHint = classifyDecisionFailureHint(decision);
   if (!decision.ok) {
     const status = Number(decision.status) || 0;
     const detailText = typeof decision.error === "string" && decision.error
@@ -190,8 +224,11 @@ export async function recoverApplicationIdentityFromVeriffDecision(
       application_id: applicationId,
       session_id: identitySessionId,
       app_status: applicationStatus,
+      session_source: decisionDiagnostics.sessionSource,
       error_type: errorType,
+      failure_hint: decisionDiagnostics.decisionFailureHint,
       http_status: status || null,
+      response_body: decision?.details || null,
       cooldown_until: new Date(cooldownUntil).toISOString(),
     };
     if (errorType === "auth_failure") {
