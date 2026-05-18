@@ -224,6 +224,7 @@ const supabaseDirectUpdates = [];
 // Pre-populated by tests that need a revenue_record to already exist
 const supabaseRevenueStore = {}; // booking_id → { id, ...row }
 const supabaseRevenueByPiStore = {}; // payment_intent_id → row
+let failExtensionOptionalColumnsForBookingRef = null;
 
 mock.module("./_supabase.js", {
   namedExports: {
@@ -291,6 +292,16 @@ mock.module("./_supabase.js", {
             }
             if (table === "bookings") {
               if (_eqFilters.booking_ref) {
+                if (
+                  failExtensionOptionalColumnsForBookingRef &&
+                  _eqFilters.booking_ref === failExtensionOptionalColumnsForBookingRef &&
+                  String(_selectCols || "").includes("extension_pending_payment")
+                ) {
+                  return Promise.resolve({
+                    data: null,
+                    error: { message: "column bookings.extension_pending_payment does not exist" },
+                  });
+                }
                 const found = Object.values(supabaseBookingsStore).find(
                   (r) => r.booking_ref === _eqFilters.booking_ref
                 ) || null;
@@ -385,6 +396,7 @@ function resetCalls() {
   skipSupabaseUpsertCount = 0;
   for (const k of Object.keys(supabaseRevenueStore)) delete supabaseRevenueStore[k];
   for (const k of Object.keys(supabaseRevenueByPiStore)) delete supabaseRevenueByPiStore[k];
+  failExtensionOptionalColumnsForBookingRef = null;
 }
 
 function makeWebhookReq(event) {
@@ -987,6 +999,42 @@ test("webhook rental_extension: orphan existing PI row continues to recovery pat
     1,
     "orphan duplicate PI row must continue to extension recovery and attempt revenue relink"
   );
+});
+
+test("webhook rental_extension: falls back when bookings.extension_pending_payment column is missing", async () => {
+  resetStore(); resetCalls();
+  const bookingId = "bk-ext-legacy-schema";
+  failExtensionOptionalColumnsForBookingRef = bookingId;
+
+  supabaseBookingsStore[bookingId] = {
+    id:             `sb_${bookingId}`,
+    booking_ref:    bookingId,
+    status:         "active_rental",
+    return_date:    "2026-12-22",
+    return_time:    "15:00:00",
+    vehicle_id:     "camry",
+    customer_name:  "Anthony Legacy",
+    customer_phone: "+13105553333",
+    customer_email: "anthony.legacy@example.com",
+    pickup_date:    "2026-12-18",
+    extension_count: 1,
+    deposit_paid:   330,
+  };
+
+  const event = piSucceededEvent({
+    payment_type:         "rental_extension",
+    vehicle_id:           "camry",
+    booking_id:           bookingId,
+    new_return_date:      "2026-12-23",
+    new_return_time:      "3:00 PM",
+    previous_return_date: "2026-12-22",
+  }, 5000);
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200, "legacy-schema bookings query must still process extension webhook");
+  assert.equal(automationCalls.booking.length, 1, "extension should still upsert booking under legacy schema");
+  assert.ok(automationCalls.revenue.length >= 1, "extension should still write revenue under legacy schema");
 });
 
 

@@ -2083,11 +2083,35 @@ export default async function handler(req, res) {
             console.error("stripe-webhook: rental_extension — Supabase unavailable for booking lookup");
             return res.status(200).json({ received: true });
           }
-          const { data: sbExtRow, error: sbExtRowErr } = await sbExtClient
+          const extSelectBase =
+            "id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid, stripe_customer_id, stripe_payment_method_id";
+          const extSelectWithOptional = `${extSelectBase}, extension_pending_payment, balance_due`;
+          const isMissingOptionalColumnError = (err) => {
+            const msg = String(err?.message || "").toLowerCase();
+            return msg.includes("column bookings.extension_pending_payment does not exist")
+              || msg.includes("column bookings.balance_due does not exist");
+          };
+
+          let { data: sbExtRow, error: sbExtRowErr } = await sbExtClient
+            .from("bookings")
+            .select(extSelectWithOptional)
+            .eq("booking_ref", bookingRef)
+            .maybeSingle();
+
+          if (sbExtRowErr && isMissingOptionalColumnError(sbExtRowErr)) {
+            console.warn(
+              `stripe-webhook: rental_extension bookings query missing optional column(s); retrying legacy select for booking ${bookingRef}: ${sbExtRowErr.message}`
+            );
+            const { data: legacyRow, error: legacyErr } = await sbExtClient
               .from("bookings")
-              .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid, stripe_customer_id, stripe_payment_method_id, extension_pending_payment, balance_due")
+              .select(extSelectBase)
               .eq("booking_ref", bookingRef)
               .maybeSingle();
+            sbExtRow = legacyRow
+              ? { ...legacyRow, extension_pending_payment: null, balance_due: null }
+              : legacyRow;
+            sbExtRowErr = legacyErr;
+          }
           if (sbExtRowErr || !sbExtRow) {
             console.error(
               `stripe-webhook: rental_extension booking not found in Supabase: ${bookingRef}`,
