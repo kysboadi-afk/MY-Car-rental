@@ -13013,7 +13013,34 @@ async function runAppOperationalAction(action) {
       reviewedBy,
     });
     if (!result.success) throw new Error(result.error || 'Operation failed.');
-    showToast('Done: ' + action.replace(/_/g, ' '), 'success');
+    if (action === 'manual_recovery') {
+      if (result.synced) {
+        showToast('Recovery synced latest Veriff identity status.', 'success');
+      } else if (result.alreadySynced) {
+        showToast('Recovery check complete: identity is already synced.', 'info');
+      } else if (result.skipped && result.errorType) {
+        const recoveryMessages = {
+          auth_failure: 'Recovery paused: Veriff credentials/config need attention.',
+          session_not_found: 'Recovery check complete: Veriff session was not found (use Restart Verification).',
+          client_error: 'Recovery check complete: Veriff could not process this session.',
+          transient: 'Recovery check complete: Veriff is temporarily unavailable, try again shortly.',
+        };
+        showToast(recoveryMessages[result.errorType] || 'Recovery check completed with no status update.', 'warning');
+      } else if (result.skipped && result.reason) {
+        const skippedMessages = {
+          missing_identity_session: 'Recovery skipped: no Veriff session is linked to this application.',
+          legacy_session_id: 'Recovery skipped: legacy session detected (use Restart Verification).',
+          terminal_application_status: 'Recovery skipped: application is in a terminal status.',
+          auth_cooldown: 'Recovery temporarily paused due to recent Veriff auth failure.',
+          cooldown: 'Recovery skipped: this session is in cooldown, please retry later.',
+        };
+        showToast(skippedMessages[result.reason] || 'Recovery check completed with no status update.', 'info');
+      } else {
+        showToast('Recovery check completed with no status update.', 'info');
+      }
+    } else {
+      showToast('Done: ' + action.replace(/_/g, ' '), 'success');
+    }
     if (action === 'archive_application') {
       closeModal('app-detail-modal');
       clearAppPresence(appViewingId);

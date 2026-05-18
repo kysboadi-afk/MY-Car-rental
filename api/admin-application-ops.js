@@ -275,7 +275,22 @@ async function handleManualRecovery(applicationId, reviewer, notes, sb) {
     reviewedBy: reviewer || "admin_manual_recovery",
     notify: false,
   });
-  if (!result.ok) return { ok: false, status: 500, error: result.error || "Recovery failed.", details: result.details };
+  if (!result.ok) {
+    if (result.errorType) {
+      return {
+        ok: true,
+        synced: false,
+        skipped: true,
+        errorType: result.errorType,
+        recoveryError: result.error || null,
+        details: result.details || "",
+        veriffStatus: null,
+        applicationStatus: currentStatus,
+        identityStatus: app.identity_status || null,
+      };
+    }
+    return { ok: false, status: 500, error: result.error || "Recovery failed.", details: result.details };
+  }
 
   if (result.synced) {
     const nextStatus = String(result?.data?.application_status || currentStatus);
@@ -293,6 +308,8 @@ async function handleManualRecovery(applicationId, reviewer, notes, sb) {
     ok: true,
     synced: !!result.synced,
     alreadySynced: !!result.alreadySynced,
+    skipped: !!result.skipped,
+    reason: result.reason || null,
     veriffStatus: result.veriffStatus || null,
     applicationStatus: result?.data?.application_status || currentStatus,
     identityStatus: result?.data?.identity_status || app.identity_status || null,
