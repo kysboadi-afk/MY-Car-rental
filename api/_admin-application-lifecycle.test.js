@@ -72,6 +72,7 @@ test("buildApplicationLifecycleSummary counts lifecycle filters and new applicat
   assert.equal(summary.needsInfo, 1);
   assert.equal(summary.identityVerified, 1);
   assert.equal(summary.checkrPending, 1);
+  assert.equal(summary.checkrConsider, 1);
   assert.equal(summary.checkrIssue, 1);
   assert.equal(summary.approved, 1);
   assert.equal(summary.rejected, 1);
@@ -99,10 +100,14 @@ test("matchesApplicationLifecycleFilter treats declined alias and archived state
   const rejectedRecord = { application_status: "rejected", identity_status: "verified", checkr_report_status: "consider" };
   const archivedRecord = { application_status: "expired", identity_status: "failed", checkr_report_status: null };
   const verifiedRecord = { application_status: "under_review", identity_status: "verified", checkr_report_status: null };
+  const queuedRecord = { application_status: "submitted", identity_status: "not_started", checkr_report_status: null };
 
   assert.equal(matchesApplicationLifecycleFilter(rejectedRecord, "declined"), true);
   assert.equal(matchesApplicationLifecycleFilter(archivedRecord, "archived"), true);
   assert.equal(matchesApplicationLifecycleFilter(verifiedRecord, "identity_verified"), true);
+  assert.equal(matchesApplicationLifecycleFilter(queuedRecord, "in_queue"), true);
+  assert.equal(matchesApplicationLifecycleFilter(rejectedRecord, "checkr_consider"), false);
+  assert.equal(matchesApplicationLifecycleFilter({ application_status: "under_review", identity_status: "verified", checkr_report_status: "consider" }, "checkr_consider"), true);
 });
 
 test("queue sorting keeps operational priority deterministic", () => {

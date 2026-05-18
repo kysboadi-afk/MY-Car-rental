@@ -107,12 +107,15 @@ function normalizeApplicationLifecycleFilter(value) {
   const normalized = normalizeApplicationStatusValue(value);
   if (!normalized) return "";
   if (normalized === "declined") return "rejected";
+  if (normalized === "queue" || normalized === "in_queue") return "review_queue";
   if ([
+    "review_queue",
     "submitted",
     "under_review",
     "needs_info",
     "identity_verified",
     "checkr_pending",
+    "checkr_consider",
     "checkr_issue",
     "approved",
     "rejected",
@@ -171,6 +174,8 @@ export function matchesApplicationLifecycleFilter(record = {}, lifecycleFilter =
   const checkrStatus = normalizeApplicationStatusValue(record.checkr_report_status);
 
   switch (filter) {
+    case "review_queue":
+      return ACTIVE_APPLICATION_STATUSES.has(applicationStatus);
     case "submitted":
     case "under_review":
     case "needs_info":
@@ -183,6 +188,8 @@ export function matchesApplicationLifecycleFilter(record = {}, lifecycleFilter =
       return !isApplicationTerminal(record) && identityStatus === "verified";
     case "checkr_pending":
       return !isApplicationTerminal(record) && CHECKR_PENDING_STATUSES.has(checkrStatus);
+    case "checkr_consider":
+      return !isApplicationTerminal(record) && checkrStatus === "consider";
     case "checkr_issue":
       return !isApplicationTerminal(record) && CHECKR_ISSUE_STATUSES.has(checkrStatus);
     default:
@@ -292,6 +299,7 @@ export function buildApplicationLifecycleSummary(records = [], now = Date.now())
     needsInfo: 0,
     identityVerified: 0,
     checkrPending: 0,
+    checkrConsider: 0,
     checkrIssue: 0,
     approved: 0,
     rejected: 0,
@@ -325,6 +333,7 @@ export function buildApplicationLifecycleSummary(records = [], now = Date.now())
     if (matchesApplicationLifecycleFilter(record, "needs_info")) summary.needsInfo += 1;
     if (matchesApplicationLifecycleFilter(record, "identity_verified")) summary.identityVerified += 1;
     if (matchesApplicationLifecycleFilter(record, "checkr_pending")) summary.checkrPending += 1;
+    if (matchesApplicationLifecycleFilter(record, "checkr_consider")) summary.checkrConsider += 1;
     if (matchesApplicationLifecycleFilter(record, "checkr_issue")) summary.checkrIssue += 1;
     if (matchesApplicationLifecycleFilter(record, "approved")) summary.approved += 1;
     if (matchesApplicationLifecycleFilter(record, "rejected")) summary.rejected += 1;
