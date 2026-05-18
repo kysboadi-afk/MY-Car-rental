@@ -60,9 +60,18 @@ export default async function handler(req, res) {
           reviewedBy: "admin_review_queue_sync",
         })),
       );
+      let authFailureLogged = false;
       recoveryResults.forEach((result) => {
-        if (result.status === "fulfilled" && !result.value?.ok && result.value?.details) {
-          console.error("admin-review-queue Veriff recovery failed:", result.value.details);
+        if (result.status === "fulfilled" && !result.value?.ok) {
+          const { errorType, details } = result.value || {};
+          if (errorType === "auth_failure" && !authFailureLogged) {
+            authFailureLogged = true;
+            console.error("admin-review-queue Veriff recovery: auth/config failure — check VERIFF_API_KEY and VERIFF_PROJECT_ID");
+          } else if (errorType === "session_not_found" || errorType === "client_error") {
+            if (details) console.warn("admin-review-queue Veriff recovery skipped (permanent):", details);
+          } else if (errorType !== "auth_failure") {
+            if (details) console.warn("admin-review-queue Veriff recovery transient failure:", details);
+          }
         } else if (result.status === "rejected") {
           console.error("admin-review-queue Veriff recovery failed:", result.reason);
         }

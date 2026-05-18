@@ -73,12 +73,19 @@ export default async function handler(req, res) {
 
   let r = result.data;
   let reviewHistory = result.history || [];
-  if (r?.identity_session_id && r?.identity_status !== "verified") {
+  const appStatus = String(r?.application_status || "").toLowerCase();
+  const isRecoverableStatus = ["submitted", "under_review", "needs_info"].includes(appStatus);
+  if (r?.identity_session_id && r?.identity_status !== "verified" && isRecoverableStatus) {
     const recovery = await recoverApplicationIdentityFromVeriffDecision(r, {
       reviewedBy: "admin_review_detail_sync",
     });
     if (!recovery.ok) {
-      if (recovery.details) console.error("admin-review-detail recovery:", recovery.details);
+      const { errorType, details } = recovery;
+      if (errorType === "session_not_found" || errorType === "client_error") {
+        if (details) console.warn("admin-review-detail recovery (permanent):", details);
+      } else if (details) {
+        console.error("admin-review-detail recovery:", details);
+      }
     } else if (recovery.synced) {
       const refreshed = await fetchReviewApplicationById(applicationId.trim());
       if (refreshed.ok) {
