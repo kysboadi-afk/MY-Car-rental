@@ -60,10 +60,6 @@ function detectSecretSource(req) {
 function logAdminAuthDiagnostics(req, suppliedSecret, isAuthorized) {
   const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
   console.info("backfill-income-documents auth diagnostics", {
-    admin_secret_configured: Boolean(normalizedLength(process.env.ADMIN_SECRET)),
-    admin_secret_length: normalizedLength(process.env.ADMIN_SECRET),
-    admin_password_configured: Boolean(normalizedLength(process.env.ADMIN_PASSWORD)),
-    admin_password_length: normalizedLength(process.env.ADMIN_PASSWORD),
     auth_header_present: Boolean(authHeader),
     auth_header_uses_bearer: authHeader.startsWith("Bearer "),
     secret_source: detectSecretSource(req),
