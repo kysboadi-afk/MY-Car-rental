@@ -86,17 +86,23 @@ export function mapVeriffDecisionToIdentityStatus(rawStatus) {
 
 export function extractVeriffStatus(payload = {}) {
   return pickString(
+    payload?.verification?.decision?.status,
+    payload?.verification?.decision?.label,
+    payload?.verification?.decision?.code,
+    payload?.verification?.decision?.decision,
+    payload?.decision?.status,
+    payload?.decision?.label,
+    payload?.decision?.code,
+    payload?.decision?.decision,
     payload?.verification?.status,
     payload?.verification?.state,
     payload?.verification?.decision,
-    payload?.verification?.decision?.status,
-    payload?.decision?.status,
-    payload?.decision,
-    payload?.status,
-    payload?.action,
     payload?.eventType,
     payload?.event_type,
+    payload?.action,
     payload?.verification?.code,
+    payload?.decision,
+    payload?.status,
   );
 }
 
