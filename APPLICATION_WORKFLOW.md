@@ -22,13 +22,17 @@ This defines the intended production state machine for renter applications, incl
 - `canceled`
 
 ### Checkr status (`checkr_report_status`)
+- `not_started`
+- `launch_queued`
+- `candidate_created`
+- `invitation_sent`
 - `pending`
+- `completed`
 - `clear`
 - `consider`
 - `suspended`
-- `disputed`
-- `complete_no_adj`
-- `error`
+- `failed`
+- `webhook_missing`
 
 ---
 
@@ -67,8 +71,8 @@ This defines the intended production state machine for renter applications, incl
 
 ### Checkr transitions
 - starts only after identity is `verified`, required consent exists, and license data is present
-- initial set to `pending` at initiation
-- updates to `clear|consider|suspended|disputed|complete_no_adj|error` via Checkr webhook/events
+- initial launch phases progress `launch_queued` → `candidate_created` → `invitation_sent`
+- webhook/processing phases then update to `pending|completed|clear|consider|suspended|failed|webhook_missing`
 
 ---
 
@@ -108,12 +112,12 @@ This defines the intended production state machine for renter applications, incl
 
 ### Pending states
 - identity: `requires_input`, `processing`
-- screening: `pending`, `suspended`, `disputed`
+- screening: `launch_queued`, `candidate_created`, `invitation_sent`, `pending`, `suspended`
 - application: `submitted`, `under_review`, `needs_info`
 
 ### Failure states
 - identity: `failed`, `canceled`
-- checkr: `error`
+- checkr: `failed`, `webhook_missing`
 - these are recoverable/admin-actionable unless app is terminal
 
 ### Terminal states
@@ -147,4 +151,3 @@ For environment reset without unsafe hard deletes:
 2. Confirm and archive matches to `withdrawn`
 3. Keep audit trail intent via operation logs/history
 4. Execute one clean end-to-end production-like test application
-

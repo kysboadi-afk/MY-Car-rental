@@ -16,6 +16,7 @@
 
 import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import {
+  deriveCheckrPhase,
   listPendingIdentityRecoveryApplications,
   listReviewQueueApplications,
 } from "./_renter-applications.js";
@@ -111,7 +112,14 @@ export default async function handler(req, res) {
       needsInfoReason: r.needs_info_reason || null,
       precheckDecision: r.precheck_decision || null,
       checkrReportStatus: r.checkr_report_status || null,
+      checkrPhase: deriveCheckrPhase(r),
+      checkrCandidateId: r.checkr_candidate_id || null,
       checkrReportId: r.checkr_report_id || null,
+      checkrLastError: r.checkr_last_error || null,
+      checkrLastLaunchError: r.checkr_last_launch_error || null,
+      checkrLastLaunchAttemptAt: r.checkr_last_launch_attempt_at || null,
+      checkrLaunchAttemptCount: Number(r.checkr_launch_attempt_count || 0),
+      checkrLastWebhookAt: r.checkr_last_webhook_at || null,
       adverseActionStep: r.adverse_action_step || null,
       adverseActionSentAt: r.adverse_action_sent_at || null,
       submittedAt: r.submitted_at || null,
