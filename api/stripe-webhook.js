@@ -2045,16 +2045,30 @@ export default async function handler(req, res) {
             if (sbDup) {
               const { data: existingRev } = await sbDup
                 .from("revenue_records")
-                .select("id")
+                .select("id, is_orphan, booking_id")
                 .eq("payment_intent_id", paymentIntent.id)
                 .eq("sync_excluded", false)
                 .maybeSingle();
               if (existingRev?.id) {
-                console.log(
-                  `stripe-webhook: rental_extension PI ${paymentIntent.id} already in revenue_records ` +
-                  `(id=${existingRev.id}) — skipping duplicate`
-                );
-                return res.status(200).json({ received: true });
+                const existingBookingId = String(existingRev.booking_id || "").trim();
+                const shouldRecoverExisting =
+                  existingRev.is_orphan === true ||
+                  !existingBookingId ||
+                  (resolvedBookingId && existingBookingId !== resolvedBookingId);
+
+                if (shouldRecoverExisting) {
+                  console.warn(
+                    `stripe-webhook: rental_extension PI ${paymentIntent.id} has recoverable existing revenue row ` +
+                    `(id=${existingRev.id}, is_orphan=${existingRev.is_orphan}, booking_id=${existingBookingId || "<missing>"}) ` +
+                    "— continuing to recovery path"
+                  );
+                } else {
+                  console.log(
+                    `stripe-webhook: rental_extension PI ${paymentIntent.id} already in revenue_records ` +
+                    `(id=${existingRev.id}) — skipping duplicate`
+                  );
+                  return res.status(200).json({ received: true });
+                }
               }
             }
           } catch (dupCheckErr) {
