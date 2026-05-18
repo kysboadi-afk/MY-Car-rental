@@ -3489,6 +3489,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
       Refresh
     </button>
+    <button id="apps-clear-declined-btn" class="btn btn-secondary" onclick="clearDeclinedApplications()" style="display:none;border-color:#fecaca;color:#b91c1c;">
+      🗑 Clear Declined
+    </button>
     <button class="btn btn-secondary" onclick="archiveTestApplications()">
       🧹 Archive Test Apps
     </button>
@@ -12459,6 +12462,7 @@ async function loadAppQueue() {
     persistAppQueueState();
     syncAppQueueControls();
     updateAppsReviewBadge();
+    updateClearDeclinedButton();
     renderAppQueueKpis();
     renderAppQueue();
   } catch (err) {
@@ -12476,6 +12480,19 @@ function updateAppsReviewBadge() {
     badge.textContent = visibleCount > 99 ? '99+' : String(visibleCount);
   } else {
     badge.style.display = 'none';
+  }
+}
+
+function updateClearDeclinedButton() {
+  const btn = document.getElementById('apps-clear-declined-btn');
+  if (!btn) return;
+  const declinedCount = Number(appQueueSummary?.rejected || 0);
+  if (declinedCount > 0) {
+    btn.style.display = '';
+    btn.textContent = `🗑 Clear Declined (${declinedCount.toLocaleString()})`;
+  } else {
+    btn.style.display = 'none';
+    btn.textContent = '🗑 Clear Declined';
   }
 }
 
@@ -12503,6 +12520,37 @@ function renderAppQueueKpis() {
         <div class="app-queue-kpi-sub">${esc(card.note)}</div>
       </button>`;
   }).join('');
+}
+
+async function clearDeclinedApplications() {
+  const declinedCount = Number(appQueueSummary?.rejected || 0);
+  if (declinedCount <= 0) {
+    showToast('No declined applications to clear.', 'info');
+    return;
+  }
+  if (!confirm(`Clear all ${declinedCount.toLocaleString()} declined application(s)? They will be archived and removed from the declined queue.`)) return;
+
+  try {
+    const result = await apiPost('/api/admin-application-ops', {
+      secret: adminSecret,
+      action: 'clear_declined_applications',
+      reviewedBy: 'Admin',
+      notes: 'Bulk-cleared declined applications from queue.',
+      dryRun: false,
+    });
+    if (!result.success) throw new Error(result.error || 'Operation failed.');
+
+    const cleared = Number(result.archived || 0);
+    const failedCount = Array.isArray(result.failed) ? result.failed.length : 0;
+    if (failedCount > 0) {
+      showToast(`Cleared ${cleared} declined application(s), ${failedCount} failed.`, 'error');
+    } else {
+      showToast(`Cleared ${cleared} declined application(s).`, 'success');
+    }
+    await loadAppQueue();
+  } catch (err) {
+    showToast('Failed to clear declined applications: ' + (err?.message || 'Unknown error'), 'error');
+  }
 }
 
 function appStatusBadge(status) {
