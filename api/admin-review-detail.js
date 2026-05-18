@@ -8,6 +8,8 @@
 import { isAdminAuthorized, extractAdminSecret } from "./_admin-auth.js";
 import { fetchReviewApplicationById } from "./_renter-applications.js";
 import { recoverVerifiedApplicationFromStripe } from "./_stripe-identity-recovery.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { INCOME_VERIFICATION_BUCKET, INCOME_VERIFICATION_DOC_TYPE } from "./_income-verification.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -51,6 +53,52 @@ export default async function handler(req, res) {
         r = refreshed.data;
         reviewHistory = refreshed.history || reviewHistory;
       }
+    }
+  }
+
+  // Fetch income-verification documents (gracefully skip if table doesn't exist)
+  let incomeDocuments = [];
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data: docs, error: docsErr } = await sb
+        .from("application_documents")
+        .select("id, doc_type, file_name, mime_type, file_path, file_size, review_status, reviewed_by, reviewed_at, notes, created_at")
+        .eq("application_id", r.id)
+        .eq("doc_type", INCOME_VERIFICATION_DOC_TYPE)
+        .order("created_at", { ascending: true });
+
+      if (!docsErr && Array.isArray(docs)) {
+        // Generate short-lived signed URLs for admin preview
+        incomeDocuments = await Promise.all(
+          docs.map(async (doc) => {
+            let previewUrl = null;
+            if (doc.file_path) {
+              const { data: urlData } = await sb.storage
+                .from(INCOME_VERIFICATION_BUCKET)
+                .createSignedUrl(doc.file_path, 60 * 60 * 4); // 4-hour admin preview
+              previewUrl = urlData?.signedUrl || null;
+            }
+            return {
+              id: doc.id,
+              docType: doc.doc_type,
+              fileName: doc.file_name || null,
+              mimeType: doc.mime_type || null,
+              fileSize: doc.file_size || null,
+              reviewStatus: doc.review_status || "pending",
+              reviewedBy: doc.reviewed_by || null,
+              reviewedAt: doc.reviewed_at || null,
+              notes: doc.notes || null,
+              uploadedAt: doc.created_at || null,
+              previewUrl,
+            };
+          })
+        );
+      } else if (docsErr) {
+        console.warn("admin-review-detail: could not fetch income docs (table may not exist yet):", docsErr.message);
+      }
+    } catch (fetchErr) {
+      console.warn("admin-review-detail: income docs fetch error (non-fatal):", fetchErr?.message);
     }
   }
 
@@ -104,5 +152,6 @@ export default async function handler(req, res) {
       newStatus: h.new_status,
       createdAt: h.created_at,
     })),
+    incomeDocuments,
   });
 }

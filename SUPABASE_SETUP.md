@@ -779,3 +779,80 @@ The relevant tables are:
 
 Please write the SQL I need to run in the Supabase SQL Editor to make this change.
 ```
+
+---
+
+## 📄 Income Verification Document Uploads
+
+### New Table: `application_documents`
+
+Run this SQL in the **Supabase SQL Editor** to create the table that stores renter income-verification uploads:
+
+```sql
+CREATE TABLE IF NOT EXISTS application_documents (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id   UUID        NOT NULL REFERENCES renter_applications(id) ON DELETE CASCADE,
+  doc_type         TEXT        NOT NULL DEFAULT 'income_verification',
+  file_name        TEXT,
+  mime_type        TEXT,
+  file_path        TEXT        NOT NULL,
+  file_size        INTEGER,
+  review_status    TEXT        NOT NULL DEFAULT 'pending'
+                               CHECK (review_status IN ('pending','reviewed','flagged')),
+  reviewed_by      TEXT,
+  reviewed_at      TIMESTAMPTZ,
+  notes            TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Index for fast lookup by application
+CREATE INDEX IF NOT EXISTS application_documents_application_id_idx
+  ON application_documents (application_id);
+
+-- Row-level security (all access through Vercel service role)
+ALTER TABLE application_documents ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY IF NOT EXISTS "service_role_all"
+  ON application_documents
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+```
+
+### New Storage Bucket: `application-documents`
+
+1. Go to **Supabase → Storage → New Bucket**
+2. Name: `application-documents`
+3. Public: **No** (private — access via signed URLs only)
+4. File size limit: `15728640` (15 MB)
+
+Or run via SQL:
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('application-documents', 'application-documents', false, 15728640)
+ON CONFLICT (id) DO NOTHING;
+```
+
+### Supabase Storage Policy for `application-documents`
+
+Allow the service role (used by Vercel serverless functions) full access:
+
+```sql
+CREATE POLICY "service_role_all"
+  ON storage.objects
+  FOR ALL
+  TO service_role
+  USING (bucket_id = 'application-documents')
+  WITH CHECK (bucket_id = 'application-documents');
+```
+
+### How It Works
+
+- Renters upload income verification files during the application process (optional step).
+- Each file is stored at `application-documents/{applicationId}/income-verification/{timestamp}-{random}.{ext}`.
+- A row is inserted into `application_documents` tracking: file path, MIME type, size, and initial `review_status = 'pending'`.
+- Admins view documents in the **Application Review Queue → Detail Modal**, where they can:
+  - Preview images and open PDFs via 4-hour signed URLs
+  - Mark each document as **Reviewed** or **Flagged**
+  - Flag missing docs and automatically trigger a "Needs More Info" action

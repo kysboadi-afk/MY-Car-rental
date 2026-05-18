@@ -49,6 +49,12 @@
     document.body.style.overflow = "";
   }
 
+  function hasReadyIncomeFile() {
+    return incomeFileEntries.some(function(e) {
+      return e.state === 'ready' || e.state === 'uploaded';
+    });
+  }
+
   function allRequiredConsentsChecked() {
     return !!(termsCheckbox && termsCheckbox.checked)
       && !!(smsConsentCheckbox && smsConsentCheckbox.checked)
@@ -56,7 +62,7 @@
   }
 
   function syncSubmitEnabledState() {
-    submitBtn.disabled = !allRequiredConsentsChecked();
+    submitBtn.disabled = !allRequiredConsentsChecked() || !hasReadyIncomeFile();
   }
 
   document.getElementById("applyNowBtn").addEventListener("click", openModal);
@@ -149,6 +155,334 @@
     });
   }
 
+  // ─── Income Verification Upload ───────────────────────────────────────────────
+
+  var incomeUploadInput  = document.getElementById("applyIncomeUpload");
+  var incomeFileListEl   = document.getElementById("applyIncomeFileList");
+  var incomeStatusEl     = document.getElementById("applyIncomeStatus");
+
+  // Each entry: { id, file, state, label, base64, mimeType, compressedSize }
+  var incomeFileEntries = [];
+  var INCOME_MAX_FILES  = 5;
+  var INCOME_MAX_BYTES  = 15 * 1024 * 1024; // 15 MB
+  // Compress images larger than this threshold
+  var INCOME_COMPRESS_THRESHOLD = 3 * 1024 * 1024; // 3 MB
+  var INCOME_MAX_DIMENSION = 2048; // px
+  var incomeFileIdSeq = 0;
+
+  var INCOME_ALLOWED_EXTS = /\.(jpe?g|jpg|png|webp|heic|heif|pdf)$/i;
+
+  /** Escape a string for safe insertion into an HTML attribute or text node. */
+  // eslint-disable-next-line no-unused-vars -- reserved for future HTML interpolation
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fmtBytes(bytes) {
+    if (bytes < 1024)        return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function isImageMime(mime) {
+    return typeof mime === 'string' && mime.startsWith('image/');
+  }
+
+  function isCompressibleImage(mime) {
+    // Can compress JPEG, PNG, WEBP via Canvas; not HEIC/HEIF (no Canvas support in non-Safari)
+    return isImageMime(mime) && !mime.includes('heic') && !mime.includes('heif');
+  }
+
+  /**
+   * Compress an image File using Canvas. Returns a Blob of the compressed image.
+   * Falls back to the original Blob if Canvas is unavailable.
+   */
+  function compressImageFile(file, onProgress) {
+    return new Promise(function(resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function() {
+        URL.revokeObjectURL(url);
+        var w = img.naturalWidth, h = img.naturalHeight;
+        if (w <= INCOME_MAX_DIMENSION && h <= INCOME_MAX_DIMENSION && file.size <= INCOME_COMPRESS_THRESHOLD) {
+          // No resize needed — still encode as JPEG to normalise EXIF/format
+          resolve(file.slice(0));
+          return;
+        }
+        // Scale down proportionally
+        var scale = Math.min(1, INCOME_MAX_DIMENSION / Math.max(w, h));
+        var tw = Math.round(w * scale), th = Math.round(h * scale);
+        if (onProgress) onProgress('compressing');
+        var canvas = document.createElement('canvas');
+        canvas.width = tw;
+        canvas.height = th;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, tw, th);
+        canvas.toBlob(function(blob) {
+          resolve(blob || file.slice(0));
+        }, 'image/jpeg', 0.82);
+      };
+      img.onerror = function() {
+        URL.revokeObjectURL(url);
+        resolve(file.slice(0)); // Can't decode, upload original
+      };
+      img.src = url;
+    });
+  }
+
+  function renderIncomeFileList() {
+    if (!incomeFileListEl) return;
+    // Clear previous content
+    while (incomeFileListEl.firstChild) {
+      incomeFileListEl.removeChild(incomeFileListEl.firstChild);
+    }
+    if (!incomeFileEntries.length) { syncSubmitEnabledState(); return; }
+
+    incomeFileEntries.forEach(function(entry) {
+      var stateClass = '';
+      var icon = '📄';
+      var stateSuffix = '';
+      if (entry.state === 'compressing') { stateClass = 'compressing'; icon = '⏳'; stateSuffix = ' — Compressing…'; }
+      else if (entry.state === 'ready')  { stateClass = 'ready'; icon = '✅'; stateSuffix = entry.compressedSize ? ' — Compressed (' + fmtBytes(entry.compressedSize) + ')' : ''; }
+      else if (entry.state === 'error')  { stateClass = 'error'; icon = '❌'; stateSuffix = ' — ' + (entry.errorMsg || 'Error'); }
+      else if (entry.state === 'uploading') { stateClass = 'uploading'; icon = '⬆️'; stateSuffix = ' — Uploading…'; }
+      else if (entry.state === 'uploaded')  { stateClass = 'uploaded'; icon = '✅'; stateSuffix = ' — Uploaded ✓'; }
+
+      var item = document.createElement('div');
+      item.className = 'apply-income-file-item ' + stateClass;
+      item.id = 'income-item-' + entry.id;
+
+      var iconSpan = document.createElement('span');
+      iconSpan.textContent = icon;
+      item.appendChild(iconSpan);
+
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'apply-income-file-name';
+      nameSpan.title = entry.label;
+      nameSpan.textContent = entry.label;
+      item.appendChild(nameSpan);
+
+      var sizeSpan = document.createElement('span');
+      sizeSpan.className = 'apply-income-file-size';
+      sizeSpan.textContent = fmtBytes(entry.file.size) + stateSuffix;
+      item.appendChild(sizeSpan);
+
+      if (entry.state !== 'uploading' && entry.state !== 'uploaded') {
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'apply-income-remove-btn';
+        removeBtn.setAttribute('aria-label', 'Remove file');
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (function(id) {
+          return function() {
+            incomeFileEntries = incomeFileEntries.filter(function(e) { return e.id !== id; });
+            renderIncomeFileList();
+            updateIncomeStatus();
+            if (incomeUploadInput && incomeFileEntries.length < INCOME_MAX_FILES) {
+              incomeUploadInput.disabled = false;
+              var lbl = document.getElementById('applyIncomeUploadLabel');
+              if (lbl) lbl.style.opacity = '';
+            }
+            syncSubmitEnabledState();
+          };
+        }(entry.id)));
+        item.appendChild(removeBtn);
+      }
+
+      incomeFileListEl.appendChild(item);
+    });
+
+    syncSubmitEnabledState();
+  }
+
+  function updateIncomeStatus() {
+    if (!incomeStatusEl) return;
+    var count = incomeFileEntries.length;
+    if (count === 0) { incomeStatusEl.textContent = ''; syncSubmitEnabledState(); return; }
+    var readyCount = incomeFileEntries.filter(function(e) { return e.state === 'ready'; }).length;
+    var errorCount = incomeFileEntries.filter(function(e) { return e.state === 'error'; }).length;
+    var msg = count + ' file' + (count > 1 ? 's' : '') + ' selected';
+    if (errorCount) msg += ', ' + errorCount + ' could not be processed';
+    incomeStatusEl.textContent = msg;
+    syncSubmitEnabledState();
+  }
+
+  /**
+   * Process a newly added file: validate → optionally compress → store as base64.
+   */
+  function processIncomeFile(file, entry) {
+    // Validate type
+    var mime = file.type || '';
+    var validType = mime.startsWith('image/') || mime === 'application/pdf'
+      || (mime === '' && INCOME_ALLOWED_EXTS.test(file.name));
+    if (!validType) {
+      entry.state = 'error';
+      entry.errorMsg = 'Unsupported file type';
+      renderIncomeFileList();
+      updateIncomeStatus();
+      return;
+    }
+
+    // Validate size BEFORE compression (reject obviously huge files)
+    if (file.size > INCOME_MAX_BYTES) {
+      entry.state = 'error';
+      entry.errorMsg = 'File too large (max 15 MB)';
+      renderIncomeFileList();
+      updateIncomeStatus();
+      return;
+    }
+
+    var shouldCompress = isCompressibleImage(mime) && file.size > INCOME_COMPRESS_THRESHOLD;
+
+    function storeAsBase64(blob) {
+      var reader = new FileReader();
+      reader.onload = function() {
+        var dataUrl = reader.result;
+        entry.base64 = dataUrl.split(',')[1] || dataUrl;
+        entry.mimeType = shouldCompress ? 'image/jpeg' : (mime || 'application/octet-stream');
+        entry.compressedSize = blob.size;
+        entry.state = 'ready';
+        renderIncomeFileList();
+        updateIncomeStatus();
+      };
+      reader.onerror = function() {
+        entry.state = 'error';
+        entry.errorMsg = 'Could not read file';
+        renderIncomeFileList();
+        updateIncomeStatus();
+      };
+      reader.readAsDataURL(blob);
+    }
+
+    if (shouldCompress) {
+      entry.state = 'compressing';
+      renderIncomeFileList();
+      if (incomeStatusEl) incomeStatusEl.textContent = 'Image too large, compressing…';
+      compressImageFile(file, null).then(function(blob) {
+        if (blob.size > INCOME_MAX_BYTES) {
+          entry.state = 'error';
+          entry.errorMsg = 'File still too large after compression';
+          renderIncomeFileList();
+          updateIncomeStatus();
+          return;
+        }
+        storeAsBase64(blob);
+      });
+    } else {
+      storeAsBase64(file);
+    }
+  }
+
+  if (incomeUploadInput) {
+    incomeUploadInput.addEventListener("change", function() {
+      var files = Array.from(this.files || []);
+      this.value = ''; // reset so same file can be re-added after removal
+
+      var remaining = INCOME_MAX_FILES - incomeFileEntries.length;
+      if (remaining <= 0) {
+        if (incomeStatusEl) incomeStatusEl.textContent = 'Maximum ' + INCOME_MAX_FILES + ' files already selected.';
+        return;
+      }
+
+      var toAdd = files.slice(0, remaining);
+      if (files.length > remaining && incomeStatusEl) {
+        incomeStatusEl.textContent = 'Only ' + remaining + ' more file' + (remaining > 1 ? 's' : '') + ' can be added.';
+      }
+
+      toAdd.forEach(function(file) {
+        incomeFileIdSeq++;
+        var entry = {
+          id: incomeFileIdSeq,
+          file: file,
+          label: file.name,
+          state: 'pending',
+          base64: null,
+          mimeType: null,
+          compressedSize: null,
+          errorMsg: null,
+        };
+        incomeFileEntries.push(entry);
+        processIncomeFile(file, entry);
+      });
+
+      renderIncomeFileList();
+      updateIncomeStatus();
+
+      // Disable picker if we've hit the max
+      if (incomeFileEntries.length >= INCOME_MAX_FILES) {
+        incomeUploadInput.disabled = true;
+        var label = document.getElementById('applyIncomeUploadLabel');
+        if (label) label.style.opacity = '0.4';
+      }
+    });
+  }
+
+  /**
+   * Upload all ready income verification files one-by-one after applicationId is known.
+   * Does NOT throw — returns summary of successes and failures.
+   */
+  async function uploadIncomeFiles(applicationId) {
+    var readyEntries = incomeFileEntries.filter(function(e) { return e.state === 'ready' && e.base64; });
+    if (!readyEntries.length) return { uploaded: 0, failed: 0 };
+
+    if (incomeStatusEl) incomeStatusEl.textContent = 'Uploading income documents…';
+
+    var uploaded = 0, failed = 0;
+    for (var i = 0; i < readyEntries.length; i++) {
+      var entry = readyEntries[i];
+      entry.state = 'uploading';
+      renderIncomeFileList();
+      if (incomeStatusEl) {
+        incomeStatusEl.textContent = 'Uploading ' + (i + 1) + ' of ' + readyEntries.length + '…';
+      }
+
+      try {
+        var resp = await fetch(API_BASE + '/api/upload-income-verification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicationId: applicationId,
+            fileData: entry.base64,
+            mimeType: entry.mimeType,
+            fileName: entry.label,
+          }),
+        });
+        var result = await resp.json().catch(function() { return {}; });
+        if (resp.ok && result.success) {
+          entry.state = 'uploaded';
+          uploaded++;
+        } else {
+          entry.state = 'error';
+          entry.errorMsg = result.error || 'Upload failed';
+          failed++;
+          console.warn('[apply] income doc upload failed:', result.error || resp.status);
+        }
+      } catch (uploadErr) {
+        entry.state = 'error';
+        entry.errorMsg = 'Upload failed, please try again';
+        failed++;
+        console.warn('[apply] income doc upload threw:', uploadErr);
+      }
+      renderIncomeFileList();
+    }
+
+    if (incomeStatusEl) {
+      if (failed === 0) {
+        incomeStatusEl.textContent = uploaded + ' document' + (uploaded > 1 ? 's' : '') + ' uploaded successfully.';
+      } else if (uploaded > 0) {
+        incomeStatusEl.textContent = uploaded + ' uploaded, ' + failed + ' failed — you can retry after submission.';
+      } else {
+        incomeStatusEl.textContent = 'Upload failed. Your application was saved — please try uploading again.';
+      }
+    }
+    return { uploaded: uploaded, failed: failed };
+  }
+
   // ─── Form submission ──────────────────────────────────────────────────────────
 
   form.addEventListener("submit", async function (e) {
@@ -238,6 +572,14 @@
     if (!agreeBackgroundCheck) {
       statusEl.textContent = "You must authorize the background check disclosure.";
       statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!hasReadyIncomeFile()) {
+      statusEl.textContent = "Please upload at least one proof of rideshare income (screenshot or PDF).";
+      statusEl.className = "apply-status error";
+      if (incomeStatusEl) incomeStatusEl.textContent = "At least one income document is required.";
+      document.getElementById("applyIncomeUploadLabel")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
@@ -339,6 +681,16 @@
       }
 
       const resolvedApplicationId = result.applicationId || applicationId || null;
+
+      // Upload income verification documents (non-blocking — won't prevent redirect on failure)
+      if (resolvedApplicationId && incomeFileEntries.some(function(e) { return e.state === 'ready'; })) {
+        statusEl.textContent = "Uploading income documents\u2026";
+        try {
+          await uploadIncomeFiles(resolvedApplicationId);
+        } catch (_) {
+          // Non-fatal — application already saved
+        }
+      }
 
       // Persist name, phone, lifecycle state, and protection preferences so
       // subsequent pages (cars.html, booking flow) can pre-populate the selections.
