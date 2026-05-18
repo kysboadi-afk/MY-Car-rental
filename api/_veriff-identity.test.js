@@ -80,6 +80,12 @@ const fetchReviewApplicationById = mock.fn(async (...args) => {
 
 mock.module("./_renter-applications.js", {
   namedExports: {
+    deriveCheckrPhase: (record = {}) => {
+      if (record.checkr_report_status) return record.checkr_report_status;
+      if (record.checkr_report_id) return "invitation_sent";
+      if (record.checkr_candidate_id) return "candidate_created";
+      return "not_started";
+    },
     fetchRenterApplicationById,
     fetchRenterApplicationByIdentitySessionId,
     patchRenterApplicationIdentityById,
