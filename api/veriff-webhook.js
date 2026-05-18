@@ -125,9 +125,20 @@ function isStaleIdentityUpdate(current = {}, nextPatch = {}) {
 
 function getEventId(payload = {}, sessionId = "", rawStatus = "") {
   const direct = String(payload?.id || "").trim();
-  if (direct) return direct;
+  if (direct && direct !== sessionId) return direct;
   const createdAt = String(payload?.createdAt || payload?.created_at || "").trim();
-  return [sessionId || "unknown-session", rawStatus || "unknown-status", createdAt || "unknown-time"].join(":");
+  const attemptId = pickString(
+    payload?.attemptId,
+    payload?.attempt_id,
+    payload?.verification?.attemptId,
+    payload?.verification?.attempt_id,
+  );
+  return [
+    sessionId || direct || "unknown-session",
+    rawStatus || "unknown-status",
+    attemptId || "unknown-attempt",
+    createdAt || "unknown-time",
+  ].join(":");
 }
 
 const EVENT_LOG_TABLES = [
