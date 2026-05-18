@@ -12882,7 +12882,12 @@ function selectAppAction(action) {
 }
 
 async function submitAppAction() {
-  if (!appViewingData || !appSelectedAction || appActionInFlight) return;
+  if (appActionInFlight) return;
+  if (!appViewingData) {
+    showToast('Application details failed to load. Click Refresh and try again.', 'error');
+    return;
+  }
+  if (!appSelectedAction) return;
   const submitBtn  = document.getElementById('app-submit-btn');
   const notes      = document.getElementById('app-action-notes')?.value?.trim() || '';
   const reviewedBy = document.getElementById('app-reviewer-name')?.value?.trim() || 'Admin';
