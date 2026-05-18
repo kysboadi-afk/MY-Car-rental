@@ -3,6 +3,7 @@ import {
   patchRenterApplicationIdentityById,
   fetchRenterApplicationById,
   fetchRenterApplicationByIdentitySessionId,
+  fetchReviewApplicationById,
 } from "./_renter-applications.js";
 import {
   sendIdentityIssueNotifications,
@@ -323,12 +324,24 @@ export default async function handler(req, res) {
     dbPatchExecuted: false,
     dbPatchOk: null,
     dbPatchError: null,
+    patchPayload: null,
+    dbResponsePayload: null,
+    identityAfterReload: null,
+    applicationStatusAfterReload: null,
+    reloadFetchExecuted: false,
+    reloadFetchOk: null,
+    reloadFetchError: null,
     eventLogErrorType: null,
     eventLogErrorCode: null,
     notificationKind: null,
     eventLogSkipped: false,
     skipReason: null,
+    earlyReturnReason: null,
     error: null,
+  };
+  const setEarlyReturnReason = (reason) => {
+    eventDiagnostics.skipReason = reason;
+    eventDiagnostics.earlyReturnReason = reason;
   };
 
   console.info("veriff-identity-webhook: event received", {
@@ -353,7 +366,7 @@ export default async function handler(req, res) {
   try {
     const duplicate = await isDuplicateEvent(sb, eventId);
     if (duplicate) {
-      eventDiagnostics.skipReason = "duplicate_event";
+      setEarlyReturnReason("duplicate_event");
       console.info("veriff-identity-webhook: duplicate event ignored", { eventId, applicationId, identitySessionId });
       console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
       return res.status(200).json({ received: true, duplicate: true });
@@ -370,7 +383,7 @@ export default async function handler(req, res) {
     const msg = String(recordErr?.message || "");
     const classifiedError = classifyEventLogFailure(recordErr);
     if (errCode === "23505" || /duplicate key|unique/i.test(msg)) {
-      eventDiagnostics.skipReason = "duplicate_event_conflict";
+      setEarlyReturnReason("duplicate_event_conflict");
       eventDiagnostics.eventLogErrorType = classifiedError;
       eventDiagnostics.eventLogErrorCode = errCode || null;
       console.info("veriff-identity-webhook: duplicate event ignored from insert conflict", { eventId, applicationId, identitySessionId });
@@ -419,9 +432,11 @@ export default async function handler(req, res) {
       }
     }
     if (!mappedStatus) {
-      eventDiagnostics.skipReason = eventDiagnostics.decisionLookupExecuted
-        ? "unmapped_status_after_decision_lookup"
-        : "unmapped_status_no_session_id";
+      setEarlyReturnReason(
+        eventDiagnostics.decisionLookupExecuted
+          ? "unmapped_status_after_decision_lookup"
+          : "unmapped_status_no_session_id"
+      );
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
       console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
       return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
@@ -430,7 +445,7 @@ export default async function handler(req, res) {
 
   const identityPatch = mapIdentityUpdate(mappedStatus, payload);
   if (!identityPatch) {
-    eventDiagnostics.skipReason = "unmapped_identity_patch";
+    setEarlyReturnReason("unmapped_identity_patch");
     eventDiagnostics.eventLogSkipped = eventLogSkipped;
     console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
     return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
@@ -456,7 +471,7 @@ export default async function handler(req, res) {
       }
     }
     if (!current || !current.ok) {
-      eventDiagnostics.skipReason = "application_lookup_failed";
+      setEarlyReturnReason("application_lookup_failed");
       eventDiagnostics.lookupResult = current?.error || "application_not_found";
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
       console.error("veriff-identity-webhook application lookup failed:", {
@@ -477,7 +492,7 @@ export default async function handler(req, res) {
     if (isStaleIdentityUpdate(current.data || {}, identityPatch)) {
       eventDiagnostics.staleGuardHit = true;
       eventDiagnostics.staleGuardReason = "terminal_or_verified_guard";
-      eventDiagnostics.skipReason = "stale_identity_update";
+      setEarlyReturnReason("stale_identity_update");
       eventDiagnostics.lookupResult = "matched";
       eventDiagnostics.identityBefore = current.data?.identity_status || null;
       eventDiagnostics.applicationBefore = current.data?.application_status || null;
@@ -501,28 +516,72 @@ export default async function handler(req, res) {
       }
     }
 
-    const patchResult = await patchRenterApplicationIdentityById(matchedApplicationId, {
+    eventDiagnostics.patchPayload = {
       ...identityPatch,
       identitySessionId: identitySessionId || current.data?.identity_session_id || null,
+    };
+    console.info("veriff-identity-webhook: identity patch attempt", {
+      applicationId: matchedApplicationId || null,
+      identityBefore: eventDiagnostics.identityBefore || null,
+      mappedStatus: mappedStatus || null,
+      patchPayload: eventDiagnostics.patchPayload,
+      finalizationLogicExecuted: eventDiagnostics.finalizationLogicExecuted,
+      checkrLaunchExecuted: eventDiagnostics.checkrLaunchExecuted,
+      earlyReturnReason: eventDiagnostics.earlyReturnReason,
     });
+    const patchResult = await patchRenterApplicationIdentityById(matchedApplicationId, eventDiagnostics.patchPayload);
     eventDiagnostics.dbPatchExecuted = true;
     eventDiagnostics.dbPatchOk = bool(patchResult?.ok);
+    eventDiagnostics.dbResponsePayload = patchResult?.data || null;
     if (!patchResult.ok) {
       eventDiagnostics.dbPatchError = patchResult.error || null;
-      eventDiagnostics.skipReason = "identity_patch_failed";
+      setEarlyReturnReason("identity_patch_failed");
       eventDiagnostics.error = patchResult.details || patchResult.error || null;
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
       console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
       console.error("veriff-identity-webhook patch failed:", patchResult.error, patchResult.details || "");
       return res.status(500).json({ error: patchResult.error || "Could not update application." });
     }
-    eventDiagnostics.identityAfter = patchResult.data?.identity_status || identityPatch.identityStatus || null;
-    eventDiagnostics.applicationAfter = patchResult.data?.application_status || identityPatch.applicationStatus || null;
+    let reloaded = null;
+    try {
+      eventDiagnostics.reloadFetchExecuted = true;
+      reloaded = await fetchReviewApplicationById(matchedApplicationId);
+      eventDiagnostics.reloadFetchOk = bool(reloaded?.ok);
+      if (reloaded?.ok) {
+        eventDiagnostics.identityAfterReload = reloaded?.data?.identity_status || null;
+        eventDiagnostics.applicationStatusAfterReload = reloaded?.data?.application_status || null;
+      } else {
+        eventDiagnostics.reloadFetchError = reloaded?.error || null;
+      }
+    } catch (reloadErr) {
+      eventDiagnostics.reloadFetchOk = false;
+      eventDiagnostics.reloadFetchError = reloadErr?.message || String(reloadErr);
+    }
+    eventDiagnostics.identityAfter = eventDiagnostics.identityAfterReload
+      || patchResult.data?.identity_status
+      || identityPatch.identityStatus
+      || null;
+    eventDiagnostics.applicationAfter = eventDiagnostics.applicationStatusAfterReload
+      || patchResult.data?.application_status
+      || identityPatch.applicationStatus
+      || null;
     eventDiagnostics.matchedApplicationId = matchedApplicationId || null;
     eventDiagnostics.finalizationLogicExecuted = ["verified", "failed", "requires_input", "canceled"].includes(
       eventDiagnostics.identityAfter || ""
     );
     eventDiagnostics.mappedStatusFinal = mappedStatus || null;
+    console.info("veriff-identity-webhook: identity patch result", {
+      applicationId: matchedApplicationId || null,
+      identityBefore: eventDiagnostics.identityBefore || null,
+      mappedStatus: mappedStatus || null,
+      patchPayload: eventDiagnostics.patchPayload,
+      dbResponsePayload: eventDiagnostics.dbResponsePayload,
+      identityAfterReload: eventDiagnostics.identityAfterReload,
+      applicationStatusAfterReload: eventDiagnostics.applicationStatusAfterReload,
+      finalizationLogicExecuted: eventDiagnostics.finalizationLogicExecuted,
+      checkrLaunchExecuted: eventDiagnostics.checkrLaunchExecuted,
+      earlyReturnReason: eventDiagnostics.earlyReturnReason,
+    });
 
     console.info("veriff-identity-webhook: application identity updated", {
       eventId,
@@ -579,7 +638,7 @@ export default async function handler(req, res) {
     console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
   } catch (err) {
     eventDiagnostics.error = err?.message || String(err);
-    eventDiagnostics.skipReason = "webhook_processing_exception";
+    setEarlyReturnReason("webhook_processing_exception");
     eventDiagnostics.eventLogSkipped = eventLogSkipped;
     console.error("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
     console.error("veriff-identity-webhook processing failed:", err);
