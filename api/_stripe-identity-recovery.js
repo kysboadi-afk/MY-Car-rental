@@ -27,22 +27,31 @@ export async function recoverVerifiedApplicationFromStripe(
     };
   }
 
-  if (decision.mappedStatus !== "verified") {
+  const recoveredIdentityStatus = decision.mappedStatus;
+  if (!["verified", "processing"].includes(recoveredIdentityStatus)) {
     return { ok: true, synced: false, veriffStatus: decision.rawStatus || "unknown" };
   }
 
-  if (String(application.identity_status || "").toLowerCase() === "verified") {
-    return { ok: true, synced: false, veriffStatus: decision.rawStatus || "approved", alreadyVerified: true };
+  const currentIdentityStatus = String(application.identity_status || "").toLowerCase();
+  if (currentIdentityStatus === recoveredIdentityStatus) {
+    return {
+      ok: true,
+      synced: false,
+      veriffStatus: decision.rawStatus || "unknown",
+      alreadySynced: true,
+    };
   }
 
   const applicationStatus = String(application.application_status || "").toLowerCase();
-  const shouldNotify = notify && NOTIFIABLE_APPLICATION_STATUSES.includes(applicationStatus);
+  const shouldNotify = notify && recoveredIdentityStatus === "verified" && NOTIFIABLE_APPLICATION_STATUSES.includes(applicationStatus);
   const now = new Date().toISOString();
   const patch = {
     identitySessionId: decision.sessionId || identitySessionId,
-    identityStatus: "verified",
-    identityVerifiedAt: now,
+    identityStatus: recoveredIdentityStatus,
   };
+  if (recoveredIdentityStatus === "verified") {
+    patch.identityVerifiedAt = now;
+  }
 
   if (applicationStatus === "submitted") {
     patch.applicationStatus = "under_review";

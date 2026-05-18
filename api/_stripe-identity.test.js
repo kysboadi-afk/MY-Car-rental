@@ -558,6 +558,53 @@ test("admin-review-queue recovers approved Veriff applications before loading qu
   assert.equal(calls.listedReviewQueue.length, 1);
 });
 
+test("admin-review-queue recovers processing Veriff applications before loading queue", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      identity_status: "requires_input",
+      application_status: "submitted",
+      identity_session_id: "vrf_recover_processing_1",
+    }],
+  };
+  reviewQueueResult = {
+    ok: true,
+    data: [{
+      id: "app_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      age: 28,
+      experience: "3 years",
+      application_status: "under_review",
+      identity_status: "processing",
+      review_version: 0,
+      reviewed_by: "admin_review_queue_sync",
+      reviewed_at: "2026-05-14T03:00:00.000Z",
+      submitted_at: "2026-05-14T02:00:00.000Z",
+      updated_at: "2026-05-14T03:00:00.000Z",
+    }],
+    total: 1,
+    page: 1,
+    pageSize: 50,
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_recover_processing_1", status: "submitted" } };
+
+  const res = makeRes();
+  await adminReviewQueueHandler(makeAdminGetReq({ secret: "test-admin-secret", page: 1, pageSize: 50 }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(calls.patched[0].patch.identityStatus, "processing");
+  assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.listedReviewQueue.length, 1);
+});
+
 test("admin-review-detail recovers approved Veriff application before returning detail", async () => {
   const submittedDetail = {
     id: "11111111-1111-1111-1111-111111111111",
