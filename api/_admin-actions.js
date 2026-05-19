@@ -2821,7 +2821,7 @@ async function toolGetSiteContent() {
       source: "default",
       message: "Supabase not configured — returning default settings.",
       settings: {
-        business_name: "SLY Transportation Services",
+        business_name: "Sly Car Rentals",
         logo_url: "",
         phone: "",
         email: "",

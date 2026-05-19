@@ -41,7 +41,7 @@ const ALLOWED_KEYS = new Set([
 
 // Default values returned when Supabase is not configured.
 const DEFAULT_SETTINGS = {
-  business_name:          "SLY Transportation Services",
+  business_name:          "Sly Car Rentals",
   logo_url:               "",
   phone:                  "",
   whatsapp:               "",
