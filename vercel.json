@@ -68,6 +68,7 @@
     "api/create-identity-verification-session.js": { "maxDuration": 30 },
     "api/resolve-identity-resume.js":              { "maxDuration": 30 },
     "api/veriff-webhook.js":                  { "maxDuration": 60 },
+    "api/veriff-identity-recovery-cron.js":   { "maxDuration": 60 },
     "api/admin-review-queue.js":              { "maxDuration": 20 },
     "api/admin-review-detail.js":             { "maxDuration": 20 },
     "api/review-application.js":              { "maxDuration": 30 },
@@ -119,6 +120,10 @@
     {
       "path": "/api/stripe-reconcile-cron",
       "schedule": "0 */8 * * *"
+    },
+    {
+      "path": "/api/veriff-identity-recovery-cron",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
