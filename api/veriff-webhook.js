@@ -174,18 +174,25 @@ const EVENT_LOG_TABLES = [
 function isMissingEventLogTableError(err) {
   const code = String(err?.code || "");
   const msg = String(err?.message || "");
+  const details = String(err?.details || "");
+  const combined = `${msg} ${details}`;
   return code === "42P01"
     || code === "42703"
-    || /relation .* does not exist/i.test(msg)
-    || /column .* does not exist/i.test(msg)
-    || /Unexpected table/i.test(msg);
+    || /relation .* does not exist/i.test(combined)
+    || /column .* does not exist/i.test(combined)
+    || /could not find the table .* in the schema cache/i.test(combined)
+    || /schema cache/i.test(combined)
+    || /Unexpected table/i.test(combined);
 }
 
 function classifyEventLogFailure(err) {
   const code = String(err?.code || "");
   const msg = String(err?.message || "");
-  const text = `${code} ${msg}`.toLowerCase();
-  if (code === "42P01" || code === "42703" || /relation .* does not exist|column .* does not exist/.test(text)) {
+  const details = String(err?.details || "");
+  const text = `${code} ${msg} ${details}`.toLowerCase();
+  if (code === "42P01"
+    || code === "42703"
+    || /relation .* does not exist|column .* does not exist|could not find the table .* in the schema cache|schema cache/.test(text)) {
     return "missing_db_migration";
   }
   if (code === "42501" || /row-level security|permission denied|not allowed/.test(text)) {
