@@ -5,6 +5,8 @@ process.env.OTP_SECRET = "test-secret-for-identity-resume-tokens";
 process.env.VERIFF_API_KEY = "veriff_api_key_test";
 process.env.VERIFF_SHARED_SECRET = "veriff_shared_secret_test";
 process.env.VERIFF_PROJECT_ID = "veriff_project_id_test";
+process.env.STRIPE_SECRET_KEY = "";
+process.env.STRIPE_PUBLISHABLE_KEY = "";
 
 const TEST_APP_ID = "8d3b1914-5f12-4f61-a0cb-b57f042080ab";
 

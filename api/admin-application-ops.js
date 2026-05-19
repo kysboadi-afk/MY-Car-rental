@@ -10,10 +10,17 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { createVeriffSession, fetchVeriffDecision } from "./_veriff.js";
 import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 import { initiateCheckrScreening } from "./_checkr.js";
+import {
+  createStripeIdentitySession,
+  getStripeIdentityConfig,
+  isStripeIdentitySessionId,
+  retrieveStripeIdentitySession,
+} from "./_stripe-identity.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
 const TERMINAL_APPLICATION_STATUSES = new Set(["approved", "rejected", "expired", "withdrawn"]);
+const stripeIdentityCfg = getStripeIdentityConfig();
 
 function cleanText(value, maxLen = 2000) {
   if (value == null) return "";
@@ -98,9 +105,9 @@ async function handleResendVerification(applicationId, reviewer, notes, sb) {
   }
 
   if (app.identity_session_id) {
-    try {
-      const decision = await fetchVeriffDecision(app.identity_session_id);
-      if (decision.ok && decision.mappedStatus === "requires_input" && decision.verificationUrl) {
+    if (isStripeIdentitySessionId(app.identity_session_id)) {
+      const session = await retrieveStripeIdentitySession(app.identity_session_id);
+      if (session.ok && session.mappedStatus === "requires_input" && session.verificationUrl) {
         await appendAuditAction(sb, {
           applicationId,
           action: "resend_verification",
@@ -112,21 +119,49 @@ async function handleResendVerification(applicationId, reviewer, notes, sb) {
         return {
           ok: true,
           reused: true,
-          verificationUrl: decision.verificationUrl,
-          verificationSessionId: decision.sessionId || app.identity_session_id,
+          verificationUrl: session.verificationUrl,
+          verificationSessionId: session.sessionId || app.identity_session_id,
+          identityClientSecret: session.clientSecret || null,
           identityStatus: "requires_input",
         };
       }
-    } catch (err) {
-      console.warn("admin-application-ops resend lookup failed; creating fresh session:", err?.message || err);
+    } else {
+      try {
+        const decision = await fetchVeriffDecision(app.identity_session_id);
+        if (decision.ok && decision.mappedStatus === "requires_input" && decision.verificationUrl) {
+          await appendAuditAction(sb, {
+            applicationId,
+            action: "resend_verification",
+            performedBy: reviewer,
+            notes: notes || "Reused existing verification session.",
+            previousStatus: currentStatus,
+            newStatus: currentStatus,
+          });
+          return {
+            ok: true,
+            reused: true,
+            verificationUrl: decision.verificationUrl,
+            verificationSessionId: decision.sessionId || app.identity_session_id,
+            identityStatus: "requires_input",
+          };
+        }
+      } catch (err) {
+        console.warn("admin-application-ops resend lookup failed; creating fresh session:", err?.message || err);
+      }
     }
   }
 
-  const session = await createVeriffSession({
-    applicationId,
-    returnUrl: getReturnUrl(applicationId),
-    person: buildVeriffPersonFromApplication(app),
-  });
+  const session = stripeIdentityCfg.configured
+    ? await createStripeIdentitySession({
+      applicationId,
+      returnUrl: getReturnUrl(applicationId),
+      person: buildVeriffPersonFromApplication(app),
+    })
+    : await createVeriffSession({
+      applicationId,
+      returnUrl: getReturnUrl(applicationId),
+      person: buildVeriffPersonFromApplication(app),
+    });
   if (!session.ok) {
     return { ok: false, status: session.status || 500, error: session.error || "Failed to create verification session." };
   }
@@ -154,6 +189,7 @@ async function handleResendVerification(applicationId, reviewer, notes, sb) {
     reused: false,
     verificationUrl: session.verificationUrl,
     verificationSessionId: session.sessionId,
+    identityClientSecret: session.clientSecret || null,
     identityStatus: "requires_input",
   };
 }
@@ -168,11 +204,17 @@ async function handleRestartVerification(applicationId, reviewer, notes, sb) {
     return { ok: false, status: 422, error: `Cannot restart verification for terminal status "${currentStatus}".` };
   }
 
-  const session = await createVeriffSession({
-    applicationId,
-    returnUrl: getReturnUrl(applicationId),
-    person: buildVeriffPersonFromApplication(app),
-  });
+  const session = stripeIdentityCfg.configured
+    ? await createStripeIdentitySession({
+      applicationId,
+      returnUrl: getReturnUrl(applicationId),
+      person: buildVeriffPersonFromApplication(app),
+    })
+    : await createVeriffSession({
+      applicationId,
+      returnUrl: getReturnUrl(applicationId),
+      person: buildVeriffPersonFromApplication(app),
+    });
   if (!session.ok) {
     return { ok: false, status: session.status || 500, error: session.error || "Failed to restart verification session." };
   }
@@ -199,6 +241,7 @@ async function handleRestartVerification(applicationId, reviewer, notes, sb) {
     ok: true,
     verificationUrl: session.verificationUrl,
     verificationSessionId: session.sessionId,
+    identityClientSecret: session.clientSecret || null,
     identityStatus: "requires_input",
   };
 }

@@ -1224,6 +1224,7 @@ export async function listPendingIdentityRecoveryApplications({ limit = 25 } = {
       `and(application_status.eq.under_review,identity_status.eq.processing)`,
     )
     .not("identity_session_id", "is", null)
+    .not("identity_session_id", "like", "vs_%")
     .order("submitted_at", { ascending: true })
     .limit(safeLimit);
 
