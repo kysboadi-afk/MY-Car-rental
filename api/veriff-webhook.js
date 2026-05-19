@@ -161,6 +161,29 @@ function bool(value) {
   return !!value;
 }
 
+function buildFinalizeLog(d) {
+  return {
+    eventType: d.eventType,
+    rawStatus: d.rawStatus,
+    decisionStatus: d.decisionStatus,
+    mappedStatus: d.mappedStatusFinal,
+    applicationId: d.matchedApplicationId,
+    lookupMatchedBy: d.lookupMatchedBy,
+    identityBefore: d.identityBefore,
+    patchPayload: d.patchPayload,
+    dbPatchOk: d.dbPatchOk,
+    dbPatchError: d.dbPatchError,
+    identityAfterReload: d.identityAfterReload,
+    applicationStatusAfterReload: d.applicationStatusAfterReload,
+    finalizationLogicExecuted: d.finalizationLogicExecuted,
+    checkrLaunchExecuted: d.checkrLaunchExecuted,
+    checkrLaunchSkippedReason: d.checkrLaunchSkippedReason,
+    earlyReturnReason: d.earlyReturnReason,
+    staleGuardTriggered: d.staleGuardHit,
+    skipReason: d.skipReason,
+  };
+}
+
 const EVENT_LOG_TABLES = [
   { name: "veriff_webhook_events", eventIdColumn: "event_id" },
   // Legacy fallback: stripe_identity_webhook_events was the original event log
@@ -375,7 +398,7 @@ export default async function handler(req, res) {
     if (duplicate) {
       setEarlyReturnReason("duplicate_event");
       console.info("veriff-identity-webhook: duplicate event ignored", { eventId, applicationId, identitySessionId });
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       return res.status(200).json({ received: true, duplicate: true });
     }
   } catch (dupErr) {
@@ -394,7 +417,7 @@ export default async function handler(req, res) {
       eventDiagnostics.eventLogErrorType = classifiedError;
       eventDiagnostics.eventLogErrorCode = errCode || null;
       console.info("veriff-identity-webhook: duplicate event ignored from insert conflict", { eventId, applicationId, identitySessionId });
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       return res.status(200).json({ received: true, duplicate: true });
     }
     eventLogSkipped = true;
@@ -445,7 +468,7 @@ export default async function handler(req, res) {
           : "unmapped_status_no_session_id"
       );
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
     }
   }
@@ -454,7 +477,7 @@ export default async function handler(req, res) {
   if (!identityPatch) {
     setEarlyReturnReason("unmapped_identity_patch");
     eventDiagnostics.eventLogSkipped = eventLogSkipped;
-    console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+    console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
     return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
   }
 
@@ -492,7 +515,7 @@ export default async function handler(req, res) {
         attemptId: attemptId || null,
         clientId: clientId || null,
       });
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       return res.status(200).json({ received: true, ignored: true, eventLogSkipped });
     }
 
@@ -504,7 +527,7 @@ export default async function handler(req, res) {
       eventDiagnostics.identityBefore = current.data?.identity_status || null;
       eventDiagnostics.applicationBefore = current.data?.application_status || null;
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       return res.status(200).json({ received: true, ignored: true, stale: true });
     }
 
@@ -545,7 +568,7 @@ export default async function handler(req, res) {
       setEarlyReturnReason("identity_patch_failed");
       eventDiagnostics.error = patchResult.details || patchResult.error || null;
       eventDiagnostics.eventLogSkipped = eventLogSkipped;
-      console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+      console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
       console.error("veriff-identity-webhook patch failed:", patchResult.error, patchResult.details || "");
       return res.status(500).json({ error: patchResult.error || "Could not update application." });
     }
@@ -573,22 +596,9 @@ export default async function handler(req, res) {
       || identityPatch.applicationStatus
       || null;
     eventDiagnostics.matchedApplicationId = matchedApplicationId || null;
-    eventDiagnostics.finalizationLogicExecuted = ["verified", "failed", "requires_input", "canceled"].includes(
-      eventDiagnostics.identityAfter || ""
-    );
     eventDiagnostics.mappedStatusFinal = mappedStatus || null;
-    console.info("veriff-identity-webhook: identity patch result", {
-      applicationId: matchedApplicationId || null,
-      identityBefore: eventDiagnostics.identityBefore || null,
-      mappedStatus: mappedStatus || null,
-      patchPayload: eventDiagnostics.patchPayload,
-      dbResponsePayload: eventDiagnostics.dbResponsePayload,
-      identityAfterReload: eventDiagnostics.identityAfterReload,
-      applicationStatusAfterReload: eventDiagnostics.applicationStatusAfterReload,
-      finalizationLogicExecuted: eventDiagnostics.finalizationLogicExecuted,
-      checkrLaunchExecuted: eventDiagnostics.checkrLaunchExecuted,
-      earlyReturnReason: eventDiagnostics.earlyReturnReason,
-    });
+    // finalizationLogicExecuted is set to true below when the notification/Checkr block is entered
+    console.info("veriff-identity-webhook: finalize-trace (post-patch)", buildFinalizeLog(eventDiagnostics));
 
     console.info("veriff-identity-webhook: application identity updated", {
       eventId,
@@ -604,6 +614,7 @@ export default async function handler(req, res) {
     });
 
     if (notificationKind === "verified") {
+      eventDiagnostics.finalizationLogicExecuted = true;
       eventDiagnostics.checkrLaunchExecuted = true;
       try {
         await sendIdentityVerifiedNotifications(patchResult.data || current.data || {});
@@ -632,6 +643,7 @@ export default async function handler(req, res) {
         console.error("veriff-identity-webhook Checkr initiation failed:", checkrErr.message || checkrErr);
       }
     } else if (notificationKind === "requires_input" || notificationKind === "failed" || notificationKind === "canceled") {
+      eventDiagnostics.finalizationLogicExecuted = true;
       eventDiagnostics.checkrLaunchSkippedReason = `notification_kind_${notificationKind}`;
       try {
         await sendIdentityIssueNotifications(patchResult.data || current.data || {}, notificationKind);
@@ -642,12 +654,12 @@ export default async function handler(req, res) {
       eventDiagnostics.checkrLaunchSkippedReason = "no_verified_transition";
     }
     eventDiagnostics.eventLogSkipped = eventLogSkipped;
-    console.info("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+    console.info("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
   } catch (err) {
     eventDiagnostics.error = err?.message || String(err);
     setEarlyReturnReason("webhook_processing_exception");
     eventDiagnostics.eventLogSkipped = eventLogSkipped;
-    console.error("veriff-identity-webhook: decision diagnostics", eventDiagnostics);
+    console.error("veriff-identity-webhook: finalize-trace", buildFinalizeLog(eventDiagnostics));
     console.error("veriff-identity-webhook processing failed:", err);
     return res.status(500).json({ error: "Failed to process webhook event." });
   }
