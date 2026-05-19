@@ -91,6 +91,26 @@ function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function schemaMismatchDiagnostics(err) {
+  const message = String(err?.message || "");
+  const code = String(err?.code || "");
+  const columnMatch = message.match(/column\s+("?[\w.]+"?)\s+does not exist/i);
+  const relationMatch = message.match(/relation\s+("?[\w.]+"?)\s+does not exist/i);
+  const schemaCacheMatch = message.match(/Could not find the ['"]?([^'"]+)['"]? in the schema cache/i);
+  const missingColumn = columnMatch?.[1] || null;
+  const missingRelation = relationMatch?.[1] || null;
+  const schemaCacheEntity = schemaCacheMatch?.[1] || null;
+  const missingToken = (missingColumn || schemaCacheEntity || missingRelation || "").toLowerCase();
+  return {
+    code,
+    message,
+    missingColumn,
+    missingRelation,
+    schemaCacheEntity,
+    suggestsMissing0171: missingToken.includes("extension_risk_override"),
+  };
+}
+
 async function loadSlingshotBookingRow(sb, bookingId) {
   const { data, error } = await sb
     .from("bookings")
@@ -355,17 +375,32 @@ export default async function handler(req, res) {
           return q;
         };
 
+        let usedCompatibilitySelect = false;
+        let usedLegacyDeletedFallback = false;
         let { data: rows, error } = await buildListQuery(LIST_SELECT_FULL, !includeDeleted).order("created_at", { ascending: false });
         if (error && isSchemaError(error)) {
-          console.warn("v2-bookings list: schema mismatch on full select, retrying with compatibility columns:", error.message);
+          const details = schemaMismatchDiagnostics(error);
+          console.warn("v2-bookings list: schema mismatch on full select, retrying with compatibility columns:", details);
+          if (details.suggestsMissing0171) {
+            console.warn("v2-bookings list: extension_risk_override appears missing; apply migration 0171_bookings_extension_risk_override.sql");
+          }
+          usedCompatibilitySelect = true;
           ({ data: rows, error } = await buildListQuery(LIST_SELECT_COMPAT, !includeDeleted).order("created_at", { ascending: false }));
         }
         if (error && isSchemaError(error)) {
-          console.warn("v2-bookings list: retrying legacy query without deleted_at filter:", error.message);
+          const details = schemaMismatchDiagnostics(error);
+          console.warn("v2-bookings list: retrying legacy query without deleted_at filter:", details);
+          usedLegacyDeletedFallback = true;
           ({ data: rows, error } = await buildListQuery(LIST_SELECT_COMPAT, false).order("created_at", { ascending: false }));
         }
 
         if (!error) {
+          if (usedCompatibilitySelect || usedLegacyDeletedFallback) {
+            console.warn("v2-bookings list: compatibility fallback served request; production schema drift remains.", {
+              usedCompatibilitySelect,
+              usedLegacyDeletedFallback,
+            });
+          }
           // Fetch revenue_records for financial totals (best-effort; non-fatal)
           let revenueByBookingId = {};
           try {
@@ -597,13 +632,19 @@ export default async function handler(req, res) {
           return q;
         };
 
+        let usedCompatibilitySelect = false;
+        let usedLegacyDeletedFallback = false;
         let { data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_FULL, !includeDeleted).order("created_at", { ascending: false });
         if (error && isSchemaError(error)) {
-          console.warn("v2-bookings list_raw: schema mismatch on full select, retrying with compatibility columns:", error.message);
+          const details = schemaMismatchDiagnostics(error);
+          console.warn("v2-bookings list_raw: schema mismatch on full select, retrying with compatibility columns:", details);
+          usedCompatibilitySelect = true;
           ({ data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_COMPAT, !includeDeleted).order("created_at", { ascending: false }));
         }
         if (error && isSchemaError(error)) {
-          console.warn("v2-bookings list_raw: retrying legacy query without deleted_at filter:", error.message);
+          const details = schemaMismatchDiagnostics(error);
+          console.warn("v2-bookings list_raw: retrying legacy query without deleted_at filter:", details);
+          usedLegacyDeletedFallback = true;
           ({ data: rows, error } = await buildRawListQuery(LIST_RAW_SELECT_COMPAT, false).order("created_at", { ascending: false }));
         }
 
@@ -611,6 +652,12 @@ export default async function handler(req, res) {
           console.error("v2-bookings list_raw Supabase error:", error.message);
           // Fall through to JSON fallback
         } else {
+          if (usedCompatibilitySelect || usedLegacyDeletedFallback) {
+            console.warn("v2-bookings list_raw: compatibility fallback served request; production schema drift remains.", {
+              usedCompatibilitySelect,
+              usedLegacyDeletedFallback,
+            });
+          }
           const bookings = (rows || []).map((r) => ({
             bookingId:       r.booking_ref || r.id,
             vehicleId:       r.vehicle_id,

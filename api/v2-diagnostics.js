@@ -102,6 +102,56 @@ const OPTIONAL_TABLES = [
   "vehicle_blocking_ranges",
 ];
 
+const REQUIRED_BOOKINGS_COLUMNS = [
+  "booking_ref",
+  "vehicle_id",
+  "pickup_date",
+  "return_date",
+  "pickup_time",
+  "return_time",
+  "status",
+  "total_price",
+  "deposit_paid",
+  "remaining_balance",
+  "payment_status",
+  "payment_method",
+  "payment_intent_id",
+  "stripe_customer_id",
+  "stripe_payment_method_id",
+  "extension_stripe_customer_id",
+  "extension_stripe_payment_method_id",
+  "flagged",
+  "risk_score",
+  "notes",
+  "created_at",
+  "updated_at",
+  "extension_count",
+  "late_fee_amount",
+  "late_fee_status",
+  "late_fee_approved_at",
+  "late_fee_waived",
+  "late_fee_waived_amount",
+  "deleted_at",
+  "deleted_by",
+  "deleted_reason",
+  "extension_risk_override",
+  "activated_at",
+  "completed_at",
+];
+
+const REQUIRED_CUSTOMERS_COLUMNS = [
+  "id",
+  "name",
+  "phone",
+  "email",
+  "risk_flag",
+  "flagged",
+  "banned",
+  "total_profit",
+  "total_bookings",
+  "no_show_count",
+];
+
 /**
  * Check whether a table exists in the connected Supabase project by selecting
  * a single row with a zero-limit query.  Returns "ok", "missing", or "error".
@@ -122,6 +172,43 @@ async function checkTable(sb, tableName) {
   } catch {
     return "error";
   }
+}
+
+function isMissingColumnError(error) {
+  if (!error) return false;
+  const code = String(error.code || "");
+  const msg = String(error.message || "");
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    /column .* does not exist/i.test(msg) ||
+    /Could not find the .* in the schema cache/i.test(msg)
+  );
+}
+
+async function auditTableColumns(sb, tableName, requiredColumns = []) {
+  const missing = [];
+  const unknownErrors = [];
+  for (const col of requiredColumns) {
+    try {
+      const { error } = await sb.from(tableName).select(col).limit(1);
+      if (!error) continue;
+      if (isMissingColumnError(error)) {
+        missing.push(col);
+      } else {
+        unknownErrors.push({ column: col, code: error.code || null, message: error.message || "Unknown error" });
+      }
+    } catch (err) {
+      unknownErrors.push({ column: col, code: null, message: err?.message || String(err) });
+    }
+  }
+
+  return {
+    checked: requiredColumns.length,
+    missing,
+    unknownErrors,
+    fullSelectCompatible: missing.length === 0 && unknownErrors.length === 0,
+  };
 }
 
 export default async function handler(req, res) {
@@ -172,6 +259,11 @@ export default async function handler(req, res) {
     missingTimeCount: 0,
     sampleMissingRefs: [],
   };
+  const schemaDriftAudit = {
+    checked: false,
+    bookings: null,
+    customers: null,
+  };
 
   const chargesHealthCheck = {
     checked: false,
@@ -205,6 +297,12 @@ export default async function handler(req, res) {
       // Check optional tables
       for (const table of OPTIONAL_TABLES) {
         supabaseResult.tables[table] = await checkTable(sb, table);
+      }
+
+      if (supabaseResult.tables.bookings === "ok" && supabaseResult.tables.customers === "ok") {
+        schemaDriftAudit.bookings = await auditTableColumns(sb, "bookings", REQUIRED_BOOKINGS_COLUMNS);
+        schemaDriftAudit.customers = await auditTableColumns(sb, "customers", REQUIRED_CUSTOMERS_COLUMNS);
+        schemaDriftAudit.checked = true;
       }
 
       // Booking datetime integrity audit: find rows missing pickup/return time.
@@ -310,5 +408,5 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck, openaiCheck });
+  return res.status(200).json({ env, supabase: supabaseResult, schemaDriftAudit, bookingTimeAudit, chargesHealthCheck, openaiCheck });
 }
