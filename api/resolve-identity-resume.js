@@ -22,8 +22,13 @@ function buildVeriffPersonFromApplication(application = {}) {
   };
 }
 
-function getReturnUrl(applicationId) {
-  const u = new URL(DEFAULT_RETURN_URL);
+function getReturnUrl(applicationId, requestOrigin) {
+  // Use the request origin (if trusted) so the renter is returned to the same
+  // domain they started from after completing Veriff identity verification.
+  const base = (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin))
+    ? requestOrigin + "/thank-you.html?from=apply"
+    : DEFAULT_RETURN_URL;
+  const u = new URL(base);
   u.searchParams.set("identity", "return");
   u.searchParams.set("applicationId", applicationId);
   return u.toString();
@@ -184,7 +189,7 @@ export default async function handler(req, res) {
   try {
     const session = await createVeriffSession({
       applicationId,
-      returnUrl: getReturnUrl(applicationId),
+      returnUrl: getReturnUrl(applicationId, origin),
       person: buildVeriffPersonFromApplication(application),
     });
     if (!session.ok) {

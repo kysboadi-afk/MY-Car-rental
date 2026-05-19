@@ -3,7 +3,10 @@
 // per vehicle so each slingshot can be booked via slingshot-book.html (package
 // pricing: 2hr $150 / 3hr $200 / 6hr $250 / 24hr $350).  No tax applies.
 
-const API_BASE = "https://sly-rides.vercel.app";
+const API_BASE = (
+  window.location.hostname === "slycarrentals.com" ||
+  window.location.hostname === "www.slycarrentals.com"
+) ? "" : "https://slycarrentals.com";
 const SlyLA = window.SlyLA;
 
 // ─── Fleet-status API contract ────────────────────────────────────────────────
@@ -154,7 +157,7 @@ function applyFleetStatus(fleetStatus) {
 
       if (isReserved) {
         btn.textContent = "\u2705 Complete Booking";
-        link.href = "https://slycarrentals.com/manage-booking.html";
+        link.href = "manage-booking.html";
       } else {
         btn.textContent = "\u23F1\uFE0F Extend Rental";
         link.href = `slingshot-book.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
