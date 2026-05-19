@@ -74,7 +74,7 @@ function htmlPage(title, color, heading, body) {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://www.slytrans.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
 </body>
 </html>`;
 }
@@ -164,7 +164,7 @@ async function sendEmail(to, subject, html) {
 function apiBase() {
   return process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : "https://www.slytrans.com";
+    : "https://slycarrentals.com";
 }
 
 function formatDateTime(iso) {

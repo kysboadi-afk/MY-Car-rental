@@ -59,7 +59,7 @@ The singleton client lives in `api/_supabase.js`. Confirm:
 
 ### 4 — CORS
 
-- [ ] Every `api/` handler checks `req.headers.origin` against `ALLOWED_ORIGINS` (`["https://www.slytrans.com", "https://slytrans.com"]`) and sets the `Access-Control-Allow-Origin` header only for those origins
+- [ ] Every `api/` handler checks `req.headers.origin` against `ALLOWED_ORIGINS` (`["https://slycarrentals.com", "https://slytrans.com"]`) and sets the `Access-Control-Allow-Origin` header only for those origins
 - [ ] Every handler responds to `OPTIONS` pre-flight requests with `200`
 - [ ] If you add a new endpoint, copy the CORS block from any existing handler (e.g. `api/v2-revenue.js` lines 85-90)
 - [ ] No Supabase Edge Functions are used — CORS is handled at the Vercel function layer only

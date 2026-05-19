@@ -16,13 +16,13 @@ function resolveManageToken({ bookingId, manageToken } = {}) {
 }
 
 export function buildManageBookingLink({ token } = {}) {
-  const base = "https://www.slytrans.com/manage-booking.html";
+  const base = "https://slycarrentals.com/manage-booking.html";
   if (!token) return base;
   return `${base}?t=${encodeURIComponent(String(token))}`;
 }
 
 export function buildLegacyBalanceLink({ bookingId } = {}) {
-  const base = "https://www.slytrans.com/balance.html";
+  const base = "https://slycarrentals.com/balance.html";
   const normalizedBookingId = String(bookingId || "").trim();
   if (!normalizedBookingId) return base;
   return `${base}?b=${encodeURIComponent(normalizedBookingId)}`;
@@ -30,8 +30,8 @@ export function buildLegacyBalanceLink({ bookingId } = {}) {
 
 export function buildLegacyExtendEntryLink({ vehicleId } = {}) {
   const normalizedVehicleId = String(vehicleId || "").trim();
-  if (!normalizedVehicleId) return "https://www.slytrans.com/manage-booking.html";
-  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalizedVehicleId)}&extend=1`;
+  if (!normalizedVehicleId) return "https://slycarrentals.com/manage-booking.html";
+  return `https://slycarrentals.com/car.html?vehicle=${encodeURIComponent(normalizedVehicleId)}&extend=1`;
 }
 
 export function buildDashboardExtendLink({ bookingId, manageToken, vehicleId } = {}) {

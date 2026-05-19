@@ -32,7 +32,7 @@ import { isAdminAuthorized } from "./_admin-auth.js";
 import { performPreAdverseAction, performReviewAction } from "./_renter-applications.js";
 import { sendReviewDecisionNotifications } from "./_application-notifications.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

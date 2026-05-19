@@ -46,7 +46,7 @@ export const config = {
   api: { bodyParser: false },
 };
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const ECONOMY_EXTENSION_PRICES = {
   1: { days: 1,  label: "+1 day",  price: 55  },
@@ -281,8 +281,8 @@ function findExtendPending(allBookings, phone) {
 
 function buildVehicleExtendEntryLink(vehicleId) {
   const normalized = String(vehicleId || "").trim();
-  if (!normalized) return "https://www.slytrans.com/manage-booking.html";
-  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
+  if (!normalized) return "https://slycarrentals.com/manage-booking.html";
+  return `https://slycarrentals.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
 }
 
 /**
@@ -556,7 +556,7 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
  * balance.html can confirm the PaymentIntent in extension mode.
  */
 function buildExtensionPaymentLink(clientSecret, piId) {
-  const base = "https://www.slytrans.com/balance.html?ext=1";
+  const base = "https://slycarrentals.com/balance.html?ext=1";
   if (!clientSecret) return base;
   let url = `${base}&cs=${encodeURIComponent(clientSecret)}`;
   if (piId) url += `&piId=${encodeURIComponent(piId)}`;

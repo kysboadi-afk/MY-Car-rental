@@ -3,7 +3,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 function setCors(req, res) {
   const origin = req.headers.origin;

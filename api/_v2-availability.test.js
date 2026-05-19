@@ -37,7 +37,7 @@ function makeRes() {
 function makeReq({ method = "GET", query = {}, body = {} } = {}) {
   return {
     method,
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     query,
     body,
   };
@@ -147,7 +147,7 @@ const { default: handler } = await import("./v2-availability.js");
 
 test("OPTIONS returns 200", async () => {
   const res = makeRes();
-  await handler({ method: "OPTIONS", headers: { origin: "https://www.slytrans.com" }, query: {}, body: {} }, res);
+  await handler({ method: "OPTIONS", headers: { origin: "https://slycarrentals.com" }, query: {}, body: {} }, res);
   assert.equal(res._status, 200);
 });
 

@@ -118,12 +118,12 @@ Edit `index.html` stats section:
 © 2026 SLY RIDES. All rights reserved.
 
 # SLY-RIDES
-Simple car rental website — live at **[https://www.slytrans.com](https://www.slytrans.com)** 🚗
+Simple car rental website — live at **[https://slycarrentals.com](https://slycarrentals.com)** 🚗
 
 ## 🔐 Admin Dashboard
 
-**Fleet Control (new):** [https://www.slytrans.com/admin-v2/](https://www.slytrans.com/admin-v2/)
-**Legacy Admin:** [https://www.slytrans.com/admin.html](https://www.slytrans.com/admin.html)
+**Fleet Control (new):** [https://admin.slycarrentals.com/admin-v2/](https://admin.slycarrentals.com/admin-v2/)
+**Legacy Admin:** [https://slycarrentals.com/admin.html](https://slycarrentals.com/admin.html)
 
 You can also reach the admin from any page on the site — click the small **Admin** link in the footer.
 
@@ -159,7 +159,7 @@ All pull requests have been merged to `main`. The site deploys automatically fro
 | Enforce HTTPS enabled | ✅ Done |
 | All pull requests merged to main | ✅ Done |
 
-🎉 Site: **[https://www.slytrans.com](https://www.slytrans.com)**
+🎉 Site: **[https://slycarrentals.com](https://slycarrentals.com)**
 
 ---
 

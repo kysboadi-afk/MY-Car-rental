@@ -17,7 +17,7 @@ import { toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 /**
  * Derive the canonical vehicle_id to embed in Stripe PaymentIntent metadata.
@@ -198,7 +198,7 @@ export default async function handler(req, res) {
           const outstanding = Number(balanceRows[0].balance_due || 0);
           return res.status(402).json({
             error: `You have an outstanding balance of $${outstanding.toFixed(2)} from a previous booking. ` +
-              "Please complete your payment at https://www.slytrans.com/balance.html before booking again.",
+              "Please complete your payment at https://slycarrentals.com/balance.html before booking again.",
           });
         }
       } catch (balanceErr) {

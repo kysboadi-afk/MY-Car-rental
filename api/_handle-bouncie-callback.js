@@ -16,7 +16,7 @@ export default async function handleBouncieCallback(req, res) {
 
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const redirectUri  = process.env.BOUNCIE_REDIRECT_URI || "https://sly-rides.vercel.app/api/bouncie-callback";
+  const redirectUri  = process.env.BOUNCIE_REDIRECT_URI || "https://admin.slycarrentals.com/api/bouncie-callback";
 
   let response;
   try {
@@ -62,5 +62,5 @@ export default async function handleBouncieCallback(req, res) {
       `Bouncie authorized successfully but the token could not be saved to the database: ${upsertError.message}. Check your Supabase configuration and ensure the bouncie_tokens table exists (run migration 0037).`);
   }
 
-  res.redirect("https://www.slytrans.com/admin-v2/?bouncie=connected");
+  res.redirect("https://admin.slycarrentals.com/admin-v2/?bouncie=connected");
 }

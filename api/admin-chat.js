@@ -276,7 +276,7 @@ After the tool returns:
 ## Connecting Bouncie GPS integration
 
 If Bouncie is not connected (bouncie_configured: false) and the admin asks how to connect, why mileage sync isn't working, or anything about "Bouncie not configured":
-- Tell them to open **https://sly-rides.vercel.app/api/connectBouncie** in their browser.
+- Tell them to open **https://admin.slycarrentals.com/api/connectBouncie** in their browser.
 - They will be redirected to the Bouncie authorization page to log in and approve access.
 - Once approved, tokens are saved automatically and mileage sync activates within 5 minutes.
 - Note: Connecting Bouncie only enables the GPS link. Mileage data still requires each vehicle to have a Bouncie IMEI saved under Fleet → vehicle → Bouncie Device ID.
@@ -451,7 +451,7 @@ Validation rules (reject and re-ask if violated):
 ## Mileage & maintenance context
 - For questions about a specific vehicle's maintenance (e.g. "What's the maintenance status of Camry 2013?"), ALWAYS call get_maintenance_status with the vehicle name. Never use get_mileage for single-vehicle maintenance queries.
 - Mileage tracking via GPS requires Bouncie devices. get_maintenance_status returns mileage-based alerts when a Bouncie device is assigned; otherwise it still returns service history and appointments.
-- If get_mileage returns bouncie_configured: false, explain that the Bouncie GPS integration is not yet connected. Tell the admin to visit https://sly-rides.vercel.app/api/connectBouncie to authorize. Mileage sync activates within 5 minutes.
+- If get_mileage returns bouncie_configured: false, explain that the Bouncie GPS integration is not yet connected. Tell the admin to visit https://admin.slycarrentals.com/api/connectBouncie to authorize. Mileage sync activates within 5 minutes.
 - If get_mileage returns tracked_vehicles: 0 AND raw_bouncie_rows: 0, explain that no cars currently have a Bouncie device ID saved in the database (editable in the Fleet page under each vehicle's IMEI field).
 - If get_mileage returns tracked_vehicles: 0 AND raw_bouncie_rows > 0, explain that Bouncie devices appear to be assigned to vehicles not currently in the tracking list.
 - If get_mileage returns tracked_vehicles: 0 but the dashboard is showing mileage alerts, there may be a temporary sync lag — suggest the admin refresh or re-save the vehicle's Bouncie IMEI in the Fleet page.
@@ -483,7 +483,7 @@ When connected: true, present each vehicle like this:
 - signal: "no_device" — No Bouncie IMEI assigned to this vehicle; tell the admin to add one via Fleet → vehicle → Bouncie Device ID
 
 **When connected: false:**
-- If message contains "not configured" or "no OAuth token": tell the admin to connect Bouncie at https://sly-rides.vercel.app/api/connectBouncie
+- If message contains "not configured" or "no OAuth token": tell the admin to connect Bouncie at https://admin.slycarrentals.com/api/connectBouncie
 - If message contains "unreachable" or "network": tell the admin the Bouncie API is temporarily unreachable, try again in a moment
 - Any other message: relay it exactly and suggest checking server logs
 
@@ -958,7 +958,7 @@ function formatConfirmedReply(toolName, args, result) {
   }
 }
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://slycarrentals.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

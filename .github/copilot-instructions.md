@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SLY RIDES is a static car rental website for **SLY Transportation Services**, a Los Angeles-based car rental company. The frontend is deployed on **GitHub Pages** with a custom domain at [www.slytrans.com](https://www.slytrans.com). The backend consists of Vercel serverless functions.
+SLY RIDES is a static car rental website for **SLY Transportation Services**, a Los Angeles-based car rental company. The frontend is deployed on **GitHub Pages** with a custom domain at [www.slytrans.com](https://slycarrentals.com). The backend consists of Vercel serverless functions.
 
 ## Tech Stack
 
@@ -34,7 +34,7 @@ SLY-RIDES/
 ## Key Conventions
 
 - **ES modules**: The `api/` functions use `import`/`export default` syntax (`"type": "module"` in `package.json`).
-- **CORS**: Both API handlers whitelist `https://www.slytrans.com` and `https://slytrans.com` only. Maintain this allowlist when modifying or adding API endpoints.
+- **CORS**: Both API handlers whitelist `https://slycarrentals.com` and `https://slytrans.com` only. Maintain this allowlist when modifying or adding API endpoints.
 - **HTML escaping**: The `esc()` helper in `send-reservation-email.js` must be applied to all user-supplied values before embedding them in email HTML to prevent XSS. Always use it when adding new fields to email templates.
 - **Currency**: Stripe amounts are in **whole cents** (`Math.round(amount * 100)`). Keep this conversion consistent.
 - **Pricing logic**: Weekly rate applies for rentals of 7+ days (see `car.js`). Any pricing changes must update both the display logic and the Stripe session amount.

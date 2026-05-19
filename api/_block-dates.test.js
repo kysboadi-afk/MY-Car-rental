@@ -25,7 +25,7 @@ function makeRes() {
   };
 }
 
-function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
+function makeReq(method, body = {}, origin = "https://slycarrentals.com") {
   return { method, headers: { origin }, body };
 }
 
@@ -76,10 +76,10 @@ test("non-POST request returns 405", async () => {
 });
 
 test("CORS header is set for allowed origin www.slytrans.com", async () => {
-  const req = makeReq("OPTIONS", {}, "https://www.slytrans.com");
+  const req = makeReq("OPTIONS", {}, "https://slycarrentals.com");
   const res = makeRes();
   await handler(req, res);
-  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://www.slytrans.com");
+  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://slycarrentals.com");
 });
 
 test("CORS header is set for allowed origin slytrans.com", async () => {

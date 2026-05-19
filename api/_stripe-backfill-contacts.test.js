@@ -113,7 +113,7 @@ const { default: handler } = await import("./stripe-backfill.js");
 function makeReq(body) {
   return {
     method:  "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body,
   };
 }

@@ -35,7 +35,7 @@ function makeRes() {
   };
 }
 
-function makeReq(body, origin = "https://www.slytrans.com", extraHeaders = {}) {
+function makeReq(body, origin = "https://slycarrentals.com", extraHeaders = {}) {
   return { method: "POST", headers: { origin, ...extraHeaders }, body };
 }
 
@@ -481,7 +481,7 @@ test("accepts Authorization bearer token when body secret is omitted", async () 
   await handler(
     makeReq(
       body,
-      "https://www.slytrans.com",
+      "https://slycarrentals.com",
       { authorization: "Bearer test-admin-secret" }
     ),
     res
@@ -491,7 +491,7 @@ test("accepts Authorization bearer token when body secret is omitted", async () 
 });
 
 test("returns 405 for GET requests", async () => {
-  const req = { method: "GET", headers: { origin: "https://www.slytrans.com" }, body: {} };
+  const req = { method: "GET", headers: { origin: "https://slycarrentals.com" }, body: {} };
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 405);
@@ -1708,7 +1708,7 @@ test("send_payment_link: bookingId path sends deduped SMS with payment-plan cont
       return_date: "2026-06-05",
       remaining_balance: 170.5,
       payment_intent_id: "pi_balance_001",
-      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-send-001",
+      balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-send-001",
       created_at: "2026-05-01T10:00:00.000Z",
     }],
   });
@@ -1765,7 +1765,7 @@ test("send_payment_link: customerId path resolves latest booking and supports em
         return_date: "2026-06-05",
         remaining_balance: 80,
         payment_intent_id: "pi_old",
-        balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-customer-older",
+        balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-customer-older",
         created_at: "2026-05-01T09:00:00.000Z",
       },
       {
@@ -1780,7 +1780,7 @@ test("send_payment_link: customerId path resolves latest booking and supports em
         return_date: "2026-06-14",
         remaining_balance: 95,
         payment_intent_id: "pi_new",
-        balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-customer-newer",
+        balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-customer-newer",
         created_at: "2026-05-10T09:00:00.000Z",
       },
     ],
@@ -1822,7 +1822,7 @@ test("send_payment_link: duplicate sends are deduped by sms_logs key", async () 
       return_date: "2026-06-05",
       remaining_balance: 60,
       payment_intent_id: "pi_dedup",
-      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-dedup-001",
+      balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-dedup-001",
       created_at: "2026-05-01T09:00:00.000Z",
     }],
   });
@@ -1865,7 +1865,7 @@ test("send_payment_link: force_sms bypasses dedup and resends SMS", async () => 
       return_date: "2026-06-05",
       remaining_balance: 75,
       payment_intent_id: "pi_force",
-      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-force-001",
+      balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-force-001",
       created_at: "2026-05-01T09:00:00.000Z",
     }],
   });
@@ -1910,7 +1910,7 @@ test("send_payment_link: SMS failure returns 500 and retry sends successfully", 
       return_date: "2026-06-05",
       remaining_balance: 45,
       payment_intent_id: "pi_retry",
-      balance_payment_link: "https://www.slytrans.com/balance.html?b=bk-retry-001",
+      balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-retry-001",
       created_at: "2026-05-01T09:00:00.000Z",
     }],
   });

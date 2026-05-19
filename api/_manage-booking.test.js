@@ -26,7 +26,7 @@ mock.module("./_vehicles.js", {
 
 const { default: handler } = await import("./manage-booking.js");
 
-function makeReq(body, origin = "https://www.slytrans.com") {
+function makeReq(body, origin = "https://slycarrentals.com") {
   return { method: "POST", headers: { origin }, body };
 }
 

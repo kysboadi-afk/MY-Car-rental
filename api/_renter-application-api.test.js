@@ -59,19 +59,19 @@ test("create-renter-application creates and returns applicationId", async () => 
   }));
 
   const res = makeRes();
-  await createHandler({ method: "POST", headers: { origin: "https://www.slytrans.com" }, body: { name: "Jane Driver", phone: "3105550199", experience: "3-5 years" } }, res);
+  await createHandler({ method: "POST", headers: { origin: "https://slycarrentals.com" }, body: { name: "Jane Driver", phone: "3105550199", experience: "3-5 years" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
   assert.equal(res._body.applicationId, "8d3b1914-5f12-4f61-a0cb-b57f042080ab");
-  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://www.slytrans.com");
+  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://slycarrentals.com");
 });
 
 test("create-renter-application returns helper error status", async () => {
   insertRenterApplication.mock.mockImplementation(async () => ({ ok: false, status: 400, error: "Missing required fields: name, phone, experience." }));
 
   const res = makeRes();
-  await createHandler({ method: "POST", headers: { origin: "https://www.slytrans.com" }, body: {} }, res);
+  await createHandler({ method: "POST", headers: { origin: "https://slycarrentals.com" }, body: {} }, res);
 
   assert.equal(res._status, 400);
   assert.equal(res._body.error, "Missing required fields: name, phone, experience.");
@@ -79,7 +79,7 @@ test("create-renter-application returns helper error status", async () => {
 
 test("get-renter-application returns 400 without applicationId", async () => {
   const res = makeRes();
-  await getHandler({ method: "GET", headers: { origin: "https://www.slytrans.com" }, query: {} }, res);
+  await getHandler({ method: "GET", headers: { origin: "https://slycarrentals.com" }, query: {} }, res);
   assert.equal(res._status, 400);
 });
 
@@ -101,7 +101,7 @@ test("get-renter-application returns application payload", async () => {
   }));
 
   const res = makeRes();
-  await getHandler({ method: "GET", headers: { origin: "https://www.slytrans.com" }, query: { applicationId: "8d3b1914-5f12-4f61-a0cb-b57f042080ab" } }, res);
+  await getHandler({ method: "GET", headers: { origin: "https://slycarrentals.com" }, query: { applicationId: "8d3b1914-5f12-4f61-a0cb-b57f042080ab" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
@@ -113,7 +113,7 @@ test("get-renter-application returns not found", async () => {
   fetchRenterApplicationById.mock.mockImplementation(async () => ({ ok: false, status: 404, error: "Application not found." }));
 
   const res = makeRes();
-  await getHandler({ method: "GET", headers: { origin: "https://www.slytrans.com" }, query: { applicationId: "missing" } }, res);
+  await getHandler({ method: "GET", headers: { origin: "https://slycarrentals.com" }, query: { applicationId: "missing" } }, res);
 
   assert.equal(res._status, 404);
   assert.equal(res._body.error, "Application not found.");

@@ -97,7 +97,7 @@ function htmlPage(title, color, heading, body) {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://www.slytrans.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
 </body>
 </html>`;
 }
@@ -232,7 +232,7 @@ export default async function handler(req, res) {
     return res.status(401).send(htmlPage(
       "Link Expired", "#c62828", "⏰ Link expired or invalid",
       `<p>This approval link has expired (links are valid for 24 hours) or is invalid.</p>
-       <p>You can still charge the customer manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+       <p>You can still charge the customer manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 
@@ -247,13 +247,13 @@ export default async function handler(req, res) {
       `<h2>Late Fee Declined</h2>
        <p>You chose not to charge the late fee of <strong>$${esc(String(amount))}</strong> for booking <strong>${esc(bookingId)}</strong>.</p>
        <p>No charge was applied to the customer's card.</p>
-       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+       <p>You can still charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
     );
     return res.status(200).send(htmlPage(
       "Declined", "#888", "✅ Late Fee Declined",
       `<p>No charge was applied to the customer's card.</p>
        <p>Booking: <strong>${esc(bookingId)}</strong></p>
-       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+       <p>You can still charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 
@@ -297,7 +297,7 @@ export default async function handler(req, res) {
        <input type="hidden" name="originalToken" value="${esc(token)}" />
        <button type="submit" class="green">✅ Confirm &amp; Charge $${esc(String(amount))}</button>
      </form>
-     <p style="margin-top:16px"><a href="https://www.slytrans.com/admin-v2/">← Back to Admin Panel</a></p>`
+     <p style="margin-top:16px"><a href="https://admin.slycarrentals.com/admin-v2/">← Back to Admin Panel</a></p>`
   ));
 }
 
@@ -460,7 +460,7 @@ async function handleApprove(res, bookingId, amount, originalAmount, approvedBy)
        <p>Attempted to charge <strong>$${esc(String(amount))}</strong> for booking <strong>${esc(bookingId)}</strong> — but Stripe returned an error:</p>
        <blockquote>${esc(err.message)}</blockquote>
        <p>A payment link has been sent to the customer as a fallback.</p>
-       <p>Please also charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a> if needed.</p>`
+       <p>Please also charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a> if needed.</p>`
     );
 
     return res.status(200).send(htmlPage(
@@ -468,7 +468,7 @@ async function handleApprove(res, bookingId, amount, originalAmount, approvedBy)
       `<p>Stripe could not process the late fee for booking <strong>${esc(bookingId)}</strong>.</p>
        <p><em>${esc(err.message)}</em></p>
        <p>A payment link has been sent to the customer as a fallback.</p>
-       <p>Please charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+       <p>Please charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 }

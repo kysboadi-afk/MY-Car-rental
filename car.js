@@ -1,8 +1,8 @@
 // ----- API Base URL -----
-// The frontend is served by GitHub Pages (www.slytrans.com).
+// The frontend is served by GitHub Pages (slycarrentals.com).
 // The API functions are deployed on Vercel (sly-rides.vercel.app).
 // Because they are on different domains, the full Vercel URL must be used here.
-const API_BASE = "https://sly-rides.vercel.app";
+const API_BASE = "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
@@ -1720,7 +1720,7 @@ async function launchExtendRentalPayment() {
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://www.slytrans.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          return_url: "https://slycarrentals.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
           ...(extEmail ? { receipt_email: extEmail } : {}),
         },
       });
@@ -2435,10 +2435,10 @@ stripeBtn.addEventListener("click", async () => {
               }));
               document.getElementById("payment-message").textContent = actionError.message;
             } else {
-              window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+              window.location.href = "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
             }
           } else {
-            window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+            window.location.href = "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
           }
         }
       });
@@ -2564,7 +2564,7 @@ stripeBtn.addEventListener("click", async () => {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
+          return_url: "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
           receipt_email: email,
           payment_method_data: {
             billing_details: {

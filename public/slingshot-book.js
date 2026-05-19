@@ -888,7 +888,7 @@ async function launchExtendRentalPayment() {
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://www.slytrans.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          return_url: "https://slycarrentals.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
           ...(email ? { receipt_email: email } : {}),
         },
       });

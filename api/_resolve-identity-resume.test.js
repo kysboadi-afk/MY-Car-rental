@@ -73,7 +73,7 @@ function makeRes() {
 function makeReq(token) {
   return {
     method: "GET",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     query: { token },
   };
 }

@@ -60,7 +60,7 @@ import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
 import { applySlingshotBookingStatusTransition } from "./_slingshot-booking-status-transitions.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VEHICLE_NAMES    = {
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
@@ -159,7 +159,7 @@ async function sendStoredSlingshotAgreementEmail(sb, bookingRow, docsRow, manage
 
 function buildBalanceLinkForBooking(row = {}) {
   if (row.balance_payment_link) return String(row.balance_payment_link).trim();
-  const base = "https://www.slytrans.com/balance.html";
+  const base = "https://slycarrentals.com/balance.html";
   const p = new URLSearchParams();
   const vid = uiVehicleId(row.vehicle_id || "");
   if (vid) p.set("v", vid);
@@ -1115,7 +1115,7 @@ export default async function handler(req, res) {
                 phone: updatedBooking.phone,
                 body: render(BOOKING_ONBOARDING, {
                   customer_name: (updatedBooking.name || "Customer").split(" ")[0],
-                  manage_link: "https://www.slytrans.com/manage-booking.html",
+                  manage_link: "https://slycarrentals.com/manage-booking.html",
                 }),
               });
             }
@@ -2140,7 +2140,7 @@ export default async function handler(req, res) {
 
       // Generate a new 72-hour manage token
       const newToken = createManageToken(bookingId);
-      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(newToken)}`;
+      const manageLink = `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(newToken)}`;
 
       const { error: updErr } = await sbManage
         .from("bookings")
@@ -2262,7 +2262,7 @@ export default async function handler(req, res) {
 
       // Generate a fresh manage token so the renter can pay inside the dashboard
       const newManageToken = createManageToken(bkRow.booking_ref);
-      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(newManageToken)}`;
+      const manageLink = `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(newManageToken)}`;
 
       // Best-effort persist the token so the dashboard's existing token stays fresh
       try {
@@ -2492,7 +2492,7 @@ export default async function handler(req, res) {
         .maybeSingle();
       if (docsErr) return res.status(500).json({ error: docsErr.message });
       const manageToken = booking.manage_token || createManageToken(bookingId);
-      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
+      const manageLink = `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
       await sb.from("bookings").update({ manage_token: manageToken, updated_at: new Date().toISOString() }).eq("booking_ref", bookingId);
       await sendStoredSlingshotAgreementEmail(sb, booking, docsRow, manageLink);
       await writeAuditLog(bookingId, [

@@ -106,14 +106,14 @@ export function verifyLateFeeToken(token) {
  *
  * @param {string} bookingId
  * @param {number} amount      — USD
- * @param {string} [baseUrl]   — defaults to VERCEL_URL or "https://sly-rides.vercel.app"
+ * @param {string} [baseUrl]   — defaults to VERCEL_URL or "https://slycarrentals.com"
  * @param {number} [ttlMs]
  * @returns {{ approveUrl: string, declineUrl: string, adjustUrl: string }}
  */
 export function buildLateFeeUrls(bookingId, amount, baseUrl, ttlMs) {
   const base = baseUrl || (process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : "https://sly-rides.vercel.app");
+    : "https://slycarrentals.com");
 
   const approveToken = createLateFeeToken(bookingId, amount, "approve", ttlMs);
   const declineToken = createLateFeeToken(bookingId, amount, "decline", ttlMs);

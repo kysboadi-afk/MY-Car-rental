@@ -188,7 +188,7 @@ const { default: handler } = await import("./v2-customers.js");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeReq(body) {
-  return { method: "POST", headers: { origin: "https://www.slytrans.com" }, body };
+  return { method: "POST", headers: { origin: "https://slycarrentals.com" }, body };
 }
 
 function makeRes() {

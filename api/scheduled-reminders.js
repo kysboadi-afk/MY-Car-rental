@@ -691,7 +691,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
               ❌ Decline — Do Not Charge
             </a>
           </p>
-          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>
+          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>
           <p><strong>Sly Transportation Services LLC 🚗</strong></p>
         `,
         text: [
@@ -705,7 +705,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
           `ADJUST amount:    ${adjustUrl}`,
           `DECLINE (no charge): ${declineUrl}`,
           ``,
-          `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin-v2/`,
+          `Links expire in 24 hours. Or charge manually from https://admin.slycarrentals.com/admin-v2/`,
         ].join("\n"),
       });
       sent = true;
@@ -2079,7 +2079,7 @@ export async function processAutoCompletions(allBookings, now) {
                     <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.pickupDate || "—")}</td></tr>
                     <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.returnDate || "—")}</td></tr>
                   </table>
-                  <p>Ready to book again? Visit <a href="https://www.slytrans.com/cars.html">www.slytrans.com</a>.</p>
+                  <p>Ready to book again? Visit <a href="https://slycarrentals.com/cars.html">www.slytrans.com</a>.</p>
                   <p>Questions? Call us at <a href="tel:+18445114059">(844) 511-4059</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
                   <p style="color:#666;font-size:13px">Sly Transportation Services LLC · Los Angeles, CA</p>
                 `,
@@ -2583,10 +2583,10 @@ async function runReconciliation() {
               <tbody>${rows}</tbody>
             </table>
             ${failedPIIds.length > 0
-              ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+              ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
               : skippedPIIds.length > 0
-                ? `<p style="color:#e65100">⚠️ <strong>${skippedPIIds.length} payment(s) require manual review</strong> (type not eligible for auto-processing). Please review them in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
-                : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`}
+                ? `<p style="color:#e65100">⚠️ <strong>${skippedPIIds.length} payment(s) require manual review</strong> (type not eligible for auto-processing). Please review them in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
+                : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`}
             <p><strong>Sly Transportation Services LLC 🚗</strong></p>
           `,
           text: [
@@ -2604,7 +2604,7 @@ async function runReconciliation() {
               return `  ${st} ${pi.id}  $${(pi.amount / 100).toFixed(2)}${errLine}`;
             }),
             "",
-            "Admin Panel: https://www.slytrans.com/admin-v2/",
+            "Admin Panel: https://admin.slycarrentals.com/admin-v2/",
           ].join("\n"),
         });
       } catch (emailErr) {

@@ -37,7 +37,7 @@ const MIN_UTILIZATION_WINDOW_DAYS = 90;
 // Average days per month (365.25 / 12) used for months_active calculation
 const AVG_DAYS_PER_MONTH = 30.4375;
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 /**
  * Load vehicles from Supabase when available (spreading the `data` JSONB column

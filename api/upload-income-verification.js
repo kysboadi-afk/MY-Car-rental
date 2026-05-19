@@ -42,7 +42,7 @@ export const config = {
   api: { bodyParser: { sizeLimit: "20mb" } },
 };
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // Statuses that still allow document uploads
 const UPLOADABLE_STATUSES = new Set([

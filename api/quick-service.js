@@ -60,7 +60,7 @@ function htmlPage(title, color, heading, body) {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://www.slytrans.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
 </body>
 </html>`;
 }

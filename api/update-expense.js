@@ -22,7 +22,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { getActiveVehicleIds } from "./_pricing.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const LEGACY_CATEGORIES = Object.keys(LEGACY_CATEGORY_MAP);
 
 export default async function handler(req, res) {

@@ -23,7 +23,7 @@ import { render, VIOLATION_NOTICE, VIOLATION_TRANSFER_SUBMITTED } from "./_sms-t
 import { normalizePhone } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const VALID_STATUSES = ["new","matched","transfer_ready","submitted","approved","rejected","charged","closed"];
 const VALID_TYPES    = ["parking","toll","camera","other"];

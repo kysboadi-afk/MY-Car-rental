@@ -23,7 +23,7 @@ import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { getActiveVehicleIds } from "./_pricing.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 // Legacy flat categories still accepted for backward-compat
 const LEGACY_CATEGORIES  = Object.keys(LEGACY_CATEGORY_MAP);
 

@@ -129,7 +129,7 @@ function makePi(id, paymentType, overrides = {}) {
 function makeReq(body) {
   return {
     method:  "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body,
   };
 }

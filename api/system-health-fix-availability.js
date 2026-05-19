@@ -31,7 +31,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { buildBufferedEnd }                     from "./_booking-automation.js";
 import { normalizeVehicleId }                   from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 // All statuses that represent a vehicle being held for a renter — must match
 // ACTIVE_BOOKING_STATUSES in fleet-status.js so the health fix covers every
 // booking state that prevents a vehicle from being available.

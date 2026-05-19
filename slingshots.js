@@ -164,7 +164,7 @@ function applyFleetStatus(fleetStatus) {
 
       if (isReserved) {
         btn.textContent = "\u2705 Complete Booking";
-        link.href = "https://www.slytrans.com/manage-booking.html";
+        link.href = "https://slycarrentals.com/manage-booking.html";
       } else {
         btn.textContent = "\u23F1\uFE0F Extend Rental";
         link.href = `car.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
