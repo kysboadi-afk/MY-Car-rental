@@ -46,6 +46,7 @@ let veriffCreateStatus = 200;
 let veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
 let veriffCreateFailureOnce = null;
 let missingVeriffEventTable = false;
+let missingVeriffEventTableError = null;
 let incomeDocumentsResponses = [];
 
 const fetchRenterApplicationById = mock.fn(async (applicationId) => {
@@ -158,7 +159,10 @@ mock.module("./_supabase.js", {
                 return {
                   maybeSingle: async () => {
                     if (isMissingVeriffTable) {
-                      return { data: null, error: { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' } };
+                      return {
+                        data: null,
+                        error: missingVeriffEventTableError || { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' },
+                      };
                     }
                     return duplicateEvent
                       ? { data: { id: 1 }, error: null }
@@ -170,7 +174,9 @@ mock.module("./_supabase.js", {
           },
           insert: async (payload) => {
             if (isMissingVeriffTable) {
-              return { error: { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' } };
+              return {
+                error: missingVeriffEventTableError || { code: "42P01", message: 'relation "veriff_webhook_events" does not exist' },
+              };
             }
             calls.eventInserts.push({ table, payload });
             return { error: insertEventError };
@@ -358,6 +364,7 @@ beforeEach(() => {
   veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
   veriffCreateFailureOnce = null;
   missingVeriffEventTable = false;
+  missingVeriffEventTableError = null;
   incomeDocumentsResponses = [];
 });
 
@@ -753,6 +760,24 @@ test("veriff-webhook falls back to legacy event log table when veriff_webhook_ev
 
   assert.equal(res._status, 200);
   assert.equal(calls.eventInserts[0]?.table, "stripe_identity_webhook_events");
+});
+
+test("veriff-webhook falls back when veriff table is missing from schema cache", async () => {
+  missingVeriffEventTable = true;
+  missingVeriffEventTableError = {
+    code: "PGRST205",
+    message: "Could not find the table 'public.veriff_webhook_events' in the schema cache",
+  };
+  const payload = {
+    id: "evt_veriff_fallback_schema_cache_1",
+    verification: { id: "vrf_123", status: "approved", vendorData: "app_1" },
+  };
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.eventInserts[0]?.table, "stripe_identity_webhook_events");
+  assert.equal(calls.patched[0]?.patch?.identityStatus, "verified");
 });
 
 test("legacy stripe-identity-webhook endpoint is deprecated (410)", async () => {
