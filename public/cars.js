@@ -3,7 +3,10 @@
 // /api/public-pricing, then renders car cards so the admin can add,
 // remove, or update vehicles in the admin portal without touching code.
 
-const API_BASE = "https://sly-rides.vercel.app";
+const API_BASE = (
+  window.location.hostname === "slycarrentals.com" ||
+  window.location.hostname === "www.slycarrentals.com"
+) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
@@ -189,7 +192,7 @@ function applyFleetStatus(fleetStatus) {
       if (isReserved) {
         btn.setAttribute("data-i18n", "fleet.completeBooking");
         btn.textContent = i18n.t("fleet.completeBooking") || "✅ Complete Booking";
-        link.href = "https://slycarrentals.com/manage-booking.html";
+        link.href = "manage-booking.html";
       } else {
         btn.setAttribute("data-i18n", "fleet.extendRental");
         btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";

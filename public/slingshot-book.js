@@ -6,7 +6,10 @@
 "use strict";
 
 // ----- API Base URL -----
-const API_BASE = "https://sly-rides.vercel.app";
+const API_BASE = (
+  window.location.hostname === "slycarrentals.com" ||
+  window.location.hostname === "www.slycarrentals.com"
+) ? "" : "https://slycarrentals.com";
 const SlyLA = window.SlyLA;
 
 // ----- Slingshot package definitions (mirror api/_slingshot-packages.js) -----
@@ -888,7 +891,7 @@ async function launchExtendRentalPayment() {
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://slycarrentals.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          return_url: window.location.origin + "/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
           ...(email ? { receipt_email: email } : {}),
         },
       });

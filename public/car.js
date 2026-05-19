@@ -1,8 +1,13 @@
 // ----- API Base URL -----
-// The frontend is served by GitHub Pages (slycarrentals.com).
-// The API functions are deployed on Vercel (sly-rides.vercel.app).
-// Because they are on different domains, the full Vercel URL must be used here.
-const API_BASE = "https://slycarrentals.com";
+// When served from the canonical Vercel domains (slycarrentals.com or
+// www.slycarrentals.com) the API functions live on the same host, so use
+// root-relative paths (empty base) to avoid any cross-subdomain CORS round-trip.
+// For GitHub Pages (www.slytrans.com / slytrans.com) the full Vercel URL is
+// required because the API functions are not available on that host.
+const API_BASE = (
+  window.location.hostname === "slycarrentals.com" ||
+  window.location.hostname === "www.slycarrentals.com"
+) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
@@ -1610,7 +1615,7 @@ async function launchExtendRentalPayment() {
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://slycarrentals.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          return_url: window.location.origin + "/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
           ...(extEmail ? { receipt_email: extEmail } : {}),
         },
       });
@@ -2377,10 +2382,10 @@ stripeBtn.addEventListener("click", async () => {
               }));
               document.getElementById("payment-message").textContent = actionError.message;
             } else {
-              window.location.href = "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+              window.location.href = window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId);
             }
           } else {
-            window.location.href = "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+            window.location.href = window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId);
           }
         }
       });
@@ -2514,7 +2519,7 @@ stripeBtn.addEventListener("click", async () => {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://slycarrentals.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
+          return_url: window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId),
           receipt_email: email,
           payment_method_data: {
             billing_details: {

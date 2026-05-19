@@ -159,7 +159,7 @@
     if (b?.returnDate) params.set("r", b.returnDate);
     if (b?.customerEmail) params.set("e", b.customerEmail);
     if (b?.bookingId) params.set("b", b.bookingId);
-    return params.toString() ? `https://slycarrentals.com/balance.html?${params.toString()}` : "";
+    return params.toString() ? `${window.location.origin}/balance.html?${params.toString()}` : "";
   }
 
   function isOverdueDate(value) {
@@ -440,7 +440,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       if ($lockNotice) {
         $lockNotice.style.display = "block";
         if (isSlingshot && (statusKey === "identity_pending" || statusKey === "identity_verified" || statusKey === "agreement_pending")) {
-          const resumeHref = `https://slycarrentals.com/slingshot-book.html?vehicle=${encodeURIComponent(b.vehicleId || "")}&resume=${encodeURIComponent(b.bookingId || "")}`;
+          const resumeHref = `slingshot-book.html?vehicle=${encodeURIComponent(b.vehicleId || "")}&resume=${encodeURIComponent(b.bookingId || "")}`;
           $lockNotice.innerHTML = `📝 Complete your slingshot onboarding to continue. <a href="${resumeHref}">Resume identity / agreement steps</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.`;
         } else if (isSlingshot && (statusKey === "agreement_signed" || statusKey === "pending_manual_payment" || statusKey === "ready_for_pickup")) {
           $lockNotice.innerHTML = "💵 Your slingshot payment will be collected in person at pickup. Use this dashboard to view your agreement and booking details.";

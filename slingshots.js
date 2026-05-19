@@ -3,7 +3,10 @@
 // /api/public-pricing, then renders a card per vehicle so each slingshot can
 // be booked individually via the standard car.html booking flow (Stripe).
 
-const API_BASE = "https://sly-rides.vercel.app";
+const API_BASE = (
+  window.location.hostname === "slycarrentals.com" ||
+  window.location.hostname === "www.slycarrentals.com"
+) ? "" : "https://slycarrentals.com";
 const SlyLA = window.SlyLA;
 
 // Mark the session as slingshot context so shared pages (manage-booking, contact)
@@ -164,7 +167,7 @@ function applyFleetStatus(fleetStatus) {
 
       if (isReserved) {
         btn.textContent = "\u2705 Complete Booking";
-        link.href = "https://slycarrentals.com/manage-booking.html";
+        link.href = "manage-booking.html";
       } else {
         btn.textContent = "\u23F1\uFE0F Extend Rental";
         link.href = `car.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
