@@ -208,9 +208,10 @@ async function loadFleetStatus() {
     const fleetRes = await fetch(API_BASE + "/api/fleet-status");
     const fleetStatus = fleetRes.ok ? await fleetRes.json() : {};
     validateFleetStatusShape(fleetStatus);
-    applyFleetStatus(fleetStatus);
+    return fleetStatus;
   } catch (err) {
     console.warn("Could not load fleet status:", err);
+    return {};
   }
 }
 
@@ -225,42 +226,43 @@ async function loadFleet() {
 
   let vehicles = [];
   let pricing  = null;
+  let fleetStatus = {};
 
   try {
-    const [vRes, pRes] = await Promise.all([
+    const [vRes, pRes, fleetRes] = await Promise.all([
       fetch(API_BASE + "/api/v2-vehicles?scope=car"),
       fetch(API_BASE + "/api/public-pricing"),
+      fetch(API_BASE + "/api/fleet-status"),
     ]);
     if (vRes.ok) vehicles = await vRes.json();
     if (pRes.ok) pricing  = await pRes.json();
+    if (fleetRes.ok) fleetStatus = await fleetRes.json();
+    validateFleetStatusShape(fleetStatus);
   } catch (err) {
     console.warn("Could not load fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
+  const activeAndAvailable = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
     if (v.status && v.status !== "active") return false;
     const cat = (v.category || "").toLowerCase();
     if (!cat || (cat !== "car" && cat !== "slingshot")) {
       console.error("[cars.js] Vehicle skipped — missing or invalid category:", v.vehicle_id, cat || "(none)");
       return false;
     }
-    return cat === "car";
+    if (cat !== "car") return false;
+    const status = fleetStatus[v.vehicle_id];
+    return !!status && status.available === true;
   });
 
-  // Only replace the grid if the API returned valid vehicles.
-  // If the API failed or returned nothing, keep any static cards already in the HTML.
-  if (!active.length) {
-    if (!grid.querySelector(".car-card")) {
-      grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles available at this time. Please check back soon.")}</p>`;
-    }
+  if (!activeAndAvailable.length) {
+    grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles currently available right now. Please check back later or contact us.")}</p>`;
     return;
   }
 
   try {
-    grid.innerHTML = active.map(v => buildCardHTML(v, pricing)).join("");
+    grid.innerHTML = activeAndAvailable.map(v => buildCardHTML(v, pricing)).join("");
     captureButtonKeys();
-    // Fetch and apply live availability badges
-    loadFleetStatus();
+    applyFleetStatus(fleetStatus);
   } catch (err) {
     console.error("[loadFleet] error rendering car cards:", err);
     // Keep whatever HTML is already in the grid (static fallback cards stay visible).
