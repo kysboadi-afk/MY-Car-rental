@@ -4302,7 +4302,7 @@ async function toolReconcileStripe({ action = "reconcile" } = {}) {
 
   const resp = await fetch(`${baseUrl}/api/stripe-reconcile`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json", origin: "https://www.slytrans.com" },
+    headers: { "Content-Type": "application/json", origin: "https://slycarrentals.com" },
     body:    JSON.stringify({ secret, action }),
   });
 

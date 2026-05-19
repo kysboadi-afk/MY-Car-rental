@@ -11,8 +11,8 @@ import { createVeriffSession, fetchVeriffDecision } from "./_veriff.js";
 import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 import { initiateCheckrScreening } from "./_checkr.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const DEFAULT_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
 const TERMINAL_APPLICATION_STATUSES = new Set(["approved", "rejected", "expired", "withdrawn"]);
 
 function cleanText(value, maxLen = 2000) {

@@ -38,7 +38,7 @@ export const config = {
 };
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || process.env.SMTP_USER || "slyservices@supports-info.com";
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const MAX_OWNER_EMAIL_ATTACHMENT_BYTES = 12 * 1024 * 1024; // keep under common SMTP limits
 const DEFAULT_ATTACHMENT_PRIORITY = 100;
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -763,7 +763,7 @@ export default async function handler(req, res) {
       ...(returnTime  ? [["rt", returnTime]]  : []),
       ...(car       ? [["car", car]]       : []),
     ];
-    balancePayUrl = "https://www.slytrans.com/balance.html?" +
+    balancePayUrl = "https://slycarrentals.com/balance.html?" +
       bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   }
 
@@ -978,7 +978,7 @@ export default async function handler(req, res) {
         <p style="font-size:13px;color:#555">
           <strong>📅 Calendar update:</strong> These dates are being automatically marked as unavailable on the booking calendar.
           If the calendar is not updated within a few minutes, use the
-          <a href="https://www.slytrans.com/admin-v2/?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
+          <a href="https://admin.slycarrentals.com/admin-v2/?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
           to block them manually.
         </p>` : ""}
       `,
@@ -1116,7 +1116,7 @@ export default async function handler(req, res) {
           !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
           breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
           "",
-          "Manage your booking at: https://www.slytrans.com/manage-booking.html",
+          "Manage your booking at: https://slycarrentals.com/manage-booking.html",
           "Use your phone number, email, or Booking ID to access it.",
           "",
           "We will be in touch shortly to confirm your rental pick-up details.",
@@ -1145,7 +1145,7 @@ export default async function handler(req, res) {
             ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
           </table>
           ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-          <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
+          <p>You can <a href="https://slycarrentals.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
           <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
           <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
         `,
@@ -1247,7 +1247,7 @@ export default async function handler(req, res) {
             phone,
             body: render(BOOKING_ONBOARDING, {
               customer_name: (name || "").split(" ")[0] || name || "Customer",
-              manage_link: "https://www.slytrans.com/manage-booking.html",
+              manage_link: "https://slycarrentals.com/manage-booking.html",
             }),
           });
         }

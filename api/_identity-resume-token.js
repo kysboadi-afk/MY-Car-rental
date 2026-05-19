@@ -23,7 +23,7 @@ import crypto from "crypto";
 
 const TOKEN_PREFIX   = "identity-resume:";
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const FRONTEND_BASE  = "https://www.slytrans.com";
+const FRONTEND_BASE  = "https://slycarrentals.com";
 
 function getSecret() {
   if (!process.env.OTP_SECRET) {

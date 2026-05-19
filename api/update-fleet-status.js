@@ -22,7 +22,7 @@ import { getAllVehicleIds } from "./_pricing.js";
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const FLEET_STATUS_PATH  = "fleet-status.json";
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const DEFAULT_STATUS = {
   camry:     { available: true },

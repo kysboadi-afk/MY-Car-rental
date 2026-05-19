@@ -23,7 +23,7 @@ function makeRes() {
   return res;
 }
 
-function makeReq({ body = {}, method = "POST", origin = "https://www.slytrans.com" } = {}) {
+function makeReq({ body = {}, method = "POST", origin = "https://slycarrentals.com" } = {}) {
   return { body, method, headers: { origin } };
 }
 

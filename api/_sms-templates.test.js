@@ -122,20 +122,20 @@ test("APPLICATION_DENIED contains rejection phrasing", () => {
 });
 
 test("render APPLICATION_RECEIVED replaces customer_name", () => {
-  const msg = render(APPLICATION_RECEIVED, { customer_name: "Bob", verification_link: "https://www.slytrans.com/thank-you.html?from=apply&applicationId=test-id" });
+  const msg = render(APPLICATION_RECEIVED, { customer_name: "Bob", verification_link: "https://slycarrentals.com/thank-you.html?from=apply&applicationId=test-id" });
   assert.ok(msg.includes("Bob"));
   assert.ok(!msg.includes("{customer_name}"));
   assert.ok(!msg.includes("{verification_link}"));
-  assert.ok(msg.includes("https://www.slytrans.com/thank-you.html"));
+  assert.ok(msg.includes("https://slycarrentals.com/thank-you.html"));
 });
 
 test("render APPLICATION_APPROVED fills all variables", () => {
   const msg = render(APPLICATION_APPROVED, {
     customer_name: "Alice",
-    waitlist_link: "https://www.slytrans.com/cars.html",
+    waitlist_link: "https://slycarrentals.com/cars.html",
   });
   assert.ok(msg.includes("Alice"));
-  assert.ok(msg.includes("https://www.slytrans.com/cars"));
+  assert.ok(msg.includes("cars.html"));
   assert.ok(!msg.includes("{"));
 });
 
@@ -282,12 +282,12 @@ test("render EXTEND_SELECTED fills all variables", () => {
     extra_time:   "+2 hours",
     vehicle:      "Camry 2012",
     price:        "100",
-    payment_link: "https://www.slytrans.com/balance.html?test=1",
+    payment_link: "https://slycarrentals.com/balance.html?test=1",
   });
   assert.ok(msg.includes("+2 hours"));
   assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("$100"));
-  assert.ok(msg.includes("https://www.slytrans.com/balance.html?test=1"));
+  assert.ok(msg.includes("https://slycarrentals.com/balance.html?test=1"));
   assert.ok(!msg.includes("{"));
 });
 
@@ -326,14 +326,14 @@ test("render EXTEND_SELECTED_UPSELL fills all variables", () => {
     extra_time:   "+3 days",
     vehicle:      "Camry 2012",
     price:        "165",
-    payment_link: "https://www.slytrans.com/balance.html?test=1",
+    payment_link: "https://slycarrentals.com/balance.html?test=1",
     weekly_price: "350",
   });
   assert.ok(msg.includes("+3 days"));
   assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("$165"));
   assert.ok(msg.includes("$350"));
-  assert.ok(msg.includes("https://www.slytrans.com/balance.html?test=1"));
+  assert.ok(msg.includes("https://slycarrentals.com/balance.html?test=1"));
   assert.ok(!msg.includes("{"));
 });
 

@@ -128,8 +128,8 @@ mock.module("./_supabase.js", {
 mock.module("./_link-validator.js", {
   namedExports: {
     PAGE_URLS: {
-      balance: "https://www.slytrans.com/balance.html",
-      cars: "https://www.slytrans.com/car.html",
+      balance: "https://slycarrentals.com/balance.html",
+      cars: "https://slycarrentals.com/car.html",
     },
     validateLink: async (url) => ({
       ok: true,
@@ -242,10 +242,10 @@ test("receive-textmagic-sms: accepts form-encoded day selection and returns paym
   assert.equal(res._status, 200);
   assert.equal(smsCalls.length, 1);
   assert.equal(smsCalls[0].templateKey, "extend_selected_upsell");
-  assert.match(smsCalls[0].body, /https:\/\/www\.slytrans\.com\/balance\.html\?ext=1&cs=cs_ext_test&piId=pi_ext_test/);
+  assert.match(smsCalls[0].body, /https:\/\/slycarrentals\.com\/balance\.html\?ext=1&cs=cs_ext_test&piId=pi_ext_test/);
   assert.equal(createdPaymentIntent?.metadata?.booking_id, "bk_ext_2");
   assert.equal(savedBookings.camry[0].extendPending, false);
-  assert.equal(savedBookings.camry[0].extensionPendingPayment.paymentLink, "https://www.slytrans.com/balance.html?ext=1&cs=cs_ext_test&piId=pi_ext_test");
+  assert.equal(savedBookings.camry[0].extensionPendingPayment.paymentLink, "https://slycarrentals.com/balance.html?ext=1&cs=cs_ext_test&piId=pi_ext_test");
 });
 
 test("receive-textmagic-sms: extension PI metadata uses canonical Supabase booking_ref when booking JSON ID is legacy", async () => {

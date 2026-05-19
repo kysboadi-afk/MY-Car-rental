@@ -4,8 +4,8 @@ import {
 } from "./_renter-applications.js";
 import { createVeriffSession, fetchVeriffDecision } from "./_veriff.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const DEFAULT_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
 
 // Application statuses where identity verification is no longer applicable.
 // The resolver blocks new session creation for any of these states.

@@ -18,17 +18,17 @@
 //
 // Usage:
 //   import { validateLink, BASE_URL } from "./_link-validator.js";
-//   const result = await validateLink("https://www.slytrans.com/balance.html");
+//   const result = await validateLink("https://slycarrentals.com/balance.html");
 //   // result: { ok: true, status: 200, url: "https://…/balance.html", fallbackUsed: false }
 //
 //   const payment = buildPaymentLink(pi.client_secret, pi.id);
 //   const { url: safeUrl, ...validationMeta } = await validateLink(payment, {
-//     baseUrlForValidation: "https://www.slytrans.com/balance.html",
-//     fallback: "https://www.slytrans.com/cars.html",
+//     baseUrlForValidation: "https://slycarrentals.com/balance.html",
+//     fallback: "https://slycarrentals.com/cars.html",
 //   });
 //   // safeUrl is payment link when page is reachable, fallback when not
 
-export const BASE_URL = "https://www.slytrans.com";
+export const BASE_URL = "https://slycarrentals.com";
 
 // Page URLs used as validation targets and SMS fallbacks.
 export const PAGE_URLS = {
@@ -50,7 +50,7 @@ const DEFAULT_FALLBACK   = PAGE_URLS.cars;
  *   The returned `url` field still contains the original full URL when the
  *   page is reachable.
  * @param {string} [opts.fallback]            - URL to return when validation fails.
- *   Defaults to https://www.slytrans.com/cars.html
+ *   Defaults to https://slycarrentals.com/cars.html
  * @param {number} [opts.timeoutMs]           - Request timeout in ms. Default 4000.
  * @returns {Promise<{
  *   ok:           boolean,

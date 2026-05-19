@@ -153,7 +153,7 @@ function makeRes() {
 function makeReq(body) {
   return {
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body,
   };
 }
@@ -291,7 +291,7 @@ test("delete-expense: cleans up stored receipts before removing the expense row"
   const res = makeRes();
   await deleteExpense({
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body: { secret: "test-admin-secret", expense_id: "exp-1" },
   }, res);
 
@@ -307,7 +307,7 @@ test("delete-expense: aborts delete when receipt cleanup fails", async () => {
   const res = makeRes();
   await deleteExpense({
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body: { secret: "test-admin-secret", expense_id: "exp-1" },
   }, res);
 

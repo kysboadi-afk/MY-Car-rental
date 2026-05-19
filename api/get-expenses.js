@@ -17,7 +17,7 @@ import { enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categorie
 import { adminErrorMessage } from "./_error-helpers.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
 
 function normalizeScope(scope) {

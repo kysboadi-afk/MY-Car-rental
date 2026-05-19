@@ -24,7 +24,7 @@ function makeRes() {
   };
 }
 
-function makeReq(body, origin = "https://www.slytrans.com") {
+function makeReq(body, origin = "https://slycarrentals.com") {
   return { method: "POST", headers: { origin }, body };
 }
 
@@ -121,7 +121,7 @@ test("waive-late-fee: 405 for non-POST methods", async () => {
 
 test("waive-late-fee: 200 OPTIONS preflight returns 200", async () => {
   reset();
-  const req = { method: "OPTIONS", headers: { origin: "https://www.slytrans.com" }, body: {} };
+  const req = { method: "OPTIONS", headers: { origin: "https://slycarrentals.com" }, body: {} };
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 200);

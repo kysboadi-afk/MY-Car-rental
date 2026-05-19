@@ -62,7 +62,7 @@ function htmlPage(title, heading, body, color = "#333") {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://www.slytrans.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
 </body>
 </html>`;
 }
@@ -367,7 +367,7 @@ export default async function handler(req, res) {
           render(WAITLIST_APPROVED, {
             customer_name: entry.name,
             vehicle:       entry.vehicleName || vehicleId,
-            booking_link:  "https://www.slytrans.com/cars.html",
+            booking_link:  "https://slycarrentals.com/cars.html",
           })
         );
       } else {

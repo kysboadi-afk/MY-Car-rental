@@ -363,7 +363,7 @@ The response will tell you:
 
 ## Step 6 — Test the Payment Form
 
-1. Visit **[https://www.slytrans.com/car.html?vehicle=camry](https://www.slytrans.com/car.html?vehicle=camry)**.
+1. Visit **[https://slycarrentals.com/car.html?vehicle=camry](https://slycarrentals.com/car.html?vehicle=camry)**.
 2. Fill in pickup date, return date, email, and upload an ID.
 3. Check the **"I agree"** checkbox.
 4. Click **💳 Pay Now**.
@@ -405,7 +405,7 @@ The response will tell you:
 | What | Status |
 |---|---|
 | Vercel project URL | `https://sly-rides.vercel.app` ✅ (this is correct) |
-| Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
+| Frontend URL | `https://slycarrentals.com` (GitHub Pages) |
 | Canonical Stripe webhook endpoint | `https://sly-rides.vercel.app/api/stripe-webhook` ✅ |
 | Canonical Stripe webhook owner | Vercel project for this repository |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |

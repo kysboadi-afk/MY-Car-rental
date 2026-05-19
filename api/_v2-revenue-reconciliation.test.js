@@ -87,7 +87,7 @@ function makeRes() {
 }
 
 function makeReq(body) {
-  return { method: "POST", headers: { origin: "https://www.slytrans.com" }, body };
+  return { method: "POST", headers: { origin: "https://slycarrentals.com" }, body };
 }
 
 /** A canonical audit row (included in all surfaces). */

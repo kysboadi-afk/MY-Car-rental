@@ -45,7 +45,7 @@ const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const SITE_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
-  : "https://www.slytrans.com";
+  : "https://slycarrentals.com";
 
 const SERVICE_LABELS = {
   oil:    "oil change",

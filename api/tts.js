@@ -16,6 +16,9 @@ import { isAdminAuthorized } from "./_admin-auth.js";
 const ALLOWED_ORIGINS = [
   "https://www.slytrans.com",
   "https://slytrans.com",
+  "https://slycarrentals.com",
+  "https://www.slycarrentals.com",
+  "https://admin.slycarrentals.com",
 ];
 
 const MAX_TEXT_LENGTH = 1000;

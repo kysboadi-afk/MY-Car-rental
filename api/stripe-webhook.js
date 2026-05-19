@@ -1526,8 +1526,8 @@ function sanitizeSmsValue(value) {
 
 function buildVehicleExtendEntryLink(vehicleId) {
   const normalized = String(uiVehicleId(vehicleId || "") || "").trim();
-  if (!normalized) return "https://www.slytrans.com/manage-booking.html";
-  return `https://www.slytrans.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
+  if (!normalized) return "https://slycarrentals.com/manage-booking.html";
+  return `https://slycarrentals.com/car.html?vehicle=${encodeURIComponent(normalized)}&extend=1`;
 }
 
 function buildRenterOnboardingLink({ bookingId, vehicleId }) {
@@ -1613,7 +1613,7 @@ async function appendStripeRefundToCustomerLedger({ bookingRef, charge, amountDo
 }
 
 function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking }) {
-  const base = "https://www.slytrans.com/balance.html";
+  const base = "https://slycarrentals.com/balance.html";
   const p = new URLSearchParams();
   const vehicleId = booking?.vehicleId || meta.vehicle_id || "";
   const pickup = booking?.pickupDate || meta.pickup_date || "";
@@ -1666,7 +1666,7 @@ async function sendReservationDepositBalanceEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
-      <p>To view or manage your booking, visit <a href="https://www.slytrans.com/manage-booking.html">Manage Booking</a> and enter your phone number, email, or Booking ID.</p>
+      <p>To view or manage your booking, visit <a href="https://slycarrentals.com/manage-booking.html">Manage Booking</a> and enter your phone number, email, or Booking ID.</p>
     `,
   });
 }
@@ -1809,7 +1809,7 @@ async function sendBalancePaidCustomerEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(amountPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Paid</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(totalPrice).toFixed(2))}</strong></td></tr>
       </table>
-      <p>Questions? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
+      <p>Questions? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://slycarrentals.com">slytrans.com</a>.</p>
     `,
     text: [
       "✅ Payment Received — You're All Set!",
@@ -2969,7 +2969,7 @@ export default async function handler(req, res) {
         }
 
         // Build new balance link
-        const newBalanceLink = `https://www.slytrans.com/balance.html?v=${encodeURIComponent(pendingUiVehicleId)}&p=${encodeURIComponent(newPickupDate)}&r=${encodeURIComponent(newReturnDate)}&b=${encodeURIComponent(bookingRef)}`;
+        const newBalanceLink = `https://slycarrentals.com/balance.html?v=${encodeURIComponent(pendingUiVehicleId)}&p=${encodeURIComponent(newPickupDate)}&r=${encodeURIComponent(newReturnDate)}&b=${encodeURIComponent(bookingRef)}`;
 
         // Apply the change
         const { error: updateErr } = await sb
@@ -3671,7 +3671,7 @@ export default async function handler(req, res) {
                   <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))} (refundable after inspection)</td></tr>
                 </table>
                 ${slPdfBuffer ? "<p>📄 Your signed rental agreement is attached. Please keep it for your records.</p>" : ""}
-                <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
+                <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://slycarrentals.com">slytrans.com</a>.</p>
                 <p>Thank you for choosing SLY Slingshot Rentals!</p>
               `,
               text: [

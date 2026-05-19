@@ -62,7 +62,7 @@ const { default: handler } = await import("./extension-config.js");
 function makeReq(overrides = {}) {
   return {
     method: "GET",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     query: { piId: "pi_test_123", ...(overrides.query || {}) },
     ...overrides,
   };

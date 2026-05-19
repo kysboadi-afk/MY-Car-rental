@@ -18,7 +18,7 @@ function makeRes() {
   };
 }
 
-function makeReq(body, origin = "https://www.slytrans.com") {
+function makeReq(body, origin = "https://slycarrentals.com") {
   return { method: "POST", headers: { origin }, body };
 }
 

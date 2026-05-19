@@ -132,7 +132,7 @@ test("review-application: approve — success 200 + notification sent", async ()
   };
 
   const res = makeRes();
-  await handler({ method: "POST", headers: { origin: "https://www.slytrans.com" }, body: validBody() }, res);
+  await handler({ method: "POST", headers: { origin: "https://slycarrentals.com" }, body: validBody() }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);

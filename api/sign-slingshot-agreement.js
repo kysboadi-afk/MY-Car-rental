@@ -6,7 +6,7 @@ import { createManageToken } from "./_manage-booking-token.js";
 import { applySlingshotBookingStatusTransition } from "./_slingshot-booking-status-transitions.js";
 import { isSchemaError } from "./_error-helpers.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const SLINGSHOT_DEPOSIT = 500;
 const BOOKING_SELECT_VARIANTS = [
   "booking_ref, vehicle_id, category, status, customer_name, customer_email, customer_phone, renter_phone, pickup_date, pickup_time, return_date, return_time, total_price, remaining_balance, payment_status, identity_session_id, manage_token",
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
       success: true,
       bookingId: trimmedBookingId,
       agreementPdfUrl: signedExisting?.signedUrl || null,
-      manageLink: booking.manage_token ? `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(booking.manage_token)}` : null,
+      manageLink: booking.manage_token ? `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(booking.manage_token)}` : null,
     });
   }
   if (currentStatus === "pending_manual_payment" || currentStatus === "ready_for_pickup") {
@@ -153,7 +153,7 @@ export default async function handler(req, res) {
   }
 
   const manageToken = booking.manage_token || createManageToken(trimmedBookingId);
-  const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
+  const manageLink = `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
   await sb
     .from("bookings")
     .update({ manage_token: manageToken, updated_at: new Date().toISOString() })

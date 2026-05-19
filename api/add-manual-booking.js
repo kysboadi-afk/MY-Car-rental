@@ -34,7 +34,7 @@ import { getActiveVehicleIds } from "./_pricing.js";
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
-const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VEHICLE_NAMES     = {
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",

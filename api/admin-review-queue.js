@@ -22,7 +22,7 @@ import {
 } from "./_renter-applications.js";
 import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const RECOVERY_SCAN_LIMIT = 25;
 
 export default async function handler(req, res) {

@@ -213,7 +213,7 @@ const { default: handler } = await import("./stripe-reconcile.js");
 function makeReq(body) {
   return {
     method:  "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body,
   };
 }

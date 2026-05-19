@@ -29,7 +29,7 @@ mock.module("./_sms-dispatcher.js", {
 
 const { default: handler } = await import("./admin-active-renters-manage-booking-sms.js");
 
-function makeReq({ body = {}, method = "POST", origin = "https://www.slytrans.com" } = {}) {
+function makeReq({ body = {}, method = "POST", origin = "https://slycarrentals.com" } = {}) {
   return { method, body, headers: { origin } };
 }
 

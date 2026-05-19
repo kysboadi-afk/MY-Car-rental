@@ -25,7 +25,7 @@ function makeRes() {
 }
 
 function makeReq() {
-  return { method: "GET", headers: { origin: "https://www.slytrans.com" }, query: {}, body: {} };
+  return { method: "GET", headers: { origin: "https://slycarrentals.com" }, query: {}, body: {} };
 }
 
 const sbMock = {
@@ -91,7 +91,7 @@ function resetMock() {
 
 test("OPTIONS returns 200", async () => {
   const res = makeRes();
-  await handler({ method: "OPTIONS", headers: { origin: "https://www.slytrans.com" } }, res);
+  await handler({ method: "OPTIONS", headers: { origin: "https://slycarrentals.com" } }, res);
   assert.equal(res._status, 200);
 });
 

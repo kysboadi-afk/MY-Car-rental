@@ -264,7 +264,7 @@ function makeRes() {
 function makeIdentityCreateReq(body = {}) {
   return {
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body,
   };
 }
@@ -286,7 +286,7 @@ function makeWebhookReq(payloadObj, { validSignature = true } = {}) {
 function makeAdminGetReq(query = {}) {
   return {
     method: "GET",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     query,
   };
 }
@@ -294,7 +294,7 @@ function makeAdminGetReq(query = {}) {
 function makeAdminPostReq(body = {}) {
   return {
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body: { reviewedBy: "test-admin", secret: "test-admin-secret", ...body },
   };
 }
@@ -383,7 +383,7 @@ test("create-identity-verification-session creates a Veriff session and persists
   assert.equal(createCall.body?.verification?.vendorData, "app_1");
   assert.equal(createCall.body?.verification?.person?.firstName, "Jane");
   assert.equal(createCall.body?.verification?.person?.lastName, "Driver");
-  assert.equal(createCall.body?.verification?.callback, "https://sly-rides.vercel.app/api/veriff-webhook");
+  assert.equal(createCall.body?.verification?.callback, "https://slycarrentals.com/api/veriff-webhook");
   assert.equal("document" in (createCall.body?.verification || {}), false);
 });
 
@@ -620,7 +620,7 @@ test("veriff-webhook redirects browser GET requests to identity return page", as
   assert.equal(res._status, 302);
   assert.equal(
     res._headers.Location,
-    "https://www.slytrans.com/thank-you.html?from=apply&identity=return&applicationId=app_1"
+    "https://slycarrentals.com/thank-you.html?from=apply&identity=return&applicationId=app_1"
   );
 });
 

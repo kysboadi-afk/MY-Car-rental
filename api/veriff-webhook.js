@@ -23,7 +23,7 @@ export const config = {
   api: { bodyParser: false },
 };
 
-const DEFAULT_IDENTITY_RETURN_URL = "https://www.slytrans.com/thank-you.html?from=apply";
+const DEFAULT_IDENTITY_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
 
 function pickString(...values) {
   for (const value of values) {
@@ -34,7 +34,7 @@ function pickString(...values) {
 
 function getBrowserReturnUrl(req) {
   const query = req?.query && typeof req.query === "object" ? req.query : {};
-  const parsedUrl = typeof req?.url === "string" ? new URL(req.url, "https://www.slytrans.com") : null;
+  const parsedUrl = typeof req?.url === "string" ? new URL(req.url, "https://slycarrentals.com") : null;
   const applicationId = pickString(
     query.applicationId,
     query.application_id,

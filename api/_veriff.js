@@ -102,7 +102,7 @@ export function getVeriffConfig() {
 }
 
 function defaultWebhookUrl() {
-  const base = pickString(process.env.VERIFF_WEBHOOK_BASE_URL) || "https://sly-rides.vercel.app";
+  const base = pickString(process.env.VERIFF_WEBHOOK_BASE_URL) || "https://slycarrentals.com";
   const sanitized = base.endsWith("/") ? base.slice(0, -1) : base;
   return `${sanitized}/api/veriff-webhook`;
 }

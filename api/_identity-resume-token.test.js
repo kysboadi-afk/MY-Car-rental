@@ -143,11 +143,11 @@ test("buildResumeUrl token is a valid verifiable token for the same applicationI
   assert.equal(resolved, TEST_APP_ID);
 });
 
-test("buildResumeUrl defaults to www.slytrans.com origin", () => {
+test("buildResumeUrl defaults to slycarrentals.com origin", () => {
   const url = buildResumeUrl(TEST_APP_ID);
   const parsed = new URL(url);
   assert.equal(parsed.protocol, "https:");
-  assert.equal(parsed.hostname, "www.slytrans.com");
+  assert.equal(parsed.hostname, "slycarrentals.com");
 });
 
 test("buildResumeUrl respects a custom baseUrl", () => {
@@ -159,7 +159,7 @@ test("buildResumeUrl respects a custom baseUrl", () => {
 });
 
 test("buildResumeUrl strips a trailing slash from baseUrl", () => {
-  const url = buildResumeUrl(TEST_APP_ID, "https://www.slytrans.com/");
+  const url = buildResumeUrl(TEST_APP_ID, "https://slycarrentals.com/");
   assert.ok(!url.includes("//thank-you"), `Double slash found in: ${url}`);
 });
 

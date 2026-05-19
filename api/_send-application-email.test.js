@@ -75,7 +75,7 @@ function makeRes() {
   return res;
 }
 
-function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
+function makeReq(method, body = {}, origin = "https://slycarrentals.com") {
   return { method, headers: { origin }, body };
 }
 
@@ -114,8 +114,8 @@ test("non-POST returns 405", async () => {
 
 test("sets CORS header for allowed origin", async () => {
   const res = makeRes();
-  await handler(makeReq("POST", VALID_BODY, "https://www.slytrans.com"), res);
-  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://www.slytrans.com");
+  await handler(makeReq("POST", VALID_BODY, "https://slycarrentals.com"), res);
+  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://slycarrentals.com");
 });
 
 test("does not set CORS header for unknown origin", async () => {
@@ -515,8 +515,8 @@ test("verification link in applicant email points to the thank-you page and not 
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
-  assert.ok(sentMails[1].html.includes("www.slytrans.com/thank-you.html"));
-  assert.ok(!sentMails[1].html.includes("www.slytrans.com/cars"));
+  assert.ok(sentMails[1].html.includes("slycarrentals.com/thank-you.html"));
+  assert.ok(!sentMails[1].html.includes("slycarrentals.com/cars"));
 });
 
 // ─── Regression: verification link when applicationId is pre-provided ─────────

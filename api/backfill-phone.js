@@ -22,7 +22,7 @@
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const ACTIVE_STATUSES = new Set(["reserved", "pending", "active_rental", "overdue"]);
 

@@ -133,10 +133,10 @@ test("returns 500 when Supabase delete fails", async () => {
 
 test("CORS header is set for allowed origin www.slytrans.com", async () => {
   deletedRows = [];
-  const req = { method: "OPTIONS", headers: { origin: "https://www.slytrans.com" } };
+  const req = { method: "OPTIONS", headers: { origin: "https://slycarrentals.com" } };
   const res = makeRes();
   await handler(req, res);
-  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://www.slytrans.com");
+  assert.equal(res._headers["Access-Control-Allow-Origin"], "https://slycarrentals.com");
 });
 
 test("CORS header is not set for unknown origin", async () => {

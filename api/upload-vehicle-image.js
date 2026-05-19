@@ -15,7 +15,7 @@
 import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const BUCKET           = "vehicle-images";
 const MAX_SIZE_BYTES   = 5 * 1024 * 1024; // 5 MB limit
 const ALLOWED_MIMETYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];

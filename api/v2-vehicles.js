@@ -21,7 +21,7 @@ import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
+const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
 const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "slingshot", "other"];
 // category is the single authoritative field that controls which page a vehicle

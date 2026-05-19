@@ -38,7 +38,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import OpenAI from "openai";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // OpenAI model validation.
 // Fast models work well within the 45 s budget. Slow/reasoning models regularly

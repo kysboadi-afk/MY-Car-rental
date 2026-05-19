@@ -18,7 +18,7 @@ import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { getActiveVehicleIds } from "./_pricing.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

@@ -29,7 +29,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const MATCH_TOLERANCE = 0.01;
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;

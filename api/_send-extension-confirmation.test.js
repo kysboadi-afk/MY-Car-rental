@@ -93,7 +93,7 @@ const { default: handler } = await import("./send-extension-confirmation.js");
 function makeReq(paymentIntentId) {
   return {
     method: "POST",
-    headers: { origin: "https://www.slytrans.com" },
+    headers: { origin: "https://slycarrentals.com" },
     body: { paymentIntentId },
   };
 }

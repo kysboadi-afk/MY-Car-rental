@@ -1033,8 +1033,8 @@
 <!-- Preview Site Modal (full-screen iframe) -->
 <div id="preview-modal-overlay">
   <div id="preview-topbar">
-    <span>🌐 <span id="preview-mode-label">Live Preview</span>: <strong>www.slytrans.com</strong></span>
-    <a id="preview-open-link" href="https://www.slytrans.com" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
+    <span>🌐 <span id="preview-mode-label">Live Preview</span>: <strong>slycarrentals.com</strong></span>
+    <a id="preview-open-link" href="https://slycarrentals.com" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
     <button id="preview-close-btn" onclick="closePreviewModal()">✕ Close</button>
   </div>
   <iframe id="preview-iframe" src="" title="Renter Preview"></iframe>
@@ -7620,7 +7620,7 @@ function openPreviewModal(mode) {
   if (window.DEMO_MODE) { showToast('Site preview is not available in demo mode.', 'info'); return; }
   const iframe = document.getElementById('preview-iframe');
   const isTestMode = mode === 'test';
-  const liveUrl = 'https://www.slytrans.com';
+  const liveUrl = 'https://slycarrentals.com';
   const vehicleParam = _firstVehicleId || '';
   if (!vehicleParam) {
     // No vehicles loaded yet — show an informational message instead of a broken URL

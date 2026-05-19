@@ -13,7 +13,7 @@ import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 function formatSupabaseError(err) {
   if (!err) return "unknown Supabase error";

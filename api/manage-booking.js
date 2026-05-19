@@ -38,7 +38,7 @@ import {
 import { computeRentalDays, getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -195,7 +195,7 @@ async function recomputePricing(vehicleData, pickupDate, returnDate, protectionP
  * Parameters mirror buildReservationBalanceLink in stripe-webhook.js.
  */
 function buildBalanceLink(bookingId, row, vehicleId) {
-  const base = "https://www.slytrans.com/balance.html";
+  const base = "https://slycarrentals.com/balance.html";
   const p = new URLSearchParams();
   const vid = uiVehicleId(vehicleId || row.vehicle_id || "");
   if (vid)                    p.set("v",  vid);

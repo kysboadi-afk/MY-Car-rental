@@ -36,7 +36,7 @@ import { writeAuditLog }     from "./_booking-automation.js";
 import { LATE_FEE_BASE } from "./_pricing.js";
 import { addLedgerWaiver }   from "./_renter-balance-ledger.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 function esc(str) {
   if (!str) return "";

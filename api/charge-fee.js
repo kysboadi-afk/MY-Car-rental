@@ -24,7 +24,7 @@ import { render, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.j
 import { normalizePhone } from "./_bookings.js";
 import { autoCreateRevenueRecord } from "./_booking-automation.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // ── Predefined fee amounts (USD) ─────────────────────────────────────────────
 export const PREDEFINED_FEES = {

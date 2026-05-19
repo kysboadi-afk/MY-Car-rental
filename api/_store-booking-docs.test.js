@@ -27,7 +27,7 @@ function makeReq(body = {}) {
   return {
     method: "POST",
     headers: {
-      origin: "https://www.slytrans.com",
+      origin: "https://slycarrentals.com",
       "user-agent": "MobileSafari/17.0",
     },
     body,

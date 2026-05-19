@@ -26,7 +26,7 @@ export const config = {
   runtime: "nodejs",
 };
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // Maps serviceType param → DB column and JSONB key
 const SERVICE_COLUMNS = {

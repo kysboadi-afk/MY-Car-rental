@@ -64,7 +64,7 @@ import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
@@ -1931,7 +1931,7 @@ async function sendOwnerAlerts(checks, overallStatus, checkedAt) {
   const smsText =
     `[SLY RIDES] System Health ${overallStatus.toUpperCase()}: ` +
     issueChecks.map((c) => c.label).join(", ") +
-    ` — https://www.slytrans.com/admin-v2/`;
+    ` — https://admin.slycarrentals.com/admin-v2/`;
 
   // Build plain text body
   const plainText = [
@@ -1945,7 +1945,7 @@ async function sendOwnerAlerts(checks, overallStatus, checkedAt) {
       return `${icon} ${c.label}\n   ${c.summary}${topItems ? "\n" + topItems : ""}`;
     }),
     "",
-    `Open admin panel: https://www.slytrans.com/admin-v2/`,
+    `Open admin panel: https://admin.slycarrentals.com/admin-v2/`,
   ].join("\n");
 
   // ── Email ──
@@ -1989,7 +1989,7 @@ async function sendOwnerAlerts(checks, overallStatus, checkedAt) {
           <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
           ${htmlRows}</table>
           <p style="margin-top:16px;">
-            <a href="https://www.slytrans.com/admin-v2/"
+            <a href="https://admin.slycarrentals.com/admin-v2/"
                style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;` +
                `text-decoration:none;border-radius:6px;font-weight:600;">🩺 Open Admin Panel</a>
           </p>
