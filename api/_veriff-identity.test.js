@@ -245,6 +245,7 @@ const { default: deprecatedStripeIdentityWebhookHandler } = await import("./stri
 const { default: adminReviewQueueHandler } = await import("./admin-review-queue.js");
 const { default: adminReviewDetailHandler } = await import("./admin-review-detail.js");
 const { default: adminApplicationOpsHandler } = await import("./admin-application-ops.js");
+const { default: veriffRecoveryCronHandler } = await import("./veriff-identity-recovery-cron.js");
 const { clearRecoveryCooldownCache } = await import("./_veriff-identity-recovery.js");
 const { mapVeriffDecisionToIdentityStatus } = await import("./_veriff.js");
 
@@ -296,6 +297,17 @@ function makeAdminPostReq(body = {}) {
     method: "POST",
     headers: { origin: "https://slycarrentals.com" },
     body: { reviewedBy: "test-admin", secret: "test-admin-secret", ...body },
+  };
+}
+
+function makeCronGetReq() {
+  return { method: "GET", headers: {} };
+}
+
+function makeCronPostReq({ auth = "test-admin-secret" } = {}) {
+  return {
+    method: "POST",
+    headers: { authorization: auth ? `Bearer ${auth}` : "" },
   };
 }
 
@@ -1452,3 +1464,220 @@ test("backfill_veriff_approved skips already-synced verified applications but at
   assert.equal(calls.patched.length, 0);
   assert.equal(calls.checkrInitiations.length, 1, "Checkr still attempted for already-verified");
 });
+
+// ── veriff-identity-recovery-cron.js ─────────────────────────────────────────
+
+test("recovery cron GET returns empty summary when no candidates", async () => {
+  recoveryCandidatesResult = { ok: true, data: [] };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 0);
+  assert.equal(res._body.synced, 0);
+  assert.equal(res._body.skipped, 0);
+  assert.equal(res._body.failed, 0);
+  assert.equal(res._body.stuckCount, 0);
+  assert.equal(res._body.authFailureDetected, false);
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff calls when no candidates");
+});
+
+test("recovery cron GET syncs approved candidate and launches Checkr", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_cron_1",
+      name: "Cron Renter",
+      phone: "3105550001",
+      email: "cron@example.com",
+      application_status: "submitted",
+      identity_status: "processing",
+      identity_session_id: "vrf_cron_approved_1",
+    }],
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_cron_approved_1", status: "approved" } };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 1);
+  assert.equal(res._body.synced, 1);
+  assert.equal(res._body.skipped, 0);
+  assert.equal(res._body.failed, 0);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.checkrInitiations.length, 1);
+});
+
+test("recovery cron POST with valid auth runs recovery", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_cron_2",
+      name: "Manual Renter",
+      phone: "3105550002",
+      email: "manual@example.com",
+      application_status: "under_review",
+      identity_status: "processing",
+      identity_session_id: "vrf_cron_manual_1",
+    }],
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_cron_manual_1", status: "approved" } };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronPostReq({ auth: "test-admin-secret" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 1);
+  assert.equal(res._body.synced, 1);
+});
+
+test("recovery cron POST with wrong auth returns 401", async () => {
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronPostReq({ auth: "wrong-secret" }), res);
+
+  assert.equal(res._status, 401);
+  assert.equal(calls.listedRecoveryCandidates.length, 0, "no DB query on unauthorized request");
+});
+
+test("recovery cron POST with missing auth returns 401", async () => {
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronPostReq({ auth: "" }), res);
+
+  assert.equal(res._status, 401);
+});
+
+test("recovery cron rejects disallowed HTTP methods", async () => {
+  const req = { method: "DELETE", headers: {} };
+  const res = makeRes();
+  await veriffRecoveryCronHandler(req, res);
+  assert.equal(res._status, 405);
+});
+
+test("recovery cron skips candidate with legacy session ID", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_cron_3",
+      name: "Legacy Renter",
+      phone: "3105550003",
+      email: "legacy@example.com",
+      application_status: "submitted",
+      identity_status: "processing",
+      identity_session_id: "vs_legacy_stripe_id",
+    }],
+  };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 1);
+  assert.equal(res._body.skipped, 1, "legacy session ID is skipped");
+  assert.equal(res._body.synced, 0);
+  assert.equal(calls.veriffFetches.length, 0, "no Veriff call for legacy session");
+});
+
+test("recovery cron counts 404 session as skipped", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_cron_4",
+      name: "Missing Renter",
+      phone: "3105550004",
+      email: "missing@example.com",
+      application_status: "submitted",
+      identity_status: "processing",
+      identity_session_id: "vrf_cron_stale_404",
+    }],
+  };
+  veriffDecisionStatus = 404;
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 1);
+  assert.equal(res._body.skipped, 1, "404 permanent error is skipped, not failed");
+  assert.equal(res._body.failed, 0);
+  assert.equal(calls.patched.length, 0);
+});
+
+test("recovery cron detects auth failure and stops early", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [
+      {
+        id: "app_cron_5a",
+        name: "Auth Fail A",
+        phone: "3105550005",
+        email: "a@example.com",
+        application_status: "submitted",
+        identity_status: "processing",
+        identity_session_id: "vrf_cron_auth_fail_a",
+      },
+      {
+        id: "app_cron_5b",
+        name: "Auth Fail B",
+        phone: "3105550006",
+        email: "b@example.com",
+        application_status: "submitted",
+        identity_status: "processing",
+        identity_session_id: "vrf_cron_auth_fail_b",
+      },
+    ],
+  };
+  veriffDecisionStatus = 401;
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.authFailureDetected, true);
+  assert.equal(res._body.failed, 1, "auth failure counts as failed (only first call before break)");
+  // After auth failure the cron breaks early — second candidate is not attempted
+  assert.equal(calls.veriffFetches.length, 1, "only one Veriff call before auth break");
+});
+
+test("recovery cron skips all when candidate scan fails", async () => {
+  recoveryCandidatesResult = { ok: false, error: "DB query failed", status: 503 };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.skipped, true, "returns skipped:true on scan failure");
+  assert.equal(res._body.reason, "candidate_scan_failed");
+  assert.equal(calls.veriffFetches.length, 0);
+});
+
+test("recovery cron skips already-synced candidates and attempts Checkr for verified", async () => {
+  recoveryCandidatesResult = {
+    ok: true,
+    data: [{
+      id: "app_cron_6",
+      name: "Verified Renter",
+      phone: "3105550007",
+      email: "verified@example.com",
+      application_status: "under_review",
+      identity_status: "verified",
+      identity_session_id: "vrf_cron_already_verified",
+    }],
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: { id: "vrf_cron_already_verified", status: "approved" } };
+
+  const res = makeRes();
+  await veriffRecoveryCronHandler(makeCronGetReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.scanned, 1);
+  assert.equal(res._body.skipped, 1, "already-synced is counted as skipped");
+  assert.equal(res._body.synced, 0);
+  assert.equal(calls.patched.length, 0);
+  assert.equal(calls.checkrInitiations.length, 1, "Checkr still attempted for already-verified");
+});
+
