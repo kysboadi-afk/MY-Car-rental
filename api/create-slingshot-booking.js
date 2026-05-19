@@ -36,8 +36,11 @@ const SLINGSHOT_MANUAL_PAYMENT_ENABLED = /^(true|1|yes|on)$/i.test(String(proces
 const SLINGSHOT_IDENTITY_POLL_ATTEMPTS = 5;
 const SLINGSHOT_IDENTITY_POLL_DELAY_MS = 1500;
 
-function buildSlingshotIdentityReturnUrl(vehicleId) {
-  const url = new URL(DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL);
+function buildSlingshotIdentityReturnUrl(vehicleId, requestOrigin) {
+  const base = (requestOrigin && ALLOWED_ORIGINS.includes(requestOrigin))
+    ? requestOrigin + "/slingshot-book.html"
+    : DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL;
+  const url = new URL(base);
   if (vehicleId) url.searchParams.set("vehicle", vehicleId);
   url.searchParams.set("identity", "return");
   return url.toString();
@@ -141,7 +144,7 @@ export default async function handler(req, res) {
             require_matching_selfie: true,
           },
         },
-        return_url: buildSlingshotIdentityReturnUrl(vehicleId),
+        return_url: buildSlingshotIdentityReturnUrl(vehicleId, origin),
       });
 
       return res.status(200).json({
