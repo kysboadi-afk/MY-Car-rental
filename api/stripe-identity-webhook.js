@@ -114,6 +114,28 @@ async function recordEvent(sb, eventId, eventType, applicationId, sessionId, pay
   return { error };
 }
 
+async function enrichRecordedEvent(sb, eventId, applicationId, sessionId) {
+  if (applicationId) {
+    const { error } = await sb
+      .from("stripe_identity_webhook_events")
+      .update({ application_id: applicationId })
+      .eq("stripe_event_id", eventId)
+      .is("application_id", null);
+    if (error) return { error };
+  }
+
+  if (sessionId) {
+    const { error } = await sb
+      .from("stripe_identity_webhook_events")
+      .update({ identity_session_id: sessionId })
+      .eq("stripe_event_id", eventId)
+      .is("identity_session_id", null);
+    if (error) return { error };
+  }
+
+  return { error: null };
+}
+
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
@@ -156,8 +178,19 @@ export default async function handler(req, res) {
 
   if (!eventId) return res.status(400).send("Webhook Error: missing event id");
 
+  if (!applicationId && sessionId) {
+    const bySession = await fetchRenterApplicationByIdentitySessionId(sessionId);
+    if (bySession?.ok) {
+      applicationId = bySession.data?.id || applicationId;
+    }
+  }
+
   try {
     if (await isDuplicateEvent(sb, eventId)) {
+      const enrichResult = await enrichRecordedEvent(sb, eventId, applicationId, sessionId);
+      if (enrichResult.error) {
+        console.error("stripe-identity-webhook duplicate enrichment failed:", enrichResult.error.message || enrichResult.error);
+      }
       return res.status(200).json({ received: true, duplicate: true });
     }
   } catch (dupErr) {
@@ -168,6 +201,10 @@ export default async function handler(req, res) {
   if (recordResult.error) {
     const code = String(recordResult.error?.code || "");
     if (code === "23505") {
+      const enrichResult = await enrichRecordedEvent(sb, eventId, applicationId, sessionId);
+      if (enrichResult.error) {
+        console.error("stripe-identity-webhook duplicate enrichment failed:", enrichResult.error.message || enrichResult.error);
+      }
       return res.status(200).json({ received: true, duplicate: true });
     }
     console.error("stripe-identity-webhook event logging failed:", recordResult.error.message || recordResult.error);
@@ -195,6 +232,13 @@ export default async function handler(req, res) {
 
   const currentApp = current?.ok ? current.data : (await fetchRenterApplicationByIdentitySessionId(sessionId))?.data;
   if (!currentApp) return res.status(200).json({ received: true, ignored: true });
+  applicationId = applicationId || currentApp.id || null;
+  if (applicationId || sessionId) {
+    const enrichResult = await enrichRecordedEvent(sb, eventId, applicationId, sessionId);
+    if (enrichResult.error) {
+      console.error("stripe-identity-webhook event enrichment failed:", enrichResult.error.message || enrichResult.error);
+    }
+  }
   const identityPatch = mapIdentityUpdate(mappedStatus, rawStatus, currentApp.application_status);
   if (!identityPatch) return res.status(200).json({ received: true, ignored: true });
   if (isStaleIdentityUpdate(currentApp, identityPatch)) {
