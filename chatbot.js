@@ -446,7 +446,7 @@ function getManageBookingReply(inputLower) {
   for (var i = 0; i < topics.length; i++) {
     var topic = topics[i];
     if (topic.keywords.some(function(keyword) { return keyword && query.indexOf(keyword) !== -1; })) {
-      return topic.title + "\n\n" + topic.answer + "\n\nNeed account-specific help? Call or text (844) 511-4059.";
+      return escHtml(topic.title) + "\n\n" + escHtml(topic.answer) + "\n\nNeed account-specific help? Call or text (844) 511-4059.";
     }
   }
   if (query.indexOf("next payment") !== -1 || query.indexOf("when is my next payment due") !== -1) {
