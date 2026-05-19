@@ -60,6 +60,18 @@ function getRawBody(req) {
   });
 }
 
+function normalizeVeriffWebhookPayload(input = {}) {
+  if (!input || typeof input !== "object") return {};
+  const nested = input?.data && typeof input.data === "object" ? input.data : {};
+  return {
+    ...nested,
+    ...input,
+    verification: input?.verification ?? nested?.verification,
+    decision: input?.decision ?? nested?.decision,
+    extraction: input?.extraction ?? nested?.extraction,
+  };
+}
+
 function mapIdentityUpdate(identityStatus, payload = {}) {
   const rawStatus = String(extractVeriffStatus(payload) || "");
   if (identityStatus === "verified") {
@@ -296,6 +308,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(400).send("Webhook Error: invalid JSON");
   }
+  payload = normalizeVeriffWebhookPayload(payload);
 
   const rawStatus = extractVeriffStatus(payload);
   const decisionStatus = buildDecisionStatus(payload, rawStatus);
@@ -332,6 +345,7 @@ export default async function handler(req, res) {
     matchedApplicationId: matchedApplicationId || null,
     attemptId: attemptId || null,
     clientId: clientId || null,
+    hasExtractionPayload: !!(payload?.extraction && typeof payload.extraction === "object"),
     decisionLookupExecuted: false,
     decisionLookupOk: null,
     decisionLookupPayload: null,
@@ -385,6 +399,7 @@ export default async function handler(req, res) {
     identitySessionId: identitySessionId || null,
     attemptId: attemptId || null,
     clientId: clientId || null,
+    hasExtractionPayload: eventDiagnostics.hasExtractionPayload,
   });
 
   const sb = getSupabaseAdmin();

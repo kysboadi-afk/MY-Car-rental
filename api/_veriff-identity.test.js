@@ -42,6 +42,7 @@ let recoveryCandidatesResult = { ok: true, data: [] };
 let reviewDetailResult = { ok: true, data: null, history: [] };
 let veriffDecisionStatus = 404;
 let veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
+let veriffDecisionEndpointOverrides = {};
 let veriffCreateStatus = 200;
 let veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
 let veriffCreateFailureOnce = null;
@@ -208,6 +209,7 @@ mock.module("./_checkr.js", {
 
 global.fetch = mock.fn(async (url, init = {}) => {
   const method = init.method || "GET";
+  const requestUrl = String(url);
   let body = null;
   const headers = Object.fromEntries(
     Object.entries(init.headers || {}).map(([key, value]) => [String(key).toLowerCase(), String(value)])
@@ -215,12 +217,15 @@ global.fetch = mock.fn(async (url, init = {}) => {
   if (typeof init.body === "string") {
     try { body = JSON.parse(init.body); } catch { body = init.body; }
   }
-  calls.veriffFetches.push({ url: String(url), method, body, headers });
+  calls.veriffFetches.push({ url: requestUrl, method, body, headers });
   if (method === "GET") {
+    const override = Object.entries(veriffDecisionEndpointOverrides || {}).find(([needle]) => requestUrl.includes(needle));
+    const status = override ? Number(override[1]?.status || 0) : veriffDecisionStatus;
+    const payload = override ? (override[1]?.payload || {}) : veriffDecisionPayload;
     return {
-      ok: veriffDecisionStatus >= 200 && veriffDecisionStatus < 300,
-      status: veriffDecisionStatus,
-      async json() { return veriffDecisionPayload; },
+      ok: status >= 200 && status < 300,
+      status,
+      async json() { return payload; },
     };
   }
   if (veriffCreateFailureOnce) {
@@ -372,6 +377,7 @@ beforeEach(() => {
   });
   veriffDecisionStatus = 404;
   veriffDecisionPayload = { status: "success", verification: { id: "vrf_existing", status: "submitted" } };
+  veriffDecisionEndpointOverrides = {};
   veriffCreateStatus = 200;
   veriffCreatePayload = { status: "success", verification: { id: "vrf_123", status: "created", url: "https://veriff.test/session/vrf_123" } };
   veriffCreateFailureOnce = null;
@@ -448,6 +454,47 @@ test("create-identity-verification-session returns processing when existing deci
   assert.deepEqual(methods, ["GET"]);
 });
 
+test("create-identity-verification-session uses fullauto decision when default decision is empty", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: "app_1",
+      identity_status: "processing",
+      application_status: "submitted",
+      identity_session_id: "vrf_fullauto_existing",
+    },
+  };
+  veriffDecisionStatus = 200;
+  veriffDecisionPayload = { status: "success", verification: null };
+  veriffDecisionEndpointOverrides = {
+    "/decision/fullauto?version=1": {
+      status: 200,
+      payload: {
+        status: "success",
+        verification: {
+          id: "vrf_fullauto_existing",
+          vendorData: "app_1",
+          decision: { status: "approved" },
+        },
+      },
+    },
+  };
+
+  const res = makeRes();
+  await createIdentitySessionHandler(makeIdentityCreateReq({ applicationId: "app_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.alreadyVerified, true);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(
+    calls.veriffFetches.filter((entry) => entry.method === "GET").length,
+    2,
+    "default + fullauto decision lookups are executed"
+  );
+});
+
 test("veriff-webhook maps approved Veriff decision to verified", async () => {
   const payload = {
     id: "evt_veriff_approved_1",
@@ -505,6 +552,33 @@ test("veriff-webhook maps verification.completed decision payload to verified", 
     },
     decision: {
       status: "approved",
+    },
+  };
+
+  const res = makeRes();
+  await identityWebhookHandler(makeWebhookReq(payload), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(calls.patched.length, 1);
+  assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.patched[0].applicationId, "app_1");
+});
+
+test("veriff-webhook maps fullauto-style combined payload envelope to verified", async () => {
+  const payload = {
+    status: "success",
+    data: {
+      eventType: "verification.completed",
+      verification: {
+        id: "vrf_fullauto_evt_1",
+        vendorData: "app_1",
+      },
+      decision: {
+        status: "approved",
+      },
+      extraction: {
+        person: { firstName: "Jane", lastName: "Driver" },
+      },
     },
   };
 
@@ -1680,4 +1754,3 @@ test("recovery cron skips already-synced candidates and attempts Checkr for veri
   assert.equal(calls.patched.length, 0);
   assert.equal(calls.checkrInitiations.length, 1, "Checkr still attempted for already-verified");
 });
-

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 const VERIFF_API_BASE = "https://stationapi.veriff.com/v1";
+const VERIFF_FULLAUTO_VERSION = "1";
 
 function pickString(...values) {
   for (const value of values) {
@@ -110,24 +111,43 @@ function defaultWebhookUrl() {
 export function mapVeriffDecisionToIdentityStatus(rawStatus) {
   const candidates = [];
   if (rawStatus && typeof rawStatus === "object") {
+    const root = rawStatus;
+    const nested = rawStatus?.data && typeof rawStatus.data === "object" ? rawStatus.data : null;
     candidates.push(
-      rawStatus?.verification?.decision?.status,
-      rawStatus?.verification?.decision?.label,
-      rawStatus?.verification?.decision?.code,
-      rawStatus?.verification?.decision?.decision,
-      rawStatus?.decision?.status,
-      rawStatus?.decision?.label,
-      rawStatus?.decision?.code,
-      rawStatus?.decision?.decision,
-      rawStatus?.verification?.status,
-      rawStatus?.verification?.state,
-      rawStatus?.verification?.decision,
-      rawStatus?.eventType,
-      rawStatus?.event_type,
-      rawStatus?.action,
-      rawStatus?.verification?.code,
-      rawStatus?.decision,
-      rawStatus?.status,
+      root?.verification?.decision?.status,
+      root?.verification?.decision?.label,
+      root?.verification?.decision?.code,
+      root?.verification?.decision?.decision,
+      root?.decision?.status,
+      root?.decision?.label,
+      root?.decision?.code,
+      root?.decision?.decision,
+      root?.verification?.status,
+      root?.verification?.state,
+      root?.verification?.decision,
+      root?.eventType,
+      root?.event_type,
+      root?.action,
+      root?.verification?.code,
+      root?.decision,
+      root?.status,
+      nested?.verification?.decision?.status,
+      nested?.verification?.decision?.label,
+      nested?.verification?.decision?.code,
+      nested?.verification?.decision?.decision,
+      nested?.decision?.status,
+      nested?.decision?.label,
+      nested?.decision?.code,
+      nested?.decision?.decision,
+      nested?.verification?.status,
+      nested?.verification?.state,
+      nested?.verification?.decision,
+      nested?.eventType,
+      nested?.event_type,
+      nested?.action,
+      nested?.verification?.code,
+      nested?.decision,
+      nested?.status,
     );
   } else {
     candidates.push(rawStatus);
@@ -179,6 +199,23 @@ export function extractVeriffStatus(payload = {}) {
     payload?.verification?.code,
     payload?.decision,
     payload?.status,
+    payload?.data?.verification?.decision?.status,
+    payload?.data?.verification?.decision?.label,
+    payload?.data?.verification?.decision?.code,
+    payload?.data?.verification?.decision?.decision,
+    payload?.data?.decision?.status,
+    payload?.data?.decision?.label,
+    payload?.data?.decision?.code,
+    payload?.data?.decision?.decision,
+    payload?.data?.verification?.status,
+    payload?.data?.verification?.state,
+    payload?.data?.verification?.decision,
+    payload?.data?.eventType,
+    payload?.data?.event_type,
+    payload?.data?.action,
+    payload?.data?.verification?.code,
+    payload?.data?.decision,
+    payload?.data?.status,
   );
 }
 
@@ -193,6 +230,15 @@ export function extractVeriffDecisionStatus(payload = {}, fallbackStatus = "") {
     payload?.decision?.code,
     payload?.decision?.decision,
     payload?.decision,
+    payload?.data?.verification?.decision?.status,
+    payload?.data?.verification?.decision?.label,
+    payload?.data?.verification?.decision?.code,
+    payload?.data?.verification?.decision?.decision,
+    payload?.data?.decision?.status,
+    payload?.data?.decision?.label,
+    payload?.data?.decision?.code,
+    payload?.data?.decision?.decision,
+    payload?.data?.decision,
     fallbackStatus,
   );
 }
@@ -205,6 +251,12 @@ export function extractVeriffApplicationId(payload = {}) {
     payload?.vendor_data,
     payload?.verification?.metadata?.application_id,
     payload?.metadata?.application_id,
+    payload?.data?.verification?.vendorData,
+    payload?.data?.verification?.vendor_data,
+    payload?.data?.vendorData,
+    payload?.data?.vendor_data,
+    payload?.data?.verification?.metadata?.application_id,
+    payload?.data?.metadata?.application_id,
   );
 }
 
@@ -216,6 +268,12 @@ export function extractVeriffSessionId(payload = {}) {
     payload?.sessionId,
     payload?.session_id,
     payload?.id,
+    payload?.data?.verification?.id,
+    payload?.data?.verification?.sessionId,
+    payload?.data?.verification?.session_id,
+    payload?.data?.sessionId,
+    payload?.data?.session_id,
+    payload?.data?.id,
   );
 }
 
@@ -227,6 +285,12 @@ export function extractVeriffVerificationUrl(payload = {}) {
     payload?.verification?.sessionUrl,
     payload?.verification?.session_url,
     payload?.url,
+    payload?.data?.verification?.url,
+    payload?.data?.verification?.hostedUrl,
+    payload?.data?.verification?.hosted_url,
+    payload?.data?.verification?.sessionUrl,
+    payload?.data?.verification?.session_url,
+    payload?.data?.url,
   );
 }
 
@@ -391,7 +455,6 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
     return { ok: false, status: 400, error: "sessionId is required." };
   }
 
-  const endpoint = `${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision`;
   const hmacSignature = crypto.createHmac("sha256", cfg.sharedSecret).update(sessionId).digest("hex");
   const requestHeaders = {
     "Content-Type": "application/json",
@@ -399,59 +462,153 @@ export async function fetchVeriffDecision(sessionId, fetchImpl = fetch) {
     "X-AUTH-CLIENT-PROJECT": cfg.projectId,
     "X-HMAC-SIGNATURE": hmacSignature,
   };
-  const requestMeta = buildVeriffRequestDiagnostics(cfg, endpoint, "GET", requestHeaders);
-  console.info("veriff:fetch-decision request", requestMeta);
-  const response = await fetchImpl(endpoint, {
-    method: "GET",
-    headers: requestHeaders,
-  });
-  const payload = await response.json().catch(() => ({}));
-  console.info("veriff:fetch-decision response", {
-    endpoint,
-    status: Number(response?.status) || null,
-    ok: !!response?.ok,
-    error: payload?.message || payload?.error || null,
-    body: payload,
-    authHeaderNamesPresent: requestMeta.authHeaderNamesPresent,
-    credentialEnvironment: requestMeta.credentialEnvironment,
-    sameCredentialEnvironment: requestMeta?.credentialEnvironment?.sameCredentialEnvironment ?? null,
-    likelyEnvMismatch: requestMeta.likelyEnvMismatch,
-  });
+  const enableFullAutoLookup = toLower(process.env.VERIFF_ENABLE_FULLAUTO_DECISION_LOOKUP || "true") !== "false";
+  const alwaysCompareFullAuto = toLower(process.env.VERIFF_COMPARE_DECISION_ENDPOINTS || "false") === "true";
+  const primaryEndpoint = `${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision`;
+  const fullAutoEndpoint = `${VERIFF_API_BASE}/sessions/${encodeURIComponent(sessionId)}/decision/fullauto?version=${VERIFF_FULLAUTO_VERSION}`;
 
-  if (!response.ok) {
-    console.warn("veriff:fetch-decision failed", {
-      sessionId,
+  async function callDecisionEndpoint(endpoint, endpointKind) {
+    const requestMeta = buildVeriffRequestDiagnostics(cfg, endpoint, "GET", requestHeaders);
+    console.info("veriff:fetch-decision request", {
+      ...requestMeta,
+      endpointKind,
+    });
+    const response = await fetchImpl(endpoint, {
+      method: "GET",
+      headers: requestHeaders,
+    });
+    const payload = await response.json().catch(() => ({}));
+    console.info("veriff:fetch-decision response", {
+      endpointKind,
       endpoint,
       status: Number(response?.status) || null,
+      ok: !!response?.ok,
+      error: payload?.message || payload?.error || null,
       body: payload,
+      authHeaderNamesPresent: requestMeta.authHeaderNamesPresent,
+      credentialEnvironment: requestMeta.credentialEnvironment,
+      sameCredentialEnvironment: requestMeta?.credentialEnvironment?.sameCredentialEnvironment ?? null,
+      likelyEnvMismatch: requestMeta.likelyEnvMismatch,
     });
+    return { endpointKind, endpoint, response, payload };
+  }
+
+  function parseDecisionPayload(payload = {}) {
+    const rawStatus = extractVeriffStatus(payload);
+    const decisionStatus = extractVeriffDecisionStatus(payload, rawStatus);
+    const mappedStatus = mapVeriffDecisionToIdentityStatus(payload)
+      || mapVeriffDecisionToIdentityStatus(decisionStatus || rawStatus);
+    const verificationPayload = payload?.verification ?? payload?.data?.verification ?? null;
+    const decisionPayload = payload?.decision ?? payload?.verification?.decision ?? payload?.data?.decision ?? null;
     return {
-      ok: false,
-      status: response.status || 500,
-      error: payload?.message || payload?.error || "Failed to retrieve verification decision.",
-      details: payload,
+      rawStatus,
+      decisionStatus,
+      mappedStatus,
+      sessionId: extractVeriffSessionId(payload) || sessionId,
+      verificationUrl: extractVeriffVerificationUrl(payload),
+      applicationId: extractVeriffApplicationId(payload),
+      verificationPayload,
+      decisionPayload,
     };
   }
 
-  const rawStatus = extractVeriffStatus(payload);
-  const decisionStatus = extractVeriffDecisionStatus(payload, rawStatus);
-  const mappedStatus = mapVeriffDecisionToIdentityStatus(payload)
-    || mapVeriffDecisionToIdentityStatus(decisionStatus || rawStatus);
+  function summarizeParsedDecision(parsed = {}, payload = {}) {
+    return {
+      rawStatus: parsed.rawStatus || null,
+      decisionStatus: parsed.decisionStatus || null,
+      mappedStatus: parsed.mappedStatus || null,
+      hasVerificationPayload: !!parsed.verificationPayload,
+      hasDecisionPayload: !!parsed.decisionPayload,
+      topLevelKeys: Object.keys(payload || {}),
+      verificationKeys: parsed.verificationPayload && typeof parsed.verificationPayload === "object"
+        ? Object.keys(parsed.verificationPayload)
+        : [],
+      decisionKeys: parsed.decisionPayload && typeof parsed.decisionPayload === "object"
+        ? Object.keys(parsed.decisionPayload)
+        : [],
+      extractionKeys: payload?.extraction && typeof payload.extraction === "object"
+        ? Object.keys(payload.extraction)
+        : [],
+    };
+  }
+
+  const primaryResult = await callDecisionEndpoint(primaryEndpoint, "default");
+  if (!primaryResult.response.ok) {
+    console.warn("veriff:fetch-decision failed", {
+      sessionId,
+      endpoint: primaryEndpoint,
+      endpointKind: "default",
+      status: Number(primaryResult.response?.status) || null,
+      body: primaryResult.payload,
+    });
+    return {
+      ok: false,
+      status: primaryResult.response.status || 500,
+      error: primaryResult.payload?.message || primaryResult.payload?.error || "Failed to retrieve verification decision.",
+      details: primaryResult.payload,
+    };
+  }
+
+  const primaryParsed = parseDecisionPayload(primaryResult.payload);
+  const shouldCallFullAuto = enableFullAutoLookup && (
+    alwaysCompareFullAuto
+    || !primaryParsed.mappedStatus
+    || !primaryParsed.verificationPayload
+  );
+  let fullAutoResult = null;
+  let fullAutoParsed = null;
+
+  if (shouldCallFullAuto) {
+    fullAutoResult = await callDecisionEndpoint(fullAutoEndpoint, "fullauto");
+    if (fullAutoResult.response.ok) {
+      fullAutoParsed = parseDecisionPayload(fullAutoResult.payload);
+    }
+    console.info("veriff:fetch-decision comparison", {
+      sessionId,
+      selectedEndpoint: (fullAutoResult.response.ok && fullAutoParsed?.mappedStatus) ? "fullauto" : "default",
+      defaultEndpoint: {
+        status: Number(primaryResult.response?.status) || null,
+        ok: !!primaryResult.response?.ok,
+        ...summarizeParsedDecision(primaryParsed, primaryResult.payload),
+      },
+      fullAutoEndpoint: {
+        status: Number(fullAutoResult.response?.status) || null,
+        ok: !!fullAutoResult.response?.ok,
+        ...summarizeParsedDecision(fullAutoParsed || {}, fullAutoResult.payload),
+      },
+      decisionPayloadShapeDiff: {
+        defaultTopLevelKeys: Object.keys(primaryResult.payload || {}),
+        fullAutoTopLevelKeys: Object.keys(fullAutoResult.payload || {}),
+      },
+    });
+  }
+
+  const selectedKind = (fullAutoResult?.response?.ok && fullAutoParsed?.mappedStatus) ? "fullauto" : "default";
+  const selectedPayload = selectedKind === "fullauto" ? fullAutoResult.payload : primaryResult.payload;
+  const selectedParsed = selectedKind === "fullauto" ? fullAutoParsed : primaryParsed;
   console.info("veriff:fetch-decision parsed", {
     sessionId,
-    rawStatus: rawStatus || null,
-    decisionStatus: decisionStatus || null,
-    mappedStatus: mappedStatus || null,
-    rawDecisionPayload: payload,
+    endpointKind: selectedKind,
+    rawStatus: selectedParsed?.rawStatus || null,
+    decisionStatus: selectedParsed?.decisionStatus || null,
+    mappedStatus: selectedParsed?.mappedStatus || null,
+    rawDecisionPayload: selectedPayload,
   });
   return {
     ok: true,
-    payload,
-    rawStatus,
-    decisionStatus,
-    mappedStatus,
-    sessionId: extractVeriffSessionId(payload) || sessionId,
-    verificationUrl: extractVeriffVerificationUrl(payload),
-    applicationId: extractVeriffApplicationId(payload),
+    payload: selectedPayload,
+    rawStatus: selectedParsed?.rawStatus || null,
+    decisionStatus: selectedParsed?.decisionStatus || null,
+    mappedStatus: selectedParsed?.mappedStatus || null,
+    sessionId: selectedParsed?.sessionId || sessionId,
+    verificationUrl: selectedParsed?.verificationUrl || null,
+    applicationId: selectedParsed?.applicationId || null,
+    endpointKind: selectedKind,
+    endpointComparison: shouldCallFullAuto
+      ? {
+        default: summarizeParsedDecision(primaryParsed, primaryResult.payload),
+        fullauto: summarizeParsedDecision(fullAutoParsed || {}, fullAutoResult?.payload || {}),
+      }
+      : null,
   };
 }
