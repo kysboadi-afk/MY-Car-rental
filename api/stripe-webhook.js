@@ -2477,8 +2477,15 @@ export default async function handler(req, res) {
           }
 
           // Send extension confirmed SMS
-          if (updatedBooking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          if (updatedBooking.phone) {
             try {
+              const links = buildRenterPortalLinks({
+                bookingId: bookingRef,
+                vehicleId: updatedBooking.vehicleId || vehicle_id,
+              });
+              const manageLinkLine = links.manageLinkSecondary
+                ? `Manage booking:\n${links.manageLink}\nBackup link:\n${links.manageLinkSecondary}\n\n`
+                : `Manage booking:\n${links.manageLink}\n\n`;
               await sendDedupedSms({
                 bookingId: bookingRef,
                 templateKey: "extend_confirmed_economy",
@@ -2486,6 +2493,7 @@ export default async function handler(req, res) {
                 body: render(EXTEND_CONFIRMED_ECONOMY, {
                   return_time: updatedBooking.returnTime || "",
                   return_date: updatedBooking.returnDate || "",
+                  manage_link_line: manageLinkLine,
                 }),
                 returnDateAtSend: updatedBooking.returnDate || undefined,
               });

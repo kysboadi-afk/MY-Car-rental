@@ -202,3 +202,54 @@ test("send-extension-confirmation sends deduped extension SMS from metadata when
     returnDateAtSend: "2026-05-07",
   });
 });
+
+test("send-extension-confirmation still attempts extension SMS when provider env vars are missing", async () => {
+  resetState();
+  const priorUser = process.env.TEXTMAGIC_USERNAME;
+  const priorKey = process.env.TEXTMAGIC_API_KEY;
+  delete process.env.TEXTMAGIC_USERNAME;
+  delete process.env.TEXTMAGIC_API_KEY;
+  try {
+    bookingsStore.camry = [{
+      bookingId: "bk_ext_2",
+      phone: "+13105550101",
+      email: "renter2@example.com",
+      name: "Test Renter Two",
+      pickupDate: "2026-05-01",
+      pickupTime: "10:00 AM",
+      returnDate: "2026-05-03",
+      returnTime: "5:00 PM",
+      extensionPendingPayment: {
+        newReturnDate: "2026-05-06",
+        newReturnTime: "5:00 PM",
+        label: "+3 days",
+      },
+    }];
+    paymentIntents.pi_ext_2 = {
+      id: "pi_ext_2",
+      status: "succeeded",
+      metadata: {
+        type: "rental_extension",
+        booking_id: "bk_ext_2",
+        vehicle_id: "camry",
+        renter_name: "Test Renter Two",
+        renter_email: "renter2@example.com",
+        renter_phone: "+13105550101",
+        extension_label: "+3 days",
+        new_return_date: "2026-05-06",
+        previous_return_date: "2026-05-03",
+        original_pickup_date: "2026-05-01",
+        original_pickup_time: "10:00 AM",
+      },
+    };
+
+    const res = makeRes();
+    await handler(makeReq("pi_ext_2"), res);
+
+    assert.equal(res._status, 200);
+    assert.equal(sentSmsCalls.length, 1, "SMS attempt should still be triggered for visibility/logging");
+  } finally {
+    process.env.TEXTMAGIC_USERNAME = priorUser;
+    process.env.TEXTMAGIC_API_KEY = priorKey;
+  }
+});

@@ -34,6 +34,7 @@ import {
   EXTEND_INVALID_INPUT,
   EXTEND_SELECTED,
   EXTEND_SELECTED_UPSELL,
+  EXTEND_CONFIRMED_ECONOMY,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
@@ -334,6 +335,22 @@ test("render EXTEND_SELECTED_UPSELL fills all variables", () => {
   assert.ok(msg.includes("$165"));
   assert.ok(msg.includes("$350"));
   assert.ok(msg.includes("https://slycarrentals.com/balance.html?test=1"));
+  assert.ok(!msg.includes("{"));
+});
+
+test("EXTEND_CONFIRMED_ECONOMY includes manage_link_line placeholder", () => {
+  assert.ok(EXTEND_CONFIRMED_ECONOMY.includes("{return_date}"));
+  assert.ok(EXTEND_CONFIRMED_ECONOMY.includes("{manage_link_line}"));
+});
+
+test("render EXTEND_CONFIRMED_ECONOMY fills return date and manage link line", () => {
+  const msg = render(EXTEND_CONFIRMED_ECONOMY, {
+    return_date: "2026-05-21",
+    manage_link_line: "Manage booking:\nhttps://slycarrentals.com/manage-booking.html?t=test\n\n",
+  });
+  assert.ok(msg.includes("Your extension is confirmed."));
+  assert.ok(msg.includes("2026-05-21"));
+  assert.ok(msg.includes("https://slycarrentals.com/manage-booking.html?t=test"));
   assert.ok(!msg.includes("{"));
 });
 

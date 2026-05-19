@@ -359,8 +359,10 @@ export const EXTEND_SELECTED_UPSELL =
 
 /** Sent after an economy extension payment succeeds. */
 export const EXTEND_CONFIRMED_ECONOMY =
+  "Your extension is confirmed.\n\n" +
   "Your new return date:\n" +
   "{return_date}\n\n" +
+  "{manage_link_line}" +
   "Reply STOP to opt out.";
 
 /** Sent when an extension payment is not completed. */

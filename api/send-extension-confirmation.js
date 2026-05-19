@@ -30,6 +30,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 import { render, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
 import { sendDedupedSms } from "./_sms-log.js";
+import { buildRenterPortalLinks } from "./_sms-links.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -177,9 +178,13 @@ export default async function handler(req, res) {
           console.error("send-extension-confirmation: email failed for not-found booking (non-fatal):", emailErr.message);
           return res.status(200).json({ ok: true, emailWarning: true });
         }
-        if (renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        if (renter_phone) {
           try {
             const fallbackReturnTime = normalizeClockTime(new_return_time) || DEFAULT_RETURN_TIME;
+            const portalLinks = buildRenterPortalLinks({ bookingId: bookingRef, vehicleId: vehicle_id });
+            const manageLinkLine = portalLinks.manageLinkSecondary
+              ? `Manage booking:\n${portalLinks.manageLink}\nBackup link:\n${portalLinks.manageLinkSecondary}\n\n`
+              : `Manage booking:\n${portalLinks.manageLink}\n\n`;
             await sendDedupedSms({
               bookingId: bookingRef,
               templateKey: "extend_confirmed_economy",
@@ -187,6 +192,7 @@ export default async function handler(req, res) {
               body: render(EXTEND_CONFIRMED_ECONOMY, {
                 return_time: fallbackReturnTime,
                 return_date: new_return_date,
+                manage_link_line: manageLinkLine,
               }),
               returnDateAtSend: new_return_date,
             });
@@ -371,8 +377,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, emailWarning: true });
     }
 
-    if ((booking.phone || renter_phone) && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    if (booking.phone || renter_phone) {
       try {
+        const portalLinks = buildRenterPortalLinks({ bookingId: bookingRef, vehicleId: vehicle_id });
+        const manageLinkLine = portalLinks.manageLinkSecondary
+          ? `Manage booking:\n${portalLinks.manageLink}\nBackup link:\n${portalLinks.manageLinkSecondary}\n\n`
+          : `Manage booking:\n${portalLinks.manageLink}\n\n`;
         await sendDedupedSms({
           bookingId: bookingRef,
           templateKey: "extend_confirmed_economy",
@@ -380,6 +390,7 @@ export default async function handler(req, res) {
           body: render(EXTEND_CONFIRMED_ECONOMY, {
             return_time: updatedReturnTime || "",
             return_date: updatedReturnDate || "",
+            manage_link_line: manageLinkLine,
           }),
           returnDateAtSend: updatedReturnDate || undefined,
         });
