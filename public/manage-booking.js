@@ -67,6 +67,7 @@
   const $docAgreementUnavailable = document.getElementById("doc-agreement-unavailable");
   const $docLatestReceipt = document.getElementById("doc-latest-receipt");
   const $docLatestReceiptUnavailable = document.getElementById("doc-latest-receipt-unavailable");
+  const $openRenterChatbot = document.getElementById("open-renter-chatbot");
   const $activityList     = document.getElementById("activity-list");
   const $activityEmpty    = document.getElementById("activity-empty");
   // Partial payment DOM refs
@@ -1183,6 +1184,17 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     $btnViewPlan.addEventListener("click", () => {
       const planCard = document.getElementById("payment-plan-card");
       if (planCard) planCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  if ($openRenterChatbot) {
+    $openRenterChatbot.addEventListener("click", () => {
+      const toggle = document.getElementById("chat-toggle");
+      if (toggle) {
+        toggle.click();
+        return;
+      }
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
     });
   }
 

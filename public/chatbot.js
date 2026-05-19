@@ -46,6 +46,8 @@ var CHATBOT_API_BASE = "https://sly-rides.vercel.app";
 var slyFleetStatus  = null;
 var slyBookedDates  = null;
 var slyChatPricing  = null;
+var isManageBookingPage = /(^|\/)manage-booking\.html$/i.test((window.location && window.location.pathname) || "");
+var manageHelpKnowledgeCache = null;
 
 (function fetchChatbotFleetStatus() {
   fetch(CHATBOT_API_BASE + "/api/fleet-status")
@@ -406,6 +408,53 @@ function buildFleetMessage(lang) {
   return outEn + "Visit our Cars page to browse and book!";
 }
 
+function normalizeManageHelpText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function getManageHelpKnowledge() {
+  if (manageHelpKnowledgeCache) return manageHelpKnowledgeCache;
+  var container = document.getElementById("renter-help-center");
+  if (!container) {
+    manageHelpKnowledgeCache = [];
+    return manageHelpKnowledgeCache;
+  }
+  var topics = Array.prototype.slice.call(container.querySelectorAll("[data-help-topic]"));
+  manageHelpKnowledgeCache = topics.map(function(topic) {
+    var summaryEl = topic.querySelector("summary span");
+    var answerEl = topic.querySelector(".help-answer");
+    var keywords = String(topic.getAttribute("data-help-keywords") || "")
+      .split(",")
+      .map(function(v) { return normalizeManageHelpText(v.toLowerCase()); })
+      .filter(Boolean);
+    return {
+      title: normalizeManageHelpText(summaryEl ? summaryEl.textContent : "Rental Guide"),
+      answer: normalizeManageHelpText(answerEl ? answerEl.textContent : ""),
+      keywords: keywords
+    };
+  }).filter(function(topic) {
+    return topic.answer && topic.keywords.length;
+  });
+  return manageHelpKnowledgeCache;
+}
+
+function getManageBookingReply(inputLower) {
+  if (!isManageBookingPage) return "";
+  var query = normalizeManageHelpText(inputLower);
+  if (!query) return "";
+  var topics = getManageHelpKnowledge();
+  for (var i = 0; i < topics.length; i++) {
+    var topic = topics[i];
+    if (topic.keywords.some(function(keyword) { return keyword && query.indexOf(keyword) !== -1; })) {
+      return topic.title + "\n\n" + topic.answer + "\n\nNeed account-specific help? Call or text (844) 511-4059.";
+    }
+  }
+  if (query.indexOf("next payment") !== -1 || query.indexOf("when is my next payment due") !== -1) {
+    return "Your next due date appears in Payment Plan Visibility on this page under “Next Due Date.” If no plan is active, the dashboard still shows your current balance and due status.\n\nNeed help reviewing your account? Call or text (844) 511-4059.";
+  }
+  return "";
+}
+
 var botResponses = {
   en: [
     {
@@ -603,9 +652,11 @@ var botResponses = {
 
 function getBotReply(input) {
   var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : (localStorage.getItem("slyLang") || "en");
+  var lower = input.toLowerCase();
+  var manageReply = getManageBookingReply(lower);
+  if (manageReply) return manageReply;
   var responseSet = botResponses;
   var responses = responseSet[lang] || responseSet["en"];
-  var lower = input.toLowerCase();
   for (var i = 0; i < responses.length; i++) {
     var item = responses[i];
     if (item.patterns.some(function(p) { return lower.includes(p); })) {
@@ -621,6 +672,9 @@ function getBotReply(input) {
         return typeof enItem.reply === "function" ? enItem.reply() : enItem.reply;
       }
     }
+  }
+  if (isManageBookingPage) {
+    return "I can help with your active rental operations.\n\nTry asking:\n• How do extensions work?\n• What happens if I miss a payment?\n• How do tolls or tickets work?\n• How do I report maintenance?\n• How do I request roadside help?\n\nNeed immediate support? Call or text (844) 511-4059.";
   }
   return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.fallback") : "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com";
 }

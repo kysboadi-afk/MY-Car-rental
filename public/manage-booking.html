@@ -433,6 +433,65 @@
       text-decoration: none;
       white-space: nowrap;
     }
+    .support-bar .btn-chat {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #111;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.9em;
+      padding: 10px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .renter-guide-card {
+      border: 1px solid #edf1f5;
+    }
+    .guide-top-note {
+      margin: 0 0 14px;
+      color: #4b5563;
+      font-size: 0.88em;
+      line-height: 1.5;
+    }
+    .help-topic {
+      border: 1px solid #e9eef4;
+      border-radius: 10px;
+      background: #fbfcfe;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .help-topic summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 13px 14px;
+      font-size: 0.9em;
+      font-weight: 700;
+      color: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .help-topic summary::-webkit-details-marker { display: none; }
+    .help-topic summary .chevron {
+      font-size: 0.78em;
+      color: #6b7280;
+      transition: transform 0.2s;
+    }
+    .help-topic[open] summary .chevron { transform: rotate(180deg); }
+    .help-answer {
+      padding: 0 14px 14px;
+      color: #4b5563;
+      font-size: 0.84em;
+      line-height: 1.55;
+      white-space: pre-line;
+    }
     .secure-note {
       font-size: 0.75em;
       color: #888;
@@ -1219,6 +1278,81 @@
             <a href="tel:+18445114059" class="doc-action">Call (844) 511-4059</a>
           </div>
         </div>
+
+        <div class="dash-card renter-guide-card" id="renter-help-center">
+          <div class="section-head">
+            <div>
+              <h3>Rental Guide &amp; Renter Help Center</h3>
+              <p class="section-kicker">Open a topic anytime for active-rental policy, support, and operations guidance.</p>
+            </div>
+            <span class="section-tag">Self-service hub</span>
+          </div>
+          <p class="guide-top-note">This help center is built for active renters and customers. Use it for day-to-day rental operations, payment questions, and support procedures during your booking.</p>
+
+          <details class="help-topic" data-help-topic data-help-keywords="payment expectations,payment schedule,next payment due,installment,installments,payment plan,payment confirmation">
+            <summary><span>💳 Payment Expectations &amp; Schedule</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Your dashboard is the source of truth for current balance, next due date, and payment-plan progress.
+If installment billing is active, the next due amount/date appears in Payment Plan Visibility.
+Posted payments and confirmations appear in Activity &amp; History and receipts/documents.
+If you just paid, allow brief processing time and then refresh or reopen your booking.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="miss payment,late fee,late fees,overdue,overdue balance,past due,payment missed">
+            <summary><span>⏰ Missed Payments, Late Fees &amp; Overdue Handling</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">If a payment is missed, your booking may move to past-due/overdue and require immediate action.
+Late fees may apply according to your rental terms and account status.
+When overdue appears, pay as soon as possible and contact support to avoid further escalation.
+Overdue balances can limit extension eligibility and may trigger additional account restrictions.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="extension,extensions,renewal,renewals,extend rental">
+            <summary><span>🗓️ Extensions &amp; Renewals</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Use Extension Availability to check your current extension path.
+Open Extension Flow to request more time; approval depends on booking status, balance, and fleet availability.
+If extension cannot be completed online, call support for manual review.
+Any unpaid extension-related amount remains due on your booking account.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="tolls,tickets,gps,tracking,security disclosure">
+            <summary><span>🛣️ Tolls, Tickets, GPS &amp; Security Disclosure</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Renters are responsible for tolls, tickets, parking violations, and related charges incurred during the rental period.
+Vehicle/location monitoring and security systems may be active for asset protection, compliance, and recovery.
+Unpaid toll/ticket obligations can be billed to your account after reconciliation.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="maintenance,oil change,service,vehicle care,cleaning,smoking">
+            <summary><span>🔧 Maintenance, Service &amp; Vehicle Care</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Report warning lights, service alerts, tire issues, and drivability concerns immediately.
+Do not ignore oil/service intervals; contact support for service coordination before authorizing major work.
+Return expectations include normal cleanliness and no smoking/vaping in the vehicle.
+Excessive cleaning, smoke remediation, or preventable neglect may result in added charges.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="accident,collision,roadside,emergency,breakdown,flat tire,tow">
+            <summary><span>🚨 Accidents, Roadside &amp; Emergency Instructions</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">For emergencies, prioritize safety first and call 911 when needed.
+For accidents: document scene details, exchange required information, and notify support as soon as possible.
+For roadside breakdowns: pull over safely, secure the vehicle, and contact support for next steps.
+Do not abandon the vehicle or authorize non-emergency repairs without approval.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="pickup,return,communication,check in,check-out">
+            <summary><span>📍 Pickup, Return &amp; Communication Expectations</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Arrive on time for pickup/return windows and communicate early if delays are expected.
+Late returns without approved extension can trigger late fees and overdue enforcement.
+Return the vehicle with expected fuel level and in comparable condition.
+Keep your phone reachable for booking updates, support outreach, and operational notices.</div>
+          </details>
+
+          <details class="help-topic" data-help-topic data-help-keywords="booking management,rental status,active rental,status explanation,responsibilities,violations,consequences,refund,security deposit">
+            <summary><span>📂 Booking Management, Responsibilities &amp; Policy Outcomes</span><span class="chevron">▼</span></summary>
+            <div class="help-answer">Use this portal to view booking status, manage payments, review activity, and access available documents.
+Active-rental statuses indicate whether your booking is current, needs action, or is overdue.
+Renters are responsible for compliant vehicle use and honoring all rental terms.
+Policy violations may lead to extra fees, booking restrictions, or account actions.
+Any refund/security-deposit handling follows the signed rental terms and posted account records.</div>
+          </details>
+        </div>
       </div>
     </section>
 
@@ -1362,8 +1496,9 @@
     <div class="support-bar">
       <div class="support-bar-left">
         <strong>Need help with your booking?</strong>
-        <span>Our team is available 7 days a week.</span>
+        <span>Use the Rental Guide above or ask the Renter Assistant chatbot.</span>
       </div>
+      <button type="button" id="open-renter-chatbot" class="btn-chat">🤖 Ask Renter Assistant</button>
       <a href="tel:+18445114059" class="btn-call">📞 (844) 511-4059</a>
     </div>
 
