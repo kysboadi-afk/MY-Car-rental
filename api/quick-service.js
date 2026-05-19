@@ -49,7 +49,7 @@ function htmlPage(title, color, heading, body) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)} — SLY Rides</title>
+  <title>${esc(title)} — Sly Car Rentals</title>
   <style>
     body { font-family: sans-serif; max-width: 560px; margin: 60px auto; padding: 24px; text-align: center; }
     h1   { color: ${color}; }
@@ -60,7 +60,7 @@ function htmlPage(title, color, heading, body) {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to Sly Car Rentals</a></p>
 </body>
 </html>`;
 }

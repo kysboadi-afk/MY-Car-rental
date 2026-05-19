@@ -2039,7 +2039,7 @@ export default async function handler(req, res) {
 
       // Owner email
       await transporter.sendMail({
-        from:    `"SLY RIDES Bookings" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals Bookings" <${process.env.SMTP_USER}>`,
         to:      ownerEmail,
         ...(email ? { replyTo: email } : {}),
         subject: ownerTemplate.subject,

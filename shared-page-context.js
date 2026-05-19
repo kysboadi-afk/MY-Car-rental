@@ -9,7 +9,7 @@
   var logoImg = document.querySelector('img.site-logo');
   if (logoImg) {
     logoImg.src = 'images/logo.jpg';
-    logoImg.alt = 'SLY Transportation Logo';
+    logoImg.alt = 'Sly Car Rentals Logo';
   }
 
   // ── Logo link ─────────────────────────────────────────────────────────────

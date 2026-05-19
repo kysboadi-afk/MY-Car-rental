@@ -51,7 +51,7 @@ function htmlPage(title, heading, body, color = "#333") {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)} — SLY Rides</title>
+  <title>${esc(title)} — Sly Car Rentals</title>
   <style>
     body { font-family: sans-serif; max-width: 560px; margin: 60px auto; padding: 24px; text-align: center; }
     h1   { color: ${color}; }
@@ -62,7 +62,7 @@ function htmlPage(title, heading, body, color = "#333") {
 <body>
   <h1>${heading}</h1>
   ${body}
-  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to SLY Rides</a></p>
+  <p style="margin-top:32px"><a href="https://slycarrentals.com">← Return to Sly Car Rentals</a></p>
 </body>
 </html>`;
 }
@@ -257,7 +257,7 @@ export default async function handler(req, res) {
         await transporter.sendMail({
           from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to:      entry.email,
-          subject: `✅ You're Approved! Waitlist Confirmed — ${entry.vehicleName || vehicleId} | SLY Transportation`,
+          subject: `✅ You're Approved! Waitlist Confirmed — ${entry.vehicleName || vehicleId} | Sly Car Rentals`,
           text: [
             `Hi ${entry.name},`,
             "",
@@ -318,7 +318,7 @@ export default async function handler(req, res) {
         await transporter.sendMail({
           from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to:      entry.email,
-          subject: `Waitlist Update — ${entry.vehicleName || vehicleId} | SLY Transportation`,
+          subject: `Waitlist Update — ${entry.vehicleName || vehicleId} | Sly Car Rentals`,
           text: [
             `Hi ${entry.name},`,
             "",

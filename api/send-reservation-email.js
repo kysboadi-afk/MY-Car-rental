@@ -258,7 +258,7 @@ function generateRentalAgreementHtml(body) {
   <p style="text-align:center;font-size:13px;color:#555">Generated: ${esc(signedAt)} (Pacific Time)</p>
 
   <h4>PARTIES</h4>
-  <p><strong>Owner:</strong> SLY Transportation Services &mdash; (844) 511-4059 &mdash; info@slytrans.com</p>
+  <p><strong>Owner:</strong> Sly Car Rentals &mdash; (844) 511-4059 &mdash; info@slytrans.com</p>
   <p><strong>Renter:</strong> ${esc(name || "Not provided")}</p>
 
   <h4>RENTER INFORMATION</h4>
@@ -302,7 +302,7 @@ function generateRentalAgreementHtml(body) {
   <p>Renter must provide <strong>one of the following</strong> prior to vehicle release:</p>
   <ul>
     <li>Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
-    <li>Purchase of SLY Transportation Services Damage Protection Plan</li>
+    <li>Purchase of Sly Car Rentals Damage Protection Plan</li>
   </ul>
   <p><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $${PROTECTION_PLAN_BASIC}/day &bull; Standard &mdash; $${PROTECTION_PLAN_STANDARD}/day &bull; Premium &mdash; $${PROTECTION_PLAN_PREMIUM}/day</p>
   <p>Liability cap depends on plan selected: Basic &mdash; $2,500 &bull; Standard &mdash; $1,000 &bull; Premium &mdash; $500 per incident.</p>
@@ -323,7 +323,7 @@ function generateRentalAgreementHtml(body) {
     <li>Failure to report damage within 24 hours</li>
     <li>Violation of rental agreement terms</li>
   </ul>
-  <p><strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.</p>
+  <p><strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. Sly Car Rentals is not liable for renter negligence. Renter agrees to indemnify and hold harmless Sly Car Rentals from any claims, losses, or expenses arising from vehicle use.</p>
 
   <h4>USE RESTRICTIONS</h4>
   <p>Renter agrees to all of the following restrictions:</p>
@@ -334,14 +334,14 @@ function generateRentalAgreementHtml(body) {
   <p>Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
 
   <h4>TERMINATION</h4>
-  <p>SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
+  <p>Sly Car Rentals may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
 
   <h4>PAYMENT TERMS</h4>
   <p>All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
-  <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
+  <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if Sly Car Rentals cancels or cannot fulfill the rental.</p>
 
   <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
-  <p>By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed under this agreement, including but not limited to:</p>
+  <p>By signing this agreement, renter expressly authorizes Sly Car Rentals to charge the payment method on file for all amounts owed under this agreement, including but not limited to:</p>
   <ul>
     <li>Rental charges and extensions</li>
     <li>Security deposit and any applicable deductions</li>
@@ -355,10 +355,10 @@ function generateRentalAgreementHtml(body) {
   <p><strong>In the event of a payment dispute or chargeback, renter agrees that:</strong></p>
   <ul>
     <li>This signed agreement serves as binding proof of authorization</li>
-    <li>SLY Transportation Services may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor</li>
+    <li>Sly Car Rentals may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor</li>
     <li>Renter remains financially responsible for all charges, including any fees resulting from the dispute</li>
   </ul>
-  <p>If a chargeback is initiated without valid cause, SLY Transportation Services reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney's fees where permitted by law.</p>
+  <p>If a chargeback is initiated without valid cause, Sly Car Rentals reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney's fees where permitted by law.</p>
 
   <h4>GOVERNING LAW</h4>
   <p>This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County. By signing, the renter acknowledges they have read, understood, and agreed to all terms above.</p>
@@ -1075,7 +1075,7 @@ export default async function handler(req, res) {
     if (isConfirmed && email) {
       const customerSubject = isBalancePayment
         ? "🎉 Balance Paid – Your Rental is Fully Confirmed"
-        : "Rental Agreement Confirmation – SLY Transportation";
+        : "Rental Agreement Confirmation – Sly Car Rentals";
       const customerIntro = isBalancePayment
         ? "Great news! Your final balance payment has been received. Your rental is now fully paid and confirmed."
         : "Your booking is confirmed. Attached is your signed rental agreement.";

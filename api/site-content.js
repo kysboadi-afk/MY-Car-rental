@@ -12,7 +12,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "ht
 const CACHE_SECONDS   = 60; // public CDN/browser cache
 
 const DEFAULT_SETTINGS = {
-  business_name:          "SLY Transportation Services",
+  business_name:          "Sly Car Rentals",
   logo_url:               "",
   phone:                  "",
   whatsapp:              "",
