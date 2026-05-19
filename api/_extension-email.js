@@ -121,7 +121,7 @@ export function generateExtensionAgreementPdf({
 
     // ── Parties ─────────────────────────────────────────────────────────────────
     sectionHeader("Parties");
-    bodyText("Owner:   SLY Transportation Services \u2014 (844) 511-4059 \u2014 info@slytrans.com");
+    bodyText("Owner:   Sly Car Rentals \u2014 (844) 511-4059 \u2014 info@slytrans.com");
     bodyText(`Renter:  ${renterName || "Not provided"}`);
 
     // ── Renter Information ───────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ export function generateExtensionAgreementPdf({
         .text(`  \u2022  ${item}`, { lineGap: 1 });
     });
     doc.moveDown(0.3);
-    bodyText("The renter\u2019s prior electronic signature on the original rental agreement constitutes acceptance of these extension terms and authorizes SLY Transportation Services to charge the payment method on file for the extension amount shown above, as well as any additional fees incurred during the extension period.");
+    bodyText("The renter\u2019s prior electronic signature on the original rental agreement constitutes acceptance of these extension terms and authorizes Sly Car Rentals to charge the payment method on file for the extension amount shown above, as well as any additional fees incurred during the extension period.");
 
     // ── Chargeback Acknowledgment ────────────────────────────────────────────────
     sectionHeader("Payment Authorization");

@@ -8,7 +8,7 @@ const ACTIVE_RENTER_STATUSES = ["active_rental", "active", "overdue"];
 const CAMPAIGN_TEMPLATE_KEY = "active_renter_manage_booking_education_2026_05";
 const CAMPAIGN_SOURCE = "admin_active_renters_manage_booking_sms";
 const CAMPAIGN_MESSAGE =
-  "SLY Rides update: To view or extend your current rental, use Manage Booking:\n" +
+  "Sly Car Rentals update: To view or extend your current rental, use Manage Booking:\n" +
   "https://slycarrentals.com/manage-booking.html\n\n" +
   "Use the booking details from your confirmation if prompted. Reply STOP to opt out.";
 

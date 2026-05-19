@@ -1,4 +1,4 @@
-// ===== SLY RIDES — Multi-Language Support (EN / ES) =====
+// ===== Sly Car Rentals — Multi-Language Support (EN / ES) =====
 (function () {
   "use strict";
 
@@ -46,13 +46,13 @@
       },
       testimonials: {
         heading:    "Hear It Straight From Our Customers",
-        subheading: "Real drivers. Real stories. See why LA trusts SLY Rides."
+        subheading: "Real drivers. Real stories. See why LA trusts Sly Car Rentals."
       },
       about: {
-        heading: "About SLY Transportation Services",
-        body:    "SLY Transportation Services provides reliable, professional car rental solutions for Los Angeles visitors and rideshare drivers. Whether you\u2019re exploring the city or earning on platforms like Uber, Lyft, or DoorDash, our well-maintained fleet \u2014 from fuel-efficient sedans to head-turning rides \u2014 keeps you moving with confidence. We offer flexible rental terms, unlimited mileage, and responsive customer support, because your time and experience matter.",
+        heading: "About Sly Car Rentals",
+        body:    "Sly Car Rentals provides reliable, professional car rental solutions for Los Angeles visitors and rideshare drivers. Whether you\u2019re exploring the city or earning on platforms like Uber, Lyft, or DoorDash, our well-maintained fleet \u2014 from fuel-efficient sedans to head-turning rides \u2014 keeps you moving with confidence. We offer flexible rental terms, unlimited mileage, and responsive customer support, because your time and experience matter.",
         valuesTitle: "Our Values: Safety, Sustainability & Service Excellence",
-        valuesBody:  "At SLY Transportation Services, our commitment is simple: safe, efficient, and professional transportation \u2014 every time. Every vehicle in our fleet is regularly inspected and meticulously cleaned. Every rental is backed by transparent pricing and a team that genuinely cares. Safe, reliable service isn\u2019t just a promise here \u2014 it\u2019s our standard."
+        valuesBody:  "At Sly Car Rentals, our commitment is simple: safe, efficient, and professional transportation \u2014 every time. Every vehicle in our fleet is regularly inspected and meticulously cleaned. Every rental is backed by transparent pricing and a team that genuinely cares. Safe, reliable service isn\u2019t just a promise here \u2014 it\u2019s our standard."
       },
       applyModal: {
         title:       "Apply to Rent",
@@ -77,7 +77,7 @@
         expGt10:    "More than 10 years",
         sendCode:    "Send Code",
         terms:       "I agree to the",
-        smsConsent:  "I agree to receive SMS messages from SLY Transportation related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.",
+        smsConsent:  "I agree to receive SMS messages from Sly Car Rentals related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.",
         backBtn:     "\u2190 Back to Home",
         submitBtn:   "Submit Application",
         uploadLicense: "\uD83D\uDCF7 Upload License (JPG, PNG, or PDF \u00B7 max 5\u00A0MB)",
@@ -152,7 +152,7 @@
         driverReq1: "\uD83E\uDE96 Valid Driver\u2019s License",
         driverReq2: "\uD83D\uDE97 Active or eligible Uber / Lyft driver account",
         driverReq3: "\uD83C\uDF82 Minimum age 21",
-        whyHeading: "Why Drivers Choose SLY Transportation",
+        whyHeading: "Why Drivers Choose Sly Car Rentals",
         why1: "\u2705 Rideshare\u2011approved vehicles",
         why2: "\u267E\uFE0F Unlimited miles for Uber, Lyft, and delivery",
         why3: "\uD83D\uDCB0 Affordable weekly rentals",
@@ -202,7 +202,7 @@
         namePh: "Enter your full name",
         emailPh: "Enter your email",
         phonePh: "Enter your phone number",
-        smsConsent: "I agree to receive SMS messages from SLY Transportation related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.",
+        smsConsent: "I agree to receive SMS messages from Sly Car Rentals related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.",
         idNote: "A valid government-issued ID is required to confirm your rental.",
         uploadIdFront: "\uD83D\uDCCE Front of Driver\u2019s License / ID",
         uploadIdBack:  "\uD83D\uDCCE Back of Driver\u2019s License / ID",
@@ -232,7 +232,7 @@
         taxNote: "(+ applicable sales tax)",
         payHint: "Fill in dates, enter your name, email, and phone number, upload the front and back of your ID, select your insurance coverage option (and upload proof if you have coverage), and sign & agree to terms to enable payment.",
         cancelPayment: "\u2190 Change booking details",
-        cardAuthorizationNotice: "By booking, you authorize SLY Rides to charge your card for any applicable late fees or extensions.",
+        cardAuthorizationNotice: "By booking, you authorize Sly Car Rentals to charge your card for any applicable late fees or extensions.",
         browseOther:   "Browse other available vehicles",
         earningsTagline: "Uber & Lyft Ready \u2022 Unlimited Miles",
         earningsTitle: "Driver Earnings Example (Los Angeles)",
@@ -280,7 +280,7 @@
         title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
         depositHeading: "SECURITY DEPOSIT (Refundable)",
         partiesHeading: "PARTIES",
-        partiesOwner: "<strong>Owner:</strong> SLY Transportation Services \u2014 (844) 511-4059 \u2014 info@slytrans.com",
+        partiesOwner: "<strong>Owner:</strong> Sly Car Rentals \u2014 (844) 511-4059 \u2014 info@slytrans.com",
         partiesRenter: "<strong>Renter:</strong> Name, address, phone, email, driver\u2019s license number, and date of birth as provided at time of booking.",
         vehicleHeading: "VEHICLE INFORMATION",
         vehicleMake: "Make",
@@ -302,7 +302,7 @@
         insuranceHeading: "INSURANCE &amp; LIABILITY",
         insuranceMustProvide: "Renter must provide <strong>one of the following</strong> prior to vehicle release:",
         insuranceLi1: "Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong>",
-        insuranceLi2: "Purchase of SLY Transportation Services Damage Protection Plan",
+        insuranceLi2: "Purchase of Sly Car Rentals Damage Protection Plan",
         dppOptionalBody: "<strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $15/day &bull; Standard &mdash; $30/day &bull; Premium &mdash; $50/day",
         dppReduces: "This plan reduces the renter\u2019s financial responsibility for covered vehicle damage. Liability cap depends on plan selected: Basic \u2014 $2,500 \u2022 Standard \u2014 $1,000 \u2022 Premium \u2014 $500 per incident.",
         withoutPlanBody: "<strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:",
@@ -318,7 +318,7 @@
         exclusionLi4: "Off-road or prohibited use",
         exclusionLi5: "Failure to report damage within 24 hours",
         exclusionLi6: "Violation of rental agreement terms",
-        thirdPartyBody: "<strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.",
+        thirdPartyBody: "<strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. Sly Car Rentals is not liable for renter negligence. Renter agrees to indemnify and hold harmless Sly Car Rentals from any claims, losses, or expenses arising from vehicle use.",
         useRestrictionsHeading: "USE RESTRICTIONS",
         useRestrictionsIntro: "Renter agrees to all of the following restrictions:",
         useRestrictionsRow1: "No smoking &nbsp; No pets &nbsp; No off-road use &nbsp; No subleasing",
@@ -326,12 +326,12 @@
         conditionHeading: "CONDITION INSPECTION",
         conditionBody: "Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.",
         terminationHeading: "TERMINATION",
-        terminationBody: "SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.",
+        terminationBody: "Sly Car Rentals may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.",
         paymentTermsHeading: "PAYMENT TERMS",
         paymentTermsBody: "All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.",
-        noRefundBody: "\u26A0 <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.",
+        noRefundBody: "\u26A0 <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if Sly Car Rentals cancels or cannot fulfill the rental.",
         chargebackHeading: "PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY",
-        chargebackIntro: "By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed under this agreement, including but not limited to:",
+        chargebackIntro: "By signing this agreement, renter expressly authorizes Sly Car Rentals to charge the payment method on file for all amounts owed under this agreement, including but not limited to:",
         chargebackLi1: "Rental charges and extensions",
         chargebackLi2: "Security deposit and any applicable deductions",
         chargebackLi3: "Vehicle damage, repair, or replacement costs",
@@ -342,9 +342,9 @@
         chargebackAcknowledge: "Renter acknowledges that all charges are valid, agreed upon, and authorized under this contract. Renter agrees not to dispute, reverse, or initiate a chargeback for any legitimate charge incurred in accordance with this agreement.",
         chargebackDisputeBody: "<strong>In the event of a payment dispute or chargeback, renter agrees that:</strong>",
         chargebackDisputeLi1: "This signed agreement serves as binding proof of authorization",
-        chargebackDisputeLi2: "SLY Transportation Services may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor",
+        chargebackDisputeLi2: "Sly Car Rentals may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor",
         chargebackDisputeLi3: "Renter remains financially responsible for all charges, including any fees resulting from the dispute",
-        chargebackChargeback: "If a chargeback is initiated without valid cause, SLY Transportation Services reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney\u2019s fees where permitted by law.",
+        chargebackChargeback: "If a chargeback is initiated without valid cause, Sly Car Rentals reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney\u2019s fees where permitted by law.",
         governingLawHeading: "GOVERNING LAW",
         governingLawBody: "This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County. By signing, the renter acknowledges they have read, understood, and agreed to all terms above."
       },
@@ -386,7 +386,7 @@
       // success.html
       success: {
         title:      "\u2705 Payment Successful!",
-        body:       "Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.",
+        body:       "Thank you for booking with Sly Car Rentals! Your car is reserved. We will be in touch shortly to confirm your rental details.",
         sending:    "Sending confirmation\u2026",
         homeBtn:    "Return to Checkout",
         failTitle:  "\u274C Payment Failed",
@@ -408,7 +408,7 @@
       thankyou: {
         title:          "\uD83C\uDF89 Thank You!",
         sub:            "Your submission has been received!",
-        detail:         "Our team at Sly Transportation Services LLC will review your information and reach out to you shortly to complete your approval.",
+        detail:         "Our team at Sly Car Rentals will review your information and reach out to you shortly to complete your approval.",
         download:       "📄 Download PDF",
         fillAgain:      "🔄 Fill Again",
         questions:      "Questions? Call us:",
@@ -416,17 +416,17 @@
         backHome:       "\uD83C\uDFE0 Back to Home",
         approvedTitle:  "\uD83C\uDF89 You\u2019re Approved!",
         approvedSub:    "Congratulations \u2014 your application has been accepted!",
-        approvedDetail: "You are now cleared to browse and book a vehicle with <strong>Sly Transportation Services LLC</strong>. Check your email for your official approval confirmation and next steps.",
+        approvedDetail: "You are now cleared to browse and book a vehicle with <strong>Sly Car Rentals</strong>. Check your email for your official approval confirmation and next steps.",
         reviewTitle:    "\u23F3 Application Received!",
         reviewSub:      "We\u2019re reviewing your information now.",
-        reviewDetail:   "Our team at <strong>Sly Transportation Services LLC</strong> will review your application and contact you within <strong>24 hours</strong>. Check your email and phone for updates.",
+        reviewDetail:   "Our team at <strong>Sly Car Rentals</strong> will review your application and contact you within <strong>24 hours</strong>. Check your email and phone for updates.",
         declinedTitle:  "Application Update",
         declinedSub:    "We were unable to approve your application at this time.",
         declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(844) 511-4059</strong>."
       },
       // chatbot UI
       chatbot: {
-        headerTitle:  "\uD83D\uDE97 Sly Transportation Services LLC Assistant",
+        headerTitle:  "\uD83D\uDE97 Sly Car Rentals Assistant",
         placeholder:  "Ask a question\u2026",
         sendBtn:      "Send",
         closeBtn:     "\u2715",
@@ -434,7 +434,7 @@
         fallback:     "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 Sly Transportation Services LLC. All rights reserved.",
+        copy: "\u00A9 2026 SLY Transportation Services LLC. All rights reserved.",
         privacyPolicy: "Privacy Policy"
       }
     },
@@ -480,13 +480,13 @@
       },
       testimonials: {
         heading:    "Escucha Directamente de Nuestros Clientes",
-        subheading: "Conductores reales. Historias reales. Descubre por qu\u00E9 LA conf\u00EDa en SLY Rides."
+        subheading: "Conductores reales. Historias reales. Descubre por qu\u00E9 LA conf\u00EDa en Sly Car Rentals."
       },
       about: {
-        heading: "Sobre SLY Transportation Services",
-        body:    "SLY Transportation Services ofrece soluciones confiables y profesionales de alquiler de autos para visitantes de Los \u00C1ngeles y conductores de viaje compartido. Ya sea que explores la ciudad o generes ingresos en plataformas como Uber, Lyft o DoorDash, nuestra flota bien mantenida \u2014 desde sedanes eficientes hasta autos llamativos \u2014 te mantiene en movimiento con confianza. Ofrecemos t\u00E9rminos de alquiler flexibles, millaje ilimitado y soporte al cliente receptivo, porque tu tiempo y experiencia importan.",
+        heading: "Sobre Sly Car Rentals",
+        body:    "Sly Car Rentals ofrece soluciones confiables y profesionales de alquiler de autos para visitantes de Los \u00C1ngeles y conductores de viaje compartido. Ya sea que explores la ciudad o generes ingresos en plataformas como Uber, Lyft o DoorDash, nuestra flota bien mantenida \u2014 desde sedanes eficientes hasta autos llamativos \u2014 te mantiene en movimiento con confianza. Ofrecemos t\u00E9rminos de alquiler flexibles, millaje ilimitado y soporte al cliente receptivo, porque tu tiempo y experiencia importan.",
         valuesTitle: "Nuestros Valores: Seguridad, Sostenibilidad y Excelencia en el Servicio",
-        valuesBody:  "En SLY Transportation Services, nuestro compromiso es simple: transporte seguro, eficiente y profesional \u2014 siempre. Cada veh\u00EDculo de nuestra flota es inspeccionado y limpiado meticulosamente de manera regular. Cada alquiler est\u00E1 respaldado por precios transparentes y un equipo que genuinamente se preocupa. El servicio seguro y confiable no es solo una promesa aqu\u00ED \u2014 es nuestro est\u00E1ndar."
+        valuesBody:  "En Sly Car Rentals, nuestro compromiso es simple: transporte seguro, eficiente y profesional \u2014 siempre. Cada veh\u00EDculo de nuestra flota es inspeccionado y limpiado meticulosamente de manera regular. Cada alquiler est\u00E1 respaldado por precios transparentes y un equipo que genuinamente se preocupa. El servicio seguro y confiable no es solo una promesa aqu\u00ED \u2014 es nuestro est\u00E1ndar."
       },
       applyModal: {
         title:       "Solicitar Alquiler",
@@ -585,7 +585,7 @@
         driverReq1: "\uD83E\uDE96 Licencia de Conducir V\u00E1lida",
         driverReq2: "\uD83D\uDE97 Cuenta activa o elegible de Uber / Lyft",
         driverReq3: "\uD83C\uDF82 Edad m\u00EDnima 21 a\u00F1os",
-        whyHeading: "Por Qu\u00E9 los Conductores Eligen SLY Transportation",
+        whyHeading: "Por Qu\u00E9 los Conductores Eligen Sly Car Rentals",
         why1: "\u2705 Veh\u00EDculos aprobados para viaje compartido",
         why2: "\u267E\uFE0F Millaje ilimitado para Uber, Lyft y entrega",
         why3: "\uD83D\uDCB0 Alquileres semanales asequibles",
@@ -664,7 +664,7 @@
         taxNote: "(+ impuesto sobre ventas aplicable)",
         payHint: "Completa las fechas, ingresa tu nombre, correo y n\u00FAmero de tel\u00E9fono, sube el frente y el reverso de tu identificaci\u00F3n, selecciona tu opci\u00F3n de seguro (y sube el comprobante si tienes cobertura), y firma y acepta los t\u00E9rminos para activar el pago.",
         cancelPayment: "\u2190 Cambiar detalles de reserva",
-        cardAuthorizationNotice: "Al reservar, autorizas a SLY Rides a cobrar tu tarjeta por cualquier cargo por demora o extensión aplicable.",
+        cardAuthorizationNotice: "Al reservar, autorizas a Sly Car Rentals a cobrar tu tarjeta por cualquier cargo por demora o extensión aplicable.",
         browseOther:   "Ver otros veh\u00EDculos disponibles",
         earningsTagline: "Listo para Uber y Lyft \u2022 Millaje Ilimitado",
         earningsTitle: "Ejemplo de Ganancias del Conductor (Los \u00C1ngeles)",
@@ -712,7 +712,7 @@
         title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
         depositHeading: "DEP\u00D3SITO DE SEGURIDAD (Reembolsable)",
         partiesHeading: "PARTES",
-        partiesOwner: "<strong>Propietario:</strong> SLY Transportation Services \u2014 (844) 511-4059 \u2014 info@slytrans.com",
+        partiesOwner: "<strong>Propietario:</strong> Sly Car Rentals \u2014 (844) 511-4059 \u2014 info@slytrans.com",
         partiesRenter: "<strong>Arrendatario:</strong> Nombre, direcci\u00F3n, tel\u00E9fono, correo electr\u00F3nico, n\u00FAmero de licencia de conducir y fecha de nacimiento seg\u00FAn proporcionado al momento de la reserva.",
         vehicleHeading: "INFORMACI\u00D3N DEL VEH\u00CDCULO",
         vehicleMake: "Marca",
@@ -734,7 +734,7 @@
         insuranceHeading: "SEGURO Y RESPONSABILIDAD",
         insuranceMustProvide: "El arrendatario debe proporcionar <strong>una de las siguientes opciones</strong> antes de la entrega del veh\u00EDculo:",
         insuranceLi1: "Seguro de auto personal v\u00E1lido que cubra veh\u00EDculos de alquiler (se requiere comprobante), <strong>O</strong>",
-        insuranceLi2: "Contrataci\u00F3n del Plan de Protecci\u00F3n de Da\u00F1os de SLY Transportation Services",
+        insuranceLi2: "Contrataci\u00F3n del Plan de Protecci\u00F3n de Da\u00F1os de Sly Car Rentals",
         dppOptionalBody: "<strong>Plan de Protecci\u00F3n de Da\u00F1os (Opcional):</strong> B\u00E1sico &mdash; $15/d\u00EDa &bull; Est\u00E1ndar &mdash; $30/d\u00EDa &bull; Premium &mdash; $50/d\u00EDa",
         dppReduces: "Este plan reduce la responsabilidad financiera del arrendatario por da\u00F1os cubiertos al veh\u00EDculo. El l\u00EDmite de responsabilidad depende del plan seleccionado: B\u00E1sico \u2014 $2,500 \u2022 Est\u00E1ndar \u2014 $1,000 \u2022 Premium \u2014 $500 por incidente.",
         withoutPlanBody: "<strong>Sin Plan de Protecci\u00F3n:</strong> El arrendatario es totalmente responsable de todos los da\u00F1os y costos asociados, incluyendo pero no limit\u00E1ndose a:",
@@ -750,7 +750,7 @@
         exclusionLi4: "Uso fuera de carretera o prohibido",
         exclusionLi5: "No reportar da\u00F1os dentro de 24 horas",
         exclusionLi6: "Violaci\u00F3n de los t\u00E9rminos del contrato de alquiler",
-        thirdPartyBody: "<strong>Responsabilidad ante Terceros:</strong> El arrendatario es el \u00FAnico responsable de cualquier reclamaci\u00F3n de terceros, incluyendo lesiones corporales, da\u00F1os a la propiedad o muerte. SLY Transportation Services no es responsable por la negligencia del arrendatario. El arrendatario acepta indemnizar y eximir de responsabilidad a SLY Transportation Services de cualquier reclamaci\u00F3n, p\u00E9rdida o gasto derivado del uso del veh\u00EDculo.",
+        thirdPartyBody: "<strong>Responsabilidad ante Terceros:</strong> El arrendatario es el \u00FAnico responsable de cualquier reclamaci\u00F3n de terceros, incluyendo lesiones corporales, da\u00F1os a la propiedad o muerte. Sly Car Rentals no es responsable por la negligencia del arrendatario. El arrendatario acepta indemnizar y eximir de responsabilidad a Sly Car Rentals de cualquier reclamaci\u00F3n, p\u00E9rdida o gasto derivado del uso del veh\u00EDculo.",
         useRestrictionsHeading: "RESTRICCIONES DE USO",
         useRestrictionsIntro: "El arrendatario acepta todas las siguientes restricciones:",
         useRestrictionsRow1: "No fumar &nbsp; No mascotas &nbsp; No uso fuera de carretera &nbsp; No subarrendar",
@@ -758,12 +758,12 @@
         conditionHeading: "INSPECCI\u00D3N DE CONDICI\u00D3N",
         conditionBody: "El veh\u00EDculo es inspeccionado y aceptado tal como est\u00E1 al momento de la recogida. Se toman fotos de la condici\u00F3n al recoger. El arrendatario debe reportar cualquier da\u00F1o preexistente dentro de las 24 horas posteriores a la recogida.",
         terminationHeading: "TERMINACI\u00D3N",
-        terminationBody: "SLY Transportation Services puede terminar este contrato de inmediato por incumplimiento de t\u00E9rminos, cargos impagos, uso ilegal o violaciones de seguridad. El arrendatario es responsable de todos los costos de recuperaci\u00F3n del veh\u00EDculo.",
+        terminationBody: "Sly Car Rentals puede terminar este contrato de inmediato por incumplimiento de t\u00E9rminos, cargos impagos, uso ilegal o violaciones de seguridad. El arrendatario es responsable de todos los costos de recuperaci\u00F3n del veh\u00EDculo.",
         paymentTermsHeading: "T\u00C9RMINOS DE PAGO",
         paymentTermsBody: "Todos los cargos se deben al momento de la recogida. Los pagos atrasados acumulan inter\u00E9s del 1.5% mensual. Cargo por cheque devuelto (NSF): $35.",
-        noRefundBody: "\u26A0 <strong>Pol\u00EDtica de No Reembolso:</strong> Todos los pagos son finales una vez confirmada la reserva. Las cancelaciones o ausencias despu\u00E9s de la reserva no son elegibles para reembolso. Los reembolsos solo se emiten si SLY Transportation cancela o no puede cumplir con el alquiler.",
+        noRefundBody: "\u26A0 <strong>Pol\u00EDtica de No Reembolso:</strong> Todos los pagos son finales una vez confirmada la reserva. Las cancelaciones o ausencias despu\u00E9s de la reserva no son elegibles para reembolso. Los reembolsos solo se emiten si Sly Car Rentals cancela o no puede cumplir con el alquiler.",
         chargebackHeading: "AUTORIZACI\u00D3N DE PAGO Y POL\u00CDTICA DE CONTRACARGOS",
-        chargebackIntro: "Al firmar este contrato, el arrendatario autoriza expresamente a SLY Transportation Services a cargar el m\u00E9todo de pago registrado por todos los montos adeudados bajo este contrato, incluyendo pero no limit\u00E1ndose a:",
+        chargebackIntro: "Al firmar este contrato, el arrendatario autoriza expresamente a Sly Car Rentals a cargar el m\u00E9todo de pago registrado por todos los montos adeudados bajo este contrato, incluyendo pero no limit\u00E1ndose a:",
         chargebackLi1: "Cargos de alquiler y extensiones",
         chargebackLi2: "Dep\u00F3sito de seguridad y deducciones aplicables",
         chargebackLi3: "Costos de da\u00F1os, reparaci\u00F3n o reemplazo del veh\u00EDculo",
@@ -774,9 +774,9 @@
         chargebackAcknowledge: "El arrendatario reconoce que todos los cargos son v\u00E1lidos, acordados y autorizados bajo este contrato. El arrendatario acepta no disputar, revertir o iniciar un contracargo por cualquier cargo leg\u00EDtimo incurrido de acuerdo con este contrato.",
         chargebackDisputeBody: "<strong>En caso de una disputa de pago o contracargo, el arrendatario acepta que:</strong>",
         chargebackDisputeLi1: "Este contrato firmado sirve como prueba vinculante de autorizaci\u00F3n",
-        chargebackDisputeLi2: "SLY Transportation Services puede presentar este contrato, junto con registros de alquiler, fotos, informes de inspecci\u00F3n y registros de comunicaci\u00F3n, como evidencia al procesador de pagos",
+        chargebackDisputeLi2: "Sly Car Rentals puede presentar este contrato, junto con registros de alquiler, fotos, informes de inspecci\u00F3n y registros de comunicaci\u00F3n, como evidencia al procesador de pagos",
         chargebackDisputeLi3: "El arrendatario sigue siendo financieramente responsable de todos los cargos, incluidas las tarifas resultantes de la disputa",
-        chargebackChargeback: "Si se inicia un contracargo sin causa v\u00E1lida, SLY Transportation Services se reserva el derecho de recurrir a cobro, acciones legales y recuperaci\u00F3n de todos los costos asociados, incluidos honorarios razonables de abogados donde lo permita la ley.",
+        chargebackChargeback: "Si se inicia un contracargo sin causa v\u00E1lida, Sly Car Rentals se reserva el derecho de recurrir a cobro, acciones legales y recuperaci\u00F3n de todos los costos asociados, incluidos honorarios razonables de abogados donde lo permita la ley.",
         governingLawHeading: "LEY APLICABLE",
         governingLawBody: "Este contrato se rige por las leyes del Estado de California. Las disputas se resolver\u00E1n en los tribunales del Condado de Los \u00C1ngeles. Al firmar, el arrendatario reconoce que ha le\u00EDdo, comprendido y aceptado todos los t\u00E9rminos anteriores."
       },
@@ -816,7 +816,7 @@
       },
       success: {
         title:      "\u2705 \u00A1Pago Exitoso!",
-        body:       "\u00A1Gracias por reservar con Sly Transportation Services LLC! Tu auto est\u00E1 reservado. Nos pondremos en contacto contigo pronto para confirmar los detalles de tu alquiler.",
+        body:       "\u00A1Gracias por reservar con Sly Car Rentals! Tu auto est\u00E1 reservado. Nos pondremos en contacto contigo pronto para confirmar los detalles de tu alquiler.",
         sending:    "Enviando confirmaci\u00F3n\u2026",
         homeBtn:    "Volver a la Reserva",
         failTitle:  "\u274C Pago Fallido",
@@ -836,7 +836,7 @@
       thankyou: {
         title:          "\uD83C\uDF89 \u00A1Gracias!",
         sub:            "\u00A1Tu solicitud ha sido recibida!",
-        detail:         "Nuestro equipo en Sly Transportation Services LLC revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
+        detail:         "Nuestro equipo en Sly Car Rentals revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
         download:       "📄 Descargar PDF",
         fillAgain:      "🔄 Completar de Nuevo",
         questions:      "\u00BFPreguntas? Ll\u00E1manos:",
@@ -844,16 +844,16 @@
         backHome:       "\uD83C\uDFE0 Volver al Inicio",
         approvedTitle:  "\uD83C\uDF89 \u00A1Est\u00E1s Aprobado!",
         approvedSub:    "Felicitaciones \u2014 \u00A1tu solicitud ha sido aceptada!",
-        approvedDetail: "Ya puedes ver y reservar un veh\u00EDculo con <strong>Sly Transportation Services LLC</strong>. Revisa tu correo para la confirmaci\u00F3n oficial de aprobaci\u00F3n y los pr\u00F3ximos pasos.",
+        approvedDetail: "Ya puedes ver y reservar un veh\u00EDculo con <strong>Sly Car Rentals</strong>. Revisa tu correo para la confirmaci\u00F3n oficial de aprobaci\u00F3n y los pr\u00F3ximos pasos.",
         reviewTitle:    "\u23F3 \u00A1Solicitud Recibida!",
         reviewSub:      "Estamos revisando tu informaci\u00F3n ahora.",
-        reviewDetail:   "Nuestro equipo en <strong>Sly Transportation Services LLC</strong> revisar\u00E1 tu solicitud y se comunicar\u00E1 contigo en <strong>24 horas</strong>. Revisa tu correo y tel\u00E9fono para actualizaciones.",
+        reviewDetail:   "Nuestro equipo en <strong>Sly Car Rentals</strong> revisar\u00E1 tu solicitud y se comunicar\u00E1 contigo en <strong>24 horas</strong>. Revisa tu correo y tel\u00E9fono para actualizaciones.",
         declinedTitle:  "Actualizaci\u00F3n de Solicitud",
         declinedSub:    "No pudimos aprobar tu solicitud en este momento.",
         declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(844) 511-4059</strong>."
       },
       chatbot: {
-        headerTitle:  "\uD83D\uDE97 Asistente de Sly Transportation Services LLC",
+        headerTitle:  "\uD83D\uDE97 Asistente de Sly Car Rentals",
         placeholder:  "Haz una pregunta\u2026",
         sendBtn:      "Enviar",
         closeBtn:     "\u2715",
@@ -861,7 +861,7 @@
         fallback:     "No estoy seguro de eso \uD83E\uDD14\n\nIntenta preguntar sobre:\n\u2022 Precios\n\u2022 Autos disponibles\n\u2022 C\u00F3mo reservar\n\u2022 Aplicaciones de entrega\n\u2022 Informaci\u00F3n de contacto\n\nO env\u00EDanos un correo a slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 Sly Transportation Services LLC. Todos los derechos reservados.",
+        copy: "\u00A9 2026 SLY Transportation Services LLC. Todos los derechos reservados.",
         privacyPolicy: "Pol\u00EDtica de Privacidad"
       }
     }

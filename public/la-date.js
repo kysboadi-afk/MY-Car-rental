@@ -1,6 +1,6 @@
 // la-date.js — Los Angeles timezone date utilities
 // Single source of truth for all customer-facing date/time logic on the
-// SLY RIDES frontend.  Load this script BEFORE car.js, cars.js, and
+// Sly Car Rentals frontend.  Load this script BEFORE car.js, cars.js, and
 // chatbot.js so that window.SlyLA is available when those scripts run.
 //
 // All helpers are intentionally timezone-explicit so that:

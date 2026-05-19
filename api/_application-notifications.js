@@ -236,7 +236,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
   if (isValidEmail(ctx.email)) {
     await sendMailIfPossible({
       to: ctx.email,
-      subject: "Complete Identity Verification — SLY Transportation Services",
+      subject: "Complete Identity Verification — Sly Car Rentals",
       text: [
         `Hi ${ctx.firstName},`,
         "",
@@ -283,7 +283,7 @@ function buildIdentityIssueContent(kind, ctx) {
     return {
       ownerSubject: "⚠️ Identity Verification Requires Input",
       ownerLabel: "requires input",
-      applicantSubject: "Action Needed: Retry Identity Verification — SLY Transportation Services",
+      applicantSubject: "Action Needed: Retry Identity Verification — Sly Car Rentals",
       applicantText: [
         `Hi ${ctx.firstName},`,
         "",
@@ -320,7 +320,7 @@ function buildIdentityIssueContent(kind, ctx) {
     return {
       ownerSubject: "❌ Identity Verification Failed",
       ownerLabel: "failed",
-      applicantSubject: "Identity Verification Issue — SLY Transportation Services",
+      applicantSubject: "Identity Verification Issue — Sly Car Rentals",
       applicantText: [
         `Hi ${ctx.firstName},`,
         "",
@@ -356,7 +356,7 @@ function buildIdentityIssueContent(kind, ctx) {
   return {
     ownerSubject: "🚫 Identity Verification Canceled",
     ownerLabel: "canceled",
-    applicantSubject: "Identity Verification Canceled — SLY Transportation Services",
+    applicantSubject: "Identity Verification Canceled — Sly Car Rentals",
     applicantText: [
       `Hi ${ctx.firstName},`,
       "",
@@ -430,7 +430,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
   if (isValidEmail(ctx.email)) {
     await sendMailIfPossible({
       to: ctx.email,
-      subject: "Application Under Review — SLY Transportation Services",
+      subject: "Application Under Review — Sly Car Rentals",
       text: [
         `Hi ${ctx.firstName},`,
         "",
@@ -492,7 +492,7 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
   if (isValidEmail(ctx.email)) {
     await sendMailIfPossible({
       to: ctx.email,
-      subject: "Complete Your Background Check — SLY Transportation Services",
+      subject: "Complete Your Background Check — Sly Car Rentals",
       text: [
         `Hi ${ctx.firstName},`,
         "",
@@ -616,7 +616,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
     if (isValidEmail(ctx.email)) {
       await sendMailIfPossible({
         to: ctx.email,
-        subject: "You're Approved — SLY Transportation Services",
+        subject: "You're Approved — Sly Car Rentals",
         text: [
           `Hi ${ctx.firstName},`,
           "",
@@ -686,8 +686,8 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       await sendMailIfPossible({
         to: ctx.email,
         subject: isAdverseFinal
-          ? "Final Adverse Action Notice — SLY Transportation Services"
-          : "Application Status Update — SLY Transportation Services",
+          ? "Final Adverse Action Notice — Sly Car Rentals"
+          : "Application Status Update — Sly Car Rentals",
         text: [
           `Hi ${ctx.firstName},`,
           "",
@@ -757,7 +757,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
     if (isValidEmail(ctx.email)) {
       await sendMailIfPossible({
         to: ctx.email,
-        subject: "Pre-Adverse Action Notice — SLY Transportation Services",
+        subject: "Pre-Adverse Action Notice — Sly Car Rentals",
         text: [
           `Hi ${ctx.firstName},`,
           "",
@@ -817,7 +817,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
     if (isValidEmail(ctx.email)) {
       await sendMailIfPossible({
         to: ctx.email,
-        subject: "Additional Information Needed — SLY Transportation Services",
+        subject: "Additional Information Needed — Sly Car Rentals",
         text: [
           `Hi ${ctx.firstName},`,
           "",

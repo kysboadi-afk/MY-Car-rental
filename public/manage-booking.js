@@ -210,7 +210,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 .amount{font-size:28px;font-weight:700;color:#1b5e20;margin:20px 0}
 </style></head><body><div class="wrap">
 <h1>Payment Receipt</h1>
-<div class="meta">SLY Transportation Services LLC • (844) 511-4059</div>
+<div class="meta">Sly Car Rentals • (844) 511-4059</div>
 <div class="amount">${escapeHtml(amount)}</div>
 <table>
   <tr><td><strong>Booking ID</strong></td><td>${escapeHtml(booking.bookingId || "—")}</td></tr>
