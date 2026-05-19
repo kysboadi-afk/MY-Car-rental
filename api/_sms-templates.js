@@ -169,9 +169,12 @@ export const BOOKING_ONBOARDING =
   "• balance + payments\n" +
   "• payment plan status\n" +
   "• extension requests\n" +
-  "• booking docs/agreement\n\n" +
+  "• booking docs/agreement\n" +
+  "• rental guide + renter help center\n\n" +
   "Open dashboard:\n" +
   "{manage_link}\n\n" +
+  "Inside the dashboard, open Rental Guide & Renter Help Center for payment policy, overdue rules, maintenance, roadside, tolls/tickets, return instructions, and support workflows.\n\n" +
+  "Use the Renter Assistant chatbot there for quick self-service answers.\n\n" +
   "If your account has a balance, partial payments are accepted.\n\n" +
   "Need help? Call or text (844) 511-4059.\n\n" +
   "Reply STOP to opt out.";
