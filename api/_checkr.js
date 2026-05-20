@@ -118,6 +118,9 @@ function splitApplicantName(name = "") {
 }
 
 function buildSignatureCandidates(headerValue) {
+  if (Array.isArray(headerValue)) {
+    return headerValue.flatMap((item) => buildSignatureCandidates(item));
+  }
   if (!headerValue || typeof headerValue !== "string") return [];
   return headerValue
     .split(",")
@@ -125,6 +128,37 @@ function buildSignatureCandidates(headerValue) {
     .filter(Boolean)
     .map((part) => part.replace(/^(sha256|v1|hmac)=/i, "").trim())
     .filter(Boolean);
+}
+
+function pickHeader(headers = {}, ...names) {
+  if (!headers) return "";
+  if (typeof headers.get === "function") {
+    for (const name of names) {
+      const value = headers.get(name);
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  if (typeof headers === "object") {
+    for (const name of names) {
+      const direct = headers[name]
+        ?? headers[name.toLowerCase()]
+        ?? headers[name.toUpperCase()];
+      if (typeof direct === "string" && direct.trim()) return direct.trim();
+      if (Array.isArray(direct)) {
+        const found = direct.find((item) => typeof item === "string" && item.trim());
+        if (found) return found.trim();
+      }
+    }
+    for (const [key, value] of Object.entries(headers)) {
+      if (!names.some((name) => String(name).toLowerCase() === String(key).toLowerCase())) continue;
+      if (typeof value === "string" && value.trim()) return value.trim();
+      if (Array.isArray(value)) {
+        const found = value.find((item) => typeof item === "string" && item.trim());
+        if (found) return found.trim();
+      }
+    }
+  }
+  return "";
 }
 
 function safeEquals(a, b) {
@@ -221,10 +255,7 @@ export function mapCheckrReportStatus(status, adjudication) {
 
 export function verifyCheckrWebhookSignature(rawBody, headers = {}, webhookSecret) {
   if (!rawBody || !webhookSecret) return false;
-  const signatureHeader = pickString(
-    headers["x-checkr-signature"],
-    headers["checkr-signature"],
-  );
+  const signatureHeader = pickHeader(headers, "x-checkr-signature", "checkr-signature");
   const provided = buildSignatureCandidates(signatureHeader);
   if (!provided.length) return false;
 
@@ -372,7 +403,14 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
 }
 
 export function extractCheckrEventType(payload = {}) {
-  return pickString(payload?.type, payload?.event, payload?.event_type);
+  return pickString(
+    payload?.type,
+    payload?.event,
+    payload?.event_type,
+    payload?.data?.type,
+    payload?.data?.event,
+    payload?.data?.event_type,
+  );
 }
 
 export function extractCheckrReport(payload = {}) {

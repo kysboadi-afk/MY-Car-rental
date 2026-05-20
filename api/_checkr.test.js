@@ -85,6 +85,7 @@ global.fetch = mock.fn(async (url, init = {}) => {
 });
 
 const {
+  extractCheckrEventType,
   initiateCheckrScreening,
   mapCheckrReportStatus,
   verifyCheckrWebhookSignature,
@@ -93,6 +94,10 @@ const { default: checkrWebhookHandler } = await import("./checkr-webhook.js");
 
 function signPayload(payload) {
   return crypto.createHmac("sha256", process.env.CHECKR_WEBHOOK_SECRET).update(payload).digest("hex");
+}
+
+function signPayloadWithSecret(payload, secret) {
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
 
 function makeWebhookReq(payloadObj, { validSignature = true } = {}) {
@@ -123,6 +128,9 @@ beforeEach(() => {
   calls.invitationNotifications.length = 0;
   calls.statusNotifications.length = 0;
   calls.fetches.length = 0;
+  process.env.CHECKR_WEBHOOK_SECRET = "checkr_webhook_secret";
+  delete process.env.CHECKR_WEBHOOK_SIGNING_SECRET;
+  delete process.env.CHECKR_SIGNING_SECRET;
   applicationByIdResult = {
     ok: true,
     data: {
@@ -213,4 +221,61 @@ test("checkr-webhook rejects invalid signatures", async () => {
   const res = makeRes();
   await checkrWebhookHandler(makeWebhookReq({ type: "candidate.created" }, { validSignature: false }), res);
   assert.equal(res._status, 400);
+});
+
+test("checkr-webhook accepts configured fallback signing secret env var", async () => {
+  delete process.env.CHECKR_WEBHOOK_SECRET;
+  process.env.CHECKR_WEBHOOK_SIGNING_SECRET = "fallback_secret";
+  const payload = {
+    type: "candidate.created",
+    data: { object: { id: "candidate_123" } },
+  };
+  const body = Buffer.from(JSON.stringify(payload));
+  const req = Readable.from([body]);
+  req.method = "POST";
+  req.headers = {
+    "x-checkr-signature": signPayloadWithSecret(body, process.env.CHECKR_WEBHOOK_SIGNING_SECRET),
+  };
+
+  const res = makeRes();
+  await checkrWebhookHandler(req, res);
+  assert.equal(res._status, 200);
+});
+
+test("checkr-webhook handles pre-parsed req.body payload object", async () => {
+  const payload = {
+    type: "report.completed",
+    data: {
+      object: {
+        id: "report_123",
+        candidate_id: "candidate_123",
+        status: "complete",
+        adjudication: "clear",
+      },
+    },
+  };
+  const serialized = JSON.stringify(payload);
+  const req = {
+    method: "POST",
+    headers: {
+      "x-checkr-signature": signPayload(Buffer.from(serialized)),
+    },
+    body: payload,
+  };
+  const res = makeRes();
+  await checkrWebhookHandler(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(calls.patchCheckr.length, 1);
+});
+
+test("extractCheckrEventType supports nested data.event_type payload shape", () => {
+  assert.equal(
+    extractCheckrEventType({
+      data: {
+        event_type: "report.completed",
+        object: { id: "report_123", candidate_id: "candidate_123", status: "complete" },
+      },
+    }),
+    "report.completed",
+  );
 });

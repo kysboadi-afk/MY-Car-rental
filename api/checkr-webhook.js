@@ -18,7 +18,34 @@ export const config = {
   api: { bodyParser: false },
 };
 
+function pickString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function resolveWebhookSecret() {
+  return pickString(
+    process.env.CHECKR_WEBHOOK_SECRET,
+    process.env.CHECKR_WEBHOOK_SIGNING_SECRET,
+    process.env.CHECKR_SIGNING_SECRET,
+  );
+}
+
 function getRawBody(req) {
+  if (Buffer.isBuffer(req?.rawBody)) return Promise.resolve(req.rawBody);
+  if (typeof req?.rawBody === "string") return Promise.resolve(Buffer.from(req.rawBody, "utf8"));
+  if (Buffer.isBuffer(req?.body)) return Promise.resolve(req.body);
+  if (typeof req?.body === "string") return Promise.resolve(Buffer.from(req.body, "utf8"));
+  if (req?.body && typeof req.body === "object") {
+    try {
+      return Promise.resolve(Buffer.from(JSON.stringify(req.body), "utf8"));
+    } catch {
+      return Promise.resolve(Buffer.from("{}", "utf8"));
+    }
+  }
+  if (!req || typeof req.on !== "function") return Promise.resolve(Buffer.from("{}", "utf8"));
   return new Promise((resolve, reject) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
@@ -53,7 +80,9 @@ async function findApplicationForPayload(payload = {}) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-  if (!process.env.CHECKR_WEBHOOK_SECRET) {
+  const webhookSecret = resolveWebhookSecret();
+  if (!webhookSecret) {
+    console.error("checkr-webhook: missing CHECKR webhook secret env var");
     return res.status(500).send("Server configuration error");
   }
 
@@ -65,15 +94,18 @@ export default async function handler(req, res) {
     return res.status(400).send("Invalid request body");
   }
 
-  if (!verifyCheckrWebhookSignature(rawBody, req.headers, process.env.CHECKR_WEBHOOK_SECRET)) {
+  if (!verifyCheckrWebhookSignature(rawBody, req.headers, webhookSecret)) {
     return res.status(400).send("Webhook Error: signature verification failed");
   }
 
-  let payload = {};
+  let payload;
   try {
     payload = JSON.parse(rawBody.toString("utf8") || "{}");
   } catch {
     return res.status(400).send("Webhook Error: invalid JSON");
+  }
+  if (!payload || typeof payload !== "object") {
+    return res.status(400).send("Webhook Error: invalid payload");
   }
 
   const eventType = extractCheckrEventType(payload);
@@ -92,6 +124,8 @@ export default async function handler(req, res) {
     reportId: extractCheckrReport(payload)?.id || null,
     phase: null,
     payload,
+  }).catch((err) => {
+    console.error("checkr-webhook event logging failed:", err?.message || err);
   });
 
   if (eventType === "candidate.created" || eventType === "invitation.completed") {
