@@ -876,6 +876,7 @@ export default async function handler(req, res) {
     }
 
     let ownerEmailErr = null;
+    let ownerEmailSent = false;
     if (webhookAlreadySentOwnerEmail) {
       console.log(`[send-reservation-email] webhook already sent owner email for booking ${bookingId} — skipping duplicate owner email`);
     } else {
@@ -1041,6 +1042,7 @@ export default async function handler(req, res) {
 
     try {
       await transporter.sendMail(ownerEmailOpts);
+      ownerEmailSent = true;
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
       if (attachments.length > 0 && isLikelyAttachmentDeliveryError(ownerErr)) {
@@ -1059,6 +1061,7 @@ export default async function handler(req, res) {
               <p>⚠️ Documents could not be attached to this email due to an attachment delivery error. The booking is still confirmed and documents remain stored server-side.</p>
             `,
           });
+          ownerEmailSent = true;
           console.warn("Owner notification email sent without attachments after attachment delivery failure.");
         } catch (retryErr) {
           console.error("Owner notification email retry without attachments failed:", retryErr);
@@ -1070,9 +1073,27 @@ export default async function handler(req, res) {
     }
     } // end: else (!webhookAlreadySentOwnerEmail)
 
+    // Mark pending docs as sent when this endpoint successfully sends the owner
+    // confirmation, so a later Stripe webhook can safely skip duplicate sends.
+    if (isConfirmed && !isBalancePayment && bookingId && !webhookAlreadySentOwnerEmail && ownerEmailSent) {
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          await sb
+            .from("pending_booking_docs")
+            .upsert({ booking_id: bookingId, email_sent: true }, { onConflict: "booking_id" });
+        }
+      } catch (markErr) {
+        console.warn("[send-reservation-email] could not mark pending_booking_docs email_sent (non-fatal):", markErr.message);
+      }
+    }
+
     // --- Confirmation to customer (only for successful payments) ---
     let customerEmailErr = null;
-    if (isConfirmed && email) {
+    const webhookAlreadyHandledCustomerEmail = !!(webhookAlreadySentOwnerEmail && isConfirmed && !isBalancePayment);
+    if (webhookAlreadyHandledCustomerEmail) {
+      console.log(`[send-reservation-email] webhook already handled confirmation emails for booking ${bookingId} — skipping duplicate customer email`);
+    } else if (isConfirmed && email) {
       const customerSubject = isBalancePayment
         ? "🎉 Balance Paid – Your Rental is Fully Confirmed"
         : "Rental Agreement Confirmation – Sly Car Rentals";
