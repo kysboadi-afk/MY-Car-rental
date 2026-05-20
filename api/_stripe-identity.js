@@ -99,7 +99,10 @@ export async function createStripeIdentitySession({
     const mappedStatus = mapStripeIdentityStatusToIdentityStatus(rawStatus) || "requires_input";
     const sessionId = pickString(session?.id);
     const clientSecret = pickString(session?.client_secret);
-    const verificationUrl = buildIdentityVerificationUrl(clientSecret);
+    // Prefer session.url (the canonical short-lived hosted URL that Stripe provides)
+    // over a hand-rolled URL built from client_secret. session.url is valid for 48h
+    // and is the correct target for redirect-based identity verification.
+    const verificationUrl = pickString(session?.url) || buildIdentityVerificationUrl(clientSecret);
     if (!sessionId) {
       return { ok: false, status: 502, error: "Stripe returned an incomplete session response." };
     }
@@ -138,6 +141,10 @@ export async function retrieveStripeIdentitySession(sessionId) {
     const rawStatus = pickString(session?.status);
     const mappedStatus = mapStripeIdentityStatusToIdentityStatus(rawStatus);
     const clientSecret = pickString(session?.client_secret);
+    // Prefer session.url (Stripe re-issues a fresh short-lived hosted URL on every
+    // retrieve call) over a hand-rolled URL built from client_secret. Using session.url
+    // ensures that requires_input session reuse always provides a valid, unexpired link.
+    const verificationUrl = pickString(session?.url) || buildIdentityVerificationUrl(clientSecret);
     return {
       ok: true,
       sessionId: pickString(session?.id) || normalizedSessionId,
@@ -145,7 +152,7 @@ export async function retrieveStripeIdentitySession(sessionId) {
       rawStatus: rawStatus || null,
       mappedStatus: mappedStatus || null,
       clientSecret: clientSecret || null,
-      verificationUrl: buildIdentityVerificationUrl(clientSecret) || null,
+      verificationUrl: verificationUrl || null,
       payload: session,
     };
   } catch (err) {
