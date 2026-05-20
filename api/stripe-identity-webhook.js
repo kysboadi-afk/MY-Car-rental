@@ -115,10 +115,19 @@ async function recordEvent(sb, eventId, eventType, applicationId, sessionId, pay
 }
 
 async function enrichRecordedEvent(sb, eventId, applicationId, sessionId) {
-  if (applicationId) {
+  let resolvedApplicationId = applicationId || null;
+
+  if (!resolvedApplicationId && sessionId) {
+    const bySession = await fetchRenterApplicationByIdentitySessionId(sessionId);
+    if (bySession?.ok) {
+      resolvedApplicationId = bySession.data?.id || null;
+    }
+  }
+
+  if (resolvedApplicationId) {
     const { error } = await sb
       .from("stripe_identity_webhook_events")
-      .update({ application_id: applicationId })
+      .update({ application_id: resolvedApplicationId })
       .eq("stripe_event_id", eventId)
       .is("application_id", null);
     if (error) return { error };
