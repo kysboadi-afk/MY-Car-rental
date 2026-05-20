@@ -7,6 +7,9 @@ process.env.OTP_SECRET = "otp-secret-test";
 process.env.VERIFF_API_KEY = "veriff_api_test";
 process.env.VERIFF_SHARED_SECRET = "veriff_shared_secret_test";
 process.env.VERIFF_PROJECT_ID = "veriff_project_test";
+process.env.STRIPE_SECRET_KEY = "";
+process.env.STRIPE_PUBLISHABLE_KEY = "";
+process.env.STRIPE_IDENTITY_WEBHOOK_SECRET = "";
 process.env.ADMIN_SECRET = "test-admin-secret";
 process.env.SMTP_HOST = "smtp.test.invalid";
 process.env.SMTP_PORT = "587";
@@ -866,11 +869,10 @@ test("veriff-webhook falls back when veriff table is missing from schema cache",
   assert.equal(calls.patched[0]?.patch?.identityStatus, "verified");
 });
 
-test("legacy stripe-identity-webhook endpoint is deprecated (410)", async () => {
+test("stripe-identity-webhook only accepts POST", async () => {
   const res = makeRes();
   await deprecatedStripeIdentityWebhookHandler(makeAdminGetReq({}), res);
-  assert.equal(res._status, 410);
-  assert.equal(res._body.error, "Deprecated endpoint.");
+  assert.equal(res._status, 405);
 });
 
 test("admin-review-queue recovers approved Veriff applications before loading queue", async () => {
