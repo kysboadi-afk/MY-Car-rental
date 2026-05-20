@@ -11,6 +11,7 @@ import {
   isStripeIdentitySessionId,
   retrieveStripeIdentitySession,
 } from "./_stripe-identity.js";
+import { launchCheckrForVerifiedFinalization } from "./_identity-verified-orchestration.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
@@ -70,6 +71,28 @@ export default async function handler(req, res) {
   }
   const application = appResult.data || {};
 
+  async function launchCheckrFromResume(trigger, applicationSnapshot = null) {
+    try {
+      const launch = await launchCheckrForVerifiedFinalization({
+        applicationId,
+        source: "resolve_resume_sync",
+        trigger,
+        applicationSnapshot,
+      });
+      if (!launch?.ok) {
+        console.warn("resolve-identity-resume: Checkr launch did not start", {
+          applicationId,
+          trigger,
+          reason: launch?.reason || null,
+          status: Number(launch?.status) || null,
+          error: launch?.error || null,
+        });
+      }
+    } catch (err) {
+      console.error("resolve-identity-resume: Checkr launch exception:", err?.message || err);
+    }
+  }
+
   if (TERMINAL_APPLICATION_STATUSES.has(application.application_status)) {
     return res.status(200).json({
       success: false,
@@ -81,6 +104,7 @@ export default async function handler(req, res) {
   }
 
   if (application.identity_status === "verified") {
+    await launchCheckrFromResume("already_verified_short_circuit", application);
     return res.status(200).json({
       success: true,
       alreadyVerified: true,
@@ -121,7 +145,11 @@ export default async function handler(req, res) {
               syncResult.error,
               syncResult.details || ""
             );
+          } else {
+            await launchCheckrFromResume("stripe_verified_sync", syncResult.data || application);
           }
+        } else {
+          await launchCheckrFromResume("stripe_verified_sync_already_verified", application);
         }
         return res.status(200).json({
           success: true,
@@ -210,7 +238,11 @@ export default async function handler(req, res) {
               syncResult.error,
               syncResult.details || ""
             );
+          } else {
+            await launchCheckrFromResume("veriff_verified_sync", syncResult.data || application);
           }
+        } else {
+          await launchCheckrFromResume("veriff_verified_sync_already_verified", application);
         }
         return res.status(200).json({
           success: true,
