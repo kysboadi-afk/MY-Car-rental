@@ -142,6 +142,16 @@ function buildApiHeaders(apiKey) {
   };
 }
 
+function deriveCheckrEnvironment(apiKey) {
+  const explicit = pickString(process.env.CHECKR_ENV).toLowerCase();
+  if (explicit) return explicit;
+  const key = pickString(apiKey).toLowerCase();
+  if (!key) return "unknown";
+  if (key.includes("test")) return "test";
+  if (key.includes("live")) return "production";
+  return "unknown";
+}
+
 function redactId(value) {
   const text = pickString(value);
   if (!text) return null;
@@ -158,6 +168,8 @@ async function postJson(path, body, fetchImpl = fetch, extraHeaders = {}) {
     endpoint,
     authHeaderPresent: !!headers.Authorization,
     packageSlug: cfg.packageSlug || null,
+    packageEnvironment: cfg.packageEnvironment || "unknown",
+    packageSource: cfg.packageSource || null,
   });
   const response = await fetchImpl(endpoint, {
     method: "POST",
@@ -171,6 +183,7 @@ async function postJson(path, body, fetchImpl = fetch, extraHeaders = {}) {
     status: Number(response?.status) || null,
     ok: !!response?.ok,
     error: payload?.error || payload?.message || null,
+    errorResponse: response?.ok ? null : payload,
   });
   return { response, payload };
 }
@@ -178,12 +191,17 @@ async function postJson(path, body, fetchImpl = fetch, extraHeaders = {}) {
 export function getCheckrConfig() {
   const apiKey = pickString(process.env.CHECKR_API_KEY);
   const webhookSecret = pickString(process.env.CHECKR_WEBHOOK_SECRET);
-  const packageSlug = pickString(process.env.CHECKR_PACKAGE) || DEFAULT_PACKAGE;
+  const configuredPackage = pickString(process.env.CHECKR_PACKAGE);
+  const packageSlug = configuredPackage || DEFAULT_PACKAGE;
+  const packageSource = configuredPackage ? "env.CHECKR_PACKAGE" : "default";
+  const packageEnvironment = deriveCheckrEnvironment(apiKey);
   return {
     configured: !!apiKey,
     apiKey,
     webhookSecret,
     packageSlug,
+    packageSource,
+    packageEnvironment,
   };
 }
 
@@ -268,6 +286,7 @@ export async function createCheckrCandidate(application = {}, fetchImpl = fetch)
       applicationId: pickString(application?.id) || null,
       status: Number(response?.status) || null,
       error: payload?.error || payload?.message || "Failed to create Checkr candidate.",
+      errorResponse: payload,
     });
     return {
       ok: false,
@@ -280,6 +299,10 @@ export async function createCheckrCandidate(application = {}, fetchImpl = fetch)
   console.info("checkr:candidate create succeeded", {
     applicationId: pickString(application?.id) || null,
     candidateId: redactId(payload?.id),
+    candidateResult: {
+      id: redactId(payload?.id),
+      object: pickString(payload?.object) || null,
+    },
   });
   return {
     ok: true,
@@ -303,6 +326,13 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
   console.info("checkr:invitation create request", {
     candidateId: redactId(candidateId),
     packageSlug: body.package || null,
+    packageEnvironment: cfg.packageEnvironment || "unknown",
+    packageSource: cfg.packageSource || null,
+    requestPayload: {
+      candidate_id: redactId(body.candidate_id),
+      package: body.package || null,
+      work_locations: body.work_locations,
+    },
   });
   const idempotencyKey = buildCheckrIdempotencyKey([
     "invitation",
@@ -317,6 +347,7 @@ export async function createCheckrInvitation({ candidateId, packageSlug }, fetch
       candidateId: redactId(candidateId),
       status: Number(response?.status) || null,
       error: payload?.error || payload?.message || "Failed to create Checkr invitation.",
+      errorResponse: payload,
     });
     return {
       ok: false,
@@ -363,8 +394,9 @@ export function buildCheckrDashboardReportUrl(reportId) {
   return id ? `https://dashboard.checkr.com/reports/${encodeURIComponent(id)}` : null;
 }
 
-export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) {
+export async function initiateCheckrScreening(applicationId, fetchImpl = fetch, options = {}) {
   const cfg = getCheckrConfig();
+  const launchSource = pickString(options?.launchSource) || "unspecified";
   if (!cfg.configured) {
     return { ok: false, status: 500, error: "Server configuration error: Checkr credentials are not set." };
   }
@@ -386,6 +418,10 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
     existingReportStatus: application.checkr_report_status || null,
     existingPhase: currentPhase || null,
     nextAttemptCount,
+    packageSlug: cfg.packageSlug || null,
+    packageEnvironment: cfg.packageEnvironment || "unknown",
+    packageSource: cfg.packageSource || null,
+    launchSource,
   });
 
   if (application.identity_status !== "verified") {
@@ -434,7 +470,9 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch) 
     payload: {
       attempt: nextAttemptCount,
       packageSlug: cfg.packageSlug,
-      triggeredBy: "checkr_initiate",
+      packageEnvironment: cfg.packageEnvironment || "unknown",
+      packageSource: cfg.packageSource || null,
+      triggeredBy: launchSource,
     },
   });
 

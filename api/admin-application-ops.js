@@ -365,7 +365,7 @@ async function handleRetryCheckr(applicationId, reviewer, notes, sb) {
   if (!appResult.ok) return appResult;
   const currentStatus = String(appResult.data?.application_status || "").toLowerCase();
 
-  const result = await initiateCheckrScreening(applicationId);
+  const result = await initiateCheckrScreening(applicationId, fetch, { launchSource: "admin_retry_checkr" });
   if (!result.ok) return result;
 
   await appendAuditAction(sb, {
