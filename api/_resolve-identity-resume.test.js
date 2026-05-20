@@ -14,6 +14,7 @@ const calls = {
   patched: [],
   fetched: [],
   fetchRequests: [],
+  checkrLaunches: [],
 };
 
 let fetchResult = { ok: true, data: { id: TEST_APP_ID, identity_status: "not_started", application_status: "submitted" } };
@@ -37,6 +38,15 @@ mock.module("./_renter-applications.js", {
   namedExports: {
     fetchRenterApplicationById,
     patchRenterApplicationIdentityById,
+  },
+});
+
+mock.module("./_identity-verified-orchestration.js", {
+  namedExports: {
+    launchCheckrForVerifiedFinalization: mock.fn(async (input) => {
+      calls.checkrLaunches.push(input);
+      return { ok: true, executed: true };
+    }),
   },
 });
 
@@ -84,6 +94,7 @@ beforeEach(() => {
   calls.patched.length = 0;
   calls.fetched.length = 0;
   calls.fetchRequests.length = 0;
+  calls.checkrLaunches.length = 0;
   fetchResult = { ok: true, data: { id: TEST_APP_ID, identity_status: "not_started", application_status: "submitted" } };
   patchResult = { ok: true, data: { id: TEST_APP_ID } };
   createSessionPayload = { status: "success", verification: { id: "vrf_123", url: "https://veriff.test/session/vrf_123", status: "created" } };
@@ -121,6 +132,9 @@ test("resolve-identity-resume: returns alreadyVerified when app already verified
   assert.equal(res._status, 200);
   assert.equal(res._body.alreadyVerified, true);
   assert.equal(calls.fetchRequests.length, 0);
+  assert.equal(calls.checkrLaunches.length, 1);
+  assert.equal(calls.checkrLaunches[0].source, "resolve_resume_sync");
+  assert.equal(calls.checkrLaunches[0].trigger, "already_verified_short_circuit");
 });
 
 test("resolve-identity-resume: reuses decision URL when resubmission is requested", async () => {
@@ -171,6 +185,7 @@ test("resolve-identity-resume: syncs processing status and advances to under_rev
   assert.equal(calls.patched.length, 1);
   assert.equal(calls.patched[0].patch.identityStatus, "processing");
   assert.equal(calls.patched[0].patch.applicationStatus, "under_review");
+  assert.equal(calls.checkrLaunches.length, 0);
 });
 
 test("resolve-identity-resume: returns processing for submitted decision", async () => {
@@ -214,6 +229,8 @@ test("resolve-identity-resume: syncs verified decision from webhook lag", async 
   assert.equal(res._body.alreadyVerified, true);
   assert.equal(calls.patched.length, 1);
   assert.equal(calls.patched[0].patch.identityStatus, "verified");
+  assert.equal(calls.checkrLaunches.length, 1);
+  assert.equal(calls.checkrLaunches[0].trigger, "veriff_verified_sync");
 });
 
 test("resolve-identity-resume: returns processing when decision lookup is unavailable for existing session", async () => {

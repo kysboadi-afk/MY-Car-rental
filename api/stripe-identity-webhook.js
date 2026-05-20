@@ -18,7 +18,7 @@ import {
   sendIdentityIssueNotifications,
   sendIdentityVerifiedNotifications,
 } from "./_application-notifications.js";
-import { initiateCheckrScreening } from "./_checkr.js";
+import { launchCheckrForVerifiedFinalization } from "./_identity-verified-orchestration.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -251,6 +251,13 @@ export default async function handler(req, res) {
   const identityPatch = mapIdentityUpdate(mappedStatus, rawStatus, currentApp.application_status);
   if (!identityPatch) return res.status(200).json({ received: true, ignored: true });
   if (isStaleIdentityUpdate(currentApp, identityPatch)) {
+    console.info("stripe-identity-webhook: Checkr launch skipped", {
+      source: "stripe_identity_webhook",
+      trigger: "stale_identity_update",
+      applicationId: currentApp.id || null,
+      currentIdentityStatus: currentApp.identity_status || null,
+      nextIdentityStatus: identityPatch.identityStatus || null,
+    });
     return res.status(200).json({ received: true, ignored: true, stale: true });
   }
 
@@ -270,17 +277,38 @@ export default async function handler(req, res) {
     } catch (notifyErr) {
       console.error("stripe-identity-webhook verified notification failed:", notifyErr);
     }
-    try {
-      await initiateCheckrScreening(currentApp.id);
-    } catch (checkrErr) {
-      console.error("stripe-identity-webhook Checkr initiation failed:", checkrErr?.message || checkrErr);
-    }
   } else if (notificationKind === "requires_input" || notificationKind === "failed" || notificationKind === "canceled") {
     try {
       await sendIdentityIssueNotifications(patchResult.data || currentApp, notificationKind);
     } catch (notifyErr) {
       console.error("stripe-identity-webhook issue notification failed:", notifyErr);
     }
+  }
+
+  if (identityPatch.identityStatus === "verified") {
+    if (notificationKind !== "verified") {
+      console.info("stripe-identity-webhook: verified replay detected; attempting idempotent Checkr launch", {
+        source: "stripe_identity_webhook",
+        trigger: "verified_reconciliation",
+        applicationId: currentApp.id || null,
+        notificationKind: notificationKind || null,
+        currentIdentityStatus: currentApp.identity_status || null,
+      });
+    }
+    await launchCheckrForVerifiedFinalization({
+      applicationId: currentApp.id,
+      source: "stripe_identity_webhook",
+      trigger: notificationKind === "verified" ? "verified_transition" : "verified_reconciliation",
+      applicationSnapshot: patchResult.data || currentApp,
+    });
+  } else {
+    console.info("stripe-identity-webhook: Checkr launch skipped", {
+      source: "stripe_identity_webhook",
+      trigger: "non_verified_identity_status",
+      applicationId: currentApp.id || null,
+      identityStatus: identityPatch.identityStatus || null,
+      notificationKind: notificationKind || null,
+    });
   }
 
   return res.status(200).json({ received: true });
