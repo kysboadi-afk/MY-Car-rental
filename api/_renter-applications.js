@@ -120,7 +120,8 @@ const CHECKR_ISSUE_STATUSES = new Set(["consider", "suspended", "failed", "dispu
 const CHECKR_PENDING_STATUSES = new Set(["pending"]);
 const APPLICATION_QUEUE_SELECT = "id, name, phone, email, age, experience, application_status, identity_status, " +
   "identity_session_id, review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
-  "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, submitted_at, created_at, updated_at";
+  "checkr_report_status, checkr_report_id, checkr_invitation_url, checkr_invitation_sent_at, checkr_invitation_sms_sent_at, " +
+  "checkr_invitation_reminder_sent_at, adverse_action_step, adverse_action_sent_at, submitted_at, created_at, updated_at";
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -542,6 +543,10 @@ export function toClientApplication(record = {}) {
     identityStatus: record.identity_status,
     checkrCandidateId: record.checkr_candidate_id || null,
     checkrReportId: record.checkr_report_id || null,
+    checkrInvitationUrl: record.checkr_invitation_url || null,
+    checkrInvitationSentAt: record.checkr_invitation_sent_at || null,
+    checkrInvitationSmsSentAt: record.checkr_invitation_sms_sent_at || null,
+    checkrInvitationReminderSentAt: record.checkr_invitation_reminder_sent_at || null,
     checkrReportStatus: record.checkr_report_status || null,
     checkrAdjudication: record.checkr_adjudication || null,
     checkrCompletedAt: record.checkr_completed_at || null,
@@ -812,6 +817,10 @@ export async function patchRenterApplicationCheckrById(applicationId, patchPaylo
   const patch = {};
   if ("checkrCandidateId" in patchPayload) patch.checkr_candidate_id = cleanText(patchPayload.checkrCandidateId, 255);
   if ("checkrReportId" in patchPayload) patch.checkr_report_id = cleanText(patchPayload.checkrReportId, 255);
+  if ("checkrInvitationUrl" in patchPayload) patch.checkr_invitation_url = cleanText(patchPayload.checkrInvitationUrl, 2000);
+  if ("checkrInvitationSentAt" in patchPayload) patch.checkr_invitation_sent_at = cleanIsoDateTime(patchPayload.checkrInvitationSentAt);
+  if ("checkrInvitationSmsSentAt" in patchPayload) patch.checkr_invitation_sms_sent_at = cleanIsoDateTime(patchPayload.checkrInvitationSmsSentAt);
+  if ("checkrInvitationReminderSentAt" in patchPayload) patch.checkr_invitation_reminder_sent_at = cleanIsoDateTime(patchPayload.checkrInvitationReminderSentAt);
   if ("checkrReportStatus" in patchPayload) {
     patch.checkr_report_status = normalizeCheckrReportStatusValue(patchPayload.checkrReportStatus);
   }

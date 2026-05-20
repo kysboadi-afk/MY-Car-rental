@@ -567,6 +567,9 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch, 
   const patchResult = await patchRenterApplicationCheckrById(applicationId, {
     checkrCandidateId: candidateId,
     checkrReportId: invitationResult.reportId || null,
+    checkrInvitationUrl: invitationResult.invitationUrl || null,
+    checkrInvitationSentAt: nowIso,
+    checkrInvitationReminderSentAt: null,
     checkrReportStatus: "invitation_sent",
     checkrPhase: "invitation_sent",
     checkrLastError: null,
@@ -590,7 +593,7 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch, 
   });
 
   try {
-    await sendCheckrInvitationNotifications(
+    const notificationResult = await sendCheckrInvitationNotifications(
       {
         ...application,
         ...patchResult.data,
@@ -600,6 +603,11 @@ export async function initiateCheckrScreening(applicationId, fetchImpl = fetch, 
         packageSlug: cfg.packageSlug,
       },
     );
+    if (notificationResult?.applicantSmsSent) {
+      await patchRenterApplicationCheckrById(applicationId, {
+        checkrInvitationSmsSentAt: new Date().toISOString(),
+      }).catch(() => {});
+    }
   } catch (notifyErr) {
     console.error("initiateCheckrScreening notification failed:", notifyErr.message || notifyErr);
   }

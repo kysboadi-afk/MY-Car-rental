@@ -33,11 +33,13 @@ const calls = {
   sentMessages: [],
   veriffFetches: [],
   checkrInitiations: [],
+  patchedCheckr: [],
 };
 
 let fetchResult = { ok: true, data: { id: "app_1", identity_status: "not_started", application_status: "submitted" } };
 let fetchBySessionResult = { ok: true, data: { id: "app_1", identity_status: "not_started", application_status: "submitted" } };
 let patchResult = { ok: true, data: { id: "app_1" } };
+let patchCheckrResult = { ok: true, data: { id: "app_1" } };
 let duplicateEvent = false;
 let insertEventError = null;
 let reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
@@ -66,6 +68,11 @@ const fetchRenterApplicationByIdentitySessionId = mock.fn(async (identitySession
 const patchRenterApplicationIdentityById = mock.fn(async (applicationId, patch) => {
   calls.patched.push({ applicationId, patch });
   return patchResult;
+});
+
+const patchRenterApplicationCheckrById = mock.fn(async (applicationId, patch) => {
+  calls.patchedCheckr.push({ applicationId, patch });
+  return patchCheckrResult;
 });
 
 const listReviewQueueApplications = mock.fn(async (...args) => {
@@ -100,6 +107,7 @@ mock.module("./_renter-applications.js", {
     fetchRenterApplicationById,
     fetchRenterApplicationByIdentitySessionId,
     patchRenterApplicationIdentityById,
+    patchRenterApplicationCheckrById,
     listReviewQueueApplications,
     listPendingIdentityRecoveryApplications,
     fetchReviewApplicationById,
@@ -334,6 +342,7 @@ beforeEach(() => {
   calls.sentMessages.length = 0;
   calls.veriffFetches.length = 0;
   calls.checkrInitiations.length = 0;
+  calls.patchedCheckr.length = 0;
   fetchResult = {
     ok: true,
     data: {
@@ -368,6 +377,7 @@ beforeEach(() => {
       application_status: "under_review",
     },
   };
+  patchCheckrResult = { ok: true, data: { id: "app_1" } };
   duplicateEvent = false;
   insertEventError = null;
   reviewQueueResult = { ok: true, data: [], total: 0, page: 1, pageSize: 50 };
@@ -1397,6 +1407,34 @@ test("admin-review-detail skips Veriff recovery when session is in cooldown", as
 
   assert.equal(res2._status, 200);
   assert.equal(calls.veriffFetches.length, 0, "Veriff NOT called again — cooldown active");
+});
+
+test("admin-application-ops resend_checkr_invitation sends notifications and records SMS timestamp", async () => {
+  fetchResult = {
+    ok: true,
+    data: {
+      id: "app_checkr_resend_1",
+      name: "Jane Driver",
+      phone: "3105550199",
+      email: "jane@example.com",
+      application_status: "under_review",
+      checkr_invitation_url: "https://checkr.test/invite/app_checkr_resend_1",
+    },
+  };
+
+  const res = makeRes();
+  await adminApplicationOpsHandler(makeAdminPostReq({
+    action: "resend_checkr_invitation",
+    applicationId: "app_checkr_resend_1",
+    dryRun: false,
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.applicantSmsSent, true);
+  assert.equal(calls.sentMessages.length > 0, true);
+  assert.equal(calls.patchedCheckr.length > 0, true);
+  assert.equal(calls.patchedCheckr[0].patch.checkrInvitationSmsSentAt != null, true);
 });
 
 test("backfill_veriff_approved dry run returns candidate count without patching", async () => {

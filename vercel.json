@@ -73,6 +73,7 @@
     "api/admin-review-queue.js":              { "maxDuration": 20 },
     "api/admin-review-detail.js":             { "maxDuration": 20 },
     "api/review-application.js":              { "maxDuration": 30 },
+    "api/checkr-invitation-reminder-cron.js": { "maxDuration": 30 },
     "api/renter-balance-ledger.js":           { "maxDuration": 20 },
     "api/create-slingshot-booking.js":        { "maxDuration": 30 },
     "api/sign-slingshot-agreement.js":        { "maxDuration": 30 }
@@ -125,6 +126,10 @@
     {
       "path": "/api/veriff-identity-recovery-cron",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/checkr-invitation-reminder-cron",
+      "schedule": "0 * * * *"
     }
   ]
 }
