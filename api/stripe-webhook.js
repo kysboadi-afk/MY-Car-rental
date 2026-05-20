@@ -1187,23 +1187,23 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     }
   }
 
-  // ── Mark docs as sent so the browser-side email skips the owner copy ──────
-  // Only mark email_sent=true when the send actually succeeded.
-  if (ownerEmailSent && storedDocs && booking_id && docsCompleteForDedupe) {
+  // ── Mark docs as sent so the browser-side email skips duplicate sends ─────
+  // Mark email_sent=true whenever the owner email actually succeeds.
+  if (ownerEmailSent && booking_id) {
     try {
       const sb = getSupabaseAdmin();
       if (sb) {
         await sb
           .from("pending_booking_docs")
-          .update({ email_sent: true })
-          .eq("booking_id", booking_id);
+          .upsert({ booking_id, email_sent: true }, { onConflict: "booking_id" });
       }
     } catch (markErr) {
       console.warn("stripe-webhook: could not mark docs email_sent (non-fatal):", markErr.message);
     }
-  } else if (ownerEmailSent && storedDocs && booking_id && !docsCompleteForDedupe) {
-    console.warn(`stripe-webhook: owner email sent for booking_id ${booking_id} but not marking email_sent because required docs were omitted (idFrontExpected=${idFrontExpected} idFrontAttached=${idFrontAttached} idBackExpected=${idBackExpected} idBackAttached=${idBackAttached} agreementExpected=${agreementExpected} agreementAttached=${agreementAttached})`);
-  } else if (!ownerEmailSent && storedDocs && booking_id) {
+    if (!docsCompleteForDedupe) {
+      console.warn(`stripe-webhook: owner email sent for booking_id ${booking_id} with omitted docs (idFrontExpected=${idFrontExpected} idFrontAttached=${idFrontAttached} idBackExpected=${idBackExpected} idBackAttached=${idBackAttached} agreementExpected=${agreementExpected} agreementAttached=${agreementAttached})`);
+    }
+  } else if (!ownerEmailSent && booking_id) {
     console.warn(`stripe-webhook: email_sent NOT marked for booking_id ${booking_id} because owner email send failed`);
   }
 
