@@ -101,7 +101,11 @@ async function tryLaunchCheckrAfterVerified(application = {}) {
     return { executed: false, ok: false, skippedReason: "missing_application_id" };
   }
   try {
-    const result = await initiateCheckrScreening(applicationId);
+    const result = await initiateCheckrScreening(
+      applicationId,
+      fetch,
+      { launchSource: "veriff_recovery_verified" },
+    );
     if (!result?.ok) {
       console.warn("veriff-recovery: checkr launch did not start", {
         application_id: applicationId,

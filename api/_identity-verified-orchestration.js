@@ -127,7 +127,11 @@ export async function launchCheckrForVerifiedFinalization({
   }
 
   try {
-    const checkrResult = await initiateCheckrScreening(resolvedApplicationId);
+    const checkrResult = await initiateCheckrScreening(
+      resolvedApplicationId,
+      fetch,
+      { launchSource: `identity_verified:${resolvedSource}:${resolvedTrigger}` },
+    );
     if (!checkrResult?.ok) {
       console.warn("identity-verified-orchestration: Checkr launch failed", {
         source: resolvedSource,

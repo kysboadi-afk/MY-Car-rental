@@ -637,7 +637,11 @@ export default async function handler(req, res) {
         console.error("veriff-identity-webhook verified notification failed:", notifyErr);
       }
       try {
-        const checkrResult = await initiateCheckrScreening(matchedApplicationId);
+        const checkrResult = await initiateCheckrScreening(
+          matchedApplicationId,
+          fetch,
+          { launchSource: "veriff_webhook_verified" },
+        );
         eventDiagnostics.checkrLaunchOk = bool(checkrResult?.ok);
         if (!checkrResult?.ok) {
           eventDiagnostics.checkrLaunchSkippedReason = checkrResult?.error || "checkr_launch_failed";
