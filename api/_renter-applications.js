@@ -122,6 +122,15 @@ const APPLICATION_QUEUE_SELECT = "id, name, phone, email, age, experience, appli
   "identity_session_id, review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
   "checkr_report_status, checkr_report_id, checkr_invitation_url, checkr_invitation_sent_at, checkr_invitation_sms_sent_at, " +
   "checkr_invitation_reminder_sent_at, adverse_action_step, adverse_action_sent_at, submitted_at, created_at, updated_at";
+const APPLICATION_QUEUE_SELECT_LEGACY = "id, name, phone, email, age, experience, application_status, identity_status, " +
+  "identity_session_id, review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
+  "checkr_report_status, checkr_report_id, adverse_action_step, adverse_action_sent_at, submitted_at, created_at, updated_at";
+const APPLICATION_QUEUE_OPTIONAL_COLUMNS = [
+  "checkr_invitation_url",
+  "checkr_invitation_sent_at",
+  "checkr_invitation_sms_sent_at",
+  "checkr_invitation_reminder_sent_at",
+];
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -209,6 +218,13 @@ function getIsoTimeValue(value) {
   if (!value) return 0;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+function isMissingApplicationQueueColumn(error = null, column = "") {
+  if (!column) return false;
+  const msg = cleanText(error?.message || error, 4000) || "";
+  return msg.includes(`column renter_applications.${column} does not exist`) ||
+    msg.includes(`column "${column}" does not exist`);
 }
 
 export function getApplicationAttentionFlags(record = {}, now = Date.now()) {
@@ -453,9 +469,15 @@ export async function listApplicationLifecycleSnapshot(sbClient = null) {
   const sb = sbClient || getSupabaseAdmin();
   if (!sb) return { ok: false, status: 503, error: "Application storage service is not configured." };
 
-  const { data, error } = await sb
+  let { data, error } = await sb
     .from("renter_applications")
     .select(APPLICATION_QUEUE_SELECT);
+
+  if (error && APPLICATION_QUEUE_OPTIONAL_COLUMNS.some((column) => isMissingApplicationQueueColumn(error, column))) {
+    ({ data, error } = await sb
+      .from("renter_applications")
+      .select(APPLICATION_QUEUE_SELECT_LEGACY));
+  }
 
   if (error) {
     return { ok: false, status: 503, error: "Could not load applications.", details: error.message };
