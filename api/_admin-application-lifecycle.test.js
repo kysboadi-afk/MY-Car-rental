@@ -101,6 +101,7 @@ test("matchesApplicationLifecycleFilter treats declined alias and archived state
   const archivedRecord = { application_status: "expired", identity_status: "failed", checkr_report_status: null };
   const verifiedRecord = { application_status: "under_review", identity_status: "verified", checkr_report_status: null };
   const queuedRecord = { application_status: "submitted", identity_status: "not_started", checkr_report_status: null };
+  const checkrFailedRecord = { application_status: "under_review", identity_status: "verified", checkr_report_status: "failed" };
 
   assert.equal(matchesApplicationLifecycleFilter(rejectedRecord, "declined"), true);
   assert.equal(matchesApplicationLifecycleFilter(archivedRecord, "archived"), true);
@@ -108,6 +109,7 @@ test("matchesApplicationLifecycleFilter treats declined alias and archived state
   assert.equal(matchesApplicationLifecycleFilter(queuedRecord, "in_queue"), true);
   assert.equal(matchesApplicationLifecycleFilter(rejectedRecord, "checkr_consider"), false);
   assert.equal(matchesApplicationLifecycleFilter({ application_status: "under_review", identity_status: "verified", checkr_report_status: "consider" }, "checkr_consider"), true);
+  assert.equal(matchesApplicationLifecycleFilter(checkrFailedRecord, "checkr_issue"), true);
 });
 
 test("queue sorting keeps operational priority deterministic", () => {

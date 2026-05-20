@@ -54,12 +54,31 @@ function cleanJsonValue(value) {
   return null;
 }
 
+function cleanNonNegativeInt(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 const APPLICATION_STATUSES = ["submitted", "under_review", "needs_info", "approved", "rejected", "withdrawn", "expired"];
 // Only statuses where a Veriff decision may still arrive and change outcome.
 // "failed" and "canceled" are excluded: they're terminal identity states whose
 // Veriff decision will remain declined, so polling adds noise without value.
 const RECOVERABLE_IDENTITY_STATUSES = ["not_started", "requires_input", "processing"];
-const CHECKR_REPORT_STATUSES = ["pending", "clear", "consider", "suspended", "disputed", "complete_no_adj", "error"];
+const CHECKR_REPORT_STATUSES = [
+  "not_started",
+  "launch_queued",
+  "candidate_created",
+  "invitation_sent",
+  "pending",
+  "completed",
+  "clear",
+  "consider",
+  "suspended",
+  "failed",
+  "webhook_missing",
+];
 const CHECKR_PHASES = new Set([
   "not_started",
   "launch_queued",
@@ -97,7 +116,7 @@ function cleanUuid(value) {
 const IDENTITY_STATUSES = ["not_started", "requires_input", "processing", "verified", "failed", "canceled"];
 const ARCHIVED_APPLICATION_STATUSES = new Set(["withdrawn", "expired"]);
 const ACTIVE_APPLICATION_STATUSES = new Set(["submitted", "under_review", "needs_info"]);
-const CHECKR_ISSUE_STATUSES = new Set(["consider", "suspended", "disputed", "error"]);
+const CHECKR_ISSUE_STATUSES = new Set(["consider", "suspended", "failed", "disputed", "error"]);
 const CHECKR_PENDING_STATUSES = new Set(["pending"]);
 const APPLICATION_QUEUE_SELECT = "id, name, phone, email, age, experience, application_status, identity_status, " +
   "identity_session_id, review_version, reviewed_by, reviewed_at, needs_info_reason, precheck_decision, " +
@@ -119,6 +138,16 @@ function normalizeCheckrPhaseValue(value) {
   if (raw === "error") return "failed";
   if (raw === "complete_no_adj") return "completed";
   if (raw === "disputed") return "suspended";
+  return null;
+}
+
+function normalizeCheckrReportStatusValue(value) {
+  const raw = cleanText(value, 40)?.toLowerCase() || "";
+  if (!raw) return null;
+  if (CHECKR_REPORT_STATUSES.includes(raw)) return raw;
+  if (raw === "complete" || raw === "complete_no_adj") return "completed";
+  if (raw === "disputed") return "suspended";
+  if (raw === "error") return "failed";
   return null;
 }
 
@@ -212,7 +241,8 @@ export function matchesApplicationLifecycleFilter(record = {}, lifecycleFilter =
 
   const applicationStatus = normalizeApplicationStatusValue(record.application_status);
   const identityStatus = normalizeApplicationStatusValue(record.identity_status);
-  const checkrStatus = normalizeApplicationStatusValue(record.checkr_report_status);
+  const checkrStatus = normalizeCheckrReportStatusValue(record.checkr_report_status)
+    || normalizeApplicationStatusValue(record.checkr_report_status);
 
   switch (filter) {
     case "review_queue":
@@ -444,7 +474,7 @@ export function mapApplicationRecord(payload = {}) {
   const normalizedPrecheck = cleanText(payload.precheckDecision || payload.decision, 20);
   const identityStatus = cleanText(payload.identityStatus, 30);
   const applicationStatus = cleanText(payload.applicationStatus, 30);
-  const checkrReportStatus = cleanText(payload.checkrReportStatus, 30);
+  const checkrReportStatus = normalizeCheckrReportStatusValue(payload.checkrReportStatus);
   const adverseActionStep = cleanText(payload.adverseActionStep, 30);
   const licenseFileName = cleanText(payload.licenseFileName, 255);
   const insuranceFileName = cleanText(payload.insuranceFileName, 255);
@@ -481,7 +511,7 @@ export function mapApplicationRecord(payload = {}) {
       : "not_started",
     checkr_candidate_id: cleanText(payload.checkrCandidateId, 255),
     checkr_report_id: cleanText(payload.checkrReportId, 255),
-    checkr_report_status: CHECKR_REPORT_STATUSES.includes(checkrReportStatus) ? checkrReportStatus : null,
+    checkr_report_status: checkrReportStatus,
     checkr_adjudication: cleanText(payload.checkrAdjudication, 80),
     checkr_completed_at: cleanIsoDateTime(payload.checkrCompletedAt),
     checkr_last_error: cleanText(payload.checkrLastError, 2000),
@@ -783,13 +813,20 @@ export async function patchRenterApplicationCheckrById(applicationId, patchPaylo
   if ("checkrCandidateId" in patchPayload) patch.checkr_candidate_id = cleanText(patchPayload.checkrCandidateId, 255);
   if ("checkrReportId" in patchPayload) patch.checkr_report_id = cleanText(patchPayload.checkrReportId, 255);
   if ("checkrReportStatus" in patchPayload) {
-    const status = cleanText(patchPayload.checkrReportStatus, 30);
-    patch.checkr_report_status = CHECKR_REPORT_STATUSES.includes(status) ? status : null;
+    patch.checkr_report_status = normalizeCheckrReportStatusValue(patchPayload.checkrReportStatus);
   }
+  if ("checkrPhase" in patchPayload) patch.checkr_phase = normalizeCheckrPhaseValue(patchPayload.checkrPhase);
   if ("checkrAdjudication" in patchPayload) patch.checkr_adjudication = cleanText(patchPayload.checkrAdjudication, 80);
   if ("checkrCompletedAt" in patchPayload) patch.checkr_completed_at = cleanIsoDateTime(patchPayload.checkrCompletedAt);
   if ("checkrLastError" in patchPayload) patch.checkr_last_error = cleanText(patchPayload.checkrLastError, 2000);
   if ("checkrMvrViolations" in patchPayload) patch.checkr_mvr_violations = cleanJsonValue(patchPayload.checkrMvrViolations);
+  if ("checkrLastWebhookAt" in patchPayload) patch.checkr_last_webhook_at = cleanIsoDateTime(patchPayload.checkrLastWebhookAt);
+  if ("checkrLastLaunchAttemptAt" in patchPayload) patch.checkr_last_launch_attempt_at = cleanIsoDateTime(patchPayload.checkrLastLaunchAttemptAt);
+  if ("checkrLaunchAttemptCount" in patchPayload) {
+    const launchCount = cleanNonNegativeInt(patchPayload.checkrLaunchAttemptCount);
+    if (launchCount != null) patch.checkr_launch_attempt_count = launchCount;
+  }
+  if ("checkrLastLaunchError" in patchPayload) patch.checkr_last_launch_error = cleanText(patchPayload.checkrLastLaunchError, 2000);
   if ("adverseActionStep" in patchPayload) {
     const step = cleanText(patchPayload.adverseActionStep, 30);
     patch.adverse_action_step = ADVERSE_ACTION_STEPS.includes(step) ? step : null;
