@@ -3,6 +3,7 @@ import { extractAdminSecret, isAdminAuthorized } from "./_admin-auth.js";
 import {
   fetchRenterApplicationById,
   listPendingIdentityRecoveryApplications,
+  patchRenterApplicationCheckrById,
   patchRenterApplicationIdentityById,
   performReviewAction,
 } from "./_renter-applications.js";
@@ -16,6 +17,7 @@ import {
   isStripeIdentitySessionId,
   retrieveStripeIdentitySession,
 } from "./_stripe-identity.js";
+import { sendCheckrInvitationNotifications } from "./_application-notifications.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
@@ -387,6 +389,43 @@ async function handleRetryCheckr(applicationId, reviewer, notes, sb) {
   };
 }
 
+async function handleResendCheckrInvitation(applicationId, reviewer, notes, sb) {
+  const appResult = await fetchRequiredApplication(applicationId);
+  if (!appResult.ok) return appResult;
+  const app = appResult.data || {};
+  const currentStatus = String(app.application_status || "").toLowerCase();
+  const invitationUrl = cleanText(app.checkr_invitation_url, 2000);
+  if (!invitationUrl) {
+    return { ok: false, status: 422, error: "No Checkr invitation URL is saved for this application." };
+  }
+
+  const notificationResult = await sendCheckrInvitationNotifications(app, {
+    invitationUrl,
+    packageSlug: process.env.CHECKR_PACKAGE || "driver_pro",
+  });
+
+  if (notificationResult?.applicantSmsSent) {
+    await patchRenterApplicationCheckrById(applicationId, {
+      checkrInvitationSmsSentAt: new Date().toISOString(),
+    }).catch(() => {});
+  }
+
+  await appendAuditAction(sb, {
+    applicationId,
+    action: "resend_checkr_invitation",
+    performedBy: reviewer,
+    notes: notes || "Resent Checkr invitation notifications.",
+    previousStatus: currentStatus,
+    newStatus: currentStatus,
+  });
+
+  return {
+    ok: true,
+    invitationUrl,
+    applicantSmsSent: !!notificationResult?.applicantSmsSent,
+  };
+}
+
 async function handleArchiveApplication(applicationId, reviewer, notes, sb) {
   const appResult = await fetchRequiredApplication(applicationId);
   if (!appResult.ok) return appResult;
@@ -651,6 +690,8 @@ export default async function handler(req, res) {
         result = await handleManualRecovery(applicationId, reviewedBy, notes, sb);
       } else if (action === "retry_checkr") {
         result = await handleRetryCheckr(applicationId, reviewedBy, notes, sb);
+      } else if (action === "resend_checkr_invitation") {
+        result = await handleResendCheckrInvitation(applicationId, reviewedBy, notes, sb);
       } else if (action === "archive_application") {
         result = await handleArchiveApplication(applicationId, reviewedBy, notes, sb);
       } else {

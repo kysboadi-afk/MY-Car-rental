@@ -463,8 +463,9 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
 
 export async function sendCheckrInvitationNotifications(application = {}, { invitationUrl, packageSlug } = {}) {
   const ctx = getContext(application);
+  const normalizedInvitationUrl = String(invitationUrl || "").trim();
 
-  await sendMailIfPossible({
+  const ownerEmailSent = await sendMailIfPossible({
     to: OWNER_EMAIL,
     subject: "🧾 Checkr Screening Started",
     text: [
@@ -475,7 +476,7 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
       `Phone           : ${ctx.phone}`,
       `Email           : ${ctx.email || "Not provided"}`,
       `Package         : ${packageSlug || "driver_pro"}`,
-      `Invitation URL  : ${invitationUrl || "Not returned"}`,
+      `Invitation URL  : ${normalizedInvitationUrl || "Not returned"}`,
       "Lifecycle Stage : checkr_pending",
     ].join("\n"),
     html: `
@@ -484,20 +485,21 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.name)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Application ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(ctx.applicationId || "Not available")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Package</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(packageSlug || "driver_pro")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Invitation URL</strong></td><td style="padding:8px;border:1px solid #ddd">${invitationUrl ? `<a href="${esc(invitationUrl)}">${esc(invitationUrl)}</a>` : "Not returned"}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Invitation URL</strong></td><td style="padding:8px;border:1px solid #ddd">${normalizedInvitationUrl ? `<a href="${esc(normalizedInvitationUrl)}">${esc(normalizedInvitationUrl)}</a>` : "Not returned"}</td></tr>
       </table>
     `,
   });
 
+  let applicantEmailSent = false;
   if (isValidEmail(ctx.email)) {
-    await sendMailIfPossible({
+    applicantEmailSent = await sendMailIfPossible({
       to: ctx.email,
       subject: "Complete Your Background Check — Sly Car Rentals",
       text: [
         `Hi ${ctx.firstName},`,
         "",
         "Your identity verification is complete. The next step is your Checkr background screening.",
-        invitationUrl ? `Complete your Checkr invite here: ${invitationUrl}` : "Our team will send your Checkr invite shortly.",
+        normalizedInvitationUrl ? `Complete your Checkr invite here: ${normalizedInvitationUrl}` : "Our team will send your Checkr invite shortly.",
         "",
         "This screening includes a consumer report and motor vehicle record review for your rental application.",
         "",
@@ -508,13 +510,38 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
         <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
         <p>Your identity verification is complete. The next step is your <strong>Checkr background screening</strong>.</p>
         <p style="background:#eef2ff;padding:10px;border-left:4px solid #6366f1;margin-bottom:16px">
-          ${invitationUrl ? `Complete your Checkr invite here:<br><a href="${esc(invitationUrl)}">${esc(invitationUrl)}</a>` : "Our team will send your Checkr invite shortly."}
+          ${normalizedInvitationUrl ? `Complete your Checkr invite here:<br><a href="${esc(normalizedInvitationUrl)}">${esc(normalizedInvitationUrl)}</a>` : "Our team will send your Checkr invite shortly."}
         </p>
         <p>This screening includes a consumer report and motor vehicle record review for your rental application.</p>
         <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
       `,
     });
   }
+
+  let applicantSmsSent = false;
+  if (ctx.phone && normalizedInvitationUrl) {
+    const smsResult = await dispatchSms({
+      phone: normalizePhone(ctx.phone),
+      body: [
+        "SLY Rides: Your background screening is ready.",
+        "Please complete it as soon as possible to continue your rental approval:",
+        normalizedInvitationUrl,
+        "Questions? Reply here or call (844) 511-4059",
+      ].join("\n"),
+      templateKey: "checkr_invitation_ready",
+      source: "application_notifications",
+      dedupe: false,
+      throwOnError: false,
+    });
+    applicantSmsSent = !!smsResult?.sent;
+  }
+
+  return {
+    ownerEmailSent,
+    applicantEmailSent,
+    applicantSmsSent,
+    invitationUrl: normalizedInvitationUrl || null,
+  };
 }
 
 export async function sendCheckrStatusNotifications(application = {}, { eventType, reportStatus } = {}) {

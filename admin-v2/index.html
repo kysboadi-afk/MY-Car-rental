@@ -3611,6 +3611,7 @@
           <button class="app-action-btn" onclick="runAppOperationalAction('move_to_review')">🧭 Move to Review</button>
           <button class="app-action-btn" onclick="runAppOperationalAction('manual_recovery')">🛠️ Trigger Recovery</button>
           <button class="app-action-btn" onclick="runAppOperationalAction('retry_checkr')">🔁 Retry Checkr</button>
+          <button class="app-action-btn" onclick="runAppOperationalAction('resend_checkr_invitation')">📲 Resend Checkr Invite</button>
           <button class="app-action-btn" onclick="runAppOperationalAction('archive_application')" style="border-color:#fecaca;color:#b91c1c;">🗑️ Delete (Archive)</button>
         </div>
         <div id="app-action-selected" style="font-size:12px;color:var(--text-sub);margin-bottom:8px;min-height:16px;"></div>
@@ -12854,6 +12855,7 @@ function renderAppDetail() {
     row('Checkr Phase',     appStatusBadge(d.checkrPhase || 'not_started')),
     row('Checkr Report',    esc(d.checkrReportStatus || '—')),
     row('Report ID',        d.checkrReportId ? `<code style="font-size:11px;">${esc(d.checkrReportId)}</code>` : '—'),
+    row('Invitation URL',   d.checkrInvitationUrl ? `<a href="${esc(d.checkrInvitationUrl)}" target="_blank" rel="noopener">${esc(d.checkrInvitationUrl)}</a>` : '—'),
     row('Adjudication',     esc(d.checkrAdjudication || '—')),
   ].join('');
 
@@ -12997,6 +12999,7 @@ async function runAppOperationalAction(action) {
     archive_application:  'Archive (delete) this application? This cannot be undone.',
     restart_verification: 'Restart verification and issue a new session link?',
     manual_recovery:      'Trigger manual Veriff recovery check for this application?',
+    resend_checkr_invitation: 'Resend the Checkr invitation SMS/email to this applicant now?',
   };
   if (confirmMessages[action] && !confirm(confirmMessages[action])) return;
 

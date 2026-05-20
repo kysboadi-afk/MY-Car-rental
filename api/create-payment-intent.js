@@ -312,12 +312,18 @@ export default async function handler(req, res) {
       status: attemptedRow?.status || preWriteRow.status,
     });
 
+    const setupFutureUsageRaw = String(process.env.STRIPE_BOOKING_SETUP_FUTURE_USAGE || "").trim().toLowerCase();
+    const setupFutureUsage = (setupFutureUsageRaw === "off_session" || setupFutureUsageRaw === "on_session")
+      ? setupFutureUsageRaw
+      : null;
+
     const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       customer: stripeCustomerId,
-      // Save the card for future off-session charges (damages, late fees, etc.).
-      setup_future_usage: "off_session",
+      // Keep wallet compatibility (Apple Pay / Google Pay) by not forcing
+      // setup_future_usage unless explicitly configured via env.
+      ...(setupFutureUsage ? { setup_future_usage: setupFutureUsage } : {}),
       receipt_email: email,
       description: isCamryDepositMode
             ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
