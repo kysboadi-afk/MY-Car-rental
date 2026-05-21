@@ -55,7 +55,11 @@ function fmtMoney(n) {
 function buildEconomyCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
   const name     = esc(v.vehicle_name || v.vehicle_id);
-  const img      = esc(v.cover_image || "/images/car1.jpg");
+  const rawImage = String(v.cover_image || "");
+  const resolvedImage = /(^|\/)images\/car1\.jpg$/i.test(rawImage)
+    ? "/images/IMG_5144.png"
+    : (rawImage || "/images/IMG_0046.png");
+  const img      = esc(resolvedImage);
   const subtitle = esc(v.subtitle || t("fleet.sedan5seater", "Sedan • 5 Seater"));
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 

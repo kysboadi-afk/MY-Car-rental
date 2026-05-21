@@ -269,7 +269,7 @@ function buildCarDataFromAPI(v) {
       if (Array.isArray(v.gallery_images)) {
         v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
       }
-      return imgs.length ? imgs : ["/images/car1.jpg"];
+      return imgs.length ? imgs : ["/images/IMG_0046.png"];
     })(),
     make:          v.make          || "",
     model:         v.model         || v.vehicle_name || vehicleId,
