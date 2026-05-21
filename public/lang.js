@@ -277,7 +277,7 @@
         fmtDayN:              "{n} days \u00D7 ${price}/day"
       },
       agreement: {
-        title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
+        title: "SLY CAR RENTALS \u2014 CAR RENTAL AGREEMENT",
         depositHeading: "SECURITY DEPOSIT (Refundable)",
         partiesHeading: "PARTIES",
         partiesOwner: "<strong>Owner:</strong> Sly Car Rentals \u2014 (844) 511-4059 \u2014 info@slytrans.com",
@@ -434,7 +434,7 @@
         fallback:     "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 SLY Transportation Services LLC. All rights reserved.",
+        copy: "\u00A9 2026 SLY Car Rentals LLC. All rights reserved.",
         privacyPolicy: "Privacy Policy"
       }
     },
@@ -709,7 +709,7 @@
         fmtDayN:              "{n} d\u00EDas \u00D7 ${price}/d\u00EDa"
       },
       agreement: {
-        title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
+        title: "SLY CAR RENTALS \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
         depositHeading: "DEP\u00D3SITO DE SEGURIDAD (Reembolsable)",
         partiesHeading: "PARTES",
         partiesOwner: "<strong>Propietario:</strong> Sly Car Rentals \u2014 (844) 511-4059 \u2014 info@slytrans.com",
@@ -861,7 +861,7 @@
         fallback:     "No estoy seguro de eso \uD83E\uDD14\n\nIntenta preguntar sobre:\n\u2022 Precios\n\u2022 Autos disponibles\n\u2022 C\u00F3mo reservar\n\u2022 Aplicaciones de entrega\n\u2022 Informaci\u00F3n de contacto\n\nO env\u00EDanos un correo a slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 SLY Transportation Services LLC. Todos los derechos reservados.",
+        copy: "\u00A9 2026 SLY Car Rentals LLC. Todos los derechos reservados.",
         privacyPolicy: "Pol\u00EDtica de Privacidad"
       }
     }

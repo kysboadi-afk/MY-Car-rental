@@ -396,7 +396,7 @@ export default async function handler(req, res) {
   let ownerEmailSent = false;
   try {
     await transporter.sendMail({
-      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
       subject:     `🔁 [RECOVERED] ${ownerEmail.subject}`,

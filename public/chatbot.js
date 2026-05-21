@@ -1,4 +1,4 @@
-// ===== Sly Transportation Services LLC CHATBOT =====
+// ===== Sly Car Rentals LLC CHATBOT =====
 
 // Safely escape user-supplied text before embedding it into bot HTML
 function escHtml(str) {
@@ -547,11 +547,11 @@ var botResponses = {
     },
     {
       patterns: ["app","uber","lyft","turo","getaround","rideshare","ride share","drive for","what app","doordash","instacart","grubhub","amazon flex","amazon"],
-      reply: "Great question! 🚗 We are <strong>not</strong> a rideshare or delivery app.<br><br>We are <strong>Sly Transportation Services LLC</strong> — a car rental company based in Los Angeles, CA.<br><br>We rent vehicles directly to you, so <em>you</em> can drive for any app you like — DoorDash, Uber Eats, Instacart, Amazon Flex, and more!<br><br>Ready to get behind the wheel? 👇<br><a href=\"index.html\" id=\"chatApplyLink\">👉 Apply &amp; Get Approved Now</a>"
+      reply: "Great question! 🚗 We are <strong>not</strong> a rideshare or delivery app.<br><br>We are <strong>Sly Car Rentals LLC</strong> — a car rental company based in Los Angeles, CA.<br><br>We rent vehicles directly to you, so <em>you</em> can drive for any app you like — DoorDash, Uber Eats, Instacart, Amazon Flex, and more!<br><br>Ready to get behind the wheel? 👇<br><a href=\"index.html\" id=\"chatApplyLink\">👉 Apply &amp; Get Approved Now</a>"
     },
     {
       patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
-      reply: "You're welcome! 😊 Happy to help. Enjoy your ride with Sly Transportation Services LLC! 🚗💨"
+      reply: "You're welcome! 😊 Happy to help. Enjoy your ride with Sly Car Rentals LLC! 🚗💨"
     },
     {
       patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
@@ -637,11 +637,11 @@ var botResponses = {
     },
     {
       patterns: ["app","uber","lyft","doordash","instacart","grubhub","amazon","entrega","delivery"],
-      reply: "¡Buena pregunta! 🚗 <strong>No</strong> somos una aplicación de viaje compartido o entrega.<br><br>Somos <strong>Sly Transportation Services LLC</strong> — una empresa de alquiler de autos en Los Ángeles, CA.<br><br>¡Te alquilamos vehículos directamente para que <em>tú</em> puedas trabajar en cualquier app que desees — DoorDash, Uber Eats, Instacart, Amazon Flex y más!<br><br>¿Listo para ponerte al volante? 👇<br><a href=\"index.html\" id=\"chatApplyLink\">👉 Solicitar y Obtener Aprobación Ahora</a>"
+      reply: "¡Buena pregunta! 🚗 <strong>No</strong> somos una aplicación de viaje compartido o entrega.<br><br>Somos <strong>Sly Car Rentals LLC</strong> — una empresa de alquiler de autos en Los Ángeles, CA.<br><br>¡Te alquilamos vehículos directamente para que <em>tú</em> puedas trabajar en cualquier app que desees — DoorDash, Uber Eats, Instacart, Amazon Flex y más!<br><br>¿Listo para ponerte al volante? 👇<br><a href=\"index.html\" id=\"chatApplyLink\">👉 Solicitar y Obtener Aprobación Ahora</a>"
     },
     {
       patterns: ["gracias","muchas gracias","te agradezco","genial","perfecto","excelente"],
-      reply: "¡De nada! 😊 Un placer ayudarte. ¡Disfruta tu viaje con Sly Transportation Services LLC! 🚗💨"
+      reply: "¡De nada! 😊 Un placer ayudarte. ¡Disfruta tu viaje con Sly Car Rentals LLC! 🚗💨"
     },
     {
       patterns: ["texto","sms","notificación","notificacion","notificaciones","recordatorio","recordatorios","mensaje","mensajes","me van a mandar","van a enviar","mensajes automáticos","mensajes automaticos","qué mensajes","que mensajes"],

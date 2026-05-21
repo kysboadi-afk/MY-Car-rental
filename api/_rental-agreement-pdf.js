@@ -126,7 +126,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     // ── Header ─────────────────────────────────────────────────────────────────
     doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND_BLACK)
-      .text("SLY TRANSPORTATION SERVICES — CAR RENTAL AGREEMENT", { align: "center" });
+      .text("SLY CAR RENTALS — CAR RENTAL AGREEMENT", { align: "center" });
     doc.moveDown(0.3);
     doc.font("Helvetica").fontSize(9).fillColor(SECTION_GRAY)
       .text(`Generated: ${signedAt} (Pacific Time)`, { align: "center" });
@@ -134,7 +134,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     // ── Parties ────────────────────────────────────────────────────────────────
     sectionHeader("Parties");
-    bodyText(`Owner:   SLY Transportation Services — (844) 511-4059 — info@slytrans.com`);
+    bodyText(`Owner:   SLY Car Rentals — (844) 511-4059 — info@slytrans.com`);
     bodyText(`Renter:  ${name || "Not provided"}`);
 
     // ── Renter Information ─────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("Renter must provide one of the following prior to vehicle release:");
     bulletList([
       "Valid personal auto insurance covering rental vehicles (proof required), OR",
-      "Purchase of SLY Transportation Services Damage Protection Plan",
+      "Purchase of SLY Car Rentals Damage Protection Plan",
     ]);
     doc.moveDown(0.2);
     bodyText(`Damage Protection Plan (Optional): Basic — $${PROTECTION_PLAN_BASIC}/day  •  Standard — $${PROTECTION_PLAN_STANDARD}/day  •  Premium — $${PROTECTION_PLAN_PREMIUM}/day`);
@@ -221,7 +221,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       "Violation of rental agreement terms",
     ]);
     doc.moveDown(0.2);
-    bodyText("Third-Party Liability: Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.");
+    bodyText("Third-Party Liability: Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Car Rentals is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Car Rentals from any claims, losses, or expenses arising from vehicle use.");
 
     // ── Use Restrictions ───────────────────────────────────────────────────────
     sectionHeader("Use Restrictions");
@@ -235,7 +235,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     // ── Termination ────────────────────────────────────────────────────────────
     sectionHeader("Termination");
-    bodyText("SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.");
+    bodyText("SLY Car Rentals may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.");
 
     // ── Payment Terms ──────────────────────────────────────────────────────────
     sectionHeader("Payment Terms");
@@ -245,11 +245,11 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
     }
     doc.moveDown(0.1);
-    bodyText("⚠ No-Refund Policy: All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.");
+    bodyText("⚠ No-Refund Policy: All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Car Rentals cancels or cannot fulfill the rental.");
 
     // ── Payment Authorization & Chargeback Policy ──────────────────────────────
     sectionHeader("Payment Authorization & Chargeback Policy");
-    bodyText("By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed, including:");
+    bodyText("By signing this agreement, renter expressly authorizes SLY Car Rentals to charge the payment method on file for all amounts owed, including:");
     bulletList([
       "Rental charges and extensions",
       "Security deposit and any applicable deductions",
@@ -264,7 +264,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("In the event of a payment dispute or chargeback:");
     bulletList([
       "This signed agreement serves as binding proof of authorization",
-      "SLY Transportation Services may submit this agreement and supporting records as evidence",
+      "SLY Car Rentals may submit this agreement and supporting records as evidence",
       "Renter remains financially responsible for all charges including dispute fees",
     ]);
 

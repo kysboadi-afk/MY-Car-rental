@@ -155,17 +155,17 @@ export function buildUnifiedConfirmationEmail({
     : "";
 
   const html = `
-    <h2>✅ Booking Confirmation — Sly Transportation Services LLC</h2>
+    <h2>✅ Booking Confirmation — Sly Car Rentals LLC</h2>
     <p>${intro}</p>
     <table style="border-collapse:collapse;width:100%">${tableRows}</table>
     ${breakdownHtml}
     ${notesHtml}
     <p style="margin-top:16px">If any booking details are incorrect (especially pickup/return dates or times), reply to this email or call (844) 511-4059 so we can correct it right away.</p>
-    <p style="margin-top:16px">Thank you for choosing Sly Transportation Services LLC.</p>
+    <p style="margin-top:16px">Thank you for choosing Sly Car Rentals LLC.</p>
   `;
 
   const text = [
-    "Booking Confirmation — Sly Transportation Services LLC",
+    "Booking Confirmation — Sly Car Rentals LLC",
     "",
     audience === "owner"
       ? "A booking confirmation was generated with the standardized template."

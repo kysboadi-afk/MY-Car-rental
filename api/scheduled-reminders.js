@@ -668,7 +668,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
       const escStr = (s) => String(s || "")
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      OWNER_EMAIL,
         subject: `[Action Required] Late Fee $${feeAmount} — ${renterName} (${vehicle})`,
         html: `
@@ -692,7 +692,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
             </a>
           </p>
           <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>
-          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+          <p><strong>Sly Car Rentals LLC 🚗</strong></p>
         `,
         text: [
           `Late Return — Approval Required`,
@@ -2040,7 +2040,7 @@ export async function processAutoCompletions(allBookings, now) {
             // Owner alert
             if (OWNER_EMAIL) {
               await transporter.sendMail({
-                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
                 to:      OWNER_EMAIL,
                 subject: `[Sly Car Rentals] ✅ Rental Completed — ${escStr(renterName)} (${escStr(vehicleName)})`,
                 html: `
@@ -2066,7 +2066,7 @@ export async function processAutoCompletions(allBookings, now) {
             if (renterEmail) {
               const firstName = renterName.split(" ")[0];
               await transporter.sendMail({
-                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
                 to:      renterEmail,
                 subject: "Thank you for renting with Sly Car Rentals!",
                 html: `
@@ -2081,7 +2081,7 @@ export async function processAutoCompletions(allBookings, now) {
                   </table>
                   <p>Ready to book again? Visit <a href="https://slycarrentals.com/cars.html">www.slytrans.com</a>.</p>
                   <p>Questions? Call us at <a href="tel:+18445114059">(844) 511-4059</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
-                  <p style="color:#666;font-size:13px">Sly Transportation Services LLC · Los Angeles, CA</p>
+                  <p style="color:#666;font-size:13px">Sly Car Rentals LLC · Los Angeles, CA</p>
                 `,
               });
             }
@@ -2563,7 +2563,7 @@ async function runReconciliation() {
           auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           subject,
           html: `
@@ -2587,7 +2587,7 @@ async function runReconciliation() {
               : skippedPIIds.length > 0
                 ? `<p style="color:#e65100">⚠️ <strong>${skippedPIIds.length} payment(s) require manual review</strong> (type not eligible for auto-processing). Please review them in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
                 : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`}
-            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC 🚗</strong></p>
           `,
           text: [
             subject,

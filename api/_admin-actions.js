@@ -4113,7 +4113,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
   // ── Owner notification ────────────────────────────────────────────────────
   try {
     await transporter.sendMail({
-      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
       subject:     ownerTemplate.subject,
@@ -4158,7 +4158,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
     });
     try {
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      email,
         subject: customerTemplate.subject,
         html:    customerTemplate.html,

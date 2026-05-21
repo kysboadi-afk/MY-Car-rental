@@ -41,7 +41,7 @@
       // Do not apply a slingshot-branded logo to car-rental pages.
       // The slingshot page (slingshots.html) manages its own logo directly in HTML
       // and does not load this script. Applying the slingshot logo here would
-      // replace the SLY Transportation branding on index.html, car.html, and cars.html.
+      // replace the SLY Car Rentals branding on index.html, car.html, and cars.html.
       if (logoUrl && /slingshot/i.test(logoUrl)) {
         logoUrl = '';
       }

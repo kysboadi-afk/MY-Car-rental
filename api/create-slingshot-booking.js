@@ -367,7 +367,7 @@ export default async function handler(req, res) {
       customer: stripeCustomerId,
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} ${normalizedPaymentOption === "full" ? "Full Payment" : "Reservation Deposit"} – ${pkg.label}`,
+      description: `Sly Car Rentals LLC – ${vehicleData.name} ${normalizedPaymentOption === "full" ? "Full Payment" : "Reservation Deposit"} – ${pkg.label}`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },
