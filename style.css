@@ -385,124 +385,177 @@ html {
 /* HOW IT WORKS */
 .how-it-works {
   background: #0d0d0d;
-  padding: 80px 20px;
+  padding: 70px 20px;
   border-top: 1px solid #2a2a2a;
 }
 
 .hiw-container {
-  max-width: 1000px;
+  max-width: 900px;
   margin: 0 auto;
+  text-align: center;
 }
 
 .how-it-works h2 {
   text-align: center;
   font-size: 36px;
-  margin-bottom: 50px;
+  margin-bottom: 48px;
   color: #ffb400;
   font-weight: bold;
 }
 
-.hiw-steps {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 30px;
+/* Timeline layout */
+.hiw-timeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex-wrap: nowrap;
 }
 
-.hiw-step--highlight {
-  border-color: #ffb400;
-  background: #1e1a0e;
+.hiw-timeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  max-width: 140px;
 }
 
-.hiw-step--highlight .hiw-icon {
-  color: #ffb400;
+.hiw-timeline-num {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #ffb400;
+  color: #000;
+  font-size: 22px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.hiw-step {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-radius: 12px;
-  padding: 36px 24px;
-  text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.hiw-step:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
-  border-color: #ffb400;
-}
-
-.hiw-icon {
-  font-size: 42px;
-  margin-bottom: 16px;
-}
-
-.hiw-step h3 {
-  font-size: 18px;
-  color: #fff;
-  margin-bottom: 12px;
-  font-weight: 700;
-}
-
-.hiw-step p {
+.hiw-timeline-label {
   font-size: 14px;
-  color: #aaa;
-  line-height: 1.7;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.hiw-timeline-arrow {
+  width: 32px;
+  height: 2px;
+  background: #ffb400;
+  position: relative;
+  flex-shrink: 0;
+  margin-bottom: 28px;
+}
+
+.hiw-timeline-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -5px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid #ffb400;
+}
+
+.hiw-timeline-cta {
+  margin-top: 36px;
+  display: flex;
+  justify-content: center;
+}
+
+/* Keep these for the browse link */
+.hiw-browse-link {
+  display: inline-block;
+  margin-top: 0;
+  color: #ffb400;
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 15px;
+  border: 1px solid #ffb400;
+  padding: 10px 24px;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.hiw-browse-link:hover {
+  background: #ffb400;
+  color: #000;
+}
+
+/* VEHICLE CTA SECTION */
+.vehicle-cta-section {
+  background: #111;
+  padding: 70px 20px;
+  border-top: 1px solid #2a2a2a;
+  text-align: center;
+}
+
+.vehicle-cta-container {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.vehicle-cta-section h2 {
+  font-size: 32px;
+  color: #ffb400;
+  font-weight: 900;
+  margin-bottom: 14px;
+}
+
+.vehicle-cta-section p {
+  font-size: 16px;
+  color: #ccc;
+  margin-bottom: 28px;
+  line-height: 1.6;
+}
+
+.vehicle-cta-section .hero-btn {
+  font-size: 17px;
+  font-weight: 800;
+  padding: 14px 40px;
+  border-radius: 6px;
+  display: inline-block;
+  text-decoration: none;
+  background: #ffb400;
+  color: #000;
+}
+
+.vehicle-cta-section .hero-btn:hover {
+  background: #e0a000;
+  transform: scale(1.03);
 }
 
 /* ABOUT SECTION */
 .about {
   background: #000;
-  padding: 80px 20px;
+  padding: 50px 20px;
   border-top: 1px solid #2a2a2a;
 }
 
 .about-container {
-  max-width: 1000px;
+  max-width: 700px;
   margin: 0 auto;
+  text-align: center;
 }
 
 .about h2 {
   text-align: center;
-  font-size: 36px;
-  margin-bottom: 40px;
+  font-size: 28px;
+  margin-bottom: 16px;
   color: #ffb400;
   font-weight: bold;
 }
 
-.about-content {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-}
-
-.about-text,
-.about-values {
-  background: #1a1a1a;
-  padding: 30px;
-  border-radius: 10px;
-  border: 1px solid #2a2a2a;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-
-.about-text p,
-.about-values p {
+.about-compact-text {
   font-size: 16px;
-  line-height: 1.8;
-  color: #ccc;
+  line-height: 1.7;
+  color: #aaa;
   margin: 0;
-}
-
-.about-values h3 {
-  font-size: 24px;
-  color: #ffb400;
-  margin-bottom: 15px;
-  font-weight: 600;
-}
-
-.about-values {
-  background: #1a1a1a;
-  border-left: 4px solid #ffb400;
 }
 
 .about-gallery {
@@ -2213,11 +2266,6 @@ footer {
     padding: 11px 28px;
   }
 
-  .hiw-steps {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
-
   .how-it-works h2 {
     font-size: 28px;
     margin-bottom: 30px;
@@ -2245,31 +2293,8 @@ footer {
   }
   
   .about h2 {
-    font-size: 28px;
-    margin-bottom: 30px;
-  }
-  
-  .about-text,
-  .about-values {
-    padding: 20px;
-  }
-  
-  .about-values h3 {
-    font-size: 20px;
-  }
-  
-  .about-text p,
-  .about-values p {
-    font-size: 15px;
-    line-height: 1.7;
-  }
-
-  .about-gallery {
-    grid-template-columns: 1fr;
-  }
-  
-  .about-gallery img {
-    height: 200px;
+    font-size: 24px;
+    margin-bottom: 12px;
   }
   
   .slider img.slide {
@@ -4357,9 +4382,51 @@ button.hero-btn {
     margin-bottom: 32px;
   }
 
-  .hiw-steps {
-    grid-template-columns: 1fr;
+  /* Timeline: stack vertically on mobile */
+  .hiw-timeline {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .hiw-timeline-step {
+    flex-direction: row;
+    max-width: 100%;
+    width: 100%;
     gap: 16px;
+    justify-content: flex-start;
+  }
+
+  .hiw-timeline-num {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .hiw-timeline-label {
+    font-size: 16px;
+    text-align: left;
+    line-height: 44px;
+  }
+
+  .hiw-timeline-arrow {
+    width: 2px;
+    height: 24px;
+    margin-left: 21px;
+    margin-bottom: 0;
+    background: #ffb400;
+  }
+
+  .hiw-timeline-arrow::after {
+    top: auto;
+    bottom: -1px;
+    right: -5px;
+    border-left: none;
+    border-right: none;
+    border-top: 8px solid #ffb400;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
   }
 
   /* ABOUT */
@@ -4543,8 +4610,8 @@ button.hero-btn {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .hiw-steps {
-    grid-template-columns: repeat(2, 1fr);
+  .hiw-timeline {
+    align-items: center;
   }
 
   .about-gallery {
