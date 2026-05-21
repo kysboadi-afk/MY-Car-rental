@@ -297,6 +297,14 @@ html {
   background: #e12d23;
 }
 
+.hero-trust-text {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
 .hero-btn--secondary {
   background: transparent;
   color: #ffb400;
