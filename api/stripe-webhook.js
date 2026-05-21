@@ -3671,7 +3671,7 @@ export default async function handler(req, res) {
                   <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(slDepositDollars.toFixed(2))} (refundable after inspection)</td></tr>
                 </table>
                 ${slPdfBuffer ? "<p>📄 Your signed rental agreement is attached. Please keep it for your records.</p>" : ""}
-                <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://slycarrentals.com">slytrans.com</a>.</p>
+                <p>Need help? Call us at <strong>(844) 511-4059</strong> or visit <a href="https://www.slyslingshotrentals.com">slyslingshotrentals.com</a>.</p>
                 <p>Thank you for choosing SLY Slingshot Rentals!</p>
               `,
               text: [

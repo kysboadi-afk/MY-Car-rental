@@ -8,7 +8,9 @@
 // ----- API Base URL -----
 const API_BASE = (
   window.location.hostname === "slycarrentals.com" ||
-  window.location.hostname === "www.slycarrentals.com"
+  window.location.hostname === "www.slycarrentals.com" ||
+  window.location.hostname === "slyslingshotrentals.com" ||
+  window.location.hostname === "www.slyslingshotrentals.com"
 ) ? "" : "https://slycarrentals.com";
 const SlyLA = window.SlyLA;
 

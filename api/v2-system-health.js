@@ -64,7 +64,7 @@ import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";

@@ -3,7 +3,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { dispatchSms } from "./_sms-dispatcher.js";
 import { normalizePhone } from "./_bookings.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const ACTIVE_RENTER_STATUSES = ["active_rental", "active", "overdue"];
 const CAMPAIGN_TEMPLATE_KEY = "active_renter_manage_booking_education_2026_05";
 const CAMPAIGN_SOURCE = "admin_active_renters_manage_booking_sms";

@@ -3,8 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Book a Slingshot rental with Sly Car Rentals LLC. Choose your package, verify your ID, sign your agreement, and complete in-person payment at pickup.">
-  <title>Sly Car Rentals LLC | Book a Slingshot</title>
+  <meta name="description" content="Book a Slingshot rental with SLY Slingshot Rentals. Choose your package, verify your ID, sign your agreement, and complete in-person payment at pickup.">
+  <title>SLY Slingshot Rentals | Book a Slingshot</title>
+  <link rel="canonical" href="https://www.slyslingshotrentals.com/slingshot-book.html">
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="https://www.slyslingshotrentals.com/slingshot-book.html">
+  <meta property="og:title"       content="SLY Slingshot Rentals | Book a Slingshot">
+  <meta property="og:description" content="Book a Slingshot rental with SLY Slingshot Rentals. Choose your package, verify your ID, sign your agreement, and complete in-person payment at pickup.">
+  <meta property="og:image"       content="https://www.slyslingshotrentals.com/images/slingshot-logo.png">
+  <meta property="og:site_name"   content="SLY Slingshot Rentals">
+  <!-- Slingshot domain redirect guard -->
+  <script>
+    (function () {
+      var h = window.location.hostname;
+      var sling = ["slyslingshotrentals.com", "www.slyslingshotrentals.com"];
+      var dev   = ["localhost", "127.0.0.1", "sly-rides.vercel.app"];
+      if (!sling.includes(h) && !dev.includes(h)) {
+        window.location.replace("https://www.slyslingshotrentals.com" + window.location.pathname + window.location.search);
+      }
+    })();
+  </script>
   <link rel="icon" href="images/slingshot-logo.png" type="image/png">
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
@@ -273,7 +292,7 @@
     <a href="cars.html">Browse Cars</a>
     <a href="index.html#about">About</a>
   </nav>
-  <a href="https://slycarrentals.com/manage-booking.html" class="header-complete-booking-btn">Manage Booking</a>
+  <a href="https://www.slyslingshotrentals.com/manage-booking.html" class="header-complete-booking-btn">Manage Booking</a>
   <a href="tel:+18445114059" class="header-phone">📞 (844) 511-4059</a>
 </header>
 
@@ -361,8 +380,8 @@
           <span>I agree to receive SMS messages from Sly Car Rentals related to bookings, payments, rental updates, reminders, and customer support. Message frequency varies. Reply STOP to unsubscribe. Message &amp; data rates may apply.</span> <span class="required">*</span>
         </label>
         <p class="sms-consent-links">
-          <a href="https://slycarrentals.com/privacy-policy.html" target="_blank" rel="noopener" class="apply-terms-link">Privacy Policy</a> &nbsp;|&nbsp;
-          <a href="https://slycarrentals.com/rental-agreement.html" target="_blank" rel="noopener" class="apply-terms-link">Rental Agreement</a>
+          <a href="https://www.slyslingshotrentals.com/privacy-policy.html" target="_blank" rel="noopener" class="apply-terms-link">Privacy Policy</a> &nbsp;|&nbsp;
+          <a href="https://www.slyslingshotrentals.com/rental-agreement.html" target="_blank" rel="noopener" class="apply-terms-link">Rental Agreement</a>
         </p>
       </div>
 

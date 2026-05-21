@@ -26,7 +26,7 @@ import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.
 import { getAllVehicleIds } from "./_pricing.js";
 import crypto from "crypto";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const RECORDS_FILE    = "revenue-records.json";
 

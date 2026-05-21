@@ -28,7 +28,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 // Statuses that mean the vehicle is actually occupied / unavailable.
 // "reserved" is a confirmed deposit/partial-payment reservation and must block.
 const ACTIVE_STATUSES = ["reserved", "approved", "active", "booked_paid", "active_rental", "overdue"];
