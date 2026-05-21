@@ -152,6 +152,58 @@
     return String(value || "").toLowerCase().replace(/\s+/g, "_");
   }
 
+  function approxEqual(a, b, epsilon = 0.01) {
+    return Math.abs(Number(a || 0) - Number(b || 0)) <= epsilon;
+  }
+
+  function derivePaymentUiState({ isSlingshot, total, paid, balance, depositPaid }) {
+    const normalizedBalance = Number.isFinite(balance) ? balance : 0;
+    const normalizedPaid = Number.isFinite(paid) ? paid : 0;
+    const normalizedDeposit = Number.isFinite(depositPaid) ? depositPaid : 0;
+    const isPaidInFull = normalizedBalance <= 0 && total > 0;
+    const isReservationDepositOnly = !isSlingshot
+      && normalizedBalance > 0
+      && approxEqual(normalizedDeposit, 50)
+      && normalizedPaid > 0
+      && normalizedPaid <= 50.01;
+    const hasPartialPayment = normalizedBalance > 0 && normalizedPaid > 0 && !isReservationDepositOnly;
+
+    let paymentBadgeLabel = "Balance Due at Pickup";
+    let paymentBadgeClass = "badge-review";
+    let paymentChipLabel = normalizedBalance > 0 ? `${fmt(normalizedBalance)} still due` : "Paid in full";
+
+    if (isPaidInFull) {
+      paymentBadgeLabel = "Paid in full";
+      paymentBadgeClass = "badge-confirmed";
+      paymentChipLabel = "Paid in full";
+    } else if (isReservationDepositOnly) {
+      paymentBadgeLabel = "Deposit Paid / Balance Due at Pickup";
+      paymentBadgeClass = "badge-pending";
+      paymentChipLabel = "Reservation Deposit Paid ✅ • Remaining Balance Due at Pickup";
+    } else if (hasPartialPayment) {
+      paymentBadgeLabel = "Partial Payment";
+      paymentBadgeClass = "badge-pending";
+      paymentChipLabel = `Partial Payment • ${fmt(normalizedBalance)} due`;
+    } else if (isSlingshot) {
+      paymentBadgeLabel = "Balance Due at Pickup";
+      paymentBadgeClass = "badge-review";
+      paymentChipLabel = "Payment due at pickup";
+    }
+
+    return {
+      isPaidInFull,
+      isReservationDepositOnly,
+      hasPartialPayment,
+      paymentBadgeLabel,
+      paymentBadgeClass,
+      paymentChipLabel,
+    };
+  }
+
+  function paymentStatusBadgeHtml(state) {
+    return `<span class="status-badge ${escapeHtml(state.paymentBadgeClass)}">${escapeHtml(state.paymentBadgeLabel)}</span>`;
+  }
+
   function buildBalanceLink(b) {
     if (b?.balancePaymentLink) return b.balancePaymentLink;
     const params = new URLSearchParams();
@@ -325,11 +377,13 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const statusKey = normalizeStatusKey(b.status);
     const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
     const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
+    const depositPaid = Number(b.depositPaid || 0);
     const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
-    const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
+    const paid      = Math.max(depositPaid, paidFromLedger);
     const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
     const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
     const paidPct   = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
+    const paymentState = derivePaymentUiState({ isSlingshot, total, paid, balance, depositPaid });
     const plan      = b.paymentPlan || null;
     const overdueAmount = plan?.isOverdue
       ? Number(plan.nextInstallmentAmount || 0)
@@ -342,11 +396,9 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("dash-greeting", greeting);
     setText("dash-subtitle", "Manage payments, view recent activity, and use renter self-service tools without leaving your booking.");
     setText("s-booking-id", b.bookingId || "–");
-    setHtml("s-status", statusBadgeHtml(b.status));
+    setHtml("s-status", `${statusBadgeHtml(b.status)} ${paymentStatusBadgeHtml(paymentState)}`);
     setText("vehicle-status-tag", statusKey === "overdue" ? "Action needed" : "Current booking details");
-    setText("hero-payment-chip", isSlingshot && ["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
-      ? "Payment due at pickup"
-      : (balance > 0 ? `${fmt(balance)} still due` : "Paid in full"));
+    setText("hero-payment-chip", paymentState.paymentChipLabel);
     setText("hero-plan-chip", isSlingshot ? "Manual slingshot workflow" : (plan ? `Plan: ${plan.status || "active"}` : "No active payment plan"));
 
     const vehicleLabel = [b.vehicleYear, b.vehicleName].filter(Boolean).join(" ");
@@ -385,19 +437,21 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("stat-next-due", nextDueText);
     setText("stat-plan-progress", progressText);
     setText("stat-paid-note", paid > 0 ? `${fmt(paid)} recorded across deposit and later payments.` : "No posted payments yet.");
-    setText("stat-balance-note", isSlingshot
-      ? (["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
-          ? "Payment for this slingshot booking is collected in person at pickup."
-          : "Complete the onboarding steps below to finish your slingshot reservation.")
-      : (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking."));
+    setText("stat-balance-note", paymentState.isReservationDepositOnly
+      ? "Reservation deposit paid. Remaining balance is due at pickup."
+      : (isSlingshot
+        ? (["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
+            ? "Payment for this slingshot booking is collected in person at pickup."
+            : "Complete the onboarding steps below to finish your slingshot reservation.")
+        : (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.")));
     setText("stat-overdue-note", overdueAmount > 0 ? "Past-due amount requires attention." : "No overdue amount is currently flagged.");
     setText("stat-next-due-note", plan?.nextDueDate ? "Based on your active payment plan." : "No payment-plan due date is currently scheduled.");
     setText("stat-plan-progress-note", plan ? "Installment completion using the active plan." : "If a plan is created later, progress will appear here.");
 
     const balRow = document.getElementById("balance-row");
     if (balRow) balRow.className = balance > 0 ? "fin-row fin-balance" : "fin-row fin-zero";
-    setText("progress-paid-label", `${fmt(paid)} paid`);
-    setText("progress-pct-label", `${paidPct}% complete`);
+    setText("progress-paid-label", paymentState.isReservationDepositOnly ? "Reservation Deposit Paid ✅" : `${fmt(paid)} paid`);
+    setText("progress-pct-label", paymentState.isReservationDepositOnly ? "Remaining balance due at pickup" : `${paidPct}% complete`);
     const fillEl = document.getElementById("payment-progress-fill");
     if (fillEl) fillEl.style.width = `${paidPct}%`;
 
@@ -414,6 +468,17 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
     const pifEl = document.getElementById("paid-in-full-notice");
     if (pifEl) pifEl.style.display = (balance <= 0 && total > 0) ? "block" : "none";
+    const depositBannerEl = document.getElementById("payment-balance-banner");
+    if (depositBannerEl) {
+      if (balance > 0) {
+        depositBannerEl.textContent = paymentState.isReservationDepositOnly
+          ? "The $50 reservation fee only secures the vehicle. Remaining balance is collected at pickup."
+          : "Your reservation deposit has been received. Remaining balance is collected at pickup.";
+        depositBannerEl.style.display = "block";
+      } else {
+        depositBannerEl.style.display = "none";
+      }
+    }
 
     renderPaymentPlanSummary(b, balance);
     renderLedgerSummary(b, total, paid, balance, overdueAmount);
