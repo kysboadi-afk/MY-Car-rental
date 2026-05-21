@@ -261,7 +261,8 @@ export default async function handler(req, res) {
 
     // All bookings limited to scoped vehicles (used for non-financial KPIs)
     const allBookings = allBookingsRaw
-      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
+      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId))
+      .filter((b) => !isIncompleteCheckoutAppStatus(b.status));
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
     const now = new Date();
@@ -285,10 +286,6 @@ export default async function handler(req, res) {
         // A completed_rental whose return date is in the past would otherwise be
         // incorrectly counted as overdue (now >= returnDateTime is true for any
         // past booking).  Only the revenue fallback loop below needs completed_rental.
-        continue;
-      }
-      if (isIncompleteCheckoutAppStatus(booking.status)) {
-        incompleteCheckouts++;
         continue;
       }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
