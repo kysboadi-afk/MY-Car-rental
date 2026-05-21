@@ -74,16 +74,20 @@ function buildEconomyCard(v, pricing) {
       <h3>${name}</h3>
       <p class="car-subtitle" data-i18n="fleet.sedan5seater">${subtitle}</p>
       <div class="rideshare-badges">
-        <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">${t("fleet.rideshareReadyBadge", "🚗 Uber &amp; Lyft Ready")}</span>
-        <span class="rideshare-badge" data-i18n="fleet.unlimitedMilesBadge">${t("fleet.unlimitedMilesBadge", "∞ Unlimited Miles")}</span>
+        <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">${t("fleet.rideshareReadyBadge", "🚗 Approved for Rideshare &amp; Delivery")}</span>
       </div>
+      <p class="car-platform-copy">Gig Platform Approved</p>
       <p class="price-list-label" data-i18n="fleet.rentalPlans">${t("fleet.rentalPlans", "Rental Plans")}</p>
-      <div class="price-list">
-        <div class="price-item price-item--popular">${daily} / <span data-i18n="fleet.unitDay">${t("fleet.unitDay", "day")}</span> <span class="popular-tag" data-i18n="fleet.mostPopular">${t("fleet.mostPopular", "Most Popular")}</span></div>
-        <div class="price-item">${weekly} / <span data-i18n="fleet.unitWeek">${t("fleet.unitWeek", "week")}</span></div>
-        <div class="price-item">${biweekly} / <span data-i18n="fleet.unitBiweek">${t("fleet.unitBiweek", "2 weeks")}</span></div>
-        <div class="price-item">${monthly} / <span data-i18n="fleet.unitMonth">${t("fleet.unitMonth", "month")}</span> <span class="best-value-tag" data-i18n="fleet.bestValue">${t("fleet.bestValue", "Best Value")}</span></div>
+      <div class="car-price-highlight">
+        <span class="car-price-main">${weekly}</span>
+        <span class="car-price-unit">/ <span data-i18n="fleet.unitWeek">${t("fleet.unitWeek", "week")}</span></span>
       </div>
+      <p class="car-plan-note">${daily}/<span data-i18n="fleet.unitDay">${t("fleet.unitDay", "day")}</span> • ${biweekly}/<span data-i18n="fleet.unitBiweek">${t("fleet.unitBiweek", "2 weeks")}</span> • ${monthly}/<span data-i18n="fleet.unitMonth">${t("fleet.unitMonth", "month")}</span></p>
+      <ul class="car-feature-list">
+        <li>✔ Unlimited Miles</li>
+        <li>✔ Insurance Included</li>
+        <li>✔ Flexible Rentals</li>
+      </ul>
       ${scarcity}
       <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
         <button class="select-btn" id="select-btn-${vid}" data-i18n="fleet.bookNow">${t("fleet.bookNow", "Book Now")}</button>
@@ -105,18 +109,48 @@ function showLoadingState(grid) {
   </div>`;
 }
 
-// ─── Filter buttons ───────────────────────────────────────────────────────────
+// ─── Filter + search controls ───────────────────────────────────────────────
+let activeFleetFilter = "all";
+let activeFleetSearch = "";
+
+function applyVisibleFilters() {
+  const cards = Array.from(document.querySelectorAll("#car-grid .car-card"));
+  let visible = 0;
+
+  cards.forEach(card => {
+    const inFilter = activeFleetFilter === "all" || card.dataset.category === activeFleetFilter;
+    const haystack = (card.textContent || "").toLowerCase();
+    const inSearch = !activeFleetSearch || haystack.includes(activeFleetSearch);
+    const show = inFilter && inSearch;
+    card.style.display = show ? "" : "none";
+    if (show) visible += 1;
+  });
+
+  const countEl = document.getElementById("fleetVisibleCount");
+  if (countEl) {
+    countEl.textContent = visible ? `${visible} vehicle${visible === 1 ? "" : "s"} shown` : "No matching vehicles";
+  }
+}
+
 function setupFilters() {
   document.querySelectorAll(".sidebar-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".sidebar-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      const filter = btn.dataset.filter;
-      document.querySelectorAll("#car-grid .car-card").forEach(card => {
-        card.style.display = (filter === "all" || card.dataset.category === filter) ? "" : "none";
-      });
+      activeFleetFilter = btn.dataset.filter || "all";
+      applyVisibleFilters();
     });
   });
+
+  const searchEl = document.getElementById("fleetSearch");
+  if (searchEl) {
+    searchEl.addEventListener("input", () => {
+      activeFleetSearch = (searchEl.value || "").trim().toLowerCase();
+      applyVisibleFilters();
+    });
+  }
+
+  applyVisibleFilters();
 }
 
 // ─── Fleet status & availability badges ──────────────────────────────────────
