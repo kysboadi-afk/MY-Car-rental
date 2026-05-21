@@ -13,15 +13,9 @@
 
   const API_BASE  = "/api/manage-booking";
   const VEHICLES_API = "/api/v2-vehicles?scope=cars";
+  const VEHICLE_MEDIA_API = "/api/v2-vehicles";
   const PAYMENT_SUCCESS_RELOAD_DELAY_MS = 2200;
-
-  // Static vehicle image map (vehicleId → relative path from site root)
-  const VEHICLE_IMAGES = {
-    camry:      "images/IMG_0046.png",
-    camry2013:  "images/IMG_5144.png",
-    fusion2017: "images/IMG_5144.png",
-    slingshot:  "images/slingshot.jpg",
-  };
+  const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
 
   // ── Parse token from URL ────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -98,6 +92,7 @@
   let ledgerTransactions = [];
   let latestReceiptTransaction = null;
   let agreementPdfUrl  = null;
+  let vehicleMediaById = {};
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function fmt(n) {
@@ -136,6 +131,36 @@
     if (el) el.style.display = visible ? displayValue : "none";
   }
 
+  function normalizeVehicleImageUrl(value) {
+    if (!value || typeof value !== "string") return "";
+    const url = String(value).trim();
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+    return "/" + url.replace(/^(\.\.\/)+/, "");
+  }
+
+  function toVehicleMediaLookup(vehicles) {
+    const lookup = {};
+    (Array.isArray(vehicles) ? vehicles : []).forEach((v) => {
+      const id = String(v?.vehicle_id || v?.id || "").trim();
+      if (!id) return;
+      const cover = normalizeVehicleImageUrl(v?.cover_image);
+      const gallery = Array.isArray(v?.gallery_images)
+        ? v.gallery_images.map(normalizeVehicleImageUrl).filter(Boolean)
+        : [];
+      lookup[id] = { cover, gallery };
+    });
+    return lookup;
+  }
+
+  function resolveVehicleImageForBooking(bookingVehicleId) {
+    const key = String(bookingVehicleId || "").trim();
+    if (!key) return "";
+    const media = vehicleMediaById[key];
+    if (!media) return "";
+    return media.cover || (Array.isArray(media.gallery) ? media.gallery[0] : "") || "";
+  }
+
   function formatDateTime(dateValue, timeValue) {
     if (!dateValue) return "–";
     const base = formatDate(dateValue);
@@ -150,6 +175,106 @@
 
   function normalizeStatusKey(value) {
     return String(value || "").toLowerCase().replace(/\s+/g, "_");
+  }
+
+  function derivePaymentUiState({ booking, statusKey, isSlingshot, total, paid, balance }) {
+    const normalizedBalance = Number.isFinite(balance) ? balance : 0;
+    const normalizedPaid = Number.isFinite(paid) ? paid : 0;
+    const paymentStatusKey = normalizeStatusKey(booking?.paymentStatus);
+    const isPaidInFull = normalizedBalance <= 0 && total > 0;
+    const hasPartialPayment = normalizedBalance > 0 && normalizedPaid > 0;
+    const isUnpaid = normalizedBalance > 0 && normalizedPaid <= 0;
+    const manualPickupStatuses = ["agreement_signed", "pending_manual_payment", "ready_for_pickup"];
+    const isManualPickupFlow = isSlingshot && manualPickupStatuses.includes(statusKey);
+    const hasPaymentPlan = !!booking?.paymentPlan;
+    const isDepositLike = hasPartialPayment && (
+      isManualPickupFlow ||
+      paymentStatusKey.includes("deposit") ||
+      paymentStatusKey === "partial"
+    );
+
+    let stateKey = "unpaid";
+    if (isPaidInFull) stateKey = "paid_in_full";
+    else if (hasPartialPayment) stateKey = isDepositLike ? "deposit_paid" : "partial_paid";
+    else if (isManualPickupFlow) stateKey = "unpaid_pickup";
+
+    const STATE_COPY = {
+      paid_in_full: {
+        paymentBadgeLabel: "Paid in full",
+        paymentBadgeClass: "badge-confirmed",
+        paymentChipLabel: "Paid in full",
+        balanceNote: "No balance remains on this booking.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: "100% complete",
+        bannerText: "",
+      },
+      deposit_paid: {
+        paymentBadgeLabel: isManualPickupFlow ? "Deposit Paid / Balance Due at Pickup" : "Deposit Paid",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: isManualPickupFlow
+          ? "Reservation Deposit Paid ✅ • Remaining Balance Due at Pickup"
+          : `Deposit Paid ✅ • ${fmt(normalizedBalance)} remaining`,
+        balanceNote: isManualPickupFlow
+          ? "Reservation deposit paid. Remaining balance is due at pickup."
+          : "Deposit recorded. Remaining balance is still due on this booking.",
+        progressPaidLabel: "Reservation Deposit Paid ✅",
+        progressPctLabel: isManualPickupFlow ? "Remaining balance due at pickup" : `${fmt(normalizedBalance)} remaining`,
+        bannerText: isManualPickupFlow
+          ? "Your reservation deposit has been received. Remaining balance is collected at pickup."
+          : "Your reservation deposit has been received. Remaining balance is still due on this booking.",
+      },
+      partial_paid: {
+        paymentBadgeLabel: hasPaymentPlan ? "Payment Plan Active" : "Partial Payment",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: `${hasPaymentPlan ? "Installment payment recorded" : "Partial Payment"} • ${fmt(normalizedBalance)} due`,
+        balanceNote: hasPaymentPlan
+          ? "Installment payment recorded. Continue following your payment plan schedule."
+          : "Use the payment actions below to pay now or make another partial payment.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: `${fmt(normalizedBalance)} remaining`,
+        bannerText: isManualPickupFlow
+          ? "A payment has been received. Remaining balance is collected at pickup."
+          : "A partial payment has been received. Remaining balance is still due.",
+      },
+      unpaid_pickup: {
+        paymentBadgeLabel: "Balance Due at Pickup",
+        paymentBadgeClass: "badge-review",
+        paymentChipLabel: "Payment due at pickup",
+        balanceNote: "Payment for this booking is collected in person at pickup.",
+        progressPaidLabel: "$0 paid",
+        progressPctLabel: "Payment due at pickup",
+        bannerText: "Remaining balance is collected at pickup.",
+      },
+      unpaid: {
+        paymentBadgeLabel: "Unpaid",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: `${fmt(normalizedBalance)} still due`,
+        balanceNote: "Use the payment actions below to pay now or make a partial payment.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: `${Math.max(0, Number(total || 0)) > 0 ? Math.min(100, Math.round((normalizedPaid / total) * 100)) : 0}% complete`,
+        bannerText: "Remaining balance is still due on this booking.",
+      },
+    };
+
+    const copy = STATE_COPY[stateKey] || STATE_COPY.unpaid;
+
+    return {
+      stateKey,
+      isPaidInFull,
+      hasPartialPayment,
+      isManualPickupFlow,
+      paymentBadgeLabel: copy.paymentBadgeLabel,
+      paymentBadgeClass: copy.paymentBadgeClass,
+      paymentChipLabel: copy.paymentChipLabel,
+      balanceNote: copy.balanceNote,
+      progressPaidLabel: copy.progressPaidLabel,
+      progressPctLabel: copy.progressPctLabel,
+      bannerText: copy.bannerText,
+    };
+  }
+
+  function paymentStatusBadgeHtml(state) {
+    return `<span class="status-badge ${escapeHtml(state.paymentBadgeClass)}">${escapeHtml(state.paymentBadgeLabel)}</span>`;
   }
 
   function buildBalanceLink(b) {
@@ -292,7 +417,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
   async function loadVehicleOptions() {
     if (vehicleOptions.length > 0) return vehicleOptions;
     try {
-      const resp = await fetch(VEHICLES_API, { headers: { Accept: "application/json" } });
+      const resp = await fetch(VEHICLES_API, { cache: "no-store", headers: { Accept: "application/json" } });
       const data = await resp.json();
       vehicleOptions = Array.isArray(data)
         ? data
@@ -305,6 +430,19 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       vehicleOptions = [];
     }
     return vehicleOptions;
+  }
+
+  async function loadVehicleMedia() {
+    if (Object.keys(vehicleMediaById).length > 0) return vehicleMediaById;
+    try {
+      const resp = await fetch(VEHICLE_MEDIA_API, { cache: "no-store", headers: { Accept: "application/json" } });
+      const data = await resp.json();
+      vehicleMediaById = toVehicleMediaLookup(data);
+    } catch (err) {
+      console.error("manage-booking: vehicle media load error:", err);
+      vehicleMediaById = {};
+    }
+    return vehicleMediaById;
   }
 
   function renderVehicleOptions($select, selectedId) {
@@ -325,11 +463,13 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const statusKey = normalizeStatusKey(b.status);
     const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
     const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
+    const depositPaid = Number(b.depositPaid || 0);
     const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
-    const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
+    const paid      = Math.max(depositPaid, paidFromLedger);
     const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
     const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
     const paidPct   = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
+    const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total, paid, balance });
     const plan      = b.paymentPlan || null;
     const overdueAmount = plan?.isOverdue
       ? Number(plan.nextInstallmentAmount || 0)
@@ -342,25 +482,24 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("dash-greeting", greeting);
     setText("dash-subtitle", "Manage payments, view recent activity, and use renter self-service tools without leaving your booking.");
     setText("s-booking-id", b.bookingId || "–");
-    setHtml("s-status", statusBadgeHtml(b.status));
+    setHtml("s-status", `${statusBadgeHtml(b.status)} ${paymentStatusBadgeHtml(paymentState)}`);
     setText("vehicle-status-tag", statusKey === "overdue" ? "Action needed" : "Current booking details");
-    setText("hero-payment-chip", isSlingshot && ["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
-      ? "Payment due at pickup"
-      : (balance > 0 ? `${fmt(balance)} still due` : "Paid in full"));
+    setText("hero-payment-chip", paymentState.paymentChipLabel);
     setText("hero-plan-chip", isSlingshot ? "Manual slingshot workflow" : (plan ? `Plan: ${plan.status || "active"}` : "No active payment plan"));
 
     const vehicleLabel = [b.vehicleYear, b.vehicleName].filter(Boolean).join(" ");
     setText("s-vehicle", vehicleLabel || "–");
     const imgEl = document.getElementById("vehicle-img");
     if (imgEl) {
-      const src = VEHICLE_IMAGES[b.vehicleId] || "";
-      if (src) {
-        imgEl.src = src;
-        imgEl.alt = vehicleLabel || "Rental vehicle";
-        imgEl.style.display = "";
-      } else {
-        imgEl.style.display = "none";
-      }
+      const src = resolveVehicleImageForBooking(b.vehicleId) || VEHICLE_IMAGE_PLACEHOLDER;
+      imgEl.removeAttribute("src");
+      imgEl.style.display = "";
+      imgEl.src = src;
+      imgEl.alt = vehicleLabel || "Vehicle image coming soon";
+      imgEl.onerror = () => {
+        imgEl.onerror = null;
+        imgEl.src = VEHICLE_IMAGE_PLACEHOLDER;
+      };
     }
     setText("s-pickup", formatDateTime(b.pickupDate, b.pickupTime));
     setText("s-return", formatDateTime(b.returnDate, b.returnTime));
@@ -385,19 +524,17 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("stat-next-due", nextDueText);
     setText("stat-plan-progress", progressText);
     setText("stat-paid-note", paid > 0 ? `${fmt(paid)} recorded across deposit and later payments.` : "No posted payments yet.");
-    setText("stat-balance-note", isSlingshot
-      ? (["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
-          ? "Payment for this slingshot booking is collected in person at pickup."
-          : "Complete the onboarding steps below to finish your slingshot reservation.")
-      : (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking."));
+    setText("stat-balance-note", paymentState.stateKey === "unpaid_pickup"
+      ? "Payment for this slingshot booking is collected in person at pickup."
+      : (paymentState.balanceNote || (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.")));
     setText("stat-overdue-note", overdueAmount > 0 ? "Past-due amount requires attention." : "No overdue amount is currently flagged.");
     setText("stat-next-due-note", plan?.nextDueDate ? "Based on your active payment plan." : "No payment-plan due date is currently scheduled.");
     setText("stat-plan-progress-note", plan ? "Installment completion using the active plan." : "If a plan is created later, progress will appear here.");
 
     const balRow = document.getElementById("balance-row");
     if (balRow) balRow.className = balance > 0 ? "fin-row fin-balance" : "fin-row fin-zero";
-    setText("progress-paid-label", `${fmt(paid)} paid`);
-    setText("progress-pct-label", `${paidPct}% complete`);
+    setText("progress-paid-label", paymentState.progressPaidLabel || `${fmt(paid)} paid`);
+    setText("progress-pct-label", paymentState.progressPctLabel || `${paidPct}% complete`);
     const fillEl = document.getElementById("payment-progress-fill");
     if (fillEl) fillEl.style.width = `${paidPct}%`;
 
@@ -414,6 +551,15 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
     const pifEl = document.getElementById("paid-in-full-notice");
     if (pifEl) pifEl.style.display = (balance <= 0 && total > 0) ? "block" : "none";
+    const depositBannerEl = document.getElementById("payment-balance-banner");
+    if (depositBannerEl) {
+      if (balance > 0) {
+        depositBannerEl.textContent = paymentState.bannerText || "Remaining balance is still due on this booking.";
+        depositBannerEl.style.display = "block";
+      } else {
+        depositBannerEl.style.display = "none";
+      }
+    }
 
     renderPaymentPlanSummary(b, balance);
     renderLedgerSummary(b, total, paid, balance, overdueAmount);
@@ -1229,7 +1375,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   (async function bootstrap() {
-    await loadVehicleOptions();
+    await Promise.all([loadVehicleOptions(), loadVehicleMedia()]);
     if (activeToken) {
       showSection($loading);
       await loadBooking();
