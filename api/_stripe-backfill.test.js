@@ -98,6 +98,11 @@ mock.module("./_sms-templates.js", {
   namedExports: {
     DEFAULT_LOCATION:           "Los Angeles, CA",
     render:                     (t) => t,
+    MANAGE_BOOKING_ACCESS:      "",
+    BOOKING_ONBOARDING:         "",
+    PAYMENT_EDUCATION:          "",
+    BOOKING_CONFIRMED:          "",
+    RESERVATION_DEPOSIT_CONFIRMED: "",
     EXTEND_CONFIRMED_ECONOMY:   "",
   },
 });
