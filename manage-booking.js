@@ -152,51 +152,99 @@
     return String(value || "").toLowerCase().replace(/\s+/g, "_");
   }
 
-  function approxEqual(a, b, epsilon = 0.01) {
-    return Math.abs(Number(a || 0) - Number(b || 0)) <= epsilon;
-  }
-
-  function derivePaymentUiState({ isSlingshot, total, paid, balance, depositPaid }) {
+  function derivePaymentUiState({ booking, statusKey, isSlingshot, total, paid, balance }) {
     const normalizedBalance = Number.isFinite(balance) ? balance : 0;
     const normalizedPaid = Number.isFinite(paid) ? paid : 0;
-    const normalizedDeposit = Number.isFinite(depositPaid) ? depositPaid : 0;
+    const paymentStatusKey = normalizeStatusKey(booking?.paymentStatus);
     const isPaidInFull = normalizedBalance <= 0 && total > 0;
-    const isReservationDepositOnly = !isSlingshot
-      && normalizedBalance > 0
-      && approxEqual(normalizedDeposit, 50)
-      && normalizedPaid > 0
-      && normalizedPaid <= 50.01;
-    const hasPartialPayment = normalizedBalance > 0 && normalizedPaid > 0 && !isReservationDepositOnly;
+    const hasPartialPayment = normalizedBalance > 0 && normalizedPaid > 0;
+    const isUnpaid = normalizedBalance > 0 && normalizedPaid <= 0;
+    const manualPickupStatuses = ["agreement_signed", "pending_manual_payment", "ready_for_pickup"];
+    const isManualPickupFlow = isSlingshot && manualPickupStatuses.includes(statusKey);
+    const hasPaymentPlan = !!booking?.paymentPlan;
+    const isDepositLike = hasPartialPayment && (
+      isManualPickupFlow ||
+      paymentStatusKey.includes("deposit") ||
+      paymentStatusKey === "partial"
+    );
 
-    let paymentBadgeLabel = "Balance Due at Pickup";
-    let paymentBadgeClass = "badge-review";
-    let paymentChipLabel = normalizedBalance > 0 ? `${fmt(normalizedBalance)} still due` : "Paid in full";
+    let stateKey = "unpaid";
+    if (isPaidInFull) stateKey = "paid_in_full";
+    else if (hasPartialPayment) stateKey = isDepositLike ? "deposit_paid" : "partial_paid";
+    else if (isManualPickupFlow) stateKey = "unpaid_pickup";
 
-    if (isPaidInFull) {
-      paymentBadgeLabel = "Paid in full";
-      paymentBadgeClass = "badge-confirmed";
-      paymentChipLabel = "Paid in full";
-    } else if (isReservationDepositOnly) {
-      paymentBadgeLabel = "Deposit Paid / Balance Due at Pickup";
-      paymentBadgeClass = "badge-pending";
-      paymentChipLabel = "Reservation Deposit Paid ✅ • Remaining Balance Due at Pickup";
-    } else if (hasPartialPayment) {
-      paymentBadgeLabel = "Partial Payment";
-      paymentBadgeClass = "badge-pending";
-      paymentChipLabel = `Partial Payment • ${fmt(normalizedBalance)} due`;
-    } else if (isSlingshot) {
-      paymentBadgeLabel = "Balance Due at Pickup";
-      paymentBadgeClass = "badge-review";
-      paymentChipLabel = "Payment due at pickup";
-    }
+    const STATE_COPY = {
+      paid_in_full: {
+        paymentBadgeLabel: "Paid in full",
+        paymentBadgeClass: "badge-confirmed",
+        paymentChipLabel: "Paid in full",
+        balanceNote: "No balance remains on this booking.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: "100% complete",
+        bannerText: "",
+      },
+      deposit_paid: {
+        paymentBadgeLabel: isManualPickupFlow ? "Deposit Paid / Balance Due at Pickup" : "Deposit Paid",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: isManualPickupFlow
+          ? "Reservation Deposit Paid ✅ • Remaining Balance Due at Pickup"
+          : `Deposit Paid ✅ • ${fmt(normalizedBalance)} remaining`,
+        balanceNote: isManualPickupFlow
+          ? "Reservation deposit paid. Remaining balance is due at pickup."
+          : "Deposit recorded. Remaining balance is still due on this booking.",
+        progressPaidLabel: "Reservation Deposit Paid ✅",
+        progressPctLabel: isManualPickupFlow ? "Remaining balance due at pickup" : `${fmt(normalizedBalance)} remaining`,
+        bannerText: isManualPickupFlow
+          ? "Your reservation deposit has been received. Remaining balance is collected at pickup."
+          : "Your reservation deposit has been received. Remaining balance is still due on this booking.",
+      },
+      partial_paid: {
+        paymentBadgeLabel: hasPaymentPlan ? "Payment Plan Active" : "Partial Payment",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: `${hasPaymentPlan ? "Installment payment recorded" : "Partial Payment"} • ${fmt(normalizedBalance)} due`,
+        balanceNote: hasPaymentPlan
+          ? "Installment payment recorded. Continue following your payment plan schedule."
+          : "Use the payment actions below to pay now or make another partial payment.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: `${fmt(normalizedBalance)} remaining`,
+        bannerText: isManualPickupFlow
+          ? "A payment has been received. Remaining balance is collected at pickup."
+          : "A partial payment has been received. Remaining balance is still due.",
+      },
+      unpaid_pickup: {
+        paymentBadgeLabel: "Balance Due at Pickup",
+        paymentBadgeClass: "badge-review",
+        paymentChipLabel: "Payment due at pickup",
+        balanceNote: "Payment for this booking is collected in person at pickup.",
+        progressPaidLabel: "$0 paid",
+        progressPctLabel: "Payment due at pickup",
+        bannerText: "Remaining balance is collected at pickup.",
+      },
+      unpaid: {
+        paymentBadgeLabel: "Unpaid",
+        paymentBadgeClass: "badge-pending",
+        paymentChipLabel: `${fmt(normalizedBalance)} still due`,
+        balanceNote: "Use the payment actions below to pay now or make a partial payment.",
+        progressPaidLabel: `${fmt(normalizedPaid)} paid`,
+        progressPctLabel: `${Math.max(0, Number(total || 0)) > 0 ? Math.min(100, Math.round((normalizedPaid / total) * 100)) : 0}% complete`,
+        bannerText: "Remaining balance is still due on this booking.",
+      },
+    };
+
+    const copy = STATE_COPY[stateKey] || STATE_COPY.unpaid;
 
     return {
+      stateKey,
       isPaidInFull,
-      isReservationDepositOnly,
       hasPartialPayment,
-      paymentBadgeLabel,
-      paymentBadgeClass,
-      paymentChipLabel,
+      isManualPickupFlow,
+      paymentBadgeLabel: copy.paymentBadgeLabel,
+      paymentBadgeClass: copy.paymentBadgeClass,
+      paymentChipLabel: copy.paymentChipLabel,
+      balanceNote: copy.balanceNote,
+      progressPaidLabel: copy.progressPaidLabel,
+      progressPctLabel: copy.progressPctLabel,
+      bannerText: copy.bannerText,
     };
   }
 
@@ -383,7 +431,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
     const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
     const paidPct   = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
-    const paymentState = derivePaymentUiState({ isSlingshot, total, paid, balance, depositPaid });
+    const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total, paid, balance });
     const plan      = b.paymentPlan || null;
     const overdueAmount = plan?.isOverdue
       ? Number(plan.nextInstallmentAmount || 0)
@@ -437,21 +485,17 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("stat-next-due", nextDueText);
     setText("stat-plan-progress", progressText);
     setText("stat-paid-note", paid > 0 ? `${fmt(paid)} recorded across deposit and later payments.` : "No posted payments yet.");
-    setText("stat-balance-note", paymentState.isReservationDepositOnly
-      ? "Reservation deposit paid. Remaining balance is due at pickup."
-      : (isSlingshot
-        ? (["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey)
-            ? "Payment for this slingshot booking is collected in person at pickup."
-            : "Complete the onboarding steps below to finish your slingshot reservation.")
-        : (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.")));
+    setText("stat-balance-note", paymentState.stateKey === "unpaid_pickup"
+      ? "Payment for this slingshot booking is collected in person at pickup."
+      : (paymentState.balanceNote || (balance > 0 ? "Use the payment actions below to pay now or make a partial payment." : "No balance remains on this booking.")));
     setText("stat-overdue-note", overdueAmount > 0 ? "Past-due amount requires attention." : "No overdue amount is currently flagged.");
     setText("stat-next-due-note", plan?.nextDueDate ? "Based on your active payment plan." : "No payment-plan due date is currently scheduled.");
     setText("stat-plan-progress-note", plan ? "Installment completion using the active plan." : "If a plan is created later, progress will appear here.");
 
     const balRow = document.getElementById("balance-row");
     if (balRow) balRow.className = balance > 0 ? "fin-row fin-balance" : "fin-row fin-zero";
-    setText("progress-paid-label", paymentState.isReservationDepositOnly ? "Reservation Deposit Paid ✅" : `${fmt(paid)} paid`);
-    setText("progress-pct-label", paymentState.isReservationDepositOnly ? "Remaining balance due at pickup" : `${paidPct}% complete`);
+    setText("progress-paid-label", paymentState.progressPaidLabel || `${fmt(paid)} paid`);
+    setText("progress-pct-label", paymentState.progressPctLabel || `${paidPct}% complete`);
     const fillEl = document.getElementById("payment-progress-fill");
     if (fillEl) fillEl.style.width = `${paidPct}%`;
 
@@ -471,9 +515,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const depositBannerEl = document.getElementById("payment-balance-banner");
     if (depositBannerEl) {
       if (balance > 0) {
-        depositBannerEl.textContent = paymentState.isReservationDepositOnly
-          ? "The $50 reservation fee only secures the vehicle. Remaining balance is collected at pickup."
-          : "Your reservation deposit has been received. Remaining balance is collected at pickup.";
+        depositBannerEl.textContent = paymentState.bannerText || "Remaining balance is still due on this booking.";
         depositBannerEl.style.display = "block";
       } else {
         depositBannerEl.style.display = "none";
