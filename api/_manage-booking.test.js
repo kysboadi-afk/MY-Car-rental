@@ -25,6 +25,7 @@ mock.module("./_vehicles.js", {
 });
 
 const { default: handler } = await import("./manage-booking.js");
+const { deriveBookingPaymentLifecycle } = await import("./_booking-payment-lifecycle.js");
 
 function makeReq(body, origin = "https://slycarrentals.com") {
   return { method: "POST", headers: { origin }, body };
@@ -121,6 +122,9 @@ test("manage-booking get falls back to legacy booking columns when newer columns
   assert.equal(res._body.hasProtectionPlan, false);
   assert.equal(res._body.protectionPlanTier, null);
   assert.equal(res._body.paymentPlan, null);
+  assert.equal(res._body.paymentLifecycleState, "deposit_paid");
+  assert.equal(res._body.canPayRemainingOnline, true);
+  assert.equal(res._body.isReservationStage, true);
   assert.deepEqual(selects.length, 2);
 });
 
@@ -160,4 +164,91 @@ test("manage-booking get_agreement_url returns a signed URL when agreement PDF e
   assert.equal(res._status, 200);
   assert.equal(res._body.url, "https://files.example/agreement.pdf");
   assert.equal(res._body.path, "bk-fallback-001/rental-agreement.pdf");
+});
+
+test("payment lifecycle: reservation with deposit paid stays deposit_paid until balance is cleared", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "reserved",
+    paymentStatus: "partial",
+    category: "rideshare",
+    totalAmount: 300,
+    amountPaid: 50,
+    remainingBalance: 250,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "deposit_paid");
+  assert.equal(state.isPaidInFull, false);
+  assert.equal(state.hasOutstandingBalance, true);
+  assert.equal(state.canPayRemainingOnline, true);
+});
+
+test("payment lifecycle: full payment only transitions to completed when remaining balance is zero", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "reserved",
+    paymentStatus: "paid",
+    category: "rideshare",
+    totalAmount: 300,
+    amountPaid: 300,
+    remainingBalance: 0,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "completed");
+  assert.equal(state.isPaidInFull, true);
+  assert.equal(state.hasOutstandingBalance, false);
+});
+
+test("payment lifecycle: active rental is isolated from reservation lifecycle", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "active_rental",
+    paymentStatus: "partial",
+    category: "rideshare",
+    totalAmount: 450,
+    amountPaid: 200,
+    remainingBalance: 250,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "active_rental");
+  assert.equal(state.canPayRemainingOnline, true);
+});
+
+test("payment lifecycle: payment plan with outstanding balance maps to payment_plan_active", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "active_rental",
+    paymentStatus: "partial",
+    category: "rideshare",
+    totalAmount: 700,
+    amountPaid: 250,
+    remainingBalance: 450,
+    paymentPlan: { status: "active", isOverdue: false },
+  });
+  assert.equal(state.lifecycleState, "payment_plan_active");
+  assert.equal(state.hasPaymentPlan, true);
+});
+
+test("payment lifecycle: overdue state takes precedence over other active states", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "overdue",
+    paymentStatus: "partial",
+    category: "rideshare",
+    totalAmount: 400,
+    amountPaid: 150,
+    remainingBalance: 250,
+    paymentPlan: { status: "active", isOverdue: true },
+  });
+  assert.equal(state.lifecycleState, "overdue");
+  assert.equal(state.isOverdue, true);
+});
+
+test("payment lifecycle: slingshot pickup-due flow does not expose online remaining-balance payment", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "pending_manual_payment",
+    paymentStatus: "partial",
+    category: "slingshot",
+    totalAmount: 300,
+    amountPaid: 50,
+    remainingBalance: 250,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "pickup_due");
+  assert.equal(state.canPayRemainingOnline, false);
 });

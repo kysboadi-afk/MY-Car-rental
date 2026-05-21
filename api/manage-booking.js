@@ -30,6 +30,7 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { getVehicleById } from "./_vehicles.js";
 import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
 import { getLedgerSummary } from "./_renter-balance-ledger.js";
+import { deriveBookingPaymentLifecycle } from "./_booking-payment-lifecycle.js";
 import {
   loadPricingSettings,
   computeDppCostFromSettings,
@@ -448,6 +449,15 @@ export default async function handler(req, res) {
     const paymentPlan = await fetchPaymentPlanSummary(getSupabaseAdmin(), bookingId, {
       missingTableErrorCode: POSTGRES_UNDEFINED_TABLE_ERROR,
     });
+    const lifecycle = deriveBookingPaymentLifecycle({
+      status: row.status,
+      paymentStatus: row.payment_status,
+      category: row.category,
+      totalAmount: totalPriceNum,
+      amountPaid: depositPaidNum,
+      remainingBalance: balanceDue,
+      paymentPlan,
+    });
 
     return res.status(200).json({
       bookingId,
@@ -476,6 +486,12 @@ export default async function handler(req, res) {
       hasProtectionPlan: !!row.has_protection_plan,
       protectionPlanTier: row.protection_plan_tier || null,
       paymentPlan,
+      paymentLifecycleState: lifecycle.lifecycleState,
+      canPayRemainingOnline: lifecycle.canPayRemainingOnline,
+      isReservationStage: lifecycle.isReservationStage,
+      isActiveRentalStage: lifecycle.isActiveRental,
+      isOverdueStage: lifecycle.isOverdue,
+      isPickupDueStage: lifecycle.isManualPickup && lifecycle.lifecycleState === "pickup_due",
     });
   }
 
