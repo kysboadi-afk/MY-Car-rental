@@ -31,17 +31,41 @@
       nav.appendChild(mobilePhone);
     }
 
+    /* ── Body scroll lock helpers ── */
+    var scrollY = 0;
+
+    function lockBodyScroll() {
+      scrollY = window.scrollY || window.pageYOffset;
+      document.body.style.position = 'fixed';
+      document.body.style.top = '-' + scrollY + 'px';
+      document.body.style.width = '100%';
+    }
+
+    function unlockBodyScroll() {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      window.scrollTo(0, scrollY);
+    }
+
+    /* Only lock scroll when the hamburger is actually visible (mobile) */
+    function isMobileNav() {
+      return window.getComputedStyle(btn).display !== 'none';
+    }
+
     /* ── Toggle open/close ── */
     function openNav() {
       header.classList.add('nav-open');
       btn.setAttribute('aria-expanded', 'true');
       btn.innerHTML = '&#10005;'; /* ✕ */
+      if (isMobileNav()) lockBodyScroll();
     }
 
     function closeNav() {
       header.classList.remove('nav-open');
       btn.setAttribute('aria-expanded', 'false');
       btn.innerHTML = '&#9776;'; /* ☰ */
+      if (document.body.style.position === 'fixed') unlockBodyScroll();
     }
 
     btn.addEventListener('click', function (e) {
@@ -72,6 +96,11 @@
       if (e.key === 'Escape') {
         closeNav();
       }
+    });
+
+    /* Close on orientation change (prevents layout shift mid-open) */
+    window.addEventListener('orientationchange', function () {
+      closeNav();
     });
   }
 

@@ -5,6 +5,10 @@
   font-family: Arial, sans-serif;
 }
 
+button, a, [role="button"], input, select, textarea {
+  touch-action: manipulation;
+}
+
 body {
   background: #000;
   color: #fff;
@@ -13,6 +17,8 @@ body {
 
 html {
   overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* HEADER */
@@ -4404,6 +4410,30 @@ button.hero-btn {
   /* COMPANY BANNER */
   .company-banner {
     padding: 10px 16px;
+  }
+
+  /* iOS auto-zoom fix: inputs must be ≥16px to prevent Safari zooming on focus */
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  input[type="date"],
+  input[type="time"],
+  input[type="search"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Stack availability date pickers vertically on mobile */
+  .check-dates {
+    flex-direction: column;
+  }
+
+  .check-dates input[type="date"] {
+    width: 100%;
   }
 }
 
