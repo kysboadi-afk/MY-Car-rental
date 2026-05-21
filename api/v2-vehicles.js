@@ -87,17 +87,26 @@ function enforceSlingshotCategoryInvariant({ existingData = null, updates = null
   return next;
 }
 
-// Normalize cover_image paths to root-relative form so browsers can resolve
+// Normalize image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
 // e.g. "../images/car2.jpg" → "/images/car2.jpg"
 //      "images/car2.jpg"    → "/images/car2.jpg"
 //      "/images/car2.jpg"   → "/images/car2.jpg"  (unchanged)
 //      "https://..."        → "https://..."        (unchanged)
-function normalizeCoverImage(val) {
+function normalizeImagePath(val) {
   if (!val || typeof val !== "string") return val;
   if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("/")) return val;
   // Strip any leading "../" segments then prepend "/"
   return "/" + val.replace(/^(\.\.\/)+/, "");
+}
+
+// Keep the old name as an alias so existing callers continue to work.
+const normalizeCoverImage = normalizeImagePath;
+
+// Normalize all gallery_images entries in a vehicle object to root-relative form.
+function normalizeGalleryImages(arr) {
+  if (!Array.isArray(arr)) return arr;
+  return arr.map(normalizeImagePath);
 }
 
 function vehicleCompletenessScore(v = {}) {
@@ -205,6 +214,7 @@ export default async function handler(req, res) {
             if (p.monthly_price  != null) obj.monthly_price  = p.monthly_price;
           }
           if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
+          if (obj.gallery_images) obj.gallery_images = normalizeGalleryImages(obj.gallery_images);
           vehiclesById[id] = mergeVehicleRecords(vehiclesById[id], obj);
         }
         return res.status(200).json(Object.values(vehiclesById));
@@ -229,6 +239,7 @@ export default async function handler(req, res) {
           category: deriveCategory(v.category || "", type, v.vehicle_id, v.vehicle_name),
         };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        if (next.gallery_images) next = { ...next, gallery_images: normalizeGalleryImages(next.gallery_images) };
         resultById[id] = mergeVehicleRecords(resultById[id], next);
       }
       const result = Object.values(resultById);
@@ -313,6 +324,7 @@ export default async function handler(req, res) {
               if (p.monthly_price  != null) next.monthly_price  = p.monthly_price;
             }
             if (next.cover_image) next.cover_image = normalizeCoverImage(next.cover_image);
+            if (next.gallery_images) next.gallery_images = normalizeGalleryImages(next.gallery_images);
             vehicles[id] = mergeVehicleRecords(vehicles[id], next);
           }
           return res.status(200).json({ vehicles });
@@ -334,6 +346,7 @@ export default async function handler(req, res) {
           category: deriveCategory(v.category || "", type, v.vehicle_id || id, v.vehicle_name),
         };
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        if (next.gallery_images) next = { ...next, gallery_images: normalizeGalleryImages(next.gallery_images) };
         vehicles[uiId] = mergeVehicleRecords(vehicles[uiId], next);
       }
       return res.status(200).json({ vehicles });
