@@ -703,7 +703,7 @@ function buildChatbot() {
     // Reminder popup (shown 12 s after badge appears with no interaction)
     '<div id="chat-reminder" hidden role="alertdialog" aria-label="Chat reminder">' +
       '<button id="chat-reminder-close" aria-label="Dismiss reminder">\u2715</button>' +
-      '<p>\uD83D\uDE97 <strong>$' + getChatPricing().economy.daily + '/day \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
+      '<p>\uD83D\uDE97 <strong>$' + getChatPricing().economy.daily + '/day \u2014 Unlimited Miles!</strong></p><p>Income-ready rentals for rideshare &amp; delivery drivers</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
     '</div>'
   );
 
