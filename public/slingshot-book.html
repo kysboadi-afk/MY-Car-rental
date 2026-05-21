@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Book a Slingshot rental with Sly Car Rentals LLC. Choose your package, verify your identity with Stripe, and pay securely online.">
+  <meta name="description" content="Book a Slingshot rental with Sly Car Rentals LLC. Choose your package, verify your ID, sign your agreement, and complete in-person payment at pickup.">
   <title>Sly Car Rentals LLC | Book a Slingshot</title>
   <link rel="icon" href="images/slingshot-logo.png" type="image/png">
   <link rel="stylesheet" href="style.css">
@@ -366,8 +366,10 @@
         </p>
       </div>
 
-      <div class="id-upload-section">
-        <p class="id-note">Step 1: Verify your identity securely with Stripe after clicking confirm. No ID upload is required on this page.</p>
+      <div class="id-upload-section" id="slIdentityStep">
+        <p class="id-note"><strong>Step 1:</strong> Verify your ID to unlock agreement signing. No ID upload is required on this page.</p>
+        <button type="button" id="slVerifyIdBtn" class="sign-agreement-btn">🪪 Verify ID</button>
+        <p id="slIdentityStepStatus" style="margin-top:8px;color:#aaa;font-size:13px">Complete package, pickup details, and contact info, then verify ID.</p>
       </div>
 
       <!-- Rental Agreement -->
@@ -375,7 +377,7 @@
         <p class="sign-agreement-label">📄 Step 2: Read &amp; Sign your Rental Agreement</p>
         <p id="slSignAgreementStatus" aria-live="polite"></p>
         <button type="button" id="slSignAgreementBtn" class="sign-agreement-btn">
-          ✍ Review &amp; Sign Rental Agreement
+          🔒 Verify ID to Unlock Agreement
         </button>
 
         <!-- Inline rental agreement — hidden until the button above is clicked -->
@@ -481,10 +483,11 @@
 
       <p id="payError" style="display:none;color:#ff4444;margin-bottom:10px;font-size:14px" role="alert"></p>
 
-      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Verify ID, Sign Agreement &amp; Confirm Reservation</button>
+      <button type="button" id="slBookBtn" class="sl-book-cta" disabled>Secure Your Reservation</button>
       <p class="sl-book-urgency">Limited availability — weekends sell out fast</p>
-      <p class="deposit-notice" id="paymentOptionNotice">Rental payment, deposit, and pickup charges are collected in person at pickup.</p>
-      <p class="pay-hint-slingshot" id="slPayHint">Select a package, date, time and fill in your details, then click confirm to start Step 1 (ID verification) and finish Step 2 (agreement confirmation).</p>
+      <p class="deposit-notice" id="paymentOptionNotice">In-person payment at pickup. Remaining balance is collected at pickup.</p>
+      <p class="deposit-notice">$500 refundable security deposit required. Deposit is refunded after vehicle inspection if there are no scratches, curb rash, damage, excessive wear, smoking, or violations.</p>
+      <p class="pay-hint-slingshot" id="slPayHint">ID verification and signed agreement are required before reservation approval. Remaining balance is collected in person at pickup.</p>
     </section>
 
     <!-- ── Extend Rental Section ── -->
