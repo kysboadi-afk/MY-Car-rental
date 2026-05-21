@@ -32,7 +32,7 @@ import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { APP_TO_DB_STATUS, toAppBookingStatus } from "./_booking-status.js";
+import { APP_TO_DB_STATUS, isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import {
   autoCreateRevenueRecord,
   autoUpsertCustomer,
@@ -510,7 +510,8 @@ export default async function handler(req, res) {
               _source:         "supabase",
             };
           });
-          return res.status(200).json({ bookings });
+          const adminVisibleBookings = bookings.filter((b) => !isIncompleteCheckoutAppStatus(b.status));
+          return res.status(200).json({ bookings: adminVisibleBookings });
         }
 
         console.error("v2-bookings list: Supabase error, falling back to bookings.json:", error.message);
@@ -527,8 +528,10 @@ export default async function handler(req, res) {
         }
       }
 
+      result = result.filter((b) => !isIncompleteCheckoutAppStatus(toAppBookingStatus(b.status)));
+
       if (status) {
-        result = result.filter((b) => b.status === status);
+        result = result.filter((b) => toAppBookingStatus(b.status) === status);
       }
 
       // Newest first
