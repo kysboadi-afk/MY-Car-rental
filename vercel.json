@@ -12,6 +12,12 @@
       "destination": "https://www.slytrans.com/$1",
       "permanent": true
     },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "slyslingshotrentals.com" }],
+      "destination": "https://www.slyslingshotrentals.com/$1",
+      "permanent": true
+    },
     { "source": "/slingshot.html", "destination": "/slingshots.html", "permanent": true }
   ],
   "headers": [

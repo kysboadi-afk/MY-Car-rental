@@ -11,7 +11,7 @@ import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity
 import { getSupabaseAdmin } from "./_supabase.js";
 import { INCOME_VERIFICATION_BUCKET, INCOME_VERIFICATION_DOC_TYPE } from "./_income-verification.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const INCOME_DOCUMENT_SELECT_VARIANTS = [
   "id, doc_type, file_name, mime_type, file_path, file_size, review_status, reviewed_by, reviewed_at, notes, created_at",
   "id, doc_type, file_name, mime_type, file_path, file_size:file_size_bytes, review_status, reviewed_by, reviewed_at, notes, created_at",

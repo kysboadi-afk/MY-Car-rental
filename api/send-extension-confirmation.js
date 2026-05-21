@@ -31,7 +31,7 @@ import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 import { render, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
 import { sendDedupedSms } from "./_sms-log.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";

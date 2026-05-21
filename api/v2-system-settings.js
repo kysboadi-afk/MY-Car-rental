@@ -18,7 +18,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 /** Returns the Supabase client or null if not configured. */
 function getSupabase() {

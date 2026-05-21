@@ -26,7 +26,7 @@ import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-st
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
