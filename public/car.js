@@ -2268,13 +2268,9 @@ stripeBtn.addEventListener("click", async () => {
       throw new Error("No publishableKey returned from server. Check that STRIPE_PUBLISHABLE_KEY is set in your Vercel environment variables.");
     }
 
-    // Persist the publishable key and client secret so success.html can
-    // initialize Stripe.js and call stripe.retrievePaymentIntent() to verify
-    // the actual payment status for ALL payment methods — including Apple Pay,
-    // Google Pay, card, and Cash App — regardless of whether the redirect URL
-    // contains payment_intent_client_secret.
+    // Persist only the publishable key for success.html.
+    // Never persist the PaymentIntent client secret in web storage.
     sessionStorage.setItem("slyStripePublishable", publishableKey);
-    sessionStorage.setItem("slyPiSecret", clientSecret);
 
     // Initialize Stripe and mount the Payment Element
     const stripe = Stripe(publishableKey);
