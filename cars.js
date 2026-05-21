@@ -9,6 +9,7 @@ const API_BASE = (
 ) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
+const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
 
 // Mark the session as car context so shared pages (manage-booking, contact)
 // can apply car branding when the user navigates there from this page.
@@ -54,15 +55,20 @@ function fmtMoney(n) {
   return "$" + num.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function normalizeVehicleImageUrl(value) {
+  if (!value || typeof value !== "string") return "";
+  const url = String(value).trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+  return "/" + url.replace(/^(\.\.\/)+/, "");
+}
+
 // ─── Card builders ────────────────────────────────────────────────────────────
 
 function buildEconomyCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
   const name     = esc(v.vehicle_name || v.vehicle_id);
-  const rawImage = String(v.cover_image || "");
-  const resolvedImage = /(^|\/)images\/car1\.jpg$/i.test(rawImage)
-    ? "/images/IMG_5144.png"
-    : (rawImage || "/images/IMG_0046.png");
+  const resolvedImage = normalizeVehicleImageUrl(v.cover_image) || VEHICLE_IMAGE_PLACEHOLDER;
   const img      = esc(resolvedImage);
   const subtitle = esc(v.subtitle || t("fleet.sedan5seater", "Sedan • 5 Seater"));
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
@@ -76,7 +82,7 @@ function buildEconomyCard(v, pricing) {
   const monthly  = fmtMoney(v.monthly_price  ?? v.monthly      ?? pricing?.economy?.monthly  ?? 1300);
 
   return `<div class="car-card" data-category="economy" data-vehicle="${vid}">
-    <img src="${img}" alt="${name}" loading="lazy">
+    <img src="${img}" alt="${name}" loading="lazy" data-vehicle-image-id="${vid}">
     <div class="car-info">
       <span class="status-badge available" id="status-badge-${vid}" data-i18n="fleet.available">● ${t("fleet.available", "Available")}</span>
       <h3>${name}</h3>
@@ -282,7 +288,7 @@ async function loadFleet() {
 
   try {
     const [vRes, pRes, fleetRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles?scope=car"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=car", { cache: "no-store", headers: { Accept: "application/json" } }),
       fetch(API_BASE + "/api/public-pricing"),
       fetch(API_BASE + "/api/fleet-status"),
     ]);
@@ -312,6 +318,12 @@ async function loadFleet() {
   }
 
   grid.innerHTML = activeAndAvailable.map(v => buildCardHTML(v, pricing)).join("");
+  Array.from(grid.querySelectorAll("img[data-vehicle-image-id]")).forEach((imgEl) => {
+    imgEl.addEventListener("error", () => {
+      imgEl.onerror = null;
+      imgEl.src = VEHICLE_IMAGE_PLACEHOLDER;
+    });
+  });
   captureButtonKeys();
   applyFleetStatus(fleetStatus);
   applyVisibleFilters();

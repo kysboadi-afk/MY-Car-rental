@@ -46,8 +46,8 @@ function makeRes() {
 /**
  * Build a minimal mock req object.
  */
-function makeReq({ body = {}, method = "POST", origin = "https://slycarrentals.com" } = {}) {
-  return { body, method, headers: { origin } };
+function makeReq({ body = {}, method = "POST", origin = "https://slycarrentals.com", query = {} } = {}) {
+  return { body, method, query, headers: { origin } };
 }
 
 // ── Import handler with mocked _supabase.js ───────────────────────────────────
@@ -411,6 +411,43 @@ test("GET: normalizes various cover_image path formats", async () => {
   assert.equal(res._body[4].cover_image, undefined);
 });
 
+test("GET: normalizes gallery_images and keeps media isolated per vehicle", async () => {
+  const rows = [
+    {
+      vehicle_id: "camry",
+      data: {
+        vehicle_id: "camry",
+        status: "active",
+        cover_image: "images/camry-cover.jpg",
+        gallery_images: ["../images/camry-1.jpg", "images/camry-2.jpg"],
+      },
+    },
+    {
+      vehicle_id: "camry2013",
+      data: {
+        vehicle_id: "camry2013",
+        status: "active",
+      },
+    },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const byId = Object.fromEntries(res._body.map((v) => [v.vehicle_id, v]));
+  assert.equal(byId.camry.cover_image, "/images/camry-cover.jpg");
+  assert.deepEqual(byId.camry.gallery_images, ["/images/camry-1.jpg", "/images/camry-2.jpg"]);
+  assert.equal(byId.camry2013.cover_image, undefined);
+  assert.equal(byId.camry2013.gallery_images, undefined);
+});
+
 test("GET: falls back to GitHub when Supabase select returns an error", async () => {
   supabaseMockState.client = {
     from: () => ({
@@ -510,6 +547,34 @@ test("GET: filters out inactive and maintenance vehicles from public listing (Gi
   assert.ok(ids.includes("no-status-car"), "vehicle with no status should appear (treated as active)");
   assert.ok(!ids.includes("inactive-car"),    "inactive vehicle must not appear publicly");
   assert.ok(!ids.includes("maintenance-car"), "maintenance vehicle must not appear publicly");
+});
+
+test("GET: scope filter isolates car and slingshot vehicle media listings", async () => {
+  const rows = [
+    {
+      vehicle_id: "camry",
+      data: { vehicle_id: "camry", status: "active", category: "car", cover_image: "images/camry.jpg" },
+    },
+    {
+      vehicle_id: "slingshot",
+      data: { vehicle_id: "slingshot", status: "active", category: "slingshot", cover_image: "images/slingshot.jpg" },
+    },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const carReq = makeReq({ method: "GET", query: { scope: "car" } });
+  const carRes = makeRes();
+  await handler(carReq, carRes);
+  assert.deepEqual(carRes._body.map((v) => v.vehicle_id), ["camry"]);
+
+  const slingReq = makeReq({ method: "GET", query: { scope: "slingshot" } });
+  const slingRes = makeRes();
+  await handler(slingReq, slingRes);
+  assert.deepEqual(slingRes._body.map((v) => v.vehicle_id), ["slingshot"]);
 });
 
 // ─── create ───────────────────────────────────────────────────────────────────

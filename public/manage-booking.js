@@ -13,15 +13,9 @@
 
   const API_BASE  = "/api/manage-booking";
   const VEHICLES_API = "/api/v2-vehicles?scope=cars";
+  const VEHICLE_MEDIA_API = "/api/v2-vehicles";
   const PAYMENT_SUCCESS_RELOAD_DELAY_MS = 2200;
-
-  // Static vehicle image map (vehicleId → relative path from site root)
-  const VEHICLE_IMAGES = {
-    camry:      "images/IMG_0046.png",
-    camry2013:  "images/IMG_5144.png",
-    fusion2017: "images/IMG_5144.png",
-    slingshot:  "images/slingshot.jpg",
-  };
+  const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
 
   // ── Parse token from URL ────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -98,6 +92,7 @@
   let ledgerTransactions = [];
   let latestReceiptTransaction = null;
   let agreementPdfUrl  = null;
+  let vehicleMediaById = {};
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   function fmt(n) {
@@ -134,6 +129,36 @@
   function setDisplay(id, visible, displayValue = "") {
     const el = document.getElementById(id);
     if (el) el.style.display = visible ? displayValue : "none";
+  }
+
+  function normalizeVehicleImageUrl(value) {
+    if (!value || typeof value !== "string") return "";
+    const url = String(value).trim();
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+    return "/" + url.replace(/^(\.\.\/)+/, "");
+  }
+
+  function toVehicleMediaLookup(vehicles) {
+    const lookup = {};
+    (Array.isArray(vehicles) ? vehicles : []).forEach((v) => {
+      const id = String(v?.vehicle_id || v?.id || "").trim();
+      if (!id) return;
+      const cover = normalizeVehicleImageUrl(v?.cover_image);
+      const gallery = Array.isArray(v?.gallery_images)
+        ? v.gallery_images.map(normalizeVehicleImageUrl).filter(Boolean)
+        : [];
+      lookup[id] = { cover, gallery };
+    });
+    return lookup;
+  }
+
+  function resolveVehicleImageForBooking(bookingVehicleId) {
+    const key = String(bookingVehicleId || "").trim();
+    if (!key) return "";
+    const media = vehicleMediaById[key];
+    if (!media) return "";
+    return media.cover || (Array.isArray(media.gallery) ? media.gallery[0] : "") || "";
   }
 
   function formatDateTime(dateValue, timeValue) {
@@ -392,7 +417,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
   async function loadVehicleOptions() {
     if (vehicleOptions.length > 0) return vehicleOptions;
     try {
-      const resp = await fetch(VEHICLES_API, { headers: { Accept: "application/json" } });
+      const resp = await fetch(VEHICLES_API, { cache: "no-store", headers: { Accept: "application/json" } });
       const data = await resp.json();
       vehicleOptions = Array.isArray(data)
         ? data
@@ -405,6 +430,19 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       vehicleOptions = [];
     }
     return vehicleOptions;
+  }
+
+  async function loadVehicleMedia() {
+    if (Object.keys(vehicleMediaById).length > 0) return vehicleMediaById;
+    try {
+      const resp = await fetch(VEHICLE_MEDIA_API, { cache: "no-store", headers: { Accept: "application/json" } });
+      const data = await resp.json();
+      vehicleMediaById = toVehicleMediaLookup(data);
+    } catch (err) {
+      console.error("manage-booking: vehicle media load error:", err);
+      vehicleMediaById = {};
+    }
+    return vehicleMediaById;
   }
 
   function renderVehicleOptions($select, selectedId) {
@@ -453,14 +491,15 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     setText("s-vehicle", vehicleLabel || "–");
     const imgEl = document.getElementById("vehicle-img");
     if (imgEl) {
-      const src = VEHICLE_IMAGES[b.vehicleId] || "";
-      if (src) {
-        imgEl.src = src;
-        imgEl.alt = vehicleLabel || "Rental vehicle";
-        imgEl.style.display = "";
-      } else {
-        imgEl.style.display = "none";
-      }
+      const src = resolveVehicleImageForBooking(b.vehicleId) || VEHICLE_IMAGE_PLACEHOLDER;
+      imgEl.removeAttribute("src");
+      imgEl.style.display = "";
+      imgEl.src = src;
+      imgEl.alt = vehicleLabel || "Vehicle image coming soon";
+      imgEl.onerror = () => {
+        imgEl.onerror = null;
+        imgEl.src = VEHICLE_IMAGE_PLACEHOLDER;
+      };
     }
     setText("s-pickup", formatDateTime(b.pickupDate, b.pickupTime));
     setText("s-return", formatDateTime(b.returnDate, b.returnTime));
@@ -1336,7 +1375,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   (async function bootstrap() {
-    await loadVehicleOptions();
+    await Promise.all([loadVehicleOptions(), loadVehicleMedia()]);
     if (activeToken) {
       showSection($loading);
       await loadBooking();
