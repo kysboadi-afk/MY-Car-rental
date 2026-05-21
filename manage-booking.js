@@ -19,7 +19,7 @@
   const VEHICLE_IMAGES = {
     camry:      "images/IMG_0046.png",
     camry2013:  "images/IMG_5144.png",
-    fusion2017: "images/car1.jpg",
+    fusion2017: "images/IMG_5144.png",
     slingshot:  "images/slingshot.jpg",
   };
 
