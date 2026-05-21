@@ -74,12 +74,12 @@ export default async function handler(req, res) {
   // ── Owner notification ────────────────────────────────────────────────────
   try {
     await transporter.sendMail({
-      from: `"Sly Transportation Services LLC Contact" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals LLC Contact" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: `📬 New Contact Form Submission – ${name} [#${submissionId}]`,
       replyTo: email,
       text: [
-        "New Contact Form Submission – Sly Transportation Services LLC",
+        "New Contact Form Submission – Sly Car Rentals LLC",
         "",
         "Someone has submitted the contact form on the website.",
         "",
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
       ].join("\n"),
       html: `
         <h2>📬 New Contact Form Submission</h2>
-        <p>Someone has submitted the contact form on the Sly Transportation Services LLC website.</p>
+        <p>Someone has submitted the contact form on the Sly Car Rentals LLC website.</p>
         <table style="border-collapse:collapse;width:100%;max-width:560px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Submission ID</strong></td><td style="padding:8px;border:1px solid #ddd;font-family:monospace">${esc(submissionId)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name)}</td></tr>
@@ -112,13 +112,13 @@ export default async function handler(req, res) {
   // Response time commitment: 5–15 minutes (business SLA — update if this changes).
   try {
     await transporter.sendMail({
-      from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
       to: email,
       subject: `✅ We received your message! [#${submissionId}]`,
       text: [
         `Hi ${name},`,
         "",
-        "Thank you for reaching out to Sly Transportation Services LLC!",
+        "Thank you for reaching out to Sly Car Rentals LLC!",
         "We have received your message and will get back to you within 5–15 minutes.",
         "",
         `Your submission reference number is: ${submissionId}`,
@@ -126,14 +126,14 @@ export default async function handler(req, res) {
         "",
         `If you need immediate assistance, call us at ${BUSINESS_PHONE}.`,
         "",
-        "– Sly Transportation Services LLC",
+        "– Sly Car Rentals LLC",
         "1200 S Figueroa St, Los Angeles, CA 90015",
       ].join("\n"),
       html: `
         <div style="font-family:sans-serif;max-width:520px">
           <h2 style="color:#ffb400">✅ Message Received!</h2>
           <p>Hi ${esc(name)},</p>
-          <p>Thank you for reaching out to <strong>Sly Transportation Services LLC</strong>! We have received your message and will get back to you within <strong>5–15 minutes</strong>.</p>
+          <p>Thank you for reaching out to <strong>Sly Car Rentals LLC</strong>! We have received your message and will get back to you within <strong>5–15 minutes</strong>.</p>
           <table style="border-collapse:collapse;width:100%;margin:16px 0">
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Submission #</strong></td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;color:#555">${esc(submissionId)}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Expected Reply</strong></td><td style="padding:8px;border:1px solid #ddd">5–15 minutes</td></tr>
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
           <p>If you need immediate assistance, please call us directly:</p>
           <p style="font-size:20px;font-weight:700"><a href="tel:+18445114059" style="color:#ffb400;text-decoration:none">${BUSINESS_PHONE}</a></p>
           <hr style="border:none;border-top:1px solid #ddd;margin:24px 0">
-          <p style="font-size:12px;color:#888">– Sly Transportation Services LLC · 1200 S Figueroa St, Los Angeles, CA 90015</p>
+          <p style="font-size:12px;color:#888">– Sly Car Rentals LLC · 1200 S Figueroa St, Los Angeles, CA 90015</p>
         </div>
       `,
     });

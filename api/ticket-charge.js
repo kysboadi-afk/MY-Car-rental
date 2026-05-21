@@ -187,7 +187,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
   // ── 5. Create off-session Stripe PaymentIntent ────────────────────────────
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const description =
-    `Sly Transportation Services LLC – Violation Ticket #${ticket.ticket_number}` +
+    `Sly Car Rentals LLC – Violation Ticket #${ticket.ticket_number}` +
     ` (includes $${effectiveAdminFee.toFixed(2)} admin fee)`;
 
   let stripePI    = null;
@@ -373,19 +373,19 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       if (renterEmail) {
         emailPromises.push(
           transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      renterEmail,
-            subject: `Violation Charge – $${totalAmount.toFixed(2)} | Sly Transportation Services LLC`,
+            subject: `Violation Charge – $${totalAmount.toFixed(2)} | Sly Car Rentals LLC`,
             html: `
               <h2>\ud83d\udea8 Violation Charge Notice</h2>
               <p>Hi ${esc(renterName.split(" ")[0])},</p>
               <p>A charge of <strong>${esc(formattedTotal)}</strong> has been applied to your card for a violation ticket recorded during your rental.</p>
               ${detailTable}
               <p>Questions? Contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
-              <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
+              <p><strong>Sly Car Rentals LLC \ud83d\ude97</strong></p>
             `,
             text: [
-              `Violation Charge Notice — Sly Transportation Services LLC`,
+              `Violation Charge Notice — Sly Car Rentals LLC`,
               ``,
               `Hi ${renterName.split(" ")[0]},`,
               ``,
@@ -398,7 +398,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               ``,
               `Questions? Call (844) 511-4059 or email ${OWNER_EMAIL}.`,
               ``,
-              `Sly Transportation Services LLC`,
+              `Sly Car Rentals LLC`,
             ].join("\n"),
           }).catch((e) => console.error("ticket-charge: renter email failed:", e.message))
         );
@@ -408,7 +408,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       if (OWNER_EMAIL) {
         emailPromises.push(
           transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      OWNER_EMAIL,
             subject: `[Admin] Violation Charge Succeeded – ${renterName} – ${formattedTotal}`,
             html: `
@@ -416,7 +416,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               <p>A violation ticket charge completed successfully.</p>
               ${detailTable}
               ${licenseLinksBlock}
-              <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
+              <p><strong>Sly Car Rentals LLC \ud83d\ude97</strong></p>
             `,
             text: [
               `Violation Charge Succeeded`,
@@ -437,7 +437,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
       if (OWNER_EMAIL) {
         emailPromises.push(
           transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      OWNER_EMAIL,
             subject: `[Admin] Violation Charge FAILED – ${renterName} – Ticket #${ticket.ticket_number}`,
             html: `
@@ -447,7 +447,7 @@ async function actionCharge(sb, ticketId, isRetry, res) {
               ${licenseLinksBlock}
               <p><strong>Error:</strong> ${esc(stripeError || "Unknown error")}</p>
               <p>Retry count: ${ticketPatch.charge_retry_count}</p>
-              <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
+              <p><strong>Sly Car Rentals LLC \ud83d\ude97</strong></p>
             `,
             text: [
               `Violation Charge Failed`,

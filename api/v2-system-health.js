@@ -1979,7 +1979,7 @@ async function sendOwnerAlerts(checks, overallStatus, checkedAt) {
       }).join("");
 
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      OWNER_EMAIL,
         subject,
         html: `<div style="font-family:sans-serif;max-width:640px;margin:0 auto;">

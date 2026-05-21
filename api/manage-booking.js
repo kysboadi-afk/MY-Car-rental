@@ -225,7 +225,7 @@ async function sendChangeConfirmationEmail({
     });
     const firstName = (renterName || "").split(" ")[0] || "there";
     await transporter.sendMail({
-      from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
       to: renterEmail,
       subject: "Your Booking Has Been Updated",
       html: `
@@ -539,7 +539,7 @@ export default async function handler(req, res) {
       amount: Math.round(paymentAmount * 100),
       currency: "usd",
       receipt_email: row.customer_email || undefined,
-      description: `Sly Transportation Services LLC – ${vehicleData?.name || uiVehicle || "Rental"} ${isPartialPayment ? "Partial " : ""}Balance Payment`,
+      description: `Sly Car Rentals LLC – ${vehicleData?.name || uiVehicle || "Rental"} ${isPartialPayment ? "Partial " : ""}Balance Payment`,
       automatic_payment_methods: { enabled: true },
       metadata: {
         payment_type: isPartialPayment ? "partial_balance" : "rental_balance",
@@ -888,7 +888,7 @@ export default async function handler(req, res) {
       amount: Math.round(changeFee * 100),
       currency: "usd",
       receipt_email: row.customer_email || undefined,
-      description: `Sly Transportation Services LLC – Booking Change Fee (${bookingId})`,
+      description: `Sly Car Rentals LLC – Booking Change Fee (${bookingId})`,
       automatic_payment_methods: { enabled: true },
       metadata: {
         payment_type:    "booking_change_fee",

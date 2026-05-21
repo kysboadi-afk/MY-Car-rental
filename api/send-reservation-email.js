@@ -238,7 +238,7 @@ function generateRentalAgreementHtml(body) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Signed Rental Agreement — SLY Transportation Services LLC</title>
+  <title>Signed Rental Agreement — SLY Car Rentals LLC</title>
   <style>
     body { font-family: Arial, sans-serif; font-size: 14px; color: #111; margin: 40px; line-height: 1.6; }
     h2 { text-align: center; border-bottom: 2px solid #111; padding-bottom: 8px; }
@@ -254,7 +254,7 @@ function generateRentalAgreementHtml(body) {
   </style>
 </head>
 <body>
-  <h2>SLY TRANSPORTATION SERVICES — CAR RENTAL AGREEMENT</h2>
+  <h2>SLY CAR RENTALS — CAR RENTAL AGREEMENT</h2>
   <p style="text-align:center;font-size:13px;color:#555">Generated: ${esc(signedAt)} (Pacific Time)</p>
 
   <h4>PARTIES</h4>
@@ -882,7 +882,7 @@ export default async function handler(req, res) {
     } else {
     console.log(`[send-reservation-email] entering owner email block — to=${OWNER_EMAIL} SMTP_HOST=${process.env.SMTP_HOST || "(not set)"} booking=${bookingId || "(no id)"} attachments=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
     const ownerEmailOpts = {
-      from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: ownerSubject,
       attachments,
@@ -1108,12 +1108,12 @@ export default async function handler(req, res) {
           }]
         : [];
       const customerEmailOpts = {
-        from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to: email,
         subject: customerSubject,
         ...(customerAttachments.length ? { attachments: customerAttachments } : {}),
         text: [
-          isBalancePayment ? "Balance Paid – Sly Transportation Services LLC" : "Payment Confirmed – Sly Transportation Services LLC",
+          isBalancePayment ? "Balance Paid – Sly Car Rentals LLC" : "Payment Confirmed – Sly Car Rentals LLC",
           "",
           customerIntro,
           "Here are your booking details:",
@@ -1143,10 +1143,10 @@ export default async function handler(req, res) {
           "We will be in touch shortly to confirm your rental pick-up details.",
           `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
           "",
-          "Sly Transportation Services LLC Team",
+          "Sly Car Rentals LLC Team",
         ].filter(line => line !== undefined).join("\n"),
         html: `
-          <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Transportation Services LLC" : "✅ Payment Confirmed – Sly Transportation Services LLC"}</h2>
+          <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Car Rentals LLC" : "✅ Payment Confirmed – Sly Car Rentals LLC"}</h2>
           <p>${esc(customerIntro)} Here are your booking details:</p>
           <table style="border-collapse:collapse;width:100%">
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
@@ -1168,7 +1168,7 @@ export default async function handler(req, res) {
           ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
           <p>You can <a href="https://slycarrentals.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
           <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-          <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+          <p><strong>Sly Car Rentals LLC Team 🚗</strong></p>
         `,
       };
       try {

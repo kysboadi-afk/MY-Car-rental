@@ -251,7 +251,7 @@ export default async function handler(req, res) {
       // Save the card for future off-session charges (damages, late fees, etc.).
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} Balance Payment`,
+      description: `Sly Car Rentals LLC – ${vehicleData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
       // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
       // based on the customer's billing address collected by the Payment Element.

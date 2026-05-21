@@ -326,8 +326,8 @@ export default async function handler(req, res) {
       ...(setupFutureUsage ? { setup_future_usage: setupFutureUsage } : {}),
       receipt_email: email,
       description: isCamryDepositMode
-            ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
-            : `Sly Transportation Services LLC – ${vehicleData.name}`,
+            ? `Sly Car Rentals LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
+            : `Sly Car Rentals LLC – ${vehicleData.name}`,
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },

@@ -140,7 +140,7 @@ async function sendStoredSlingshotAgreementEmail(sb, bookingRow, docsRow, manage
   const recipients = [String(bookingRow.customer_email || "").trim().toLowerCase()].filter(Boolean);
   if (!recipients.length) throw new Error("Booking has no renter email.");
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
     to: recipients.join(", "),
     subject: "Your signed Slingshot agreement",
     html: `
@@ -2096,7 +2096,7 @@ export default async function handler(req, res) {
         });
         try {
           await transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      email,
             subject: customerTemplate.subject,
             html: customerTemplate.html,
@@ -2160,7 +2160,7 @@ export default async function handler(req, res) {
           });
           const balanceLink = bkRow.balance_payment_link || "";
           await transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      bkRow.customer_email,
             subject: "Your Booking Management Link",
             html: `
@@ -2341,7 +2341,7 @@ export default async function handler(req, res) {
             auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
           });
           await transporter.sendMail({
-            from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to: email,
             subject: isSlingshotManual ? "Manage Your Slingshot Booking" : "Manage & Pay Your Booking",
             html: `

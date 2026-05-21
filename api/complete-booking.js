@@ -249,7 +249,7 @@ async function handleCreatePaymentIntent(req, res, booking) {
       amount: Math.round(remainingBalance * 100),
       currency: "usd",
       receipt_email: booking.email || undefined,
-      description: `Sly Transportation Services LLC – ${booking.vehicleName || booking.vehicleId} Rental Balance`,
+      description: `Sly Car Rentals LLC – ${booking.vehicleName || booking.vehicleId} Rental Balance`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },

@@ -513,7 +513,7 @@ async function sendBookingPersistenceAlert(paymentIntent, reason, details = {}) 
       },
     });
     await transporter.sendMail({
-      from: `"Sly Transportation Alerts" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals Alerts" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: `🚨 Booking persistence failed for ${paymentIntent?.id || "unknown PI"}`,
       text: alertText,
@@ -1149,7 +1149,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   let ownerEmailSent = false;
   try {
     await transporter.sendMail({
-      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
       subject:     ownerEmail.subject,
@@ -1164,7 +1164,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     if (attachments.length > 0 && isLikelyAttachmentDeliveryError(emailErr)) {
       try {
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           ...(email ? { replyTo: email } : {}),
           subject: ownerEmail.subject,
@@ -1233,7 +1233,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     });
     try {
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      email,
         subject: customerEmail.subject,
         text:    customerEmail.text,
@@ -1651,7 +1651,7 @@ async function sendReservationDepositBalanceEmail({
   });
   const firstName = (renterName || "").split(" ")[0] || "there";
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
     to: renterEmail,
     subject: "Your Reservation Deposit Was Received — Complete Remaining Balance",
     html: `
@@ -1682,7 +1682,7 @@ async function sendReservationDepositBalanceOwnerEmail({
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
     to: OWNER_EMAIL,
     ...(renterEmail ? { replyTo: renterEmail } : {}),
     subject: `🔒 Reservation Deposit Paid — ${esc(renterName || "Renter")}`,
@@ -1793,7 +1793,7 @@ async function sendBalancePaidCustomerEmail({
     amountPaid,
   });
   const customerMailOpts = {
-    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
     to: renterEmail,
     subject: "✅ Payment Received — Your Rental is Fully Booked!",
     attachments: agreementAttachment,
@@ -1869,7 +1869,7 @@ async function sendBalancePaidOwnerEmail({
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
     to: OWNER_EMAIL,
     ...(renterEmail ? { replyTo: renterEmail } : {}),
     subject: `✅ Balance Paid — ${esc(renterName || "Renter")} — ${esc(vehicleName || "")}`,
@@ -3026,7 +3026,7 @@ export default async function handler(req, res) {
               auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
             });
             await transporter.sendMail({
-              from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+              from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
               to:      bkRow.customer_email,
               subject: "Your Booking Change Has Been Applied",
               html: `
@@ -3605,7 +3605,7 @@ export default async function handler(req, res) {
           let slOwnerEmailSent = false;
           try {
             await slTransporter.sendMail({
-              from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+              from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
               to:          OWNER_EMAIL,
               ...(sl_renter_email ? { replyTo: sl_renter_email } : {}),
               subject:     `✅ Slingshot Booking — ${esc(sl_renter_name || "New Renter")} — ${esc(sl_vehicle_name || "")} — ${esc(sl_pickup_date || "")}`,
@@ -3654,7 +3654,7 @@ export default async function handler(req, res) {
             const slFirstName = (sl_renter_name || "").split(" ")[0] || "there";
             const slRenterAttachments = slPdfBuffer ? slAttachments.filter((a) => a.filename === slPdfFilename) : [];
             const slRenterMailOpts = {
-              from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+              from:        `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
               to:          sl_renter_email,
               subject:     `✅ Your Slingshot Booking is Confirmed — ${esc(sl_vehicle_name || "Polaris Slingshot")}`,
               attachments: slRenterAttachments,

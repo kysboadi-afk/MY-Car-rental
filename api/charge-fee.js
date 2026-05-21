@@ -150,7 +150,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
   const renterPhone = booking.customers?.phone || null;
   const label       = CHARGE_TYPE_LABELS[chargeType] || chargeType;
   const paymentType = CHARGE_TYPE_TO_PAYMENT_TYPE[chargeType] || "other_fee";
-  const description = `Sly Transportation Services LLC – ${label}` + (notes ? ` (${notes})` : "");
+  const description = `Sly Car Rentals LLC – ${label}` + (notes ? ` (${notes})` : "");
 
   // ── Create off-session Stripe PaymentIntent ──────────────────────────────
   const stripe    = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -247,19 +247,19 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     if (renterEmail) {
       promises.push(
         transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      renterEmail,
-          subject: `Additional Charge – ${label} | Sly Transportation Services LLC`,
+          subject: `Additional Charge – ${label} | Sly Car Rentals LLC`,
           html: `
             <h2>📋 Additional Charge Notice</h2>
             <p>Hi ${esc(renterName.split(" ")[0])},</p>
             <p>An additional charge of <strong>${esc(formattedAmount)}</strong> has been applied to your rental for <strong>${esc(label)}</strong>.</p>
             ${sharedTable}
             <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
-            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC 🚗</strong></p>
           `,
           text: [
-            `Additional Charge Notice — Sly Transportation Services LLC`,
+            `Additional Charge Notice — Sly Car Rentals LLC`,
             ``,
             `Hi ${renterName.split(" ")[0]},`,
             ``,
@@ -273,7 +273,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
             ``,
             `If you have any questions contact us at ${OWNER_EMAIL} or call (844) 511-4059.`,
             ``,
-            `Sly Transportation Services LLC`,
+            `Sly Car Rentals LLC`,
           ].filter((l) => l !== undefined).join("\n"),
         }).catch((err) => console.error("charge-fee: renter email failed:", err.message))
       );
@@ -283,17 +283,17 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     if (OWNER_EMAIL) {
       promises.push(
         transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           subject: `[Admin] Extra Charge Applied – ${label} – ${renterName}`,
           html: `
             <h2>💳 Extra Charge Applied</h2>
             <p>A charge was applied to a customer's card from the <strong>${esc(chargedBy)}</strong> interface.</p>
             ${sharedTable}
-            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC 🚗</strong></p>
           `,
           text: [
-            `Extra Charge Applied — Sly Transportation Services LLC`,
+            `Extra Charge Applied — Sly Car Rentals LLC`,
             ``,
             `A charge was applied to a customer's card from the ${chargedBy} interface.`,
             ``,
@@ -303,7 +303,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
             `Amount       : ${formattedAmount}`,
             notes ? `Note         : ${notes}` : "",
             ``,
-            `Sly Transportation Services LLC`,
+            `Sly Car Rentals LLC`,
           ].filter((l) => l !== undefined).join("\n"),
         }).catch((err) => console.error("charge-fee: owner email failed:", err.message))
       );
