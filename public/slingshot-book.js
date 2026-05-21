@@ -1,7 +1,7 @@
 // slingshot-book.js
 // Booking page JavaScript for slingshot hourly-package rentals.
-// Handles: package selection, Stripe Identity verification, Stripe payment,
-// and the "Extend Rental" flow (?extend=1).
+// Handles: package selection, Stripe Identity verification, agreement signing,
+// reservation finalization, and the "Extend Rental" flow (?extend=1).
 
 "use strict";
 
@@ -40,9 +40,11 @@ var carData = null;                 // vehicle data from API
 var agreementSigned = false;        // true once renter signs the rental agreement
 var agreementSignature = "";        // typed name used as electronic signature
 var verifiedIdentitySessionId = null;
+var identityVerificationInFlight = false;
 var selectedPaymentOption = "manual";
 var SLINGSHOT_IDENTITY_STATE_KEY = "slySlingshotIdentityState";
 var SLINGSHOT_BOOKING_DRAFT_KEY = "slySlingshotBookingDraft";
+var SLINGSHOT_CTA_LABEL = "Secure Your Reservation";
 
 // ----- Helpers -----
 function escHtml(str) {
@@ -154,6 +156,109 @@ function clearBookingDraft() {
   try { sessionStorage.removeItem(SLINGSHOT_BOOKING_DRAFT_KEY); } catch (_) {}
 }
 
+function setIdentityStatus(message, tone) {
+  var statusEl = document.getElementById("slIdentityStepStatus");
+  if (!statusEl) return;
+  statusEl.style.color = tone === "success" ? "#4caf50" : (tone === "error" ? "#ff8a65" : "#aaa");
+  statusEl.textContent = message || "";
+}
+
+function syncAgreementUi() {
+  var signBtn = document.getElementById("slSignAgreementBtn");
+  var signBox = document.getElementById("slRentalAgreementBox");
+  var agreeEl = document.getElementById("slAgree");
+  var signStatus = document.getElementById("slSignAgreementStatus");
+  var identityReady = !!verifiedIdentitySessionId;
+
+  if (!identityReady) {
+    if (signBtn) {
+      signBtn.disabled = true;
+      signBtn.style.opacity = "0.65";
+      signBtn.textContent = "🔒 Verify ID to Unlock Agreement";
+    }
+    if (signBox) signBox.style.display = "none";
+    if (agreeEl) {
+      agreeEl.checked = false;
+      agreeEl.disabled = true;
+    }
+    if (signStatus) {
+      signStatus.style.color = "#aaa";
+      signStatus.textContent = "Verify ID in Step 1 before signing the agreement.";
+    }
+    return;
+  }
+
+  if (signBtn) {
+    signBtn.disabled = false;
+    signBtn.style.opacity = "";
+    if (!agreementSigned) signBtn.textContent = "✍ Review & Sign Rental Agreement";
+  }
+  if (agreementSigned) return;
+  if (signStatus) {
+    signStatus.style.color = "#aaa";
+    signStatus.textContent = "ID verified. Review and sign the agreement to continue.";
+  }
+  if (agreeEl) {
+    agreeEl.checked = false;
+    agreeEl.disabled = true;
+  }
+}
+
+function clearAgreementProgress() {
+  agreementSigned = false;
+  agreementSignature = "";
+  var signBtn = document.getElementById("slSignAgreementBtn");
+  var signBox = document.getElementById("slRentalAgreementBox");
+  var signInput = document.getElementById("slSignatureInput");
+  var signStatus = document.getElementById("slSignAgreementStatus");
+  var sigErr = document.getElementById("slSignatureError");
+  var agreeEl = document.getElementById("slAgree");
+  if (signInput) signInput.value = "";
+  if (signBox) signBox.style.display = "none";
+  if (signBtn) {
+    signBtn.classList.remove("signed");
+    signBtn.style.display = "";
+  }
+  if (sigErr) {
+    sigErr.textContent = "";
+    sigErr.style.display = "none";
+  }
+  if (signStatus) {
+    signStatus.style.color = "#aaa";
+    signStatus.textContent = "";
+  }
+  if (agreeEl) {
+    agreeEl.checked = false;
+    agreeEl.disabled = true;
+  }
+  syncAgreementUi();
+}
+
+function collectBookingDraft() {
+  var dateInput = document.getElementById("slPickupDate");
+  var timeSelect = document.getElementById("slPickupTime");
+  var nameInput = document.getElementById("slName");
+  var emailInput = document.getElementById("slEmail");
+  var phoneInput = document.getElementById("slPhone");
+  var smsInput = document.getElementById("smsConsentCheck");
+  return {
+    vehicleId: vehicleId,
+    slingshotPackage: selectedPackage,
+    pickupDate: dateInput && dateInput.value ? dateInput.value : "",
+    pickupTime: timeSelect && timeSelect.value ? timeSelect.value : "",
+    name: nameInput ? nameInput.value.trim() : "",
+    email: emailInput ? emailInput.value.trim() : "",
+    phone: phoneInput ? phoneInput.value.trim() : "",
+    agreementSignature: agreementSignature,
+    agreementSigned: agreementSigned,
+    smsConsent: !!(smsInput && smsInput.checked),
+  };
+}
+
+function persistBookingDraft() {
+  writeBookingDraft(collectBookingDraft());
+}
+
 function clearIdentityReturnParamsFromUrl() {
   try {
     var url = new URL(window.location.href);
@@ -219,12 +324,7 @@ function computePaymentDetails(pkgKey, paymentOption) {
 function updateBookBtnLabel() {
   var btn = document.getElementById("slBookBtn");
   if (!btn) return;
-  var details = selectedPackage ? computePaymentDetails(selectedPackage, selectedPaymentOption) : null;
-  if (!details) {
-    btn.textContent = "Verify ID, Sign Agreement & Confirm Reservation";
-    return;
-  }
-  btn.textContent = "Verify ID, Sign Agreement & Confirm Reservation";
+  btn.textContent = SLINGSHOT_CTA_LABEL;
 }
 
 /**
@@ -508,7 +608,7 @@ function updateTotalBreakdown() {
   if (!selectedPackage) {
     breakdownEl.style.display = "none";
     if (noticeEl) {
-      noticeEl.textContent = "Rental payment, deposit, and pickup charges are collected in person at pickup.";
+      noticeEl.textContent = "In-person payment at pickup. Remaining balance is collected at pickup.";
     }
     updateBookBtnLabel();
     return;
@@ -523,7 +623,7 @@ function updateTotalBreakdown() {
   if (balanceEl)    balanceEl.textContent    = details.balanceAtPickup.toFixed(2);
   if (balanceRow)   balanceRow.style.display = "none";
   if (noticeEl) {
-    noticeEl.textContent = "Rental payment, deposit, and pickup charges are collected in person at pickup.";
+    noticeEl.textContent = "In-person payment at pickup. Remaining balance is collected at pickup.";
   }
   breakdownEl.style.display = "";
   updateBookBtnLabel();
@@ -547,13 +647,14 @@ function updateBookBtn() {
   var nameOk   = !!(nameInput && nameInput.value.trim());
   var emailOk  = !!(emailInput && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim()));
   var phoneOk  = !!(phoneInput && phoneInput.value.trim().length >= 7);
-  var agreeEl  = document.getElementById("slAgree");
   var smsEl    = document.getElementById("smsConsentCheck");
   var smsOk    = !smsEl || smsEl.checked;
 
   var ready = pkgOk && dateOk && timeOk && nameOk && emailOk && phoneOk && smsOk;
   btn.disabled = !ready;
-  if (hintEl) hintEl.style.display = ready ? "none" : "";
+  updateBookBtnLabel();
+  if (hintEl) hintEl.style.display = "";
+  persistBookingDraft();
 }
 
 // ----- Package picker -----
@@ -607,52 +708,102 @@ async function ensureSlingshotIdentityVerified(payload) {
   return verifiedIdentitySessionId;
 }
 
-async function launchSlingshotPayment() {
-  clearPayError();
-  var flowStage = "start";
-
+function getBookingFormValues() {
   var dateInput  = document.getElementById("slPickupDate");
   var timeSelect = document.getElementById("slPickupTime");
   var nameInput  = document.getElementById("slName");
   var emailInput = document.getElementById("slEmail");
   var phoneInput = document.getElementById("slPhone");
-  var bookBtn    = document.getElementById("slBookBtn");
-  if (!selectedPackage) { showPayError("Please select a rental package."); return; }
-  if (!dateInput || !dateInput.value) { showPayError("Please select a pickup date."); return; }
-  if (!timeSelect || !timeSelect.value) { showPayError("Please select a pickup time."); return; }
+  return {
+    dateInput: dateInput,
+    timeSelect: timeSelect,
+    nameInput: nameInput,
+    emailInput: emailInput,
+    phoneInput: phoneInput,
+    pickupDate: dateInput ? dateInput.value : "",
+    pickupTime: timeSelect ? timeSelect.value : "",
+    name: nameInput ? nameInput.value.trim() : "",
+    email: emailInput ? emailInput.value.trim() : "",
+    phone: phoneInput ? phoneInput.value.trim() : "",
+  };
+}
 
-  var name  = nameInput  ? nameInput.value.trim()  : "";
-  var email = emailInput ? emailInput.value.trim()  : "";
-  var phone = phoneInput ? phoneInput.value.trim()  : "";
+function validateBookingInputs(values) {
+  if (!selectedPackage) return "Please select a rental package.";
+  if (!values.pickupDate) return "Please select a pickup date.";
+  if (!values.pickupTime) return "Please select a pickup time.";
+  if (!values.name) return "Full name is required.";
+  if (!values.email) return "Email address is required.";
+  if (!values.phone) return "Phone number is required.";
+  return "";
+}
 
-  if (!name)  { showPayError("Full name is required."); return; }
-  if (!email) { showPayError("Email address is required."); return; }
-  if (!phone) { showPayError("Phone number is required."); return; }
-  writeBookingDraft({
-    vehicleId: vehicleId,
-    slingshotPackage: selectedPackage,
-    pickupDate: dateInput.value,
-    pickupTime: timeSelect.value,
-    name: name,
-    email: email,
-    phone: phone,
-    agreementSignature: agreementSignature,
-    agreementSigned: agreementSigned,
-  });
+async function runIdentityVerificationStep(values, triggerEl) {
+  if (identityVerificationInFlight) return verifiedIdentitySessionId;
+  var validationError = validateBookingInputs(values);
+  if (validationError) {
+    showPayError(validationError);
+    setIdentityStatus(validationError, "error");
+    return null;
+  }
 
-  if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Verifying identity…"; }
+  identityVerificationInFlight = true;
+  clearPayError();
+  setIdentityStatus("Launching secure ID verification…", "neutral");
+  var previousText = triggerEl ? triggerEl.textContent : "";
+  if (triggerEl) {
+    triggerEl.disabled = true;
+    triggerEl.textContent = "Verifying ID…";
+  }
 
   try {
-    flowStage = "identity_verification";
     var identitySessionId = await ensureSlingshotIdentityVerified({
       vehicleId: vehicleId,
-      name: name,
-      email: email,
-      phone: phone,
+      name: values.name,
+      email: values.email,
+      phone: values.phone,
     });
+    setIdentityStatus("✅ ID verification complete. Step 2 is now unlocked.", "success");
+    syncAgreementUi();
+    persistBookingDraft();
+    return identitySessionId;
+  } catch (err) {
+    var msg = isNetworkFetchError(err)
+      ? "Network error while verifying ID. Please reconnect and try again."
+      : (err && err.message ? err.message : "Could not complete ID verification.");
+    setIdentityStatus(msg, "error");
+    showPayError(msg);
+    return null;
+  } finally {
+    identityVerificationInFlight = false;
+    if (triggerEl) {
+      triggerEl.disabled = false;
+      triggerEl.textContent = previousText || SLINGSHOT_CTA_LABEL;
+    }
+  }
+}
+
+async function launchSlingshotPayment() {
+  clearPayError();
+  var flowStage = "start";
+  var bookBtn    = document.getElementById("slBookBtn");
+  var values = getBookingFormValues();
+  var validationError = validateBookingInputs(values);
+  if (validationError) { showPayError(validationError); return; }
+  persistBookingDraft();
+
+  if (bookBtn) { bookBtn.disabled = true; bookBtn.textContent = "Securing reservation…"; }
+
+  try {
+    var identitySessionId = verifiedIdentitySessionId;
+    if (!identitySessionId) {
+      flowStage = "identity_verification";
+      identitySessionId = await runIdentityVerificationStep(values, bookBtn);
+      if (!identitySessionId) return;
+    }
 
     if (!agreementSigned) {
-      throw new Error("ID verified. Please read and sign the Rental Agreement, then click confirm reservation.");
+      throw new Error("ID verified. Please read and sign the Rental Agreement in Step 2, then tap Secure Your Reservation again.");
     }
     var agreeEl = document.getElementById("slAgree");
     if (!agreeEl || !agreeEl.checked) {
@@ -671,11 +822,11 @@ async function launchSlingshotPayment() {
           vehicleId,
           slingshotPackage: selectedPackage,
           paymentOption:    "deposit",
-          pickupDate:       dateInput.value,
-          pickupTime:       timeSelect.value,
-          name,
-          email,
-          phone,
+          pickupDate:       values.pickupDate,
+          pickupTime:       values.pickupTime,
+          name:             values.name,
+          email:            values.email,
+          phone:            values.phone,
           identitySessionId,
         }),
       });
@@ -694,10 +845,10 @@ async function launchSlingshotPayment() {
     var details = computePaymentDetails(selectedPackage, "manual");
     if (!details) throw new Error("Invalid package selected. Please choose a package and try again.");
     var pkg = SLINGSHOT_PACKAGES[selectedPackage];
-    var returnResult = computeReturnHHMM(timeSelect.value, pkg.hours);
+    var returnResult = computeReturnHHMM(values.pickupTime, pkg.hours);
     var returnDate = returnResult.daysAdded > 0
-      ? SlyLA.addDaysToISO(dateInput.value, returnResult.daysAdded)
-      : dateInput.value;
+      ? SlyLA.addDaysToISO(values.pickupDate, returnResult.daysAdded)
+      : values.pickupDate;
     var total = details.totalAmount;
     var chargedToday = details.chargedToday;
     var balanceAtPickup = details.balanceAtPickup;
@@ -706,11 +857,11 @@ async function launchSlingshotPayment() {
       vehicleId:          vehicleId,
       bookingId:          pendingBookingId || null,
       car:                carData ? carData.name : "Slingshot",
-      name,
-      email,
-      phone,
-      pickup:             dateInput.value,
-      pickupTime:         timeSelect.value,
+      name:               values.name,
+      email:              values.email,
+      phone:              values.phone,
+      pickup:             values.pickupDate,
+      pickupTime:         values.pickupTime,
       returnDate:         returnDate,
       returnTime:         returnResult.time,
       total:              total.toFixed(2),
@@ -788,6 +939,11 @@ async function launchSlingshotPayment() {
       showPayError(err.message || "Reservation could not be completed. Please try again or call (844) 511-4059.");
     }
     if (bookBtn) { bookBtn.disabled = false; updateBookBtnLabel(); }
+  } finally {
+    if (bookBtn) {
+      updateBookBtn();
+      updateBookBtnLabel();
+    }
   }
 }
 
@@ -989,9 +1145,23 @@ function initBookingForm() {
     if (el) el.addEventListener("input", function() {
       verifiedIdentitySessionId = null;
       clearIdentityState();
+      setIdentityStatus("Contact details changed. Please verify ID again.", "neutral");
+      clearAgreementProgress();
       updateBookBtn();
     });
   });
+
+  var slVerifyBtn = document.getElementById("slVerifyIdBtn");
+  if (slVerifyBtn) {
+    slVerifyBtn.addEventListener("click", async function() {
+      var values = getBookingFormValues();
+      var identityId = await runIdentityVerificationStep(values, slVerifyBtn);
+      if (identityId) {
+        setIdentityStatus("✅ ID verified. Continue with Step 2: sign agreement.", "success");
+        updateBookBtn();
+      }
+    });
+  }
 
   // Rental agreement signing
   var slSignBtn       = document.getElementById("slSignAgreementBtn");
@@ -1004,6 +1174,11 @@ function initBookingForm() {
 
   if (slSignBtn) {
     slSignBtn.addEventListener("click", function() {
+      if (!verifiedIdentitySessionId) {
+        setIdentityStatus("Please verify ID in Step 1 before opening the agreement.", "error");
+        showPayError("Please complete Step 1: Verify ID before signing the agreement.");
+        return;
+      }
       // Pre-fill signature field with renter name if already typed
       var renterName = (document.getElementById("slName") || {}).value || "";
       renterName = renterName.trim();
@@ -1061,12 +1236,13 @@ function initBookingForm() {
       }
       if (slSignStatus) {
         slSignStatus.style.color   = "#4caf50";
-        slSignStatus.textContent   = "Signed by " + sig + ". Check the box below to confirm.";
+        slSignStatus.textContent   = "Signed by " + sig + ". Your reservation can now be secured.";
       }
       if (slAgreeCheck) {
         slAgreeCheck.disabled = false;
         slAgreeCheck.checked = true;
       }
+      persistBookingDraft();
       updateBookBtn();
     });
   }
@@ -1084,7 +1260,10 @@ function initBookingForm() {
 
   var slSmsConsent = document.getElementById("smsConsentCheck");
   if (slSmsConsent) {
-    slSmsConsent.addEventListener("change", updateBookBtn);
+    slSmsConsent.addEventListener("change", function() {
+      updateBookBtn();
+      persistBookingDraft();
+    });
   }
 
   // Book button
@@ -1093,8 +1272,7 @@ function initBookingForm() {
     bookBtn.addEventListener("click", launchSlingshotPayment);
   }
 
-  (function maybeResumeFromIdentityReturn() {
-    if (!isIdentityReturnMode) return;
+  (function restoreDraftState() {
     var draft = readBookingDraft();
     if (!draft || String(draft.vehicleId || "") !== String(vehicleId || "")) return;
     var dateInput = document.getElementById("slPickupDate");
@@ -1105,10 +1283,13 @@ function initBookingForm() {
     var signInput = document.getElementById("slSignatureInput");
     var agreeCheck = document.getElementById("slAgree");
 
+    var smsCheck = document.getElementById("smsConsentCheck");
+
     if (nameInput) nameInput.value = draft.name || "";
     if (emailInput) emailInput.value = draft.email || "";
     if (phoneInput) phoneInput.value = draft.phone || "";
     if (dateInput) dateInput.value = draft.pickupDate || "";
+    if (smsCheck) smsCheck.checked = !!draft.smsConsent;
     if (draft.slingshotPackage) {
       var pkgBtn = document.querySelector('#packageGrid .package-btn[data-pkg="' + draft.slingshotPackage + '"]');
       if (pkgBtn) pkgBtn.click();
@@ -1120,6 +1301,10 @@ function initBookingForm() {
     if (signInput && draft.agreementSignature) signInput.value = draft.agreementSignature;
     agreementSignature = draft.agreementSignature || agreementSignature;
     agreementSigned = !!draft.agreementSigned;
+    if (slSignBtn && agreementSigned) {
+      slSignBtn.classList.add("signed");
+      slSignBtn.textContent = "✅ Rental Agreement Signed";
+    }
     if (agreeCheck && agreementSigned) {
       agreeCheck.checked = true;
       agreeCheck.disabled = false;
@@ -1135,13 +1320,16 @@ function initBookingForm() {
     updateReturnTimeDisplay();
     updateTotalBreakdown();
     updateBookBtn();
-    clearIdentityReturnParamsFromUrl();
-
-    if (verifiedIdentitySessionId) {
-      setTimeout(function() { launchSlingshotPayment(); }, 0);
+    syncAgreementUi();
+    if (isIdentityReturnMode) {
+      clearIdentityReturnParamsFromUrl();
+      if (verifiedIdentitySessionId) {
+        setIdentityStatus("✅ ID verified. Continue with Step 2: sign agreement.", "success");
+      }
     }
   }());
 
+  syncAgreementUi();
   updateBookBtn();
   updateTotalBreakdown();
 }
