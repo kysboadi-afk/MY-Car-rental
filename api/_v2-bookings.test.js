@@ -1241,6 +1241,40 @@ test("list: returns Supabase rows when client is available", async () => {
   }
 });
 
+test("list: derives remaining from total_price - deposit_paid when remaining_balance is stale zero", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-rem-1", booking_ref: "bk-rem-1", vehicle_id: "camry",
+      pickup_date: "2026-06-01", return_date: "2026-06-08",
+      pickup_time: "10:00 AM", return_time: "10:00 AM",
+      status: "reserved", total_price: 350, deposit_paid: 50,
+      remaining_balance: 0, payment_status: "partial", payment_method: "stripe",
+      payment_intent_id: "pi_rem_1", notes: "", created_at: "2026-05-20T10:00:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-rem-1", name: "Remaining Test", phone: "+15550001110", email: "remaining@example.com" },
+    },
+  ];
+  const makeChain = (rows) => ({
+    select() { return this; },
+    eq()     { return this; },
+    in()     { return this; },
+    is()     { return this; },
+    order()  { return Promise.resolve({ data: rows, error: null }); },
+  });
+  supabaseMockState.client = { from: () => makeChain(fakeRows) };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].status, "reserved_unpaid");
+    assert.equal(res._body.bookings[0].remaining, 300);
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
 test("list: retries with compatibility select when Supabase schema is missing newer columns", async () => {
   resetStore(); resetCalls();
   const fakeRows = [
@@ -1769,6 +1803,47 @@ test("send_payment_link: bookingId path sends deduped SMS with payment-plan cont
   assert.match(smsCalls[0].body, /manage-booking\.html/, "SMS should link to manage-booking dashboard");
   assert.ok(res._body?.manageLink, "response should include manageLink");
   assert.match(String(res._body?.manageLink || ""), /manage-booking\.html\?t=/, "manageLink should contain token");
+});
+
+test("send_payment_link: derives current balance when remaining_balance is stale zero", async () => {
+  resetStore(); resetCalls();
+  supabaseMockState.client = createSendPaymentLinkSupabaseMock({
+    bookings: [{
+      booking_ref: "bk-stale-remaining-1",
+      customer_id: "cust-stale-1",
+      customer_name: "Stale Remaining",
+      customer_phone: "+13105551111",
+      renter_phone: null,
+      customer_email: "stale@example.com",
+      vehicle_id: "camry",
+      pickup_date: "2026-06-01",
+      return_date: "2026-06-08",
+      total_price: 350,
+      deposit_paid: 50,
+      remaining_balance: 0,
+      payment_intent_id: "pi_stale_1",
+      balance_payment_link: "https://slycarrentals.com/balance.html?b=bk-stale-remaining-1",
+      created_at: "2026-05-01T10:00:00.000Z",
+    }],
+  });
+  paymentPlanProgressMockState.value = {
+    has_active_plan: false,
+    remaining_balance: 0,
+    overdue_amount: 0,
+    next_due_date: null,
+    remaining_installments: 0,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "send_payment_link",
+    bookingId: "bk-stale-remaining-1",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(smsCalls.length, 1);
+  assert.match(String(smsCalls[0].body || ""), /Current balance: \$300\.00\./);
 });
 
 test("send_payment_link: customerId path resolves latest booking and supports email-only send", async () => {
