@@ -356,6 +356,9 @@
       <h3 class="waitlist-heading">⏱️ Extend Your Rental</h3>
       <p class="waitlist-subtitle">This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.</p>
 
+      <!-- Account-state banners: shown when the booking has overdue balance, late fees, or requires review -->
+      <div id="extAccountStateBanner" style="display:none;margin-bottom:14px"></div>
+
       <div class="waitlist-form" id="extendRentalForm">
         <label for="extEmail">Email Address</label>
         <input type="email" id="extEmail" placeholder="Enter your booking email" autocomplete="email">
@@ -375,6 +378,7 @@
           <p style="margin:0;color:#aaa;font-size:14px">Estimated extension cost (before tax):</p>
           <p style="margin:4px 0 0;font-size:22px;font-weight:bold;color:#ffb400">$<span id="extPriceAmount">0</span></p>
           <p style="margin:4px 0 0;font-size:12px;color:#888">Final amount including tax is confirmed at checkout.</p>
+          <p id="extLateFeeDisclaimer" style="display:none;margin:4px 0 0;font-size:12px;color:#f59e0b;font-weight:600"></p>
         </div>
 
         <button id="extSubmitBtn" class="extend-btn" disabled>⏱️ Extend Rental</button>

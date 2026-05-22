@@ -94,7 +94,139 @@ function logExtensionTrace(eventName, fields) {
   });
 }
 
-async function loadExtensionBookingContext() {
+// Derive the account-state-based extension approval state from a booking context.
+// Returns { state, banners, ctaLabel, ctaEnabled } — a pure function suitable for tests.
+function deriveExtensionApprovalState(booking) {
+  if (!booking || typeof booking !== "object") {
+    return { state: "unknown", banners: [], ctaLabel: "⏱️ Extend Rental", ctaEnabled: true };
+  }
+  const lifecycleState = String(booking.paymentLifecycleState || "").trim().toLowerCase();
+  const statusKey = String(booking.status || "").trim().toLowerCase();
+  const isOverdue = statusKey === "overdue";
+  const paymentPlan = booking.paymentPlan || null;
+  const planStatus = String(paymentPlan?.status || "").trim().toLowerCase();
+  const isPlanDelinquent = !!(paymentPlan && (paymentPlan.isOverdue || planStatus === "defaulted" || planStatus === "past_due"));
+  const lateFeeStatus = String(booking.lateFeeStatus || "").trim().toLowerCase();
+  const lateFeeAmount = Number(booking.lateFeeAmount || 0);
+  const hasActiveLateF = (lateFeeStatus === "assessed" || lateFeeStatus === "pending_collection") && lateFeeAmount > 0;
+  const riskOverride = String(booking.extensionRiskOverride || "").trim().toLowerCase();
+  const balanceDue = Number(booking.balanceDue || 0);
+
+  if (riskOverride === "block") {
+    return {
+      state: "blocked",
+      banners: ["⛔ Extension approval has been temporarily paused for this account. Please contact support at (844) 511-4059 to resolve before requesting an extension."],
+      ctaLabel: "Extension Blocked — Contact Support",
+      ctaEnabled: false,
+    };
+  }
+  if (riskOverride === "allow") {
+    return { state: "auto_approved", banners: [], ctaLabel: "⏱️ Extend Rental", ctaEnabled: true };
+  }
+  if (planStatus === "defaulted") {
+    return {
+      state: "manual_review",
+      banners: [
+        "⚠️ Your payment plan has been flagged for review.",
+        "Extension request requires manual approval from our team. Please call (844) 511-4059.",
+      ],
+      ctaLabel: "⏱️ Submit Extension Request",
+      ctaEnabled: true,
+    };
+  }
+  if (isOverdue) {
+    var msgs = ["⚠️ Your account currently has an overdue balance."];
+    if (hasActiveLateF) msgs.push("Late fees ($" + lateFeeAmount.toFixed(2) + ") have been applied to your account.");
+    msgs.push("Outstanding balance must be resolved before extension approval. Any applicable late fees will be collected at checkout.");
+    return {
+      state: "overdue_pay_first",
+      banners: msgs,
+      ctaLabel: "⏱️ Extend Rental (Overdue Balance)",
+      ctaEnabled: true,
+    };
+  }
+  if (isPlanDelinquent) {
+    return {
+      state: "manual_review",
+      banners: [
+        "⚠️ Your payment plan has a past-due installment.",
+        "Partial balance payment may be required before extension.",
+      ],
+      ctaLabel: "⏱️ Submit Extension Request",
+      ctaEnabled: true,
+    };
+  }
+  if (hasActiveLateF) {
+    return {
+      state: "late_fee_pending",
+      banners: [
+        "ℹ️ Late fees ($" + lateFeeAmount.toFixed(2) + ") have been applied to your account.",
+        "These fees will be included in your extension payment at checkout.",
+      ],
+      ctaLabel: "⏱️ Extend Rental",
+      ctaEnabled: true,
+    };
+  }
+  if (balanceDue > 0 && lifecycleState === "payment_plan_active") {
+    return {
+      state: "partial_balance_required",
+      banners: [
+        "ℹ️ A partial balance ($" + balanceDue.toFixed(2) + ") remains on your account.",
+        "Partial balance payment may be required before or alongside your extension.",
+      ],
+      ctaLabel: "⏱️ Extend Rental",
+      ctaEnabled: true,
+    };
+  }
+  return { state: "auto_approved", banners: [], ctaLabel: "⏱️ Extend Rental", ctaEnabled: true };
+}
+
+// Apply the extension account state to the DOM: render banners, update CTA,
+// and pre-fill contact fields from the booking context.
+function applyExtensionAccountState(bookingCtx) {
+  if (!IS_EXTENSION_FLOW || !isValidExtensionBookingContext(bookingCtx)) return;
+  var approvalState = deriveExtensionApprovalState(bookingCtx);
+
+  // Render account-state banners
+  var bannerEl = document.getElementById("extAccountStateBanner");
+  if (bannerEl) {
+    if (approvalState.banners.length > 0) {
+      bannerEl.innerHTML = approvalState.banners
+        .map(function(msg) { return "<div class=\"ext-account-banner-item\">" + msg + "</div>"; })
+        .join("");
+      bannerEl.style.display = "";
+    } else {
+      bannerEl.innerHTML = "";
+      bannerEl.style.display = "none";
+    }
+  }
+
+  // Adjust submit button label and blocked state
+  var extSubmitBtn = document.getElementById("extSubmitBtn");
+  if (extSubmitBtn) {
+    if (approvalState.ctaLabel) extSubmitBtn.textContent = approvalState.ctaLabel;
+    if (!approvalState.ctaEnabled) extSubmitBtn.disabled = true;
+  }
+
+  // Pre-fill contact info from booking context so overdue renters don't have to re-enter
+  var extEmailEl = document.getElementById("extEmail");
+  if (extEmailEl && !extEmailEl.value && bookingCtx.customerEmail) {
+    extEmailEl.value = bookingCtx.customerEmail;
+    extEmailEl.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  var extPhoneEl = document.getElementById("extPhone");
+  if (extPhoneEl && !extPhoneEl.value && bookingCtx.customerPhone) {
+    extPhoneEl.value = bookingCtx.customerPhone;
+    extPhoneEl.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  logExtensionTrace("extension_approval_state_applied", {
+    extension_approval_state: approvalState.state,
+    has_account_banners: approvalState.banners.length > 0,
+  });
+}
+
+
   if (!IS_EXTENSION_FLOW) return null;
   const token = String(pageParams.get("t") || "").trim();
   if (!token) {
@@ -778,6 +910,7 @@ async function initializeVehicleContext() {
       carData = cars[vehicleId] = buildCarDataFromAPI(resolved.vehicle);
       sliderContainer.innerHTML = "";
       initCarPage();
+      if (IS_EXTENSION_FLOW) applyExtensionAccountState(extensionBookingContext);
       return;
     }
 
@@ -794,6 +927,7 @@ async function initializeVehicleContext() {
       carData = cars[vehicleId] = buildFallbackExtensionCarData(extensionBookingContext, vehicleId);
       sliderContainer.innerHTML = "";
       initCarPage();
+      applyExtensionAccountState(extensionBookingContext);
       return;
     }
 
@@ -812,6 +946,7 @@ async function initializeVehicleContext() {
       carData = cars[vehicleId] = buildFallbackExtensionCarData(extensionBookingContext, vehicleId);
       sliderContainer.innerHTML = "";
       initCarPage();
+      applyExtensionAccountState(extensionBookingContext);
       return;
     }
     extensionTraceContext.inventory_match_result = "not_found";
@@ -1885,6 +2020,26 @@ function initExtendRentalForm() {
     }
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
+
+    // If the booking context indicates active late fees or overdue state, surface
+    // a disclaimer so the renter sees it BEFORE clicking "Extend Rental".
+    // The server computes the authoritative final amount (including late fees);
+    // the estimate above does not include them.
+    var extFeeDisclaimer = document.getElementById("extLateFeeDisclaimer");
+    if (extFeeDisclaimer && extensionBookingContext) {
+      var ctxLateFeeStatus = String(extensionBookingContext.lateFeeStatus || "").trim().toLowerCase();
+      var ctxLateFeeAmt = Number(extensionBookingContext.lateFeeAmount || 0);
+      var ctxIsOverdue = !!extensionBookingContext.isOverdueStage;
+      if ((ctxLateFeeStatus === "assessed" || ctxLateFeeStatus === "pending_collection") && ctxLateFeeAmt > 0) {
+        extFeeDisclaimer.textContent = "Note: $" + ctxLateFeeAmt.toFixed(2) + " late fee will be added at checkout.";
+        extFeeDisclaimer.style.display = "";
+      } else if (ctxIsOverdue) {
+        extFeeDisclaimer.textContent = "Note: Late fees may apply. Final amount confirmed at checkout.";
+        extFeeDisclaimer.style.display = "";
+      } else {
+        extFeeDisclaimer.style.display = "none";
+      }
+    }
   }
 
   function updateExtBtn() {
@@ -2000,9 +2155,15 @@ async function launchExtendRentalPayment() {
       newReturnDate: confirmedDate,
       newReturnTime: confirmedTime,
       vehicleName,
-      renterName
+      renterName,
+      extensionFinancialTrace,
     } = data;
     if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
+
+    // Log the structured financial trace from the server for auditability.
+    if (extensionFinancialTrace && IS_EXTENSION_FLOW) {
+      logExtensionTrace("extension_financial_trace_received", extensionFinancialTrace);
+    }
     var payNowAmount = amountPaidNow || extensionAmount;
     var fullExtensionTotal = extensionTotal || extensionAmount;
     var remainingAfterPayment = remainingBalance || "0.00";

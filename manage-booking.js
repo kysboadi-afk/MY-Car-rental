@@ -766,20 +766,58 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
     const extensionEligible = ["active", "active_rental", "overdue", "extended"].includes(statusKey);
     const extensionHref = buildExtensionHref(b);
+    // Account-state-aware extension section: derive messaging from financial state fields.
+    const extLateFeeStatus = String(b.lateFeeStatus || "").trim().toLowerCase();
+    const extLateFeeAmount = Number(b.lateFeeAmount || 0);
+    const extRiskOverride = String(b.extensionRiskOverride || "").trim().toLowerCase();
+    const extPlanStatus = String(plan?.status || "").trim().toLowerCase();
+    const extIsOverdue = statusKey === "overdue";
+    const extIsPlanDelinquent = !!(plan && (plan.isOverdue || extPlanStatus === "defaulted" || extPlanStatus === "past_due"));
+    const extHasActiveLateF = (extLateFeeStatus === "assessed" || extLateFeeStatus === "pending_collection") && extLateFeeAmount > 0;
+    const extIsBlocked = extRiskOverride === "block";
+
+    let extCtaText = "⏱️ Open Extension Flow";
+    let extCtaHref = extensionHref;
+    let extPillText = "Eligible to review extension options";
+    let extCtaNote = "Open the extension flow to select a new return date and pay online.";
+
+    if (extIsBlocked) {
+      extPillText = "Extension temporarily blocked";
+      extCtaText = "📞 Contact Support";
+      extCtaHref = "tel:+18445114059";
+      extCtaNote = "Extension approval has been paused for this account. Contact support at (844) 511-4059 to resolve.";
+    } else if (!extensionEligible) {
+      extPillText = "Extension requires support";
+      extCtaText = "📞 Contact Support About Extensions";
+      extCtaHref = "tel:+18445114059";
+      extCtaNote = "Call support to review extension options for this booking status.";
+    } else if (extPlanStatus === "defaulted") {
+      extPillText = "⚠️ Payment plan defaulted — manual review required";
+      extCtaNote = "Extension request requires manual approval. Your payment plan has been flagged. Call (844) 511-4059.";
+    } else if (extIsOverdue) {
+      extPillText = "⚠️ Overdue — balance must be resolved before extension";
+      extCtaNote = extHasActiveLateF
+        ? "Outstanding balance and late fees ($" + extLateFeeAmount.toFixed(2) + ") must be resolved. Both will be collected at extension checkout."
+        : "Outstanding balance must be resolved before extension approval.";
+    } else if (extIsPlanDelinquent) {
+      extPillText = "⚠️ Payment plan past due — review needed";
+      extCtaNote = "Partial balance payment may be required before extension. Your payment plan has a past-due installment.";
+    } else if (extHasActiveLateF) {
+      extPillText = "ℹ️ Late fee pending ($" + extLateFeeAmount.toFixed(2) + ")";
+      extCtaNote = "Late fee of $" + extLateFeeAmount.toFixed(2) + " will be included in your extension payment at checkout.";
+    }
+
     const extensionCta = document.getElementById("extension-cta");
     if (extensionCta) {
-      extensionCta.href = extensionHref;
-      extensionCta.textContent = extensionEligible ? "⏱️ Open Extension Flow" : "📞 Contact Support About Extensions";
-      if (!extensionEligible) extensionCta.href = "tel:+18445114059";
+      extensionCta.href = extCtaHref;
+      extensionCta.textContent = extCtaText;
     }
-    setText("extension-status-pill", extensionEligible ? "Eligible to review extension options" : "Extension requires support");
+    setText("extension-status-pill", extPillText);
     setText("extension-balance", fmt(balance));
     setText("extension-overdue", fmt(overdueAmount));
     setText("extension-balance-note", balance > 0 ? "Current balance remains due before or alongside any extension arrangements." : "Your existing booking balance is currently clear.");
     setText("extension-overdue-note", overdueAmount > 0 ? "An overdue amount is currently flagged on your account." : "No overdue extension-related amount is flagged.");
-    setText("extension-cta-note", extensionEligible
-      ? "The CTA opens the current specialized extension experience without changing extension pricing or validation."
-      : "Call support to review extension options for this booking status.");
+    setText("extension-cta-note", extCtaNote);
 
     const editableStatuses = ["reserved", "reserved_unpaid", "pending"];
     const isLocked = !editableStatuses.includes(statusKey);
