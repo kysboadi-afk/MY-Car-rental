@@ -200,9 +200,9 @@
       }
     });
 
+    if (wrapperEl) wrapperEl.style.display = "none";
     containerEl.innerHTML = "";
     expressEl.mount(containerEl);
-    if (wrapperEl) wrapperEl.style.display = "none";
     return expressEl;
   }
 

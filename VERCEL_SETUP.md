@@ -113,6 +113,17 @@ Without these, the card form cannot load. This is the most common reason it does
 5. Go to **Deployments** → click the **⋯** next to the latest deployment → **Redeploy**.  
    *(This is required for new env vars to take effect.)*
 
+### Apple Pay / Google Pay wallet domain checklist
+
+When using Stripe Payment Element or Express Checkout Element, register each production web domain in Stripe Dashboard → **Settings → Payment methods → Wallets → Apple Pay** (Payment Method Domains):
+
+- `slycarrentals.com`
+- `www.slycarrentals.com`
+- `slyslingshotrentals.com`
+- `www.slyslingshotrentals.com`
+
+Keep this list in sync with production hostnames so Apple Pay can render on Safari/iPhone/Mac. Google Pay and Cash App Pay continue to auto-render on supported devices and browsers from the same Stripe PaymentIntent flow.
+
 ---
 
 ## Step 2b — Set the Canonical Stripe Webhook Endpoint and Signing Secret
