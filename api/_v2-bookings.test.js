@@ -275,6 +275,7 @@ global.fetch = async (url, opts) => {
 };
 
 const { default: handler } = await import("./v2-bookings.js");
+const { createAdminSessionToken } = await import("./_admin-auth.js");
 
 // ─── Reset helpers ─────────────────────────────────────────────────────────────
 
@@ -486,6 +487,17 @@ test("accepts Authorization bearer token when body secret is omitted", async () 
     ),
     res
   );
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+});
+
+test("accepts signed admin session token in body secret", async () => {
+  resetStore(); resetCalls();
+  const sessionToken = createAdminSessionToken({ role: "admin", sub: "test-admin" });
+  assert.ok(sessionToken);
+  const res = makeRes();
+  const body = createPayload({ secret: sessionToken });
+  await handler(makeReq(body), res);
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
 });

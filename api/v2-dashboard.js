@@ -20,7 +20,7 @@ import { loadBookings, isNetworkError } from "./_bookings.js";
 import { computeAmount, getAllVehicleIds } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
@@ -90,8 +90,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret, scope } = req.body || {};
-  if (!isAdminAuthorized(secret)) {
+  const { scope } = req.body || {};
+  const suppliedAdminCredential = extractAdminSecret(req);
+  if (!isAdminAuthorized(suppliedAdminCredential)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

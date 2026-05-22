@@ -3804,7 +3804,8 @@ const MAINTENANCE_WARNING_THRESHOLD_MIN = 500;
 const MAINTENANCE_WARNING_THRESHOLD_PERCENT = 0.35;
 
 // ── State ──────────────────────────────────────────────────────────────────
-let adminSecret   = '';
+const ADMIN_SESSION_STORAGE_KEY = 'sly_admin_session_token';
+let adminSessionToken   = '';
 let dashboardData = null;
 let allBookings   = [];
 let allExpenses   = [];
@@ -3933,37 +3934,65 @@ document.getElementById('auth-password').addEventListener('keydown', (e) => {
 });
 document.getElementById('auth-btn').addEventListener('click', signIn);
 
-function signIn() {
+function clearAdminSession() {
+  adminSessionToken = '';
+  try { sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY); } catch (_) {}
+}
+
+function setAdminSession(token) {
+  adminSessionToken = String(token || '').trim();
+  if (!adminSessionToken) {
+    clearAdminSession();
+    return;
+  }
+  try { sessionStorage.setItem(ADMIN_SESSION_STORAGE_KEY, adminSessionToken); } catch (_) {}
+}
+
+async function establishAdminAppSession() {
+  const data = await apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' });
+  dashboardData = data;
+  closeAllModals();
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').classList.add('ready');
+  renderDashboard(data);
+  aiRestoreHistory();
+  checkFirstTimeUser(data);
+
+  // Handle return from Bouncie OAuth callback
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('bouncie') === 'connected') {
+    showToast('✅ Bouncie connected successfully! GPS sync is now active.', 'success');
+    navigate('gps');
+    history.replaceState({}, '', window.location.pathname);
+  }
+}
+
+async function signIn() {
   const pw = document.getElementById('auth-password').value.trim();
   if (!pw) { showAuthError('Please enter a password.'); return; }
-  adminSecret = pw;
   document.getElementById('auth-btn').textContent = 'Signing in…';
   document.getElementById('auth-btn').disabled = true;
+  showAuthError('');
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
-    .then((data) => {
-      dashboardData = data;
-      closeAllModals();
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('app').classList.add('ready');
-      renderDashboard(data);
-      aiRestoreHistory();
-      checkFirstTimeUser(data);
-
-      // Handle return from Bouncie OAuth callback
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('bouncie') === 'connected') {
-        showToast('✅ Bouncie connected successfully! GPS sync is now active.', 'success');
-        navigate('gps');
-        history.replaceState({}, '', window.location.pathname);
-      }
-    })
-    .catch((err) => {
-      adminSecret = '';
-      document.getElementById('auth-btn').textContent = 'Sign In';
-      document.getElementById('auth-btn').disabled = false;
-      showAuthError(err.message === 'Unauthorized' ? 'Incorrect password.' : `Error: ${err.message}`);
+  try {
+    const resp = await fetch(API_BASE + '/api/admin-auth-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', secret: pw }),
     });
+    const payload = await resp.json().catch(() => ({}));
+    if (!resp.ok || !payload?.token) {
+      throw new Error(payload?.error || `HTTP ${resp.status}`);
+    }
+    setAdminSession(payload.token);
+    await establishAdminAppSession();
+  } catch (err) {
+    clearAdminSession();
+    showAuthError(err.message === 'Unauthorized' ? 'Incorrect password.' : `Error: ${err.message}`);
+  } finally {
+    document.getElementById('auth-btn').textContent = 'Sign In';
+    document.getElementById('auth-btn').disabled = false;
+  }
 }
 
 function showAuthError(msg) {
@@ -3971,7 +4000,7 @@ function showAuthError(msg) {
 }
 
 function logout() {
-  adminSecret = '';
+  clearAdminSession();
   dashboardData = null;
   allBookings = [];
   allVehicles = {};
@@ -4001,7 +4030,7 @@ function logout() {
 
 // ── API ────────────────────────────────────────────────────────────────────
 function handleUnauthorizedApiResponse() {
-  adminSecret = '';
+  clearAdminSession();
   const appEl = document.getElementById('app');
   const authScreen = document.getElementById('auth-screen');
   if (!appEl || !authScreen || !appEl.classList.contains('ready')) return;
@@ -4020,11 +4049,26 @@ function handleUnauthorizedApiResponse() {
   showAuthError('Session expired. Please sign in again.');
 }
 
+async function tryRestoreSessionOnLoad() {
+  if (window.DEMO_MODE) return;
+  const restored = (() => {
+    try { return String(sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY) || '').trim(); }
+    catch (_) { return ''; }
+  })();
+  if (!restored) return;
+  setAdminSession(restored);
+  try {
+    await establishAdminAppSession();
+  } catch {
+    clearAdminSession();
+  }
+}
+
 let authRecheckPromise = null;
 
 async function shouldForceLogoutAfterUnauthorized(path) {
   if (window.DEMO_MODE) return false;
-  if (!adminSecret) return true;
+  if (!adminSessionToken) return true;
   if (path === '/api/v2-dashboard') return true;
   if (authRecheckPromise) return authRecheckPromise;
 
@@ -4033,7 +4077,7 @@ async function shouldForceLogoutAfterUnauthorized(path) {
       const resp = await fetch(API_BASE + '/api/v2-dashboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret: adminSecret, scope: 'car' }),
+        body: JSON.stringify({ secret: adminSessionToken, scope: 'car' }),
       });
       if (resp.status === 401) return true;
       return false;
@@ -4054,7 +4098,7 @@ async function apiPost(path, body, signal = undefined) {
   const authHeaders = { 'Content-Type': 'application/json' };
   const isAbsoluteApiBase = /^https?:\/\//i.test(API_BASE);
   const isAuthFallbackSafePath = path === '/api/v2-dashboard';
-  if (adminSecret) authHeaders.Authorization = 'Bearer ' + adminSecret;
+  if (adminSessionToken) authHeaders.Authorization = 'Bearer ' + adminSessionToken;
   const requestBody = JSON.stringify(body);
   const doPost = (headers) => fetch(url, {
     method: 'POST',
@@ -4070,7 +4114,7 @@ async function apiPost(path, body, signal = undefined) {
     // Authorization. In that CORS-only failure mode, retry once without Authorization.
     // Cross-origin preflight failures surface to fetch as TypeError (browser wording varies).
     const corsLikeFetchFailure = err?.name === 'TypeError';
-    const shouldRetryWithoutAuth = !!adminSecret
+    const shouldRetryWithoutAuth = !!adminSessionToken
       && !!body?.secret
       && isAbsoluteApiBase
       && isAuthFallbackSafePath
@@ -4235,7 +4279,7 @@ function navigateToUnpaidBookings() {
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
-  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
+  apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' })
     .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
     .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
 }
@@ -4413,8 +4457,8 @@ function loadVehicles() {
   document.getElementById('vehicles-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' }),
-    apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' }),
+    apiPost('/api/v2-vehicles', { secret: adminSessionToken, action: 'list', scope: 'car' }),
+    apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' }),
   ]).then(([vData, dash]) => {
     const freshVehicles = vData.vehicles || {};
     // Preserve bouncie_device_id from the in-memory cache when the fresh API
@@ -4513,7 +4557,7 @@ function showVehicleProfile(vehicleId) {
   document.getElementById('page-title').textContent = v.vehicle_name || getVehicleLabel(vehicleId);
 
   // Load fresh stats
-  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
+  apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' })
     .then((dash) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
       cachedVehicleStats[vehicleId] = s;
@@ -4664,7 +4708,7 @@ async function openEditVehicle(vehicleId) {
   // We use the list action (rather than a per-vehicle GET) because no
   // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
   try {
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSessionToken, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
       const fresh    = latest.vehicles[vehicleId];
       const existing = allVehicles[vehicleId] || {};
@@ -4738,7 +4782,7 @@ async function saveVehicle() {
     // copy is used as the base for the merge inside the update handler.
     // We use the list action (rather than a per-vehicle GET) because no
     // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSessionToken, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[editingVehicleId]) {
       const fresh    = latest.vehicles[editingVehicleId];
       const existing = allVehicles[editingVehicleId] || {};
@@ -4753,7 +4797,7 @@ async function saveVehicle() {
 
     // Submit the admin's edits; the API merges them onto the latest DB row.
     const result = await apiPost('/api/v2-vehicles', {
-      secret: adminSecret, action: 'update', vehicleId: editingVehicleId, updates,
+      secret: adminSessionToken, action: 'update', vehicleId: editingVehicleId, updates,
     });
 
     closeModal('edit-vehicle-modal');
@@ -4804,7 +4848,7 @@ function loadGpsTracking() {
     return;
   }
 
-  fetch(`${API_BASE}/api/bouncie-location?secret=${encodeURIComponent(adminSecret)}`)
+  fetch(`${API_BASE}/api/bouncie-location?secret=${encodeURIComponent(adminSessionToken)}`)
     .then((r) => r.json())
     .then((data) => {
       loading.style.display = 'none';
@@ -4998,8 +5042,8 @@ function toggleGpsAutoRefresh() {
  * Redirect to the Bouncie OAuth connect flow from the GPS tracking page.
  */
 function startBouncieConnect() {
-  if (!adminSecret) { showToast('Please sign in first.', 'error'); return; }
-  window.location.href = `${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}`;
+  if (!adminSessionToken) { showToast('Please sign in first.', 'error'); return; }
+  window.location.href = `${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSessionToken)}`;
 }
 
 /**
@@ -5018,7 +5062,7 @@ function updateBouncieWarning(prefix) {
 async function triggerBouncieSync(vehicleId) {
   try {
     showToast('Syncing with Bouncie…', 'info');
-    const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
+    const result = await apiPost('/api/v2-mileage', { secret: adminSessionToken, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
     if (result.bouncie_error) {
       showToast('Bouncie sync error: ' + (result.reason || "Bouncie is not connected — please go to System Settings and click 'Connect Now' to authorize the GPS integration."), 'error');
@@ -5029,7 +5073,7 @@ async function triggerBouncieSync(vehicleId) {
       showToast(result.skipped ? 'Bouncie not connected' : 'Sync complete (no new data)', 'info');
     }
     // Reload vehicle to reflect updated mileage
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' });
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSessionToken, action: 'list', scope: 'car' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
       allVehicles[vehicleId] = latest.vehicles[vehicleId];
       if (currentPage === 'vehicle-profile') {
@@ -5049,7 +5093,7 @@ async function triggerGlobalBouncieSync() {
   try {
     const resp = await fetch(`${API_BASE}/api/bouncie-sync`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminSecret}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminSessionToken}` },
     });
     const result = await resp.json();
     if (!resp.ok || result.error) {
@@ -5076,7 +5120,7 @@ async function markVehicleServiced(vehicleId, serviceType) {
   const label     = serviceType ? labels[serviceType] : 'service';
   if (!confirm(`Record ${label} at current mileage for this vehicle? This updates the maintenance counter.`)) return;
   try {
-    const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId, serviceType });
+    const result = await apiPost('/api/v2-mileage', { secret: adminSessionToken, action: 'update_service', vehicleId, serviceType });
     showToast(`${label.charAt(0).toUpperCase() + label.slice(1)} recorded.`, 'success');
     // Update local cache from the API response without re-fetching all vehicles
     if (result.service_mileage != null && allVehicles[vehicleId]) {
@@ -5216,7 +5260,7 @@ async function saveNewVehicle() {
 
   try {
     await apiPost('/api/v2-vehicles', {
-      secret: adminSecret, action: 'create',
+      secret: adminSessionToken, action: 'create',
       vehicleId, vehicleName, type, category, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
       ...(make         ? { make }         : {}),
       ...(galleryImages.length ? { galleryImages } : {}),
@@ -5339,7 +5383,7 @@ function loadLateFees() {
   document.getElementById('lf-table-wrap').style.display = 'none';
   document.getElementById('lf-empty').style.display = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'list', scope: 'car' })
     .then((data) => {
       // Keep bookings that have any late fee activity:
       //  (a) lateFeeStatus is set, OR
@@ -5451,7 +5495,7 @@ function dismissLateFee(bookingId, btn) {
   logBookingActionAudit('dismissLateFee', ctx);
   if (!confirm('Dismiss this late fee? The customer will NOT be charged and the fee will be cleared.')) return;
   if (btn) btn.disabled = true;
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'dismiss_late_fee', bookingId })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'dismiss_late_fee', bookingId })
     .then(() => {
       showToast('Late fee dismissed.', 'success');
       loadLateFees();
@@ -5468,7 +5512,7 @@ async function setExtensionOverride(bookingId) {
   if (!sel) return;
   const override = sel.value || null;
   try {
-    await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'set_extension_override', bookingId, override });
+    await apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'set_extension_override', bookingId, override });
     showToast('Extension risk override saved.', 'success');
     refreshBookings();
   } catch (err) {
@@ -5507,7 +5551,7 @@ function confirmLateFeeEdit() {
   msgEl.style.color = 'var(--text-sub)';
 
   apiPost('/api/v2-bookings', {
-    secret:        adminSecret,
+    secret:        adminSessionToken,
     action:        'set_late_fee',
     bookingId:     _lfEditBookingId,
     lateFeeAmount: lateFeeAmount,
@@ -5553,7 +5597,7 @@ function confirmLateFeeCharge() {
   msgEl.style.color = 'var(--text-sub)';
 
   apiPost('/api/charge-fee', {
-    secret:      adminSecret,
+    secret:      adminSessionToken,
     booking_id:  _lfChargeBookingId,
     charge_type: 'late_fee',
     amount,
@@ -5612,7 +5656,7 @@ function confirmLateFeeWaive() {
   msgEl.style.color = 'var(--text-sub)';
 
   apiPost('/api/waive-late-fee', {
-    secret:        adminSecret,
+    secret:        adminSessionToken,
     booking_id:    _lfWaiveBookingId,
     action:        'apply',
     fee_type:      'late_fee',
@@ -5646,7 +5690,7 @@ function computeBookingCustomerTier(b) {
 /** Toggle flagged state on a booking. */
 function toggleBookingFlag(bookingId, flagValue, btn) {
   if (btn) btn.disabled = true;
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'flag', bookingId, flagged: flagValue })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'flag', bookingId, flagged: flagValue })
     .then(() => {
       showToast(flagValue ? '🚩 Booking flagged.' : 'Flag removed.', 'success');
       loadBookings();
@@ -5665,7 +5709,7 @@ function loadBookings() {
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  return apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list', scope: 'car' })
+  return apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'list', scope: 'car' })
     .then((data) => {
       _bookingsLoading = false;
       const rawBookings = data.bookings || [];
@@ -5859,7 +5903,7 @@ async function sendPaymentLinkForBooking(bookingId, opts = {}) {
   const forceSms = !!opts.forceSms;
   try {
     const data = await apiPost('/api/v2-bookings', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       action: 'send_payment_link',
       bookingId: bookingRef,
       send_sms: true,
@@ -5892,7 +5936,7 @@ async function sendPaymentLinkForCustomer(customerId) {
   if (!id) { showToast('Customer ID is required.', 'error'); return; }
   try {
     const data = await apiPost('/api/v2-bookings', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       action: 'send_payment_link',
       customerId: id,
       send_sms: true,
@@ -5963,7 +6007,7 @@ function viewBooking(bookingId, vehicleId) {
 
   // Silently attempt to recover missing Stripe card data in the background.
   if ((b.paymentMethod || '').toLowerCase() === 'stripe' && !b.hasSavedCard && b.paymentIntentId) {
-    apiPost('/api/backfill-stripe-card', { secret: adminSecret, action: 'backfill', bookingRef: actionBookingId })
+    apiPost('/api/backfill-stripe-card', { secret: adminSessionToken, action: 'backfill', bookingRef: actionBookingId })
       .then((data) => {
         if ((data.recovered || 0) > 0) {
           const idx = allBookings.findIndex((x) => bookingActionId(x) === actionBookingId);
@@ -6163,7 +6207,7 @@ async function loadBookingIdDocs(bookingDbId) {
     return;
   }
   try {
-    const data = await apiPost('/api/booking-documents', { secret: adminSecret, action: 'list', bookingId: bookingDbId });
+    const data = await apiPost('/api/booking-documents', { secret: adminSessionToken, action: 'list', bookingId: bookingDbId });
     const idDocs = (data.docs || []).filter((d) => d.type === 'id_copy');
     const count  = idDocs.length;
     const needed = Math.max(0, 2 - count);
@@ -6253,7 +6297,7 @@ async function adminUploadIdDoc(bookingDbId, inputId, btn) {
     });
 
     const result = await apiPost('/api/booking-documents', {
-      secret:    adminSecret,
+      secret:    adminSessionToken,
       action:    'add',
       bookingId: bookingDbId,
       docType:   'id_copy',
@@ -6353,7 +6397,7 @@ async function saveEditBooking(btn) {
 
   if (btn) btn.disabled = true;
   try {
-    await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
+    await apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'update', vehicleId, bookingId, updates });
     // Patch local cache
     const idx = allBookings.findIndex((x) => bookingActionId(x) === bookingId);
     if (idx !== -1) {
@@ -6383,7 +6427,7 @@ async function saveEditBooking(btn) {
 function deleteBooking(bookingId, btn) {
   if (!confirm('Archive booking ' + bookingId + '?\n\nThis removes it from active Booking views, and you can restore it from Raw Bookings.')) return;
   if (btn) btn.disabled = true;
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'delete', bookingId })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'delete', bookingId })
     .then(() => {
       showToast('Booking ' + bookingId + ' archived.', 'success');
       closeModal('booking-detail-modal');
@@ -6398,7 +6442,7 @@ function deleteBooking(bookingId, btn) {
 
 function markBookingPaymentPaid(bookingId, vehicleId, btn) {
   if (btn) btn.disabled = true;
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates: { paymentStatus: 'paid' } })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'update', vehicleId, bookingId, updates: { paymentStatus: 'paid' } })
     .then(() => {
       showToast('Payment marked as paid.', 'success');
       closeModal('booking-detail-modal');
@@ -6422,7 +6466,7 @@ function markReturned(bookingId, btn) {
 function handleReturn(bookingRef, btn) {
   if (!bookingRef) { showToast('Missing booking reference.', 'error'); return; }
   if (btn) btn.disabled = true;
-  apiPost('/api/return-booking', { secret: adminSecret, booking_ref: bookingRef })
+  apiPost('/api/return-booking', { secret: adminSessionToken, booking_ref: bookingRef })
     .then(() => {
       showToast('Vehicle returned successfully.', 'success');
       loadBookings();
@@ -6443,7 +6487,7 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
   const maxAttempts = 3;
   const currentAttempt = attempt || 0;
   apiPost('/api/v2-bookings', {
-    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    secret: adminSessionToken, action: 'update', vehicleId, bookingId,
     updates: { status },
   }).then(() => {
     showToast('Booking updated to ' + (status.replace(/_/g, ' ')) + '.', 'success');
@@ -6484,7 +6528,7 @@ function cancelActiveRentalWithConfirm(vehicleId, bookingId, btn) {
 
   if (btn) btn.disabled = true;
   apiPost('/api/v2-bookings', {
-    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    secret: adminSessionToken, action: 'update', vehicleId, bookingId,
     updates: { status: 'cancelled_rental', forceCancel: true },
   }).then(() => {
     showToast('Active rental cancelled.', 'success');
@@ -6507,7 +6551,7 @@ function updateBookingReturnDate(vehicleId, bookingId, btn) {
   const updates = { returnDate: newReturnDate };
   if (newReturnTime) updates.returnTime = newReturnTime;
   apiPost('/api/v2-bookings', {
-    secret: adminSecret, action: 'update', vehicleId, bookingId, updates,
+    secret: adminSessionToken, action: 'update', vehicleId, bookingId, updates,
   }).then(() => {
     showToast('Return date updated. Availability will refresh shortly.', 'success');
     closeModal('booking-detail-modal');
@@ -6521,7 +6565,7 @@ function updateBookingReturnDate(vehicleId, bookingId, btn) {
 function resendBookingEmail(bookingId, btn) {
   if (!bookingId) { showToast('No booking ID — cannot resend.', 'error'); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'resend_confirmation', bookingId })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'resend_confirmation', bookingId })
     .then((data) => {
       showToast(data.note || '✅ Confirmation email resent to owner and customer.', 'success');
     })
@@ -6538,7 +6582,7 @@ async function downloadRentalAgreement(bookingId, btn) {
   const origText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
   try {
-    const data = await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'get_agreement_url', bookingId });
+    const data = await apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'get_agreement_url', bookingId });
     if (data && data.url) {
       window.open(data.url, '_blank', 'noopener,noreferrer');
       showToast('Agreement PDF opened in new tab.', 'success');
@@ -6606,7 +6650,7 @@ function submitResendExtension(btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
 
   apiPost('/api/admin-resend-extension', {
-    secret:              adminSecret,
+    secret:              adminSessionToken,
     vehicle_id:          vehicleId,
     vehicle_name:        b.vehicleName || vehicleId,
     original_booking_id: bookingId,
@@ -6646,7 +6690,7 @@ function loadRawBookings() {
   emptyEl.style.display = 'none';
   metaEl.style.display  = 'none';
 
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw', scope: 'car', include_deleted: true })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'list_raw', scope: 'car', include_deleted: true })
     .then((data) => {
       loadEl.style.display = 'none';
       const rows = data.bookings || [];
@@ -6700,7 +6744,7 @@ function restoreDeletedBooking(bookingId, btn) {
   if (!bookingId) return;
   if (!confirm('Restore archived booking ' + bookingId + '?')) return;
   if (btn) btn.disabled = true;
-  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'restore', bookingId })
+  apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'restore', bookingId })
     .then(() => {
       showToast('Booking restored.', 'success');
       loadRawBookings();
@@ -6771,7 +6815,7 @@ async function submitManualBooking(e) {
 
   try {
     await apiPost('/api/v2-bookings', {
-      secret:         adminSecret,
+      secret:         adminSessionToken,
       action:         'create',
       vehicleId,
       name:           document.getElementById('mb-name').value.trim(),
@@ -6806,7 +6850,7 @@ function clearManualBookingForm() {
 
 // ── Expenses ───────────────────────────────────────────────────────────────
 function loadExpenseCategories() {
-  return apiPost('/api/get-expense-categories', { secret: adminSecret })
+  return apiPost('/api/get-expense-categories', { secret: adminSessionToken })
     .then((data) => {
       allExpenseCategories = data.categories || [];
       populateCategoryDropdowns();
@@ -6943,7 +6987,7 @@ function handleExpenseReceiptSelected(input, expenseId) {
   reader.onload = async (event) => {
     try {
       await apiPost('/api/upload-expense-receipt', {
-        secret: adminSecret,
+        secret: adminSessionToken,
         expenseId,
         fileData: event.target.result,
         mimeType: file.type,
@@ -6971,7 +7015,7 @@ async function viewExpenseReceipt(expenseId) {
   setExpenseReceiptModalContent('<div class="loading" style="display:flex;min-height:200px;"><div class="loading-spinner"></div><div>Loading receipt…</div></div>', expense.receipt_filename || 'Secure receipt preview');
 
   try {
-    const data = await apiPost('/api/get-expense-receipt-url', { secret: adminSecret, expenseId });
+    const data = await apiPost('/api/get-expense-receipt-url', { secret: adminSessionToken, expenseId });
     const metaBits = [
       data.fileName || expense.receipt_filename || 'Receipt',
       data.size ? formatExpenseReceiptSize(data.size) : '',
@@ -7009,7 +7053,7 @@ async function viewExpenseReceipt(expenseId) {
 
 function deleteExpenseReceipt(expenseId) {
   if (!confirm('Delete this receipt attachment?')) return;
-  apiPost('/api/delete-expense-receipt', { secret: adminSecret, expenseId })
+  apiPost('/api/delete-expense-receipt', { secret: adminSessionToken, expenseId })
     .then(() => {
       closeExpenseReceiptModal();
       showToast('Receipt deleted.', 'success');
@@ -7029,7 +7073,7 @@ function loadExpenses() {
     : loadExpenseCategories();
 
   catPromise
-    .then(() => apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' }))
+    .then(() => apiPost('/api/get-expenses', { secret: adminSessionToken, scope: 'car' }))
     .then((data) => {
       allExpenses = data.expenses || [];
       renderExpenses();
@@ -7163,7 +7207,7 @@ function submitExpense() {
 
   const isEditing = Boolean(editingExpenseId);
   const endpoint = isEditing ? '/api/update-expense' : '/api/add-expense';
-  const payload = { secret: adminSecret, vehicle_id, date, category, amount, notes };
+  const payload = { secret: adminSessionToken, vehicle_id, date, category, amount, notes };
   if (editingExpenseId) payload.expense_id = editingExpenseId;
 
   apiPost(endpoint, payload)
@@ -7187,7 +7231,7 @@ function submitExpense() {
 
 function deleteExpense(expenseId) {
   if (!confirm('Delete this expense? This cannot be undone.')) return;
-  apiPost('/api/delete-expense', { secret: adminSecret, expense_id: expenseId })
+  apiPost('/api/delete-expense', { secret: adminSessionToken, expense_id: expenseId })
     .then(() => {
       showToast('Expense deleted.', 'success');
       allExpenses = allExpenses.filter((e) => e.expense_id !== expenseId);
@@ -7240,7 +7284,7 @@ function editCategoryName(id, currentName) {
   const newName = prompt('Enter new category name:', currentName);
   if (!newName || newName.trim() === currentName) return;
 
-  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'update', id, name: newName.trim() })
+  apiPost('/api/get-expense-categories', { secret: adminSessionToken, action: 'update', id, name: newName.trim() })
     .then((data) => {
       allExpenseCategories = data.categories || allExpenseCategories;
       populateCategoryDropdowns();
@@ -7251,7 +7295,7 @@ function editCategoryName(id, currentName) {
 }
 
 function toggleCategory(id, is_active) {
-  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'toggle', id, is_active })
+  apiPost('/api/get-expense-categories', { secret: adminSessionToken, action: 'toggle', id, is_active })
     .then((data) => {
       allExpenseCategories = data.categories || allExpenseCategories;
       populateCategoryDropdowns();
@@ -7271,7 +7315,7 @@ function submitNewCategory() {
   const btn = document.getElementById('new-cat-submit');
   btn.disabled = true; btn.textContent = 'Adding…';
 
-  apiPost('/api/get-expense-categories', { secret: adminSecret, action: 'create', name, group_name })
+  apiPost('/api/get-expense-categories', { secret: adminSessionToken, action: 'create', name, group_name })
     .then((data) => {
       allExpenseCategories = data.categories || allExpenseCategories;
       populateCategoryDropdowns();
@@ -7289,7 +7333,7 @@ function loadSmsTemplates() {
   document.getElementById('sms-loading').style.display = '';
   document.getElementById('sms-list').style.display = 'none';
 
-  apiPost('/api/v2-sms-templates', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-sms-templates', { secret: adminSessionToken, action: 'list' })
     .then((data) => {
       smsTemplates = data.templates || [];
       renderSmsTemplates();
@@ -7322,7 +7366,7 @@ function renderSmsTemplates() {
 function toggleSmsTemplate(key, enabled, toggleInput) {
   if (toggleInput) toggleInput.disabled = true;
   apiPost('/api/v2-sms-templates', {
-    secret: adminSecret, action: 'update',
+    secret: adminSessionToken, action: 'update',
     templateKey: key, updates: { enabled },
   }).then(() => {
     const t = smsTemplates.find((x) => x.key === key);
@@ -7350,7 +7394,7 @@ function saveSmsTemplate() {
   const origText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   apiPost('/api/v2-sms-templates', {
-    secret: adminSecret, action: 'update',
+    secret: adminSessionToken, action: 'update',
     templateKey: editingSmsKey, updates: { message },
   }).then(() => {
     closeModal('sms-edit-modal');
@@ -7369,7 +7413,7 @@ function resetSmsTemplate() {
   const origText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Resetting…'; }
   apiPost('/api/v2-sms-templates', {
-    secret: adminSecret, action: 'reset', templateKey: editingSmsKey,
+    secret: adminSessionToken, action: 'reset', templateKey: editingSmsKey,
   }).then((data) => {
     closeModal('sms-edit-modal');
     showToast('Template reset to default.', 'success');
@@ -7780,11 +7824,11 @@ function loadRevenue() {
   // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
-    : apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' });
+    : apiPost('/api/get-expenses', { secret: adminSessionToken, scope: 'car' });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSessionToken, action: 'list_by_booking', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSessionToken, action: 'kpi', scope: 'car' }),
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {
@@ -8130,10 +8174,10 @@ async function saveRevenueRecord() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     if (id) {
-      await apiPost('/api/v2-revenue', { secret: adminSecret, action: 'update', id, updates: payload });
+      await apiPost('/api/v2-revenue', { secret: adminSessionToken, action: 'update', id, updates: payload });
       showToast('Revenue record updated.', 'success');
     } else {
-      await apiPost('/api/v2-revenue', { secret: adminSecret, action: 'create', ...payload });
+      await apiPost('/api/v2-revenue', { secret: adminSessionToken, action: 'create', ...payload });
       showToast('Revenue record created.', 'success');
     }
     closeModal('revenue-modal');
@@ -8149,7 +8193,7 @@ function deleteRevenueRecord(id) {
   const targetId = normalizeRevenueActionId(id);
   if (!targetId) { showToast('Revenue record not found.', 'error'); return; }
   if (!confirm('Delete this revenue record? This cannot be undone.')) return;
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id: targetId })
+  apiPost('/api/v2-revenue', { secret: adminSessionToken, action: 'delete', id: targetId })
     .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -8157,7 +8201,7 @@ function deleteRevenueRecord(id) {
 async function runStripeReconcile(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Reconciling…'; }
   try {
-    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'reconcile' });
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSessionToken, action: 'reconcile' });
     const v    = data.verification || {};
     const parts = [`✅ Stripe reconcile done.`];
     const stats = [];
@@ -8171,7 +8215,7 @@ async function runStripeReconcile(btn) {
     const msg = parts.filter(Boolean).join(' ');
     showToast(msg, 'success');
     // Also update cash records
-    await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
+    await apiPost('/api/stripe-reconcile', { secret: adminSessionToken, action: 'cash_update' });
     // Refresh all finance views so they show updated data
     allRevenueRecords = [];
     allRevenueGroups  = [];
@@ -8192,7 +8236,7 @@ async function runStripeReconcile(btn) {
 async function runDedup(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Deduplicating…'; }
   try {
-    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'dedup' });
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSessionToken, action: 'dedup' });
     const msg = data.merged > 0
       ? `✅ Removed ${data.merged} duplicate record${data.merged !== 1 ? 's' : ''}.`
       : '✅ No duplicates found.';
@@ -8214,7 +8258,7 @@ async function runDedup(btn) {
 async function runCleanupOrphans(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Fixing…'; }
   try {
-    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSessionToken, action: 'cleanup_orphans' });
     showToast(data.message || '✅ Cleanup complete.', 'success');
     allRevenueRecords = [];
     allRevenueGroups  = [];
@@ -8233,7 +8277,7 @@ async function runCleanupOrphans(btn) {
 async function runRevenueHeal(btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Relinking…'; }
   try {
-    const data = await apiPost('/api/revenue-self-heal', { secret: adminSecret });
+    const data = await apiPost('/api/revenue-self-heal', { secret: adminSessionToken });
     const relinked   = data.relinked   || 0;
     const backfilled = data.backfilled || 0;
     const repaired   = data.repaired   || 0;
@@ -8272,7 +8316,7 @@ async function runBackfillStripeCards(action, btn) {
   if (resultEl) { resultEl.style.display = 'none'; resultEl.textContent = ''; }
 
   try {
-    const data = await apiPost('/api/backfill-stripe-card', { secret: adminSecret, action });
+    const data = await apiPost('/api/backfill-stripe-card', { secret: adminSessionToken, action });
     const msg = data.message || (action === 'preview' ? `${data.recovered || 0} booking(s) would be patched.` : `${data.recovered || 0} booking(s) patched.`);
     showToast(msg, action === 'backfill' ? 'success' : 'info');
     if (resultEl) {
@@ -8301,9 +8345,9 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
-    apiPost('/api/get-expenses', { secret: adminSecret, scope: 'car' }),
+    apiPost('/api/v2-analytics', { secret: adminSessionToken, action: 'fleet', scope: 'car' }),
+    apiPost('/api/v2-analytics', { secret: adminSessionToken, action: 'revenue_trend', months: 12, scope: 'car' }),
+    apiPost('/api/get-expenses', { secret: adminSessionToken, scope: 'car' }),
   ]).then(([fleetData, trendData, expenseData]) => {
     renderAnalytics(
       fleetData.fleet || {},
@@ -8625,7 +8669,7 @@ function loadCustomers() {
   const kpiGrid = document.getElementById('cust-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-customers', { secret: adminSecret, action: 'list', scope: 'car' })
+  apiPost('/api/v2-customers', { secret: adminSessionToken, action: 'list', scope: 'car' })
     .then((data) => {
       allCustomers = data.customers || [];
       document.getElementById('customers-loading').style.display = 'none';
@@ -8875,7 +8919,7 @@ function viewCustomerBookings(phone, name) {
 function flagCustomer(id, flagged) {
   const reason = flagged ? (prompt('Reason for flagging (optional):') || '') : '';
   apiPost('/api/v2-customers', {
-    secret: adminSecret, action: 'update', id,
+    secret: adminSessionToken, action: 'update', id,
     updates: { flagged, flag_reason: reason || null },
   }).then(() => {
     showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
@@ -8891,7 +8935,7 @@ function banCustomer(id, banned) {
   if (banned && !confirm('Are you sure you want to ban this customer?')) return;
   const reason = banned ? (prompt('Reason for ban (optional):') || '') : '';
   apiPost('/api/v2-customers', {
-    secret: adminSecret, action: 'update', id,
+    secret: adminSessionToken, action: 'update', id,
     updates: { banned, ban_reason: reason || null },
   }).then(() => {
     showToast(banned ? 'Customer banned.' : 'Customer unbanned.', 'success');
@@ -8915,7 +8959,7 @@ function banCustomer(id, banned) {
 async function recomputeCustomerTotals({ silent = false } = {}) {
   if (!silent) showToast('⟳ Recomputing customer totals…', 'info');
   try {
-    const data = await apiPost('/api/v2-customers', { secret: adminSecret, action: 'sync' });
+    const data = await apiPost('/api/v2-customers', { secret: adminSessionToken, action: 'sync' });
     allCustomers = [];
     if (currentPage === 'customers') loadCustomers();
     showToast('✅ Customer totals updated.', 'success');
@@ -8979,11 +9023,11 @@ async function saveCustomer() {
 
   try {
     if (id) {
-      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'update', id, updates: fields });
+      await apiPost('/api/v2-customers', { secret: adminSessionToken, action: 'update', id, updates: fields });
       showToast('Customer updated.', 'success');
     } else {
       if (!phone) { showToast('Phone is required for new customers.', 'error'); return; }
-      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'upsert', ...fields });
+      await apiPost('/api/v2-customers', { secret: adminSessionToken, action: 'upsert', ...fields });
       showToast('Customer added.', 'success');
     }
     closeModal('customer-edit-modal');
@@ -9004,7 +9048,7 @@ function loadProtectionPlans() {
   document.getElementById('plans-content').style.display = 'none';
   document.getElementById('plans-empty').style.display   = 'none';
 
-  apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-protection-plans', { secret: adminSessionToken, action: 'list' })
     .then((data) => {
       allProtectionPlans = data.plans || [];
       renderProtectionPlans();
@@ -9085,10 +9129,10 @@ async function savePlan() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     if (id) {
-      await apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'update', id, updates: payload });
+      await apiPost('/api/v2-protection-plans', { secret: adminSessionToken, action: 'update', id, updates: payload });
       showToast('Plan updated.', 'success');
     } else {
-      await apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'create', ...payload });
+      await apiPost('/api/v2-protection-plans', { secret: adminSessionToken, action: 'create', ...payload });
       showToast('Plan created.', 'success');
     }
     closeModal('plan-modal');
@@ -9102,7 +9146,7 @@ async function savePlan() {
 
 function deletePlan(id) {
   if (!confirm('Delete this protection plan?')) return;
-  apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'delete', id })
+  apiPost('/api/v2-protection-plans', { secret: adminSessionToken, action: 'delete', id })
     .then(() => { showToast('Deleted.', 'success'); loadProtectionPlans(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -9112,7 +9156,7 @@ function loadVehiclePricing() {
   document.getElementById('vp-loading').style.display = '';
   document.getElementById('vp-content').style.display = 'none';
 
-  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get' })
+  apiPost('/api/admin-update-pricing', { secret: adminSessionToken, action: 'get' })
     .then((data) => {
       renderVehiclePricing(data.pricing || []);
       document.getElementById('vp-loading').style.display = 'none';
@@ -9195,7 +9239,7 @@ function updateVpSearchCount() {
 
 function saveVehiclePricing(vehicleId) {
   const fields = ['daily_price', 'weekly_price', 'biweekly_price', 'monthly_price'];
-  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId };
+  const payload = { secret: adminSessionToken, action: 'update', vehicle_id: vehicleId };
 
   for (const field of fields) {
     const el = document.getElementById(`vp-${vehicleId}-${field}`);
@@ -9235,8 +9279,8 @@ function loadSystemSettings() {
   document.getElementById('bouncie-auth-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' }),
-    fetch(`${API_BASE}/api/bouncie-auth`, { headers: { 'Authorization': 'Bearer ' + adminSecret } })
+    apiPost('/api/v2-system-settings', { secret: adminSessionToken, action: 'list' }),
+    fetch(`${API_BASE}/api/bouncie-auth`, { headers: { 'Authorization': 'Bearer ' + adminSessionToken } })
       .then((r) => r.json())
       .catch((err) => { showToast('Could not load Bouncie status: ' + err.message, 'error'); return null; }),
   ])
@@ -9315,7 +9359,7 @@ function saveSetting(key) {
   );
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
-  apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'set', key, value })
+  apiPost('/api/v2-system-settings', { secret: adminSessionToken, action: 'set', key, value })
     .then(() => showToast(`✓ "${key}" saved.`, 'success'))
     .catch((err) => showToast('Error: ' + err.message, 'error'))
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
@@ -9349,14 +9393,14 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
             To enable GPS mileage sync, connect your Bouncie account via OAuth. Click the button below to start the authorization flow.
           </p>
-          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-primary btn-sm" style="text-decoration:none;">🔗 Connect Now</a>
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSessionToken)}" class="btn btn-primary btn-sm" style="text-decoration:none;">🔗 Connect Now</a>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
             Connected via Bouncie OAuth — syncing vehicle data automatically.
           </p>
-          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔗 Reconnect</a>
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSessionToken)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔗 Reconnect</a>
         </div>
         `}
       </div>
@@ -9386,7 +9430,7 @@ function loadSiteContent() {
   const status = document.getElementById('site-content-status');
   if (status) status.textContent = '';
 
-  apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'get' })
+  apiPost('/api/admin-site-settings', { secret: adminSessionToken, action: 'get' })
     .then((data) => {
       const s = data.settings || {};
       for (const key of SITE_CONTENT_FIELDS) {
@@ -9433,7 +9477,7 @@ function saveSiteContent() {
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   if (status) { status.textContent = ''; status.style.color = ''; }
 
-  apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'update', settings })
+  apiPost('/api/admin-site-settings', { secret: adminSessionToken, action: 'update', settings })
     .then((data) => {
       // Clear the public site's sessionStorage cache so updated settings appear immediately
       try { sessionStorage.removeItem('slySiteSettingsCache'); } catch (_) {}
@@ -9488,7 +9532,7 @@ async function scLogoUpload(fileInput) {
     const imageData = e.target.result;
     try {
       const data = await apiPost('/api/upload-vehicle-image', {
-        secret:    adminSecret,
+        secret:    adminSessionToken,
         vehicleId: 'site-logo',
         imageData,
         mimeType:  file.type,
@@ -9546,7 +9590,7 @@ async function scHeroImageUpload(fileInput) {
     const imageData = e.target.result;
     try {
       const data = await apiPost('/api/upload-vehicle-image', {
-        secret:    adminSecret,
+        secret:    adminSessionToken,
         vehicleId: 'site-hero',
         imageData,
         mimeType:  file.type,
@@ -9597,7 +9641,7 @@ async function handleImageUpload(fileInput, urlInputId, previewContainerId, msgI
     const imageData = e.target.result; // data:image/jpeg;base64,...
     try {
       const data = await apiPost('/api/upload-vehicle-image', {
-        secret: adminSecret,
+        secret: adminSessionToken,
       vehicleId: (editingVehicleId || document.getElementById('av-id')?.value.trim() || ('img-' + Date.now())),
         imageData,
         mimeType: file.type,
@@ -9727,7 +9771,7 @@ function handleGalleryUpload(fileInput, prefix, idx) {
   reader.onload = async function(e) {
     try {
       const data = await apiPost('/api/upload-vehicle-image', {
-        secret: adminSecret,
+        secret: adminSessionToken,
         vehicleId: (editingVehicleId || document.getElementById('av-id')?.value.trim() || ('img-' + Date.now())),
         imageData: e.target.result,
         mimeType: file.type,
@@ -9753,7 +9797,7 @@ async function runDiagnostics() {
   out.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Checking configuration…</div></div>';
 
   try {
-    const data = await apiPost('/api/v2-diagnostics', { secret: adminSecret });
+    const data = await apiPost('/api/v2-diagnostics', { secret: adminSessionToken });
     renderDiagnostics(data);
   } catch (err) {
     out.innerHTML = `<p style="color:var(--danger)">Diagnostics failed: ${esc(err.message)}</p>`;
@@ -9917,7 +9961,7 @@ async function loadSystemHealth() {
   if (banner)  { banner.style.display = 'none'; banner.textContent = ''; }
 
   try {
-    const data = await apiPost('/api/v2-system-health', { secret: adminSecret, scope: 'car' });
+    const data = await apiPost('/api/v2-system-health', { secret: adminSessionToken, scope: 'car' });
     renderSystemHealth(data);
   } catch (err) {
     if (banner) {
@@ -10129,7 +10173,7 @@ async function acknowledgeSystemHealthManualSms(bookingId, returnDate, templateK
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     const result = await apiPost('/api/system-health-ack-sms', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       bookingRef: normalizedBookingId,
       returnDate: String(returnDate || '').trim() || undefined,
       templateKeys,
@@ -10149,14 +10193,14 @@ async function fixHealthCheck(checkKey, btn) {
     if (checkKey === 'smsDeliveryHealth') {
       // SMS repair runs through its own dedicated endpoint which reuses the
       // exact same processActiveRentals logic as the cron (repairMode: true).
-      result = await apiPost('/api/system-health-fix-sms', { secret: adminSecret, scope: 'car' });
+      result = await apiPost('/api/system-health-fix-sms', { secret: adminSessionToken, scope: 'car' });
     } else if (checkKey === 'availabilitySyncHealth') {
       // Availability sync repair rebuilds missing/stale blocked_dates rows from
       // active bookings so vehicles are never incorrectly shown as available.
-      result = await apiPost('/api/system-health-fix-availability', { secret: adminSecret, scope: 'car' });
+      result = await apiPost('/api/system-health-fix-availability', { secret: adminSessionToken, scope: 'car' });
     } else {
       result = await apiPost('/api/v2-system-health', {
-        secret: adminSecret,
+        secret: adminSessionToken,
         scope: 'car',
         action: `fix_${checkKey}`,
       });
@@ -10184,7 +10228,7 @@ async function loadSmsLogs() {
 
   try {
     const url = `${API_BASE}/api/sms-logs`;
-    const res  = await fetch(url, { headers: { 'Authorization': 'Bearer ' + adminSecret } });
+    const res  = await fetch(url, { headers: { 'Authorization': 'Bearer ' + adminSessionToken } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -10235,7 +10279,7 @@ async function clearSmsLogs() {
   if (!confirm('Clear all SMS delivery logs? This cannot be undone.')) return;
   try {
     const url = `${API_BASE}/api/sms-logs`;
-    const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminSecret } });
+    const res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + adminSessionToken } });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body.error || `HTTP ${res.status}`);
@@ -10315,7 +10359,7 @@ function updateFleetVehicleStatus(vehicleId, available, inputEl) {
   fetch(API_BASE + '/api/update-fleet-status', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ secret: adminSecret, vehicleId, available }),
+    body:    JSON.stringify({ secret: adminSessionToken, vehicleId, available }),
   })
     .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
     .then(({ ok, data }) => {
@@ -10421,7 +10465,7 @@ function deleteBlockedDate(id) {
   }
   if (!confirm('Delete blocked date #' + id + '?')) return;
 
-  fetch(API_BASE + '/api/blocked-dates?id=' + encodeURIComponent(String(id)) + '&secret=' + encodeURIComponent(adminSecret), {
+  fetch(API_BASE + '/api/blocked-dates?id=' + encodeURIComponent(String(id)) + '&secret=' + encodeURIComponent(adminSessionToken), {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
   })
@@ -10452,7 +10496,7 @@ function blockDates() {
   fetch(API_BASE + '/api/block-dates', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+    body:    JSON.stringify({ secret: adminSessionToken, vehicleId, from, to }),
   })
     .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
     .then(({ ok, data }) => {
@@ -10496,7 +10540,7 @@ function unblockBlockedDateRange(vehicleId, from, to, btn, resetText = 'Unblock'
   fetch(API_BASE + '/api/open-dates', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+    body:    JSON.stringify({ secret: adminSessionToken, vehicleId, from, to }),
   })
     .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
     .then(({ ok, data }) => {
@@ -10674,7 +10718,7 @@ async function sendAiMessage() {
 
   try {
     const data = await apiPost('/api/admin-chat', {
-      secret:    adminSecret,
+      secret:    adminSessionToken,
       messages:  messagesToSend,
       auto_mode: aiAutoMode,
     }, controller.signal);
@@ -10715,7 +10759,7 @@ async function loadAiInsights() {
   aiInitialized = true;
 
   try {
-    const data = await apiPost('/api/admin-ai-insights', { secret: adminSecret, scope: 'car' });
+    const data = await apiPost('/api/admin-ai-insights', { secret: adminSessionToken, scope: 'car' });
 
     // Revenue snapshot
     const ins = data.insights || {};
@@ -11369,7 +11413,7 @@ function initDemoMode() {
 
   // Bypass auth
   document.getElementById('auth-screen').style.display = 'none';
-  adminSecret = 'demo';
+  adminSessionToken = 'demo';
   document.getElementById('app').classList.add('ready');
 
   // Strip all SLY-specific branding so demo visitors can't identify the seller
@@ -11424,9 +11468,13 @@ function initDemoMode() {
 
 // Run demo init once DOM is fully parsed
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initDemoMode);
+  document.addEventListener('DOMContentLoaded', () => {
+    initDemoMode();
+    tryRestoreSessionOnLoad();
+  });
 } else {
   initDemoMode();
+  tryRestoreSessionOnLoad();
 }
 
 // ── First-Time User Onboarding ─────────────────────────────────────────────
@@ -11555,7 +11603,7 @@ async function wizardComplete() {
   try {
     const vId = _wizardVehicleName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 50) || 'vehicle-1';
     await apiPost('/api/v2-vehicles', {
-      secret: adminSecret, action: 'create',
+      secret: adminSessionToken, action: 'create',
       vehicleId: vId, vehicleName: _wizardVehicleName,
       type: 'economy', status: 'active',
       daily_price: _wizardDailyRate, weekly_price: _wizardWeeklyRate,
@@ -11668,7 +11716,7 @@ function loadTickets() {
     });
   }
 
-  apiPost('/api/tickets', { secret: adminSecret, action: 'list', scope: 'car' })
+  apiPost('/api/tickets', { secret: adminSessionToken, action: 'list', scope: 'car' })
     .then((data) => {
       allTickets = data.tickets || [];
       if (loading) loading.style.display = 'none';
@@ -11830,7 +11878,7 @@ async function saveTicket() {
 
   try {
     const data = await apiPost('/api/tickets', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       scope: 'car',
       action: 'create',
       ticketNumber,
@@ -11898,7 +11946,7 @@ async function openTicketDetail(ticketId) {
   openModal('ticket-detail-modal');
 
   try {
-    const data = await apiPost('/api/tickets', { secret: adminSecret, action: 'get', id: ticketId, scope: 'car' });
+    const data = await apiPost('/api/tickets', { secret: adminSessionToken, action: 'get', id: ticketId, scope: 'car' });
     viewingTicketData = data.ticket;
     const idx = allTickets.findIndex((t) => t.id === ticketId);
     if (idx >= 0) allTickets[idx] = data.ticket;
@@ -12058,7 +12106,7 @@ async function ticketAction(newStatus) {
   logBookingActionAudit('ticketAction', ctx, { ticketId: viewingTicketId || null, newStatus: newStatus || null });
   try {
     const data = await apiPost('/api/tickets', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       scope: 'car',
       action: 'update_status',
       id:     viewingTicketId,
@@ -12094,7 +12142,7 @@ async function chargeTicketRenter(isRetry = false) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        secret:   adminSecret,
+        secret:   adminSessionToken,
         action:   isRetry ? 'retry' : 'charge',
         ticketId: viewingTicketId,
       }),
@@ -12135,7 +12183,7 @@ async function addTicketNote() {
   if (!note || !viewingTicketId) return;
   try {
     const data = await apiPost('/api/tickets', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       scope: 'car',
       action: 'add_note',
       id:     viewingTicketId,
@@ -12156,7 +12204,7 @@ async function fetchBookingDocs(bookingId) {
   if (!bookingId) return [];
   try {
     const data = await apiPost('/api/booking-documents', {
-      secret: adminSecret, action: 'list', bookingId,
+      secret: adminSessionToken, action: 'list', bookingId,
     });
     return data.docs || [];
   } catch {
@@ -12188,7 +12236,7 @@ async function deleteCurrentTicket() {
   if (!viewingTicketId) return;
   if (!confirm('Delete this ticket? This cannot be undone.')) return;
   try {
-    await apiPost('/api/tickets', { secret: adminSecret, action: 'delete', id: viewingTicketId, scope: 'car' });
+    await apiPost('/api/tickets', { secret: adminSessionToken, action: 'delete', id: viewingTicketId, scope: 'car' });
     allTickets = allTickets.filter((t) => t.id !== viewingTicketId);
     updateTicketsBadge();
     closeModal('ticket-detail-modal');
@@ -12367,7 +12415,7 @@ function applyAppQueueLifecyclePreset(lifecycleFilter = '', attentionFilter = ''
 async function apiGet(path) {
   if (window.DEMO_MODE) return {};
   const resp = await fetch(API_BASE + path, {
-    headers: { Authorization: 'Bearer ' + adminSecret },
+    headers: { Authorization: 'Bearer ' + adminSessionToken },
   });
   let data = null;
   try { data = await resp.json(); } catch (err) {
@@ -12533,7 +12581,7 @@ async function clearDeclinedApplications() {
 
   try {
     const result = await apiPost('/api/admin-application-ops', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       action: 'clear_declined_applications',
       reviewedBy: 'Admin',
       notes: 'Bulk-cleared declined applications from queue.',
@@ -12959,7 +13007,7 @@ async function submitAppAction() {
 
   try {
     const result = await apiPost('/api/review-application', {
-      secret:                adminSecret,
+      secret:                adminSessionToken,
       applicationId:         appViewingData.applicationId,
       action:                appSelectedAction,
       reviewedBy,
@@ -13009,7 +13057,7 @@ async function runAppOperationalAction(action) {
 
   try {
     const result = await apiPost('/api/admin-application-ops', {
-      secret:        adminSecret,
+      secret:        adminSessionToken,
       action,
       applicationId: appViewingData.applicationId,
       notes,
@@ -13087,7 +13135,7 @@ async function runReconcileReport() {
 
   try {
     const data = await apiPost('/api/ledger-reconcile-report', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       status: statusFilter || undefined,
@@ -13152,7 +13200,7 @@ async function loadOverdueBalances() {
 
   try {
     const data = await apiPost('/api/overdue-balances', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       aging_buckets: true,
       limit: 200,
     });
@@ -13227,7 +13275,7 @@ async function loadPaymentPlans() {
 
   try {
     const data = await apiPost('/api/payment-plan', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       action: 'list',
       status: status || undefined,
       limit: 100,
@@ -13296,7 +13344,7 @@ function openCreatePlanModal(prefillBookingId, prefillTotal) {
   const interval = parseInt(prompt('Days between installments (1–90):') || '30', 10);
 
   apiPost('/api/payment-plan', {
-    secret: adminSecret,
+    secret: adminSessionToken,
     action: 'create',
     booking_id: booking.trim(),
     customer_email: email.trim(),
@@ -13311,7 +13359,7 @@ function openCreatePlanModal(prefillBookingId, prefillTotal) {
 
 async function editPaymentPlan(planId) {
   try {
-    const data = await apiPost('/api/payment-plan', { secret: adminSecret, action: 'get', plan_id: planId });
+    const data = await apiPost('/api/payment-plan', { secret: adminSessionToken, action: 'get', plan_id: planId });
     const plan = data?.plans?.[0];
     if (!plan) throw new Error('Payment plan not found');
 
@@ -13345,7 +13393,7 @@ async function editPaymentPlan(planId) {
     if (notesInput === null) return;
 
     await apiPost('/api/payment-plan', {
-      secret: adminSecret,
+      secret: adminSessionToken,
       action: 'update',
       plan_id: planId,
       customer_email: email,
@@ -13366,7 +13414,7 @@ async function editPaymentPlan(planId) {
 async function cancelPaymentPlan(planId) {
   if (!confirm('Cancel this payment plan?')) return;
   try {
-    await apiPost('/api/payment-plan', { secret: adminSecret, action: 'cancel', plan_id: planId });
+    await apiPost('/api/payment-plan', { secret: adminSessionToken, action: 'cancel', plan_id: planId });
     showToast('Payment plan cancelled.', 'success');
     loadPaymentPlans();
   } catch (err) {
@@ -13377,7 +13425,7 @@ async function cancelPaymentPlan(planId) {
 async function deletePaymentPlan(planId) {
   if (!confirm('Delete this payment plan? This cannot be undone.')) return;
   try {
-    await apiPost('/api/payment-plan', { secret: adminSecret, action: 'delete', plan_id: planId });
+    await apiPost('/api/payment-plan', { secret: adminSessionToken, action: 'delete', plan_id: planId });
     showToast('Payment plan deleted.', 'success');
     loadPaymentPlans();
   } catch (err) {

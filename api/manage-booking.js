@@ -38,6 +38,11 @@ import {
 } from "./_settings.js";
 import { computeRentalDays, getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
+import {
+  createRenterSessionToken,
+  extractBearerToken,
+  verifyRenterSessionToken,
+} from "./_renter-auth.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -48,6 +53,9 @@ const MANAGE_ELIGIBLE_STATUSES = ["reserved", "reserved_unpaid", "booked_paid", 
 const BOOKING_REF_PATTERN = /^bk-[a-z0-9]+$/;
 const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 const POSTGRES_UNDEFINED_TABLE_ERROR = "42P01";
+const VERIFY_WINDOW_MS = 15 * 60 * 1000;
+const VERIFY_LOCK_MS = 15 * 60 * 1000;
+const VERIFY_MAX_ATTEMPTS = 8;
 const BOOKING_SELECT_COLS =
   "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
@@ -60,6 +68,9 @@ const BOOKING_SELECT_FALLBACK_COLS =
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
   "change_count, category, identity_session_id, customer_name, customer_email, customer_phone, created_at";
 
+// Best-effort in-memory rate limiting for booking verification attempts.
+const verifyAttempts = new Map();
+
 
 function normalizeLookupPhone(value) {
   const digits = String(value || "").replace(/\D+/g, "");
@@ -70,6 +81,60 @@ function normalizeLookupPhone(value) {
 function normalizeLookupBookingRef(value) {
   const trimmed = String(value || "").trim();
   return BOOKING_REF_PATTERN.test(trimmed.toLowerCase()) ? trimmed.toLowerCase() : "";
+}
+
+function getClientVerifyKey(req, origin, identifier) {
+  const xfwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const ip = xfwd || String(req.socket?.remoteAddress || "unknown");
+  const id = String(identifier || "").trim().toLowerCase();
+  return `${ip}|${origin || "no-origin"}|${id}`;
+}
+
+function readVerifyState(key, now = Date.now()) {
+  const current = verifyAttempts.get(key);
+  if (!current) return { attempts: [] };
+  const attempts = (current.attempts || []).filter((ts) => now - ts <= VERIFY_WINDOW_MS);
+  const lockUntil = Number(current.lockUntil || 0);
+  if (!attempts.length && lockUntil <= now) {
+    verifyAttempts.delete(key);
+    return { attempts: [] };
+  }
+  const normalized = { attempts, lockUntil };
+  verifyAttempts.set(key, normalized);
+  return normalized;
+}
+
+function registerVerifyFailure(key, now = Date.now()) {
+  const state = readVerifyState(key, now);
+  const attempts = [...(state.attempts || []), now].filter((ts) => now - ts <= VERIFY_WINDOW_MS);
+  const next = { attempts };
+  if (attempts.length >= VERIFY_MAX_ATTEMPTS) {
+    next.lockUntil = now + VERIFY_LOCK_MS;
+  }
+  verifyAttempts.set(key, next);
+  return next;
+}
+
+function clearVerifyState(key) {
+  verifyAttempts.delete(key);
+}
+
+function renterOwnsBooking(row, claims) {
+  if (!claims) return true;
+  const claimBookingRef = String(claims.booking_ref || "").trim().toLowerCase();
+  const rowBookingRef = String(row?.booking_ref || "").trim().toLowerCase();
+  if (!claimBookingRef || !rowBookingRef || claimBookingRef !== rowBookingRef) return false;
+  const claimEmail = String(claims.email || "").trim().toLowerCase();
+  if (claimEmail) {
+    const rowEmail = String(row?.customer_email || "").trim().toLowerCase();
+    if (rowEmail && rowEmail !== claimEmail) return false;
+  }
+  const claimPhone = normalizeLookupPhone(claims.phone || "");
+  if (claimPhone) {
+    const rowPhone = normalizeLookupPhone(row?.customer_phone || row?.renter_phone || "");
+    if (rowPhone && rowPhone !== claimPhone) return false;
+  }
+  return true;
 }
 
 /**
@@ -253,7 +318,7 @@ export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
@@ -265,6 +330,17 @@ export default async function handler(req, res) {
   if (action === "verify") {
     const identifier = String(body.identifier || "").trim();
     if (!identifier) return res.status(400).json({ error: "Phone, email, or booking ID is required." });
+    const verifyKey = getClientVerifyKey(req, origin, identifier);
+    const verifyNow = Date.now();
+    const verifyState = readVerifyState(verifyKey, verifyNow);
+    if (verifyState.lockUntil && verifyState.lockUntil > verifyNow) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((verifyState.lockUntil - verifyNow) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      return res.status(429).json({
+        error: "Too many verification attempts. Please try again later.",
+        retryAfterSeconds,
+      });
+    }
 
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable." });
@@ -310,6 +386,7 @@ export default async function handler(req, res) {
       candidates = [];
     }
     if (lookupErr) {
+      registerVerifyFailure(verifyKey);
       console.error("manage-booking verify lookup error:", lookupErr.message);
       return res.status(500).json({ error: "Could not verify booking right now." });
     }
@@ -346,13 +423,21 @@ export default async function handler(req, res) {
     });
 
     if (!matches.length) {
+      registerVerifyFailure(verifyKey);
       return res.status(404).json({ error: "No eligible booking was found with that phone, email, or booking ID." });
     }
 
     // Use the most recent eligible booking (results are already ordered by created_at desc).
     const selected = matches[0];
+    clearVerifyState(verifyKey);
 
     const manageToken = createManageToken(selected.booking_ref);
+    const renterSessionToken = createRenterSessionToken({
+      bookingRef: selected.booking_ref,
+      email: selected.customer_email || "",
+      phone: selected.customer_phone || selected.renter_phone || "",
+      authMethod: "verify_identifier",
+    });
     console.log("[manage-booking] VERIFY: booking_ref =", selected.booking_ref, "| token =", manageToken);
     try {
       await sb
@@ -366,16 +451,25 @@ export default async function handler(req, res) {
     return res.status(200).json({
       verified: true,
       token: manageToken,
+      renterSessionToken: renterSessionToken || null,
       bookingId: selected.booking_ref,
       vehicleId: uiVehicleId(selected.vehicle_id || ""),
     });
   }
 
-  if (!token) return res.status(401).json({ error: "manage_token is required" });
+  const bearerToken = extractBearerToken(req);
+  const renterClaims = verifyRenterSessionToken(bearerToken);
 
-  const bookingId = verifyManageToken(token);
-  if (!bookingId) {
-    return res.status(401).json({ error: "Invalid or expired manage token. Please verify again, or contact support if your old link no longer works." });
+  let bookingId = "";
+  if (token) {
+    bookingId = verifyManageToken(token) || "";
+    if (!bookingId) {
+      return res.status(401).json({ error: "Invalid or expired manage token. Please verify again, or contact support if your old link no longer works." });
+    }
+  } else if (renterClaims?.booking_ref) {
+    bookingId = String(renterClaims.booking_ref || "").trim();
+  } else {
+    return res.status(401).json({ error: "manage_token or renter session is required" });
   }
 
   // ── action: get ─────────────────────────────────────────────────────────────
@@ -437,6 +531,9 @@ export default async function handler(req, res) {
 
     console.log("[manage-booking] RESULT:", row);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(row, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
 
     const vehicleId = uiVehicleId(row.vehicle_id || "");
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -508,6 +605,9 @@ export default async function handler(req, res) {
     }
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(row, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
     if (String(row.category || "").toLowerCase() === "slingshot") {
       return res.status(409).json({ error: "Slingshot bookings are paid in person at pickup and do not support online balance payments." });
     }
@@ -591,6 +691,11 @@ export default async function handler(req, res) {
   if (action === "get_agreement_url") {
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable" });
+    const bookingRow = await fetchBookingFromSupabase(bookingId);
+    if (!bookingRow) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(bookingRow, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
 
     const { data: docRow, error: docErr } = await sb
       .from("pending_booking_docs")
@@ -631,6 +736,9 @@ export default async function handler(req, res) {
   if (action === "check_availability") {
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(row, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
 
     const {
       newPickupDate, newReturnDate,
@@ -687,6 +795,9 @@ export default async function handler(req, res) {
   if (action === "apply_change") {
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(row, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
 
     // Only free (first) changes allowed here
     const changeCount = Number(row.change_count || 0);
@@ -846,6 +957,9 @@ export default async function handler(req, res) {
 
     const row = await fetchBookingFromSupabase(bookingId);
     if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (!renterOwnsBooking(row, renterClaims)) {
+      return res.status(403).json({ error: "Renter session does not match this booking." });
+    }
 
     const {
       newPickupDate, newReturnDate,

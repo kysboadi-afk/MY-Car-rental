@@ -20,7 +20,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.js";
 import { getAllVehicleIds } from "./_pricing.js";
@@ -96,8 +96,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
 
   const body = req.body || {};
-  const { secret, action } = body;
-  if (!isAdminAuthorized(secret))
+  const { action } = body;
+  const suppliedAdminCredential = extractAdminSecret(req);
+  if (!isAdminAuthorized(suppliedAdminCredential))
     return res.status(401).json({ error: "Unauthorized" });
 
   const sb = getSupabase();
