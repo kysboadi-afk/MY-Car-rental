@@ -383,6 +383,7 @@
     if (isOverdue) lifecycleState = "overdue";
     else if (hasPaymentPlan && hasOutstandingBalance) lifecycleState = "payment_plan_active";
     else if (isActiveRental) lifecycleState = "active_rental";
+    else if (isManualPickup && !isFullyPaidByBalance && hasPositivePaid) lifecycleState = "deposit_paid";
     else if (isManualPickup && !isFullyPaidByBalance) lifecycleState = "pickup_due";
     else if (isReservationStage) {
       if (hasOutstandingBalance && hasPositivePaid) lifecycleState = "deposit_paid";
@@ -463,7 +464,7 @@
         paymentBadgeClass: "badge-review",
         paymentChipLabel: "Payment due at pickup",
         balanceNote: "Payment for this booking is collected in person at pickup.",
-        progressPaidLabel: "$0 paid",
+        progressPaidLabel: normalizedPaid > 0 ? `${fmt(normalizedPaid)} paid` : "$0 paid",
         progressPctLabel: "Payment due at pickup",
         bannerText: "Remaining balance is collected at pickup.",
       },
