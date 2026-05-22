@@ -1934,6 +1934,7 @@
                   <th>Net</th>
                   <th>Method</th>
                   <th>Status</th>
+                  <th>Recorded</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -7957,6 +7958,10 @@ function renderRevenue(groups) {
       : '';
 
     // ── Summary row ──────────────────────────────────────────────────────────
+    const summaryCreatedAt = base?.created_at || allRecs[0]?.created_at;
+    const summaryRecordedCell = summaryCreatedAt
+      ? `<span style="white-space:nowrap;">${esc(new Date(summaryCreatedAt).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }))}</span>`
+      : '<span style="color:var(--text-sub);">—</span>';
     let html = `<tr class="rev-summary-row" data-rev-summary="${esc(id)}">
       <td>${esc(customer_name)}</td>
       <td>${esc(getVehicleLabel(vehicle_id) || '–')}</td>
@@ -7967,6 +7972,7 @@ function renderRevenue(groups) {
       <td style="font-weight:700;">$${formatMoney(totalNet)}</td>
       <td style="font-size:12px;">${esc(payment_method)}</td>
       <td>${payBadge}</td>
+      <td style="font-size:11px;color:var(--text-sub);">${summaryRecordedCell}</td>
       <td class="td-actions">
         ${toggleBtn}
         ${baseActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(baseActionId)}')">Edit</button>` : ''}
@@ -7980,6 +7986,9 @@ function renderRevenue(groups) {
         const baseNorm = normalizeRevenueRecord(base);
         const baseNet  = (baseNorm.amount_net - Number(base.refund_amount || 0)).toFixed(2);
         const baseFee  = base.stripe_fee != null ? '$' + formatMoney(base.stripe_fee) : '<span style="font-size:11px;">—</span>';
+        const baseRecordedCell = base.created_at
+          ? `<span style="white-space:nowrap;">${esc(new Date(base.created_at).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }))}</span>`
+          : '<span style="color:var(--text-sub);">—</span>';
         html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
           <td colspan="2" style="padding-left:28px;">📋 Base rental</td>
           <td>${esc((fmtRevDate(base.pickup_date) || '–') + ' → ' + (fmtRevDate(base.return_date) || '–'))}</td>
@@ -7989,6 +7998,7 @@ function renderRevenue(groups) {
           <td>$${formatMoney(baseNet)}</td>
           <td>${esc(base.payment_method || '–')}</td>
           <td></td>
+          <td style="font-size:11px;color:var(--text-sub);">${baseRecordedCell}</td>
           <td class="td-actions">
             ${baseActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(baseActionId)}')">Edit</button>` : ''}
             ${baseActionId ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(baseActionId)}')">Delete</button>` : ''}
@@ -8006,6 +8016,9 @@ function renderRevenue(groups) {
         const extNet    = (extNorm.amount_net - Number(ext.refund_amount || 0)).toFixed(2);
         const extFee    = ext.stripe_fee != null ? '$' + formatMoney(ext.stripe_fee) : '<span style="font-size:11px;">—</span>';
         const extActionId = normalizeRevenueActionId(ext?.id);
+        const extRecordedCell = ext.created_at
+          ? `<span style="white-space:nowrap;">${esc(new Date(ext.created_at).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }))}</span>`
+          : '<span style="color:var(--text-sub);">—</span>';
         html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
           <td colspan="2" style="padding-left:28px;">🔄 ${esc(extLabel)}</td>
           <td>→ ${esc(fmtRevDate(ext.return_date) || '–')}</td>
@@ -8015,6 +8028,7 @@ function renderRevenue(groups) {
           <td>$${formatMoney(extNet)}</td>
           <td>${esc(ext.payment_method || '–')}</td>
           <td></td>
+          <td style="font-size:11px;color:var(--text-sub);">${extRecordedCell}</td>
           <td class="td-actions">
             ${extActionId ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(extActionId)}')">Edit</button>` : ''}
             ${extActionId ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(extActionId)}')">Delete</button>` : ''}
