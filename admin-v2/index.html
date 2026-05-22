@@ -4639,24 +4639,30 @@ function renderVehicleProfile(id, v, s) {
               <tr style="color:var(--text-sub);">
                 <th style="text-align:left;padding:4px 8px 4px 0;">Service</th>
                 <th style="text-align:right;padding:4px 0;">Last Recorded</th>
+                <th style="text-align:right;padding:4px 0 4px 8px;">Recorded Date/Time</th>
                 <th style="text-align:right;padding:4px 0 4px 8px;">Miles Since</th>
               </tr>
             </thead>
             <tbody>
               ${[
-                { label: 'Oil Change',       key: 'last_oil_change_mileage',   interval: 3000 },
-                { label: 'Brake Inspection', key: 'last_brake_check_mileage',  interval: 10000 },
-                { label: 'Tire Replacement', key: 'last_tire_change_mileage',  interval: 20000 },
-              ].map(({ label, key, interval }) => {
-                const last   = v[key] != null ? Number(v[key]) : null;
-                const cur    = Number(v.total_mileage) || 0;
-                const since  = last != null ? Math.max(0, cur - last) : null;
-                const pct    = since != null ? since / interval : null;
-                const color  = pct == null ? 'var(--text-sub)' : pct >= 1 ? 'var(--danger)' : pct >= 0.8 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
-                const badge  = pct == null ? '' : pct >= 1 ? ' 🚨' : pct >= 0.8 ? ' ⚠️' : '';
+                { label: 'Oil Change',       key: 'last_oil_change_mileage',   tsKey: 'last_oil_change_recorded_at',   interval: 3000 },
+                { label: 'Brake Inspection', key: 'last_brake_check_mileage',  tsKey: 'last_brake_check_recorded_at',  interval: 10000 },
+                { label: 'Tire Replacement', key: 'last_tire_change_mileage',  tsKey: 'last_tire_change_recorded_at',  interval: 20000 },
+              ].map(({ label, key, tsKey, interval }) => {
+                const last     = v[key] != null ? Number(v[key]) : null;
+                const cur      = Number(v.total_mileage) || 0;
+                const since    = last != null ? Math.max(0, cur - last) : null;
+                const pct      = since != null ? since / interval : null;
+                const color    = pct == null ? 'var(--text-sub)' : pct >= 1 ? 'var(--danger)' : pct >= 0.8 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+                const badge    = pct == null ? '' : pct >= 1 ? ' 🚨' : pct >= 0.8 ? ' ⚠️' : '';
+                const recorded = v[tsKey] ? new Date(v[tsKey]) : null;
+                const recordedLabel = recorded && !isNaN(recorded.getTime())
+                  ? recorded.toLocaleString("en-US", { timeZone: "America/Los_Angeles" })
+                  : '—';
                 return `<tr>
                   <td style="padding:4px 8px 4px 0;">${label}${badge}</td>
                   <td style="text-align:right;padding:4px 0;">${last != null ? last.toLocaleString() + ' mi' : '—'}</td>
+                  <td style="text-align:right;padding:4px 0 4px 8px;">${recordedLabel}</td>
                   <td style="text-align:right;padding:4px 0 4px 8px;color:${color};font-weight:${pct != null && pct >= 0.8 ? '600' : 'normal'};">${since != null ? since.toLocaleString() + ' mi' : '—'}</td>
                 </tr>`;
               }).join('')}
@@ -5092,6 +5098,7 @@ async function triggerGlobalBouncieSync() {
 async function markVehicleServiced(vehicleId, serviceType) {
   const labels    = { oil: 'oil change', brakes: 'brake inspection', tires: 'tire replacement' };
   const colKeys   = { oil: 'last_oil_change_mileage', brakes: 'last_brake_check_mileage', tires: 'last_tire_change_mileage' };
+  const timeKeys  = { oil: 'last_oil_change_recorded_at', brakes: 'last_brake_check_recorded_at', tires: 'last_tire_change_recorded_at' };
   const label     = serviceType ? labels[serviceType] : 'service';
   if (!confirm(`Record ${label} at current mileage for this vehicle? This updates the maintenance counter.`)) return;
   try {
@@ -5104,6 +5111,13 @@ async function markVehicleServiced(vehicleId, serviceType) {
       } else {
         // Legacy all-service update — patch all three keys
         for (const key of Object.values(colKeys)) allVehicles[vehicleId][key] = result.service_mileage;
+      }
+      if (result.service_recorded_at) {
+        if (serviceType && timeKeys[serviceType]) {
+          allVehicles[vehicleId][timeKeys[serviceType]] = result.service_recorded_at;
+        } else {
+          for (const key of Object.values(timeKeys)) allVehicles[vehicleId][key] = result.service_recorded_at;
+        }
       }
     }
     if (currentPage === 'vehicle-profile') renderVehicleProfile(vehicleId, allVehicles[vehicleId], cachedVehicleStats[vehicleId] || {});
