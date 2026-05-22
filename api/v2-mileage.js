@@ -28,11 +28,11 @@ export const config = {
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
-// Maps serviceType param → DB column and JSONB key
+// Maps serviceType param → DB column and JSONB keys
 const SERVICE_COLUMNS = {
-  oil:    { col: "last_oil_change_mileage",   jsonKey: "last_oil_change_mileage" },
-  brakes: { col: "last_brake_check_mileage",  jsonKey: "last_brake_check_mileage" },
-  tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
+  oil:    { col: "last_oil_change_mileage",   jsonKey: "last_oil_change_mileage",  recordedAtJsonKey: "last_oil_change_recorded_at" },
+  brakes: { col: "last_brake_check_mileage",  jsonKey: "last_brake_check_mileage", recordedAtJsonKey: "last_brake_check_recorded_at" },
+  tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage", recordedAtJsonKey: "last_tire_change_recorded_at" },
 };
 
 export default async function handler(req, res) {
@@ -194,17 +194,20 @@ export default async function handler(req, res) {
       // Determine which columns to update
       const colUpdates = {};
       const jsonUpdates = {};
+      const recordedAtIso = new Date().toISOString();
 
       if (serviceType) {
         // Update only the requested service type
-        const { col, jsonKey } = SERVICE_COLUMNS[serviceType];
-        colUpdates[col]    = serviceMileage;
-        jsonUpdates[jsonKey] = serviceMileage;
+        const { col, jsonKey, recordedAtJsonKey } = SERVICE_COLUMNS[serviceType];
+        colUpdates[col]               = serviceMileage;
+        jsonUpdates[jsonKey]          = serviceMileage;
+        jsonUpdates[recordedAtJsonKey] = recordedAtIso;
       } else {
         // Legacy: no serviceType specified — update all three (and old combined field)
-        for (const { col, jsonKey } of Object.values(SERVICE_COLUMNS)) {
-          colUpdates[col]    = serviceMileage;
-          jsonUpdates[jsonKey] = serviceMileage;
+        for (const { col, jsonKey, recordedAtJsonKey } of Object.values(SERVICE_COLUMNS)) {
+          colUpdates[col]                = serviceMileage;
+          jsonUpdates[jsonKey]           = serviceMileage;
+          jsonUpdates[recordedAtJsonKey] = recordedAtIso;
         }
         jsonUpdates.last_service_mileage = serviceMileage;  // keep legacy key in sync
       }
@@ -238,6 +241,7 @@ export default async function handler(req, res) {
         vehicleId,
         serviceType:  serviceType || "all",
         service_mileage: serviceMileage,
+        service_recorded_at: recordedAtIso,
       });
     }
 
