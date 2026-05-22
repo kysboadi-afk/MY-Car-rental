@@ -16,7 +16,7 @@ function makeJsonResponse(status, payload) {
   };
 }
 
-async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload }) {
+async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload, createIntentPayload, setupWindow }) {
   const dom = new JSDOM(`<!doctype html><html><body>
     <div id="verify-state"></div>
     <input id="verify-identifier" />
@@ -37,6 +37,22 @@ async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload }
     <div id="paid-in-full-notice" style="display:none"></div>
     <div id="stat-balance-note"></div>
     <div id="action-msg-finance"></div>
+    <div id="balance-payment-wrap" style="display:none"></div>
+    <div id="balance-express-wrap" style="display:none"></div>
+    <div id="balance-express-checkout"></div>
+    <div id="balance-stripe-element"></div>
+    <div id="balance-error" style="display:none"></div>
+    <button id="btn-confirm-balance">Confirm Balance</button>
+    <div id="partial-payment-section" style="display:none"></div>
+    <input id="partial-amount-input" />
+    <button id="partial-max-btn">Pay Max</button>
+    <div id="partial-amount-preview"></div>
+    <button id="btn-init-partial">Init Partial</button>
+    <div id="partial-express-wrap" style="display:none"></div>
+    <div id="partial-express-checkout"></div>
+    <div id="partial-stripe-element" style="display:none"></div>
+    <div id="partial-error" style="display:none"></div>
+    <button id="btn-confirm-partial" style="display:none">Confirm Partial</button>
   </body></html>`, {
     url: "https://slycarrentals.com/manage-booking.html?t=test-token",
     runScripts: "outside-only",
@@ -54,11 +70,16 @@ async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload }
       const body = JSON.parse(options.body || "{}");
       if (body.action === "get") return makeJsonResponse(200, bookingPayload);
       if (body.action === "get_agreement_url") return makeJsonResponse(200, agreementPayload || {});
+      if (body.action === "create_balance_payment_intent") {
+        if (createIntentPayload) return makeJsonResponse(200, createIntentPayload);
+        return makeJsonResponse(400, { error: "missing createIntentPayload" });
+      }
       return makeJsonResponse(400, { error: "unexpected action" });
     }
     return makeJsonResponse(404, { error: "unexpected URL" });
   };
   window.scrollTo = () => {};
+  if (typeof setupWindow === "function") setupWindow(window);
 
   const source = await fs.readFile(scriptPath, "utf8");
   window.eval(source);
@@ -182,4 +203,66 @@ test("active-rental flow still shows actionable balance when DB balance is outst
   assert.equal(document.getElementById("s-balance").textContent, "$300.00");
   assert.equal(document.getElementById("hero-payment-chip").textContent, "$300.00 currently due");
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
+});
+
+test("payment init mounts express checkout for balance and partial flows", async () => {
+  const createCalls = [];
+  const stripeFactory = () => ({
+    elements() {
+      return {
+        create(type) {
+          createCalls.push(type);
+          const handlers = {};
+          return {
+            on(eventName, cb) { handlers[eventName] = cb; },
+            mount() {
+              if (type === "expressCheckout" && typeof handlers.ready === "function") {
+                handlers.ready({ availablePaymentMethods: { applePay: true, googlePay: true, cashApp: true } });
+              }
+            },
+            unmount() {},
+          };
+        },
+      };
+    },
+    async confirmPayment() {
+      return { paymentIntent: { status: "requires_payment_method" } };
+    },
+  });
+
+  const document = await bootDashboard({
+    bookingPayload: baseBooking(),
+    ledgerPayload: {
+      summary: {
+        total_paid: 50,
+        remaining_balance: 335.88,
+        transaction_count: 1,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    createIntentPayload: {
+      clientSecret: "cs_test_123",
+      publishableKey: "pk_test_123",
+      balanceAmount: 335.88,
+      paymentAmount: 335.88,
+    },
+    setupWindow(window) {
+      window.Stripe = stripeFactory;
+    },
+  });
+
+  document.getElementById("btn-init-balance").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  document.getElementById("btn-open-partial").click();
+  document.getElementById("btn-init-partial").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const expressCalls = createCalls.filter((type) => type === "expressCheckout").length;
+  assert.ok(expressCalls >= 2, "express checkout should be mounted for both balance and partial payment flows");
+  assert.equal(document.getElementById("balance-express-wrap").style.display, "block");
+  assert.equal(document.getElementById("partial-express-wrap").style.display, "block");
 });

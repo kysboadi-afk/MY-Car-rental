@@ -1622,7 +1622,9 @@ async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, 
     const result = await appendCustomerLedgerShadowEntry(sb, {
       caller: "stripe-webhook:payment_intent.succeeded",
       bookingRef,
-      transactionType: paymentType === "balance_payment" ? "balance_payment" : "stripe_payment",
+      transactionType: (paymentType === "balance_payment" || paymentType === "rental_balance" || paymentType === "partial_balance")
+        ? "balance_payment"
+        : "stripe_payment",
       direction: "credit",
       amountCents: Math.round(Number(amountDollars || 0) * 100),
       sourceType: "stripe_payment",
@@ -3156,7 +3158,7 @@ export default async function handler(req, res) {
     }
 
     // Skip date blocking for balance payments — dates were already blocked when the deposit was paid.
-    if (paymentType === "balance_payment" || paymentType === "rental_balance") {
+    if (paymentType === "balance_payment" || paymentType === "rental_balance" || paymentType === "partial_balance") {
       console.log(
         `stripe-webhook: ${paymentType} for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );

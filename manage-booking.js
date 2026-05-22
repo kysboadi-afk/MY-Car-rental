@@ -53,6 +53,8 @@
   const $btnViewPlan      = document.getElementById("btn-view-plan");
   const $btnDownloadLatestReceipt = document.getElementById("btn-download-latest-receipt");
   const $balanceWrap      = document.getElementById("balance-payment-wrap");
+  const $balanceExpressWrap = document.getElementById("balance-express-wrap");
+  const $balanceExpressEl = document.getElementById("balance-express-checkout");
   const $balanceStripeEl  = document.getElementById("balance-stripe-element");
   const $balanceError     = document.getElementById("balance-error");
   const $btnConfirmBal    = document.getElementById("btn-confirm-balance");
@@ -70,6 +72,8 @@
   const $partialMaxBtn    = document.getElementById("partial-max-btn");
   const $partialPreview   = document.getElementById("partial-amount-preview");
   const $btnInitPartial   = document.getElementById("btn-init-partial");
+  const $partialExpressWrap = document.getElementById("partial-express-wrap");
+  const $partialExpressEl = document.getElementById("partial-express-checkout");
   const $partialStripeEl  = document.getElementById("partial-stripe-element");
   const $partialError     = document.getElementById("partial-error");
   const $btnConfirmPartial = document.getElementById("btn-confirm-partial");
@@ -84,9 +88,11 @@
   let balanceStripe    = null;
   let balanceElements  = null;
   let balancePayEl     = null;
+  let balanceExpressCheckoutEl = null;
   let partialStripe    = null;
   let partialElements  = null;
   let partialPayEl     = null;
+  let partialExpressCheckoutEl = null;
   let currentBalance   = 0;
   let ledgerSummary    = null;
   let ledgerTransactions = [];
@@ -129,6 +135,75 @@
   function setDisplay(id, visible, displayValue = "") {
     const el = document.getElementById(id);
     if (el) el.style.display = visible ? displayValue : "none";
+  }
+
+  function resolveStripeLocale() {
+    if (window.slyI18n && typeof window.slyI18n.getLang === "function") {
+      const lang = String(window.slyI18n.getLang() || "").trim();
+      if (lang) return lang;
+    }
+    return "en";
+  }
+
+  function unmountStripeElement(element) {
+    if (!element) return;
+    try { element.unmount(); } catch (_err) { /* ignore */ }
+  }
+
+  function hideStripeExpress(wrapperEl, containerEl) {
+    if (wrapperEl) wrapperEl.style.display = "none";
+    if (containerEl) containerEl.innerHTML = "";
+  }
+
+  function mountExpressCheckoutElement({ stripe, elements, wrapperEl, containerEl, errorEl }) {
+    if (!stripe || !elements || !containerEl) return null;
+    let expressEl = null;
+    try {
+      expressEl = elements.create("expressCheckout", {
+        wallets: {
+          applePay: "auto",
+          googlePay: "auto",
+          cashApp: "auto",
+        },
+      });
+    } catch (err) {
+      console.warn("[manage-booking] express checkout unavailable:", err?.message || err);
+      hideStripeExpress(wrapperEl, containerEl);
+      return null;
+    }
+
+    expressEl.on("ready", (event) => {
+      const methods = event?.availablePaymentMethods || null;
+      const hasWalletMethod = !!(methods && Object.keys(methods).some((key) => !!methods[key]));
+      if (wrapperEl) wrapperEl.style.display = hasWalletMethod ? "block" : "none";
+    });
+
+    expressEl.on("confirm", async () => {
+      if (errorEl) errorEl.style.display = "none";
+      try {
+        const result = await stripe.confirmPayment({
+          elements,
+          confirmParams: { return_url: window.location.href },
+          redirect: "if_required",
+        });
+        if (result.error) {
+          if (errorEl) { errorEl.textContent = result.error.message || "Payment failed. Please try again."; errorEl.style.display = "block"; }
+          return;
+        }
+        if (result.paymentIntent?.status === "succeeded") {
+          setActionMsg("✅ Payment received. Updating your booking…", "success", document.getElementById("action-msg-finance"));
+          setTimeout(() => window.location.reload(), PAYMENT_SUCCESS_RELOAD_DELAY_MS);
+        }
+      } catch (err) {
+        if (errorEl) { errorEl.textContent = "Payment failed. Please try again."; errorEl.style.display = "block"; }
+        console.error("[manage-booking] express checkout confirm error:", err);
+      }
+    });
+
+    containerEl.innerHTML = "";
+    expressEl.mount(containerEl);
+    if (wrapperEl) wrapperEl.style.display = "none";
+    return expressEl;
   }
 
   function normalizeVehicleImageUrl(value) {
@@ -1202,8 +1277,18 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
           if ($balanceError) { $balanceError.textContent = "Payment library failed to load. Please refresh."; $balanceError.style.display = "block"; }
           return;
         }
+        unmountStripeElement(balancePayEl);
+        unmountStripeElement(balanceExpressCheckoutEl);
+        hideStripeExpress($balanceExpressWrap, $balanceExpressEl);
         balanceStripe   = Stripe(data.publishableKey); // eslint-disable-line no-undef
-        balanceElements = balanceStripe.elements({ clientSecret: data.clientSecret });
+        balanceElements = balanceStripe.elements({ clientSecret: data.clientSecret, locale: resolveStripeLocale() });
+        balanceExpressCheckoutEl = mountExpressCheckoutElement({
+          stripe: balanceStripe,
+          elements: balanceElements,
+          wrapperEl: $balanceExpressWrap,
+          containerEl: $balanceExpressEl,
+          errorEl: $balanceError,
+        });
         balancePayEl    = balanceElements.create("payment", {
           fields: { billingDetails: { name: "never" } },
         });
@@ -1274,6 +1359,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
       // Reset Stripe section
       if ($partialStripeEl) $partialStripeEl.style.display = "none";
+      hideStripeExpress($partialExpressWrap, $partialExpressEl);
       if ($btnConfirmPartial) $btnConfirmPartial.style.display = "none";
       if ($partialError) $partialError.style.display = "none";
       if ($btnInitPartial) { $btnInitPartial.disabled = false; $btnInitPartial.textContent = "Initialize Payment"; }
@@ -1334,7 +1420,9 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
 
       // Unmount any previous partial Stripe element
       if (partialPayEl) { try { partialPayEl.unmount(); } catch (_e) { /* ok */ } partialPayEl = null; }
+      unmountStripeElement(partialExpressCheckoutEl);
       partialStripe = null; partialElements = null;
+      hideStripeExpress($partialExpressWrap, $partialExpressEl);
       if ($partialStripeEl) $partialStripeEl.innerHTML = "";
 
       try {
@@ -1359,7 +1447,14 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
         }
 
         partialStripe   = Stripe(data.publishableKey); // eslint-disable-line no-undef
-        partialElements = partialStripe.elements({ clientSecret: data.clientSecret });
+        partialElements = partialStripe.elements({ clientSecret: data.clientSecret, locale: resolveStripeLocale() });
+        partialExpressCheckoutEl = mountExpressCheckoutElement({
+          stripe: partialStripe,
+          elements: partialElements,
+          wrapperEl: $partialExpressWrap,
+          containerEl: $partialExpressEl,
+          errorEl: $partialError,
+        });
         partialPayEl    = partialElements.create("payment", {
           fields: { billingDetails: { name: "never" } },
         });

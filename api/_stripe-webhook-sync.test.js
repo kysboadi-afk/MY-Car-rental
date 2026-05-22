@@ -601,6 +601,53 @@ test("webhook reservation_deposit: creates reservation_deposit revenue and syncs
   );
 });
 
+test("webhook reservation_deposit via wallet metadata still reconciles booking + revenue", async () => {
+  resetStore(); resetCalls();
+  const bookingId = "bk-res-dep-wallet-1";
+  bookingsStore.camry = [{
+    bookingId,
+    vehicleId: "camry",
+    vehicleName: "Camry 2012",
+    name: "Wallet Deposit",
+    phone: "+13105551122",
+    email: "wallet-deposit@example.com",
+    pickupDate: "2026-10-11",
+    returnDate: "2026-10-15",
+    pickupTime: "10:00 AM",
+    returnTime: "10:00 AM",
+    status: "reserved_unpaid",
+    amountPaid: 0,
+    totalPrice: 360,
+    paymentIntentId: "pi_old_deposit_wallet",
+  }];
+
+  const event = piSucceededEvent({
+    payment_type: "reservation_deposit",
+    booking_id: bookingId,
+    vehicle_id: "camry",
+    vehicle_name: "Camry 2012",
+    pickup_date: "2026-10-11",
+    return_date: "2026-10-15",
+    pickup_time: "10:00 AM",
+    return_time: "10:00 AM",
+    renter_name: "Wallet Deposit",
+    renter_phone: "+13105551122",
+    email: "wallet-deposit@example.com",
+    full_rental_amount: "360.00",
+  }, 5000);
+  event.data.object.payment_method_types = ["card"];
+  event.data.object.payment_method = "pm_wallet_deposit";
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const rev = automationCalls.revenue.find((r) => r.bookingId === bookingId && r.type === "reservation_deposit");
+  assert.ok(rev, "wallet-backed reservation deposit should reconcile as reservation_deposit");
+  assert.equal(rev.amountPaid, 50);
+  assert.ok(automationCalls.booking.some((b) => b.bookingId === bookingId), "wallet-backed reservation deposit must sync booking");
+});
+
 test("webhook balance_payment: PREFLIGHT — autoUpsertBooking called after status update", async () => {
   resetStore(); resetCalls();
   // Seed an existing booking that was created from a deposit
@@ -628,6 +675,46 @@ test("webhook balance_payment: PREFLIGHT — autoUpsertBooking called after stat
   assert.ok(
     automationCalls.booking.length > 0,
     "PREFLIGHT FAIL: autoUpsertBooking must be called after balance_payment so Supabase reflects the booked_paid status"
+  );
+});
+
+test("webhook partial_balance via wallet metadata reconciles like balance payments", async () => {
+  resetStore(); resetCalls();
+  const depositPiId = "pi_deposit_partial_wallet";
+  bookingsStore.camry = [{
+    bookingId: "bk-partial-wallet-test",
+    vehicleId: "camry",
+    name: "Partial Wallet Customer",
+    phone: "+13105554444",
+    pickupDate: "2026-10-20",
+    returnDate: "2026-10-23",
+    status: "reserved_unpaid",
+    amountPaid: 50,
+    totalPrice: 300,
+    paymentIntentId: depositPiId,
+  }];
+
+  const event = piSucceededEvent({
+    payment_type: "partial_balance",
+    booking_id: "bk-partial-wallet-test",
+    vehicle_id: "camry",
+    original_payment_intent_id: depositPiId,
+    payment_amount: "125",
+    remaining_after_payment: "125",
+  }, 12500);
+  event.data.object.payment_method_types = ["card"];
+  event.data.object.payment_method = "pm_wallet_partial";
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.ok(
+    automationCalls.revenue.some((r) => r.bookingId === "bk-partial-wallet-test" && r.type === "rental_balance"),
+    "partial wallet payment should write rental_balance revenue"
+  );
+  assert.ok(
+    automationCalls.booking.some((b) => b.bookingId === "bk-partial-wallet-test"),
+    "partial wallet payment should sync booking status and balances"
   );
 });
 
