@@ -227,6 +227,7 @@ function applyExtensionAccountState(bookingCtx) {
 }
 
 
+async function loadExtensionBookingContext() {
   if (!IS_EXTENSION_FLOW) return null;
   const token = String(pageParams.get("t") || "").trim();
   if (!token) {
