@@ -710,8 +710,11 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
     const statusKey = normalizeStatusKey(b.status);
     const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
-    const { total, paid, balance, paidPct } = deriveDisplayedFinancials(b, ledgerSummary, statusKey);
-    const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total, paid, balance });
+    const { total, paid, balance } = deriveDisplayedFinancials(b, ledgerSummary, statusKey);
+    const lateFee   = Number(b.lateFeeAmount || 0);
+    const displayTotal = total + lateFee;
+    const paidPct   = displayTotal > 0 ? Math.min(100, Math.round((paid / displayTotal) * 100)) : (balance === 0 ? 100 : 0);
+    const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total: displayTotal, paid, balance });
     const plan      = b.paymentPlan || null;
     const overdueAmount = plan?.isOverdue
       ? Number(plan.nextInstallmentAmount || 0)
@@ -757,9 +760,12 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     }
 
     setText("s-total", fmt(total));
+    const lateFeeRow = document.getElementById("late-fee-row");
+    if (lateFeeRow) lateFeeRow.style.display = lateFee > 0 ? "" : "none";
+    setText("s-late-fee", lateFee > 0 ? fmt(lateFee) : "–");
     setText("s-deposit", fmt(paid));
     setText("s-balance", fmt(balance));
-    setText("stat-total", fmt(total));
+    setText("stat-total", fmt(displayTotal));
     setText("stat-paid", fmt(paid));
     setText("stat-balance", fmt(balance));
     setText("stat-overdue", fmt(overdueAmount));
