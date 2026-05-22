@@ -91,6 +91,17 @@ function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function resolveBookingRemainingBalance(row = {}, fallback = 0) {
+  const totalPrice = Number(row.total_price || 0);
+  const depositPaid = Number(row.deposit_paid || 0);
+  const storedRemaining = Number(row.remaining_balance || 0);
+  if (storedRemaining > 0) return roundMoney(storedRemaining);
+  if (totalPrice > 0 && depositPaid < totalPrice) {
+    return roundMoney(totalPrice - depositPaid);
+  }
+  return roundMoney(fallback || 0);
+}
+
 function schemaMismatchDiagnostics(err) {
   const message = String(err?.message || "");
   const code = String(err?.code || "");
@@ -472,7 +483,7 @@ export default async function handler(req, res) {
               status:          toAppBookingStatus(r.status),
               amountPaid:      Number(r.deposit_paid      || 0),
               totalPrice,
-              remaining:       Number(r.remaining_balance || 0),
+              remaining:       resolveBookingRemainingBalance(r),
               paymentStatus:   r.payment_status  || "",
               paymentMethod:   r.payment_method  || "",
               paymentIntentId: r.payment_intent_id || "",
@@ -674,7 +685,7 @@ export default async function handler(req, res) {
             status:          toAppBookingStatus(r.status),
             amountPaid:      Number(r.deposit_paid   || 0),
             totalPrice:      Number(r.total_price    || 0),
-            remaining:       Number(r.remaining_balance || 0),
+            remaining:       resolveBookingRemainingBalance(r),
             paymentStatus:   r.payment_status,
             paymentMethod:   r.payment_method || "",
             notes:           r.notes || "",
@@ -1013,7 +1024,7 @@ export default async function handler(req, res) {
                   returnTime:      freshRow.return_time || "",
                   totalPrice:      Number(freshRow.total_price || 0),
                   amountPaid:      Number(freshRow.deposit_paid || 0),
-                  remaining:       Number(freshRow.remaining_balance || 0),
+                  remaining:       resolveBookingRemainingBalance(freshRow),
                   paymentStatus:   freshRow.payment_status || "",
                   paymentMethod:   freshRow.payment_method || "",
                   paymentIntentId: freshRow.payment_intent_id || "",
@@ -2243,7 +2254,7 @@ export default async function handler(req, res) {
       if (bookingId) {
         const { data, error } = await sbLinks
           .from("bookings")
-            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, category")
+            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, total_price, deposit_paid, remaining_balance, payment_intent_id, balance_payment_link, category")
           .eq("booking_ref", String(bookingId).trim())
           .maybeSingle();
         if (error) return res.status(500).json({ error: `Booking lookup failed: ${error.message}` });
@@ -2251,7 +2262,7 @@ export default async function handler(req, res) {
       } else if (customerId) {
         const { data, error } = await sbLinks
           .from("bookings")
-            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, payment_intent_id, balance_payment_link, created_at, category")
+            .select("booking_ref, customer_id, customer_name, customer_phone, renter_phone, customer_email, vehicle_id, pickup_date, return_date, total_price, deposit_paid, remaining_balance, payment_intent_id, balance_payment_link, created_at, category")
           .eq("customer_id", String(customerId).trim())
           .order("created_at", { ascending: false })
           .limit(1)
@@ -2283,7 +2294,7 @@ export default async function handler(req, res) {
       const balanceLink = isSlingshotManual ? "" : buildBalanceLinkForBooking(bkRow);
 
       const planProgress = await computePaymentPlanProgress(sbLinks, { bookingId: bkRow.booking_ref });
-      const remainingBalance = roundMoney(bkRow.remaining_balance != null ? bkRow.remaining_balance : planProgress.remaining_balance || 0);
+      const remainingBalance = resolveBookingRemainingBalance(bkRow, planProgress.remaining_balance || 0);
       const overdueAmount = roundMoney(planProgress.overdue_amount || 0);
       const nextDueDate = planProgress.next_due_date ? String(planProgress.next_due_date).slice(0, 10) : "";
       const paymentPlanRemaining = roundMoney(planProgress.remaining_balance || 0);
