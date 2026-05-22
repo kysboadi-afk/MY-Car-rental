@@ -2,6 +2,18 @@ import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 let supabaseClient = null;
+let stripeCreateCalls = [];
+
+mock.module("stripe", {
+  defaultExport: class FakeStripe {
+    paymentIntents = {
+      create: async (params) => {
+        stripeCreateCalls.push(params);
+        return { client_secret: "cs_test_manage_booking" };
+      },
+    };
+  },
+});
 
 mock.module("./_supabase.js", {
   namedExports: {
@@ -50,6 +62,7 @@ function makeQueryResult(data, error = null) {
 
 beforeEach(() => {
   supabaseClient = null;
+  stripeCreateCalls = [];
 });
 
 test("manage-booking get falls back to legacy booking columns when newer columns are missing", async () => {
@@ -251,4 +264,94 @@ test("payment lifecycle: slingshot pickup-due flow does not expose online remain
   });
   assert.equal(state.lifecycleState, "pickup_due");
   assert.equal(state.canPayRemainingOnline, false);
+});
+
+test("create_balance_payment_intent keeps automatic payment methods for remaining balance payments", async () => {
+  process.env.STRIPE_SECRET_KEY = "sk_test_manage_booking";
+  process.env.STRIPE_PUBLISHABLE_KEY = "pk_test_manage_booking";
+
+  const bookingRow = {
+    booking_ref: "bk-fallback-001",
+    vehicle_id: "camry",
+    category: "car",
+    status: "reserved",
+    total_price: 400,
+    deposit_paid: 100,
+    remaining_balance: 300,
+    customer_name: "Wallet Ready",
+    customer_email: "wallet@example.com",
+    customer_phone: "+13105550001",
+    pickup_date: "2026-08-01",
+    return_date: "2026-08-05",
+  };
+
+  supabaseClient = {
+    from(table) {
+      assert.equal(table, "bookings");
+      return {
+        select() { return this; },
+        eq() { return this; },
+        async maybeSingle() {
+          return makeQueryResult(bookingRow);
+        },
+      };
+    },
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ action: "create_balance_payment_intent", token: "valid-token" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.balanceAmount, 300);
+  assert.equal(res._body.paymentAmount, 300);
+  assert.equal(stripeCreateCalls.length, 1);
+  assert.equal(stripeCreateCalls[0].automatic_payment_methods?.enabled, true);
+  assert.equal(stripeCreateCalls[0].metadata.payment_type, "rental_balance");
+});
+
+test("create_balance_payment_intent marks partial payments as partial_balance while keeping wallet-ready auto methods", async () => {
+  process.env.STRIPE_SECRET_KEY = "sk_test_manage_booking";
+  process.env.STRIPE_PUBLISHABLE_KEY = "pk_test_manage_booking";
+
+  const bookingRow = {
+    booking_ref: "bk-fallback-001",
+    vehicle_id: "camry",
+    category: "car",
+    status: "active_rental",
+    total_price: 450,
+    deposit_paid: 150,
+    remaining_balance: 300,
+    customer_name: "Partial Wallet",
+    customer_email: "partial@example.com",
+    customer_phone: "+13105550002",
+    pickup_date: "2026-08-10",
+    return_date: "2026-08-15",
+  };
+
+  supabaseClient = {
+    from(table) {
+      assert.equal(table, "bookings");
+      return {
+        select() { return this; },
+        eq() { return this; },
+        async maybeSingle() {
+          return makeQueryResult(bookingRow);
+        },
+      };
+    },
+  };
+
+  const res = makeRes();
+  await handler(makeReq({
+    action: "create_balance_payment_intent",
+    token: "valid-token",
+    payment_amount: 125,
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.paymentAmount, 125);
+  assert.equal(res._body.isPartialPayment, true);
+  assert.equal(stripeCreateCalls.length, 1);
+  assert.equal(stripeCreateCalls[0].automatic_payment_methods?.enabled, true);
+  assert.equal(stripeCreateCalls[0].metadata.payment_type, "partial_balance");
 });
