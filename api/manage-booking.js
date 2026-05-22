@@ -543,7 +543,34 @@ export default async function handler(req, res) {
     // where amountPaid was conflated with totalPrice during sync).
     const totalPriceNum  = Number(row.total_price   || 0);
     const depositPaidNum = Number(row.deposit_paid  || 0);
-    const balanceDue     = effectiveBalanceDue(row);
+    let balanceDue       = effectiveBalanceDue(row);
+    let resolvedTotal    = totalPriceNum;
+
+    // When remaining_balance is stale zero AND total_price equals the deposit amount
+    // (e.g. older bookings where full_rental_amount was absent from PI metadata so
+    // the webhook stored total_price = deposit_amount), fall back to live vehicle
+    // pricing so the manage-booking dashboard shows the correct outstanding balance
+    // and the customer can pay online.  This mirrors the identical fallback already
+    // present in the create_balance_payment_intent action below.
+    if (balanceDue <= 0 && row.payment_status === "partial" && vehicleData && row.pickup_date && row.return_date) {
+      try {
+        const repriced = await recomputePricing(
+          vehicleData,
+          row.pickup_date,
+          row.return_date,
+          !!row.has_protection_plan,
+          row.protection_plan_tier || null,
+          depositPaidNum
+        );
+        if (repriced && repriced.newBalanceDue > 0) {
+          balanceDue    = repriced.newBalanceDue;
+          resolvedTotal = repriced.newTotal;
+        }
+      } catch (repErr) {
+        console.warn("[manage-booking] get: pricing fallback for stale balance failed (non-fatal):", repErr.message);
+      }
+    }
+
     const paymentPlan = await fetchPaymentPlanSummary(getSupabaseAdmin(), bookingId, {
       missingTableErrorCode: POSTGRES_UNDEFINED_TABLE_ERROR,
     });
@@ -551,7 +578,7 @@ export default async function handler(req, res) {
       status: row.status,
       paymentStatus: row.payment_status,
       category: row.category,
-      totalAmount: totalPriceNum,
+      totalAmount: resolvedTotal,
       amountPaid: depositPaidNum,
       remainingBalance: balanceDue,
       paymentPlan,
@@ -573,7 +600,7 @@ export default async function handler(req, res) {
       paymentStatus: row.payment_status,
       category:      row.category || null,
       identitySessionId: row.identity_session_id || null,
-      totalPrice:    totalPriceNum,
+      totalPrice:    resolvedTotal,
       depositPaid:   depositPaidNum,
       balanceDue,
       customerName:  row.customer_name || "",
