@@ -219,6 +219,7 @@ function applyExtensionAccountState(bookingCtx) {
     extPhoneEl.value = bookingCtx.customerPhone;
     extPhoneEl.dispatchEvent(new Event("input", { bubbles: true }));
   }
+  hideAuthenticatedExtensionContactInputs(bookingCtx);
 
   logExtensionTrace("extension_approval_state_applied", {
     extension_approval_state: approvalState.state,
@@ -226,7 +227,28 @@ function applyExtensionAccountState(bookingCtx) {
   });
 }
 
+function hideAuthenticatedExtensionContactInputs(bookingCtx) {
+  if (!IS_EXTENSION_FLOW || !isValidExtensionBookingContext(bookingCtx)) return;
+  var extForm = document.getElementById("extendRentalForm");
+  if (!extForm) return;
+  var extEmailLabel = extForm.querySelector('label[for="extEmail"]');
+  var extPhoneLabel = extForm.querySelector('label[for="extPhone"]');
+  var extEmailEl = document.getElementById("extEmail");
+  var extPhoneEl = document.getElementById("extPhone");
+  if (extEmailEl && !extEmailEl.value && bookingCtx.customerEmail) extEmailEl.value = bookingCtx.customerEmail;
+  if (extPhoneEl && !extPhoneEl.value && bookingCtx.customerPhone) extPhoneEl.value = bookingCtx.customerPhone;
+  if (extEmailLabel) extEmailLabel.style.display = "none";
+  if (extPhoneLabel) extPhoneLabel.style.display = "none";
+  if (extEmailEl) extEmailEl.style.display = "none";
+  if (extPhoneEl) extPhoneEl.style.display = "none";
+  var extPayHint = document.getElementById("extPayHint");
+  if (extPayHint && extPayHint.style.display !== "none") {
+    extPayHint.textContent = "Select a new return date to enable payment.";
+  }
+}
 
+
+async function loadExtensionBookingContext() {
   if (!IS_EXTENSION_FLOW) return null;
   const token = String(pageParams.get("t") || "").trim();
   if (!token) {
@@ -869,6 +891,10 @@ function applyResolvedVehicleRoute(resolvedVehicleId, source) {
 async function initializeVehicleContext() {
   extensionBookingContext = await loadExtensionBookingContext();
   const hasValidExtensionBookingContext = isValidExtensionBookingContext(extensionBookingContext);
+  if (IS_EXTENSION_FLOW && !hasValidExtensionBookingContext) {
+    handleVehicleLookupFailure("missing_extension_booking_context");
+    return;
+  }
   const vehicleCandidates = buildVehicleCandidatesForLookup(
     vehicleId,
     hasValidExtensionBookingContext ? extensionBookingContext : null
@@ -2076,10 +2102,19 @@ function initExtendRentalForm() {
       }
     }
 
-    var contactOk = emailOk || phoneOk;
+    var hasAuthenticatedContext = IS_EXTENSION_FLOW && isValidExtensionBookingContext(extensionBookingContext);
+    if (hasAuthenticatedContext) hideAuthenticatedExtensionContactInputs(extensionBookingContext);
+    var contactOk = hasAuthenticatedContext || emailOk || phoneOk;
     var ready    = contactOk && dateOk && customAmountOk;
     if (extSubmitBtn) extSubmitBtn.disabled = !ready;
-    if (extPayHint) extPayHint.style.display = ready ? "none" : "";
+    if (extPayHint) {
+      if (!ready) {
+        extPayHint.textContent = hasAuthenticatedContext
+          ? "Select a new return date to enable payment."
+          : "Enter your email or phone and select a new return date to enable payment.";
+      }
+      extPayHint.style.display = ready ? "none" : "";
+    }
   }
 
   [extEmail, extPhone, extCustomAmount].forEach(function(el) {
@@ -2102,6 +2137,11 @@ function initExtendRentalForm() {
 async function launchExtendRentalPayment() {
   var extEmail      = document.getElementById("extEmail").value.trim();
   var extPhone      = (document.getElementById("extPhone") || {}).value || "";
+  var hasAuthenticatedContext = IS_EXTENSION_FLOW && isValidExtensionBookingContext(extensionBookingContext);
+  if (hasAuthenticatedContext) {
+    extEmail = extEmail || String(extensionBookingContext.customerEmail || "").trim();
+    extPhone = extPhone || String(extensionBookingContext.customerPhone || "").trim();
+  }
   var newReturnDate = document.getElementById("extNewReturn").value;
   var extCustomAmountEl = document.getElementById("extCustomAmount");
   var customAmountRaw = extCustomAmountEl ? extCustomAmountEl.value.trim() : "";
