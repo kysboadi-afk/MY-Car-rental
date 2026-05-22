@@ -139,6 +139,19 @@ mock.module("./_extension-risk.js", {
   },
 });
 
+// _renter-balance-ledger.js mock — returns a controllable ledger summary.
+// mockLedgerSummary is reset to "no balance" before each financial-trace test.
+let mockLedgerSummary = {
+  remaining_balance: 0, total_paid: 0, total_charges: 0,
+  total_credits: 0, total_waived: 0, total_refunds: 0,
+  net_balance: 0, credit_balance: 0, transaction_count: 0,
+};
+mock.module("./_renter-balance-ledger.js", {
+  namedExports: {
+    getLedgerSummary: async () => ({ ...mockLedgerSummary }),
+  },
+});
+
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
 // capturedStripeParams stores the last params passed to paymentIntents.create so
 // metadata-content tests can assert on what was sent to Stripe.
@@ -1078,4 +1091,206 @@ test("extend-rental: Phase 2 passes through when risk gate allows the partial ex
   assert.equal(res._body.extensionPaymentStatus, "partially_paid");
   assert.ok(Number(res._body.remainingBalance) > 0, "remaining balance must be tracked");
 });
+
+// ─── Extension financial trace regression tests ───────────────────────────────
+// These tests verify that every successful 200 response includes a structured
+// extensionFinancialTrace object with all required financial-state fields.
+
+test("extension-financial-trace: active renter in good standing has clean trace (no fees, no ledger balance)", async () => {
+  mockLedgerSummary = { remaining_balance: 0, total_paid: 0, total_charges: 0,
+    total_credits: 0, total_waived: 0, total_refunds: 0,
+    net_balance: 0, credit_balance: 0, transaction_count: 0 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      { match: (t) => t === "bookings", rows: [{
+        booking_ref: "bk-camry-active-001", return_date: "2026-04-30",
+        return_time: "17:00:00", status: "active_rental",
+        late_fee_waived_amount: null, late_fee_status: null, late_fee_amount: null,
+      }] },
+    ],
+  });
+
+  // Use a "now" that is before the return date to ensure no time-based late fees.
+  await withMockedNow("2026-04-28T12:00:00-07:00", async () => {
+    const res = makeRes();
+    await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-05" }), res);
+
+    assert.equal(res._status, 200, "should succeed");
+    const trace = res._body?.extensionFinancialTrace;
+    assert.ok(trace, "extensionFinancialTrace must be present in response");
+    assert.equal(trace.late_fee_amount, 0, "no late fee for on-time renter");
+    assert.equal(trace.deferred_late_fee, 0, "no deferred late fee");
+    assert.equal(trace.overdue_amount, 0, "no overdue amount");
+    assert.ok(Number(trace.extension_fee_amount) > 0, "extension base fee > 0");
+    assert.ok(Number(trace.computed_extension_total) > 0, "extension total > 0");
+    assert.equal(trace.ledger_balance, 0, "empty ledger → balance 0");
+    assert.equal(trace.render_source_used, "supabase", "sb available + empty ledger");
+    assert.equal(trace.booking_id, "bk-camry-active-001");
+  });
+});
+
+test("extension-financial-trace: deferred late fee included in trace when pending_collection", async () => {
+  mockLedgerSummary = { remaining_balance: 0, total_paid: 0, total_charges: 0,
+    total_credits: 0, total_waived: 0, total_refunds: 0,
+    net_balance: 0, credit_balance: 0, transaction_count: 0 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      { match: (t) => t === "bookings", rows: [{
+        booking_ref: "bk-camry-active-001", return_date: "2026-04-30",
+        return_time: "17:00:00", status: "active_rental",
+        late_fee_waived_amount: null, late_fee_status: "pending_collection", late_fee_amount: 50,
+      }] },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-05" }), res);
+
+  assert.equal(res._status, 200);
+  const trace = res._body?.extensionFinancialTrace;
+  assert.ok(trace, "extensionFinancialTrace must be present");
+  assert.equal(trace.deferred_late_fee, 50, "deferred late fee should be 50");
+  // Extension total should include the $50 deferred fee
+  assert.ok(Number(trace.computed_extension_total) > 50, "total includes deferred fee");
+});
+
+test("extension-financial-trace: render_source_used is bookings_json when Supabase unavailable", async () => {
+  mockLedgerSummary = { remaining_balance: 0, total_paid: 0, total_charges: 0,
+    total_credits: 0, total_waived: 0, total_refunds: 0,
+    net_balance: 0, credit_balance: 0, transaction_count: 0 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;  // no Supabase
+
+  const res = makeRes();
+  await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-05" }), res);
+
+  assert.equal(res._status, 200);
+  const trace = res._body?.extensionFinancialTrace;
+  assert.ok(trace, "extensionFinancialTrace must be present");
+  assert.equal(trace.render_source_used, "bookings_json", "no Supabase → bookings_json");
+  assert.equal(trace.ledger_balance, 0, "no ledger available → 0");
+});
+
+test("extension-financial-trace: ledger_balance populated from mock ledger, render_source is supabase+ledger", async () => {
+  mockLedgerSummary = { remaining_balance: 150, total_paid: 100, total_charges: 250,
+    total_credits: 100, total_waived: 0, total_refunds: 0,
+    net_balance: 150, credit_balance: 0, transaction_count: 3 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      { match: (t) => t === "bookings", rows: [{
+        booking_ref: "bk-camry-active-001", return_date: "2026-04-30",
+        return_time: "17:00:00", status: "active_rental",
+        late_fee_waived_amount: null, late_fee_status: null, late_fee_amount: null,
+      }] },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-05" }), res);
+
+  assert.equal(res._status, 200);
+  const trace = res._body?.extensionFinancialTrace;
+  assert.ok(trace, "extensionFinancialTrace must be present");
+  assert.equal(trace.ledger_balance, 150, "ledger balance should reflect mock");
+  assert.equal(trace.render_source_used, "supabase+ledger", "sb + positive ledger → supabase+ledger");
+});
+
+test("extension-financial-trace: overdue booking traces overdue_amount from ledger balance", async () => {
+  mockLedgerSummary = { remaining_balance: 200, total_paid: 50, total_charges: 250,
+    total_credits: 50, total_waived: 0, total_refunds: 0,
+    net_balance: 200, credit_balance: 0, transaction_count: 2 };
+
+  const active = makeActiveBooking({ status: "overdue" });
+  mockBookings = { camry: [active] };
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      { match: (t) => t === "bookings", rows: [{
+        booking_ref: "bk-camry-active-001", return_date: "2026-04-30",
+        return_time: "17:00:00", status: "overdue",
+        customer_email: "alice@example.com", customer_name: "Alice Tester",
+        customer_phone: "2135550100", pickup_date: "2026-04-15", pickup_time: "10:00:00",
+        late_fee_waived_amount: null, late_fee_status: null, late_fee_amount: null,
+      }] },
+    ],
+  });
+
+  // Use a "now" only slightly after the return date so the time-based late fee is small
+  // and doesn't affect the overdue_amount assertion (which is ledger-based).
+  await withMockedNow("2026-05-02T12:00:00-07:00", async () => {
+    const res = makeRes();
+    await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-10" }), res);
+
+    assert.equal(res._status, 200);
+    const trace = res._body?.extensionFinancialTrace;
+    assert.ok(trace, "extensionFinancialTrace must be present");
+    assert.equal(trace.overdue_amount, 200, "overdue booking: overdue_amount = ledger_balance");
+    assert.equal(trace.ledger_balance, 200, "ledger_balance should be 200");
+    assert.equal(trace.render_source_used, "supabase+ledger");
+  });
+});
+
+test("extension-financial-trace: partial payment extension captured in trace", async () => {
+  mockLedgerSummary = { remaining_balance: 0, total_paid: 0, total_charges: 0,
+    total_credits: 0, total_waived: 0, total_refunds: 0,
+    net_balance: 0, credit_balance: 0, transaction_count: 0 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  // Use a "now" before the return date so no late fees inflate the minimum payment.
+  await withMockedNow("2026-04-28T12:00:00-07:00", async () => {
+    const res = makeRes();
+    // 5 extension days at $55 = $275 total; minimum = ceil(5/2)*55 = 165; $200 is valid.
+    await handler(makeReq({
+      vehicleId: "camry", email: "alice@example.com",
+      newReturnDate: "2026-05-05", customPaymentAmount: 200,
+    }), res);
+
+    assert.equal(res._status, 200, "partial payment should succeed");
+    const trace = res._body?.extensionFinancialTrace;
+    assert.ok(trace, "extensionFinancialTrace must be present");
+    assert.equal(trace.amount_paid_now, 200, "amount_paid_now should be 200");
+    assert.ok(Number(trace.remaining_balance_after) > 0, "remaining balance should be > 0 for partial payment");
+    assert.ok(Number(trace.computed_extension_total) > 200, "total > partial payment");
+  });
+});
+
+test("extension-financial-trace: all required trace fields present in response", async () => {
+  mockLedgerSummary = { remaining_balance: 0, total_paid: 0, total_charges: 0,
+    total_credits: 0, total_waived: 0, total_refunds: 0,
+    net_balance: 0, credit_balance: 0, transaction_count: 0 };
+
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({ vehicleId: "camry", email: "alice@example.com", newReturnDate: "2026-05-05" }), res);
+
+  assert.equal(res._status, 200);
+  const trace = res._body?.extensionFinancialTrace;
+  assert.ok(trace, "extensionFinancialTrace must be present");
+  const requiredFields = [
+    "booking_id", "overdue_amount", "late_fee_amount", "deferred_late_fee",
+    "late_fee_waived", "extension_fee_amount", "payment_plan_state",
+    "ledger_balance", "computed_extension_total", "amount_paid_now",
+    "remaining_balance_after", "render_source_used",
+  ];
+  for (const field of requiredFields) {
+    assert.ok(field in trace, `trace must include field: ${field}`);
+  }
+});
+
 

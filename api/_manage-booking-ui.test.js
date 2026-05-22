@@ -477,3 +477,165 @@ test("extension CTA resolves renamed vehicle ID from booking vehicle name", asyn
   assert.equal(query.get("extend"), "1");
   assert.equal(query.get("t"), "test-token");
 });
+
+
+// ─── Extension account-state rendering regression tests ───────────────────────
+// These tests verify that the extension section in manage-booking.js renders
+// lifecycle-aware messaging consistently across all renter account states.
+
+const EMPTY_LEDGER = { summary: { total_paid: 0, remaining_balance: 0, transaction_count: 0 }, transactions: [] };
+
+test("extension-account-state: overdue renter without late fee shows overdue balance warning", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "overdue",
+      paymentStatus: "partial",
+      balanceDue: 420,
+      paymentLifecycleState: "overdue",
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.match(pillEl.textContent, /[Oo]verdue/, "pill should indicate overdue state");
+
+  const ctaNote = document.getElementById("extension-cta-note");
+  assert.match(ctaNote.textContent, /[Oo]utstanding balance must be resolved/, "note should mention outstanding balance");
+
+  const cta = document.getElementById("extension-cta");
+  assert.match(cta.textContent, /Open Extension Flow/, "CTA still open for overdue renter");
+});
+
+test("extension-account-state: overdue renter with active late fee shows fee amount in dashboard", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "overdue",
+      paymentStatus: "partial",
+      balanceDue: 420,
+      paymentLifecycleState: "overdue",
+      lateFeeStatus: "assessed",
+      lateFeeAmount: 75,
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const ctaNote = document.getElementById("extension-cta-note");
+  assert.match(ctaNote.textContent, /\$75\.00/, "note must show late fee dollar amount");
+  assert.match(ctaNote.textContent, /late fees/, "note must mention late fees");
+});
+
+test("extension-account-state: payment plan defaulted shows manual review warning", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      balanceDue: 200,
+      paymentPlan: { status: "defaulted", isOverdue: true },
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.match(pillEl.textContent, /manual review/, "pill should indicate manual review for defaulted plan");
+
+  const ctaNote = document.getElementById("extension-cta-note");
+  assert.match(ctaNote.textContent, /manual approval/, "note should mention manual approval");
+});
+
+test("extension-account-state: payment plan past_due shows delinquency warning", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      balanceDue: 150,
+      paymentPlan: { status: "past_due", isOverdue: true },
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.match(pillEl.textContent, /past due/, "pill should indicate past due plan");
+
+  const ctaNote = document.getElementById("extension-cta-note");
+  assert.match(ctaNote.textContent, /past-due installment/, "note should mention past-due installment");
+});
+
+test("extension-account-state: extension_risk_override=block routes CTA to support", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      balanceDue: 100,
+      extensionRiskOverride: "block",
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const cta = document.getElementById("extension-cta");
+  assert.equal(cta.href, "tel:+18445114059", "blocked extension CTA must link to support phone");
+  assert.match(cta.textContent, /Contact Support/, "blocked CTA text should indicate support");
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.match(pillEl.textContent, /blocked/, "pill should indicate blocked state");
+});
+
+test("extension-account-state: active renter with assessed late fee shows fee in dashboard note", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      balanceDue: 0,
+      lateFeeStatus: "assessed",
+      lateFeeAmount: 50,
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.match(pillEl.textContent, /\$50\.00/, "pill should show late fee amount");
+  assert.match(pillEl.textContent, /[Ll]ate fee/, "pill should mention late fee");
+
+  const ctaNote = document.getElementById("extension-cta-note");
+  assert.match(ctaNote.textContent, /\$50\.00/, "note should show late fee dollar amount");
+  assert.match(ctaNote.textContent, /extension payment/, "note should mention extension payment");
+
+  const cta = document.getElementById("extension-cta");
+  assert.match(cta.textContent, /Open Extension Flow/, "CTA still available for pending late fee");
+});
+
+test("extension-account-state: active renter in good standing shows normal extension flow", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "paid",
+      balanceDue: 0,
+      paymentPlan: null,
+      lateFeeStatus: null,
+      lateFeeAmount: null,
+      extensionRiskOverride: null,
+    }),
+    ledgerPayload: EMPTY_LEDGER,
+    agreementPayload: {},
+    vehiclesPayload: [{ vehicle_id: "camry", vehicle_name: "Camry 2012" }],
+  });
+
+  const pillEl = document.getElementById("extension-status-pill");
+  assert.equal(pillEl.textContent, "Eligible to review extension options", "good-standing pill should show eligible");
+
+  const cta = document.getElementById("extension-cta");
+  assert.match(cta.textContent, /Open Extension Flow/, "good-standing CTA should open extension flow");
+  const query = getExtensionQuery(document);
+  assert.equal(query.get("extend"), "1");
+});

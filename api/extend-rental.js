@@ -25,6 +25,7 @@ import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 import { loadExtensionRiskSettings, evaluateExtensionRisk } from "./_extension-risk.js";
+import { getLedgerSummary } from "./_renter-balance-ledger.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
@@ -223,6 +224,24 @@ export default async function handler(req, res) {
         error: "No active rental found for this vehicle with the provided contact info. " +
                "Please check your email or phone number, or call us at (844) 511-4059.",
       });
+    }
+
+    // ── Step 1 of financial computation order: query authoritative ledger balance ──
+    // Provides the ground-truth remaining balance that factors into the financial
+    // trace and overdue-state derivation.  Non-fatal: failures leave ledgerBalance at 0.
+    let ledgerBalance = 0;
+    const isBookingOverdue = activeBooking.status === "overdue";
+    if (sb) {
+      try {
+        const ledgerRef = sbActiveBookingRef || activeBooking.bookingId;
+        if (ledgerRef) {
+          const summary = await getLedgerSummary(sb, { bookingId: ledgerRef });
+          const parsed = Number(summary?.remaining_balance);
+          if (Number.isFinite(parsed) && parsed > 0) ledgerBalance = parsed;
+        }
+      } catch (ledgerErr) {
+        console.warn("extend-rental: ledger query failed (non-fatal):", ledgerErr.message);
+      }
     }
 
     const isActiveRentalForPartial = activeBooking.status === "active_rental" || activeBooking.status === "active";
@@ -731,6 +750,30 @@ export default async function handler(req, res) {
       newReturnTime:     resolvedReturnTime,
       vehicleName:       vehicleData.name,
       renterName:        activeBooking.name || "",
+      extensionFinancialTrace: (() => {
+        // Structured financial trace for auditability and frontend logging.
+        // Covers the standardized computation order:
+        //   ledger → overdue → late fees → plan state → extension fee → eligibility.
+        const baseFee = Math.round((originalExtensionTotal - lateFeeIncluded - sbDeferredLateFee) * 100) / 100;
+        const trace = {
+          booking_id:              sbActiveBookingRef || activeBooking.bookingId || "",
+          overdue_amount:          isBookingOverdue ? ledgerBalance : 0,
+          late_fee_amount:         lateFeeIncluded,
+          deferred_late_fee:       sbDeferredLateFee,
+          late_fee_waived:         sbWaivedAmount,
+          extension_fee_amount:    Math.max(0, baseFee),
+          payment_plan_state:      String(activeBooking.status || "active_rental"),
+          ledger_balance:          ledgerBalance,
+          computed_extension_total: extensionTotal,
+          amount_paid_now:         amountPaidNow,
+          remaining_balance_after: extensionRemainingBalance,
+          render_source_used:      sb
+            ? (ledgerBalance > 0 ? "supabase+ledger" : "supabase")
+            : "bookings_json",
+        };
+        console.info("[extension-financial-trace]", trace);
+        return trace;
+      })(),
     });
   } catch (err) {
     console.error("extend-rental error:", err);

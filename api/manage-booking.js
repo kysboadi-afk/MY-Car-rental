@@ -53,7 +53,8 @@ const BOOKING_SELECT_COLS =
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
   "change_count, manage_token, balance_payment_link, pending_change, " +
   "has_protection_plan, protection_plan_tier, category, identity_session_id, " +
-  "customer_name, customer_email, customer_phone, payment_intent_id, created_at";
+  "customer_name, customer_email, customer_phone, payment_intent_id, created_at, " +
+  "late_fee_status, late_fee_amount, extension_risk_override";
 const BOOKING_SELECT_FALLBACK_COLS =
   "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
   "status, payment_status, total_price, deposit_paid, remaining_balance, " +
@@ -492,6 +493,9 @@ export default async function handler(req, res) {
       isActiveRentalStage: lifecycle.isActiveRental,
       isOverdueStage: lifecycle.isOverdue,
       isPickupDueStage: lifecycle.isManualPickup && lifecycle.lifecycleState === "pickup_due",
+      lateFeeStatus: row.late_fee_status || null,
+      lateFeeAmount: Number(row.late_fee_amount || 0) > 0 ? Number(row.late_fee_amount) : null,
+      extensionRiskOverride: row.extension_risk_override || null,
     });
   }
 
