@@ -344,6 +344,28 @@ function _t(key, fallback) {
   return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
 }
 
+function normalizeVehicleImageUrl(value) {
+  if (!value || typeof value !== "string") return "";
+  var url = String(value).trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+  return "/" + url.replace(/^(\.\.\/)+/, "");
+}
+
+function buildVehicleScopedImageList(v, expectedVehicleId) {
+  if (!v || String(v.vehicle_id || "") !== String(expectedVehicleId || "")) return [];
+  var images = [];
+  var pushIfSafe = function(url) {
+    var normalized = normalizeVehicleImageUrl(url);
+    if (normalized && images.indexOf(normalized) === -1) images.push(normalized);
+  };
+  pushIfSafe(v.cover_image);
+  if (Array.isArray(v.gallery_images)) {
+    v.gallery_images.forEach(pushIfSafe);
+  }
+  return images;
+}
+
 // Format helper — replaces {placeholder} tokens in a translated string.
 function _fmt(key, vars, fallback) {
   let s = _t(key, fallback || key);
@@ -351,28 +373,6 @@ function _fmt(key, vars, fallback) {
     Object.keys(vars).forEach(function(k) {
       s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
     });
-  }
-
-  function normalizeVehicleImageUrl(value) {
-    if (!value || typeof value !== "string") return "";
-    var url = String(value).trim();
-    if (!url) return "";
-    if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
-    return "/" + url.replace(/^(\.\.\/)+/, "");
-  }
-
-  function buildVehicleScopedImageList(v, expectedVehicleId) {
-    if (!v || String(v.vehicle_id || "") !== String(expectedVehicleId || "")) return [];
-    var images = [];
-    var pushIfSafe = function(url) {
-      var normalized = normalizeVehicleImageUrl(url);
-      if (normalized && images.indexOf(normalized) === -1) images.push(normalized);
-    };
-    pushIfSafe(v.cover_image);
-    if (Array.isArray(v.gallery_images)) {
-      v.gallery_images.forEach(pushIfSafe);
-    }
-    return images;
   }
   return s;
 }
