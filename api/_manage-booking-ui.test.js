@@ -195,6 +195,29 @@ test("partial-balance ledger summary updates remaining amount and payment progre
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
 });
 
+test("reserved_unpaid deposit booking keeps remaining balance online-payable", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "reserved_unpaid",
+      paymentStatus: "partial",
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 50,
+        remaining_balance: 335.88,
+        transaction_count: 1,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+  });
+
+  assert.equal(document.getElementById("hero-payment-chip").textContent, "Deposit Paid ✅ • $335.88 remaining");
+  assert.equal(document.getElementById("pay-balance-section").style.display, "block");
+  assert.equal(document.getElementById("btn-init-balance").textContent, "Pay Remaining Balance ($335.88)");
+  assert.equal(document.getElementById("paid-in-full-notice").style.display, "none");
+});
+
 test("reservation partial payment derives remaining amount from total paid when ledger balance is zeroed", async () => {
   const document = await bootDashboard({
     bookingPayload: baseBooking(),

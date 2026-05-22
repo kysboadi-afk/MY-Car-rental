@@ -302,7 +302,7 @@ test("payment lifecycle: overdue state takes precedence over other active states
   assert.equal(state.isOverdue, true);
 });
 
-test("payment lifecycle: reserved_unpaid with deposit paid hides online balance payment (balance due at pickup)", () => {
+test("payment lifecycle: reserved_unpaid with deposit paid keeps online balance payment available", () => {
   const state = deriveBookingPaymentLifecycle({
     status: "reserved_unpaid",
     paymentStatus: "partial",
@@ -313,8 +313,8 @@ test("payment lifecycle: reserved_unpaid with deposit paid hides online balance 
     paymentPlan: null,
   });
   assert.equal(state.lifecycleState, "deposit_paid");
-  assert.equal(state.isManualPickup, true);
-  assert.equal(state.canPayRemainingOnline, false);
+  assert.equal(state.isManualPickup, false);
+  assert.equal(state.canPayRemainingOnline, true);
   assert.equal(state.isPaidInFull, false);
   assert.equal(state.hasOutstandingBalance, true);
 });
