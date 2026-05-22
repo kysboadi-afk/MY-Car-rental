@@ -10,6 +10,7 @@ const API_BASE = (
 ) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
+const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
 
 // Fallback deposit amount used only if neither the vehicle record nor the
 // system settings supply a booking_deposit value (prevents a broken button
@@ -57,6 +58,28 @@ function _fmt(key, vars, fallback) {
     Object.keys(vars).forEach(function(k) {
       s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
     });
+  }
+
+  function normalizeVehicleImageUrl(value) {
+    if (!value || typeof value !== "string") return "";
+    var url = String(value).trim();
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+    return "/" + url.replace(/^(\.\.\/)+/, "");
+  }
+
+  function buildVehicleScopedImageList(v, expectedVehicleId) {
+    if (!v || String(v.vehicle_id || "") !== String(expectedVehicleId || "")) return [];
+    var images = [];
+    var pushIfSafe = function(url) {
+      var normalized = normalizeVehicleImageUrl(url);
+      if (normalized && images.indexOf(normalized) === -1) images.push(normalized);
+    };
+    pushIfSafe(v.cover_image);
+    if (Array.isArray(v.gallery_images)) {
+      v.gallery_images.forEach(pushIfSafe);
+    }
+    return images;
   }
   return s;
 }
@@ -250,6 +273,7 @@ let carData = null;
 // Builds a cars-compatible data object from a v2-vehicles API response entry.
 // All vehicles — existing and newly added — load through this path.
 function buildCarDataFromAPI(v) {
+  var scopedImages = buildVehicleScopedImageList(v, vehicleId);
   return {
     name:          v.vehicle_name || v.vehicle_id,
     subtitle:      v.subtitle     || "",
@@ -264,13 +288,7 @@ function buildCarDataFromAPI(v) {
     // deposit button is hidden. loadDynamicPricing() fills this from the system-wide
     // setting when no per-vehicle value is present.
     booking_deposit: Number(v.booking_deposit) > 0 ? Number(v.booking_deposit) : null,
-    images:        (function() {
-      var imgs = v.cover_image ? [v.cover_image] : [];
-      if (Array.isArray(v.gallery_images)) {
-        v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
-      }
-      return imgs.length ? imgs : ["/images/car1.jpg"];
-    })(),
+    images:        scopedImages.length ? scopedImages : [VEHICLE_IMAGE_PLACEHOLDER],
     make:          v.make          || "",
     model:         v.model         || v.vehicle_name || vehicleId,
     year:          v.vehicle_year  || null,
@@ -357,9 +375,15 @@ function initCarPage() {
   }
 
   // Load images into the slider
+  sliderContainer.innerHTML = "";
+  sliderDots.innerHTML = "";
   carData.images.forEach((imgSrc, idx) => {
     const img = document.createElement("img");
     img.src = imgSrc;
+    img.onerror = function() {
+      img.onerror = null;
+      img.src = VEHICLE_IMAGE_PLACEHOLDER;
+    };
     img.classList.add("slide");
     if (idx === 0) img.classList.add("active");
     sliderContainer.appendChild(img);
@@ -467,7 +491,8 @@ function goToSlide(idx){ showSlide(idx); }
 
 // Initialize page: fetch vehicle data from the API for all vehicles.
 sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
-fetch(API_BASE + "/api/v2-vehicles")
+// Fetch vehicle data without browser cache so a prior vehicle view cannot leak stale media.
+fetch(API_BASE + "/api/v2-vehicles", { cache: "no-store", headers: { Accept: "application/json" } })
   .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
   .then(function(vehicles) {
     var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;

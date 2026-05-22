@@ -162,9 +162,19 @@ export const BOOKING_CONFIRMED =
   "We\u2019ll have everything ready for you.\n\n" +
   "Reply STOP to opt out.";
 
+/** Sent after confirmation/deposit to ensure renter can access manage-booking quickly. */
+export const MANAGE_BOOKING_ACCESS =
+  "Manage your booking in one place, {customer_name}.\n\n" +
+  "Booking ID: {booking_id}\n\n" +
+  "Open dashboard:\n" +
+  "{manage_link}\n\n" +
+  "Use this portal for balance, payment plan, agreement/docs, extension requests, and support.\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent immediately after BOOKING_CONFIRMED to orient the renter. */
 export const BOOKING_ONBOARDING =
   "Welcome to Sly Car Rentals, {customer_name}.\n\n" +
+  "Booking ID: {booking_id}\n\n" +
   "Your renter dashboard is your main portal for:\n" +
   "• balance + payments\n" +
   "• payment plan status\n" +
@@ -175,6 +185,7 @@ export const BOOKING_ONBOARDING =
   "{manage_link}\n\n" +
   "Inside the dashboard, open Rental Guide & Renter Help Center for payment policy, overdue rules, maintenance, roadside, tolls/tickets, return instructions, and support workflows.\n\n" +
   "Use the Renter Assistant chatbot there for quick self-service answers.\n\n" +
+  "If your rental agreement is still pending, sign it in your dashboard before pickup.\n\n" +
   "If your account has a balance, partial payments are accepted.\n\n" +
   "Need help? Call or text (844) 511-4059.\n\n" +
   "Reply STOP to opt out.";
@@ -666,6 +677,7 @@ export const TEMPLATES = {
   waitlist_booking_reminder: WAITLIST_BOOKING_REMINDER,
   waitlist_declined:         WAITLIST_DECLINED,
   booking_confirmed:         BOOKING_CONFIRMED,
+  manage_booking_access:     MANAGE_BOOKING_ACCESS,
   booking_onboarding:        BOOKING_ONBOARDING,
   extension_education:       EXTENSION_EDUCATION,
   payment_education:         PAYMENT_EDUCATION,

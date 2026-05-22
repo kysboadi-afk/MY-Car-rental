@@ -1118,6 +1118,7 @@ export default async function handler(req, res) {
                 phone: updatedBooking.phone,
                 body: render(BOOKING_ONBOARDING, {
                   customer_name: (updatedBooking.name || "Customer").split(" ")[0],
+                  booking_id: updatedBooking.bookingId || updatedBooking.paymentIntentId || "",
                   manage_link: "https://slycarrentals.com/manage-booking.html",
                 }),
               });

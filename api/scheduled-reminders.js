@@ -83,6 +83,7 @@ import {
   fetchRecentSmsLogs,
   buildSmsContext,
 } from "./_sms-scoring.js";
+import { shouldSendBalanceCollectionReminder } from "./_sms-lifecycle.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -547,6 +548,16 @@ async function safeSend(phone, body, logCtx = null) {
         error:        "[SMS SKIPPED — NO PHONE]",
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "skipped",
+      provider_id: null,
+      error: "missing_phone",
+    }));
     return false;
   }
   try {
@@ -563,6 +574,16 @@ async function safeSend(phone, body, logCtx = null) {
         provider_id:  providerId,
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "sent",
+      provider_id: providerId,
+      error: null,
+    }));
     return true;
   } catch (err) {
     console.error(`scheduled-reminders: SMS send failed to ${normalized}:`, err.message);
@@ -577,6 +598,16 @@ async function safeSend(phone, body, logCtx = null) {
         error:        err.message,
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "failed",
+      provider_id: null,
+      error: err.message || String(err),
+    }));
     return false;
   }
 }
@@ -619,6 +650,7 @@ function vars(booking) {
   const bufferedReturnDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   return {
     customer_name: booking.name || "Customer",
+    booking_id:    booking.bookingId || booking.paymentIntentId || "",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
     pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
@@ -2821,6 +2853,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
     for (const booking of bookings) {
       if (!booking.balanceDue || booking.balanceDue <= 0) continue;
       if (!booking.phone) continue;
+      if (!shouldSendBalanceCollectionReminder(booking.status)) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
       if (!id) continue;
@@ -2860,6 +2893,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
             booking_ref:  id,
             vehicle_id:   vehicleId,
             message_type: templateKey,
+            payment_state: booking.status || null,
           });
           if (sent) {
             sentMarks.push({ vehicleId, id, key: templateKey });

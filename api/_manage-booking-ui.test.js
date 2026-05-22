@@ -108,9 +108,9 @@ test("deposit-only booking keeps DB remaining balance when ledger is empty", asy
   });
 
   assert.equal(document.getElementById("s-balance").textContent, "$335.88");
-  assert.equal(document.getElementById("progress-paid-label").textContent, "$50.00 paid");
-  assert.equal(document.getElementById("progress-pct-label").textContent, "13% complete");
-  assert.equal(document.getElementById("hero-payment-chip").textContent, "$335.88 still due");
+  assert.equal(document.getElementById("progress-paid-label").textContent, "Reservation Deposit Paid ✅");
+  assert.equal(document.getElementById("progress-pct-label").textContent, "$335.88 remaining");
+  assert.match(document.getElementById("hero-payment-chip").textContent, /\$335\.88.*remaining/);
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
   assert.equal(document.getElementById("paid-in-full-notice").style.display, "none");
 });
@@ -130,9 +130,9 @@ test("partial-balance ledger summary updates remaining amount and payment progre
   });
 
   assert.equal(document.getElementById("s-balance").textContent, "$185.88");
-  assert.equal(document.getElementById("progress-paid-label").textContent, "$200.00 paid");
-  assert.equal(document.getElementById("progress-pct-label").textContent, "52% complete");
-  assert.equal(document.getElementById("hero-payment-chip").textContent, "$185.88 still due");
+  assert.equal(document.getElementById("progress-paid-label").textContent, "Reservation Deposit Paid ✅");
+  assert.equal(document.getElementById("progress-pct-label").textContent, "$185.88 remaining");
+  assert.match(document.getElementById("hero-payment-chip").textContent, /\$185\.88.*remaining/);
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
 });
 
@@ -180,6 +180,6 @@ test("active-rental flow still shows actionable balance when DB balance is outst
   });
 
   assert.equal(document.getElementById("s-balance").textContent, "$300.00");
-  assert.equal(document.getElementById("hero-payment-chip").textContent, "$300.00 still due");
+  assert.equal(document.getElementById("hero-payment-chip").textContent, "$300.00 currently due");
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
 });
