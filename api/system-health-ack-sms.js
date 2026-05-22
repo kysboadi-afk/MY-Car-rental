@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSmsPriority } from "./_sms-priority.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const CRITICAL_KEYS = ["late_warning_30min", "late_at_return", "late_grace_expired"];
 const MANUAL_ACK_MESSAGE_BODY = "[Manual Admin Acknowledgement] Marked as handled outside automated SMS sender.";
 

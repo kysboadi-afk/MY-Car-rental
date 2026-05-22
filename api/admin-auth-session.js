@@ -21,8 +21,6 @@ const ALLOWED_ORIGINS = [
   "https://slycarrentals.com",
   "https://www.slycarrentals.com",
   "https://admin.slycarrentals.com",
-  "https://slyslingshotrentals.com",
-  "https://www.slyslingshotrentals.com",
 ];
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;

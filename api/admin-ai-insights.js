@@ -19,8 +19,8 @@ import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const VALID_SCOPES = new Set(["car", "cars"]);
 
 const DB_TO_APP_STATUS = {
   pending:              "reserved_unpaid",
@@ -52,11 +52,10 @@ function normalizeScope(scope) {
 
 function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
   const explicit = String(vehicle.category || "").toLowerCase().trim();
-  if (explicit === "car" || explicit === "slingshot") return explicit;
+  if (explicit === "car") return explicit;
   const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
   const name = String(vehicle.vehicle_name || "").toLowerCase();
-  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
   return "car";
 }
 
@@ -148,14 +147,13 @@ async function fetchAllData(scope = null) {
     }
   }
 
-  // Apply optional fleet scope ("car" | "slingshot") to the vehicle map first,
+  // Apply optional fleet scope ("car") to the vehicle map first,
   // then use that scoped vehicle-id set to filter all other datasets.
   if (normalizedScope) {
-    const onlySlingshot = normalizedScope === "slingshot";
-    vehicles = Object.fromEntries(
+      vehicles = Object.fromEntries(
       Object.entries(vehicles).filter(([vehicleId, vehicle]) => {
         const category = deriveVehicleCategory(vehicle, vehicleId);
-        return onlySlingshot ? category === "slingshot" : category === "car";
+        return category === "car";
       })
     );
   }

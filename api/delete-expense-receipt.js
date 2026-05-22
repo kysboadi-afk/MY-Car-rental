@@ -3,7 +3,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { EXPENSE_RECEIPTS_BUCKET, emptyExpenseReceiptMetadata } from "./_expense-receipts.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const EXPENSE_SELECT = "expense_id, vehicle_id, date, category, category_id, amount, notes, created_at, receipt_url, receipt_filename, receipt_uploaded_at, receipt_size, receipt_mime_type";
 
 export default async function handler(req, res) {

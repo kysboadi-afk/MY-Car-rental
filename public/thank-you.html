@@ -658,35 +658,6 @@
         return;
       }
 
-      if (fromParam === "slingshot") {
-        var bookingId = params.get("bookingId") || "";
-        var manageLink = params.get("manageLink") || "";
-        var safeBookingId = bookingId.replace(/[&<>"']/g, function(c) {
-          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-        });
-        if (dlBtn) dlBtn.style.display = "none";
-        if (titleEl) {
-          titleEl.textContent = "🏍️ Reservation Confirmed!";
-          titleEl.style.color = "#4caf50";
-        }
-        if (subEl) subEl.textContent = "Your Slingshot booking is complete.";
-        setDetailHtml(detailEl,
-          "Your identity has been verified and your rental agreement has been signed. " +
-          "Confirmation emails with your signed agreement have been sent to you and the team." +
-          "<br><br><strong style='color:#ffb400'>💵 Payments are done in person at pickup.</strong>" +
-          " Rental payment, security deposit, and any pickup-related charges are collected in person when you arrive." +
-          (safeBookingId ? "<br><br><strong>Booking ID:</strong> " + safeBookingId : "")
-        );
-        if (actionsEl) {
-          actionsEl.textContent = "";
-          if (manageLink) {
-            actionsEl.appendChild(makeBtn(manageLink, "ty-btn-primary", "📋 Manage My Booking"));
-          }
-          actionsEl.appendChild(makeBtn("slingshots.html", "ty-btn-secondary", "🏠 Back to Slingshots"));
-        }
-        return;
-      }
-
       if (fromParam !== "apply") return;
 
       var initialSnapshot = getSnapshot();

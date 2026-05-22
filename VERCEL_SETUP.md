@@ -119,8 +119,6 @@ When using Stripe Payment Element or Express Checkout Element, register each pro
 
 - `slycarrentals.com`
 - `www.slycarrentals.com`
-- `slyslingshotrentals.com`
-- `www.slyslingshotrentals.com`
 
 Keep this list in sync with production hostnames so Apple Pay can render on Safari/iPhone/Mac. Google Pay and Cash App Pay continue to auto-render on supported devices and browsers from the same Stripe PaymentIntent flow.
 

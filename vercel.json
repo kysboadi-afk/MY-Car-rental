@@ -2,87 +2,192 @@
   "redirects": [
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "admin.slycarrentals.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "admin.slycarrentals.com"
+        }
+      ],
       "destination": "/admin-v2/",
       "permanent": false
     },
     {
       "source": "/(.*)",
-      "has": [{ "type": "host", "value": "slytrans.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "slytrans.com"
+        }
+      ],
       "destination": "https://www.slytrans.com/$1",
       "permanent": true
-    },
-    {
-      "source": "/(.*)",
-      "has": [{ "type": "host", "value": "slyslingshotrentals.com" }],
-      "destination": "https://www.slyslingshotrentals.com/$1",
-      "permanent": true
-    },
-    { "source": "/slingshot.html", "destination": "/slingshots.html", "permanent": true }
+    }
   ],
   "headers": [
     {
       "source": "/api/admin-chat",
       "headers": [
-        { "key": "Access-Control-Allow-Origin",  "value": "*" },
-        { "key": "Vary", "value": "Origin" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Vary",
+          "value": "Origin"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
       ]
     },
     {
       "source": "/api/tts",
       "headers": [
-        { "key": "Access-Control-Allow-Origin",  "value": "*" },
-        { "key": "Vary", "value": "Origin" },
-        { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Vary",
+          "value": "Origin"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type"
+        }
       ]
     }
   ],
   "functions": {
-    "api/tts.js":                           { "maxDuration": 30 },
-    "api/admin-chat.js":                    { "maxDuration": 60 },
-    "api/sms-webhook.js":                   { "maxDuration": 30 },
-    "api/bouncie-sync-cron.js":             { "maxDuration": 30 },
-    "api/oil-check-cron.js":               { "maxDuration": 60 },
-    "api/stripe-reconcile.js":              { "maxDuration": 60 },
-    "api/stripe-reconcile-cron.js":         { "maxDuration": 60 },
-    "api/stripe-backfill.js":              { "maxDuration": 60 },
-    "api/stripe-replay.js":               { "maxDuration": 60 },
-    "api/send-reservation-email.js":        { "maxDuration": 60 },
-    "api/stripe-webhook.js":                { "maxDuration": 60 },
-    "api/store-booking-docs.js":            { "maxDuration": 20 },
-    "api/bouncie-sync.js":                  { "maxDuration": 30 },
-    "api/bouncie-webhook.js":               { "maxDuration": 20 },
-    "api/bouncie-location.js":              { "maxDuration": 20 },
-    "api/v2-mileage.js":                    { "maxDuration": 20 },
-    "api/send-extension-confirmation.js":   { "maxDuration": 25 },
-    "api/admin-resend-extension.js":        { "maxDuration": 25 },
-    "api/admin-resend-booking.js":          { "maxDuration": 30 },
-    "api/v2-customers.js":                  { "maxDuration": 25 },
-    "api/revenue-self-heal.js":             { "maxDuration": 60 },
-    "api/v2-system-health.js":              { "maxDuration": 30 },
-    "api/system-health-fix-sms.js":         { "maxDuration": 30 },
-    "api/system-health-fix-availability.js": { "maxDuration": 30 },
-    "api/scheduled-reminders.js":            { "maxDuration": 60 },
-    "api/tickets.js":                         { "maxDuration": 20 },
-    "api/upload-customer-doc.js":             { "maxDuration": 20 },
-    "api/upload-expense-receipt.js":          { "maxDuration": 20 },
-    "api/booking-documents.js":               { "maxDuration": 30 },
-    "api/send-application-email.js":          { "maxDuration": 60 },
-    "api/create-identity-verification-session.js": { "maxDuration": 30 },
-    "api/resolve-identity-resume.js":              { "maxDuration": 30 },
-    "api/stripe-identity-webhook.js":              { "maxDuration": 60 },
-    "api/veriff-webhook.js":                  { "maxDuration": 60 },
-    "api/veriff-identity-recovery-cron.js":   { "maxDuration": 60 },
-    "api/admin-review-queue.js":              { "maxDuration": 20 },
-    "api/admin-review-detail.js":             { "maxDuration": 20 },
-    "api/review-application.js":              { "maxDuration": 30 },
-    "api/checkr-invitation-reminder-cron.js": { "maxDuration": 30 },
-    "api/renter-balance-ledger.js":           { "maxDuration": 20 },
-    "api/create-slingshot-booking.js":        { "maxDuration": 30 },
-    "api/sign-slingshot-agreement.js":        { "maxDuration": 30 }
+    "api/tts.js": {
+      "maxDuration": 30
+    },
+    "api/admin-chat.js": {
+      "maxDuration": 60
+    },
+    "api/sms-webhook.js": {
+      "maxDuration": 30
+    },
+    "api/bouncie-sync-cron.js": {
+      "maxDuration": 30
+    },
+    "api/oil-check-cron.js": {
+      "maxDuration": 60
+    },
+    "api/stripe-reconcile.js": {
+      "maxDuration": 60
+    },
+    "api/stripe-reconcile-cron.js": {
+      "maxDuration": 60
+    },
+    "api/stripe-backfill.js": {
+      "maxDuration": 60
+    },
+    "api/stripe-replay.js": {
+      "maxDuration": 60
+    },
+    "api/send-reservation-email.js": {
+      "maxDuration": 60
+    },
+    "api/stripe-webhook.js": {
+      "maxDuration": 60
+    },
+    "api/store-booking-docs.js": {
+      "maxDuration": 20
+    },
+    "api/bouncie-sync.js": {
+      "maxDuration": 30
+    },
+    "api/bouncie-webhook.js": {
+      "maxDuration": 20
+    },
+    "api/bouncie-location.js": {
+      "maxDuration": 20
+    },
+    "api/v2-mileage.js": {
+      "maxDuration": 20
+    },
+    "api/send-extension-confirmation.js": {
+      "maxDuration": 25
+    },
+    "api/admin-resend-extension.js": {
+      "maxDuration": 25
+    },
+    "api/admin-resend-booking.js": {
+      "maxDuration": 30
+    },
+    "api/v2-customers.js": {
+      "maxDuration": 25
+    },
+    "api/revenue-self-heal.js": {
+      "maxDuration": 60
+    },
+    "api/v2-system-health.js": {
+      "maxDuration": 30
+    },
+    "api/system-health-fix-sms.js": {
+      "maxDuration": 30
+    },
+    "api/system-health-fix-availability.js": {
+      "maxDuration": 30
+    },
+    "api/scheduled-reminders.js": {
+      "maxDuration": 60
+    },
+    "api/tickets.js": {
+      "maxDuration": 20
+    },
+    "api/upload-customer-doc.js": {
+      "maxDuration": 20
+    },
+    "api/upload-expense-receipt.js": {
+      "maxDuration": 20
+    },
+    "api/booking-documents.js": {
+      "maxDuration": 30
+    },
+    "api/send-application-email.js": {
+      "maxDuration": 60
+    },
+    "api/create-identity-verification-session.js": {
+      "maxDuration": 30
+    },
+    "api/resolve-identity-resume.js": {
+      "maxDuration": 30
+    },
+    "api/stripe-identity-webhook.js": {
+      "maxDuration": 60
+    },
+    "api/veriff-webhook.js": {
+      "maxDuration": 60
+    },
+    "api/veriff-identity-recovery-cron.js": {
+      "maxDuration": 60
+    },
+    "api/admin-review-queue.js": {
+      "maxDuration": 20
+    },
+    "api/admin-review-detail.js": {
+      "maxDuration": 20
+    },
+    "api/review-application.js": {
+      "maxDuration": 30
+    },
+    "api/checkr-invitation-reminder-cron.js": {
+      "maxDuration": 30
+    },
+    "api/renter-balance-ledger.js": {
+      "maxDuration": 20
+    }
   },
   "crons": [
     {

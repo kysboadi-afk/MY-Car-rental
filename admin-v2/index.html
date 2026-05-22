@@ -3079,7 +3079,6 @@
           <option value="suv">SUV</option>
           <option value="truck">Truck</option>
           <option value="van">Van</option>
-          <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
       </div>
@@ -3087,9 +3086,8 @@
         <label class="form-label" for="ev-category">Category *</label>
         <select class="form-select" id="ev-category">
           <option value="car">Car</option>
-          <option value="slingshot">Slingshot</option>
         </select>
-        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
+        <div class="form-hint">Controls which fleet category this vehicle appears in.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -3204,7 +3202,6 @@
           <option value="suv">SUV</option>
           <option value="truck">Truck</option>
           <option value="van">Van</option>
-          <option value="slingshot">Slingshot</option>
           <option value="other">Other</option>
         </select>
       </div>
@@ -3212,9 +3209,8 @@
         <label class="form-label" for="av-category">Category *</label>
         <select class="form-select" id="av-category">
           <option value="car">Car</option>
-          <option value="slingshot">Slingshot</option>
         </select>
-        <div class="form-hint">Controls which page this vehicle appears on: Cars page or Slingshots page.</div>
+        <div class="form-hint">Controls which fleet category this vehicle appears in.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -3311,28 +3307,6 @@
           </div>
         </div>
         <div class="form-hint">Rates are saved to the booking database so renters are charged correctly. Leave blank to set up later.</div>
-      </div>
-      <div id="av-slingshot-pricing" class="form-group full" style="display:none;padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
-        <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing (Hourly Packages)</div>
-        <div class="form-grid" style="margin:0;">
-          <div class="form-group">
-            <label class="form-label">2-Hour Package ($)</label>
-            <input type="number" class="form-input" id="av-price-2hr" min="0" step="1" placeholder="e.g. 150">
-          </div>
-          <div class="form-group">
-            <label class="form-label">3-Hour Package ($)</label>
-            <input type="number" class="form-input" id="av-price-3hr" min="0" step="1" placeholder="e.g. 200">
-          </div>
-          <div class="form-group">
-            <label class="form-label">6-Hour Package ($)</label>
-            <input type="number" class="form-input" id="av-price-6hr" min="0" step="1" placeholder="e.g. 250">
-          </div>
-          <div class="form-group">
-            <label class="form-label">24-Hour Package ($)</label>
-            <input type="number" class="form-input" id="av-price-24hr" min="0" step="1" placeholder="e.g. 350">
-          </div>
-        </div>
-        <div class="form-hint">Set the price for each rental package. A $500 refundable security deposit is always collected automatically.</div>
       </div>
     </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
@@ -4729,7 +4703,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-name').value = v.vehicle_name || '';
   document.getElementById('ev-make').value = v.make || '';
   document.getElementById('ev-type').value = v.type || 'economy';
-  document.getElementById('ev-category').value = v.category || (v.type === 'slingshot' ? 'slingshot' : 'car');
+  document.getElementById('ev-category').value = v.category || 'car';
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
@@ -5138,27 +5112,18 @@ async function markVehicleServiced(vehicleId, serviceType) {
 }
 
 // ── Add Vehicle ────────────────────────────────────────────────────────────
-// Auto-sync category from type when type changes: selecting "Slingshot" sets
-// category to "slingshot"; any other type sets it to "car".
 function syncCategoryFromType(prefix) {
-  const typeEl     = document.getElementById(prefix + '-type');
   const categoryEl = document.getElementById(prefix + '-category');
-  if (!typeEl || !categoryEl) return;
-  categoryEl.value = typeEl.value === 'slingshot' ? 'slingshot' : 'car';
+  if (!categoryEl) return;
+  categoryEl.value = 'car';
 }
 
 function toggleVehicleTypeFields(prefix) {
-  const type = (document.getElementById(prefix + '-type') || {}).value || '';
-  const isSlingshot = type === 'slingshot';
-  // Show/hide car-only fields
   document.querySelectorAll('.' + prefix + '-car-only').forEach(el => {
-    el.style.display = isSlingshot ? 'none' : '';
+    el.style.display = '';
   });
-  // Show car pricing or slingshot pricing
   const carPricing = document.getElementById(prefix + '-car-pricing');
-  if (carPricing) carPricing.style.display = isSlingshot ? 'none' : '';
-  const slingshotPricing = document.getElementById(prefix + '-slingshot-pricing');
-  if (slingshotPricing) slingshotPricing.style.display = isSlingshot ? '' : 'none';
+  if (carPricing) carPricing.style.display = '';
 }
 
 function openAddVehicle() {
@@ -5183,10 +5148,6 @@ function openAddVehicle() {
   document.getElementById('av-weekly-rate').value = '';
   document.getElementById('av-biweekly-rate').value = '';
   document.getElementById('av-monthly-rate').value = '';
-  document.getElementById('av-price-2hr').value  = '';
-  document.getElementById('av-price-3hr').value  = '';
-  document.getElementById('av-price-6hr').value  = '';
-  document.getElementById('av-price-24hr').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   renderGallery('av', []);
@@ -5221,18 +5182,6 @@ async function saveNewVehicle() {
   const biweeklyRate    = parseFloat(document.getElementById('av-biweekly-rate').value) || null;
   const monthlyRate     = parseFloat(document.getElementById('av-monthly-rate').value)  || null;
 
-  // Slingshot hourly package prices
-  const isSlingshot = type === 'slingshot';
-  const price2hr    = parseFloat(document.getElementById('av-price-2hr').value)  || null;
-  const price3hr    = parseFloat(document.getElementById('av-price-3hr').value)  || null;
-  const price6hr    = parseFloat(document.getElementById('av-price-6hr').value)  || null;
-  const price24hr   = parseFloat(document.getElementById('av-price-24hr').value) || null;
-  const hourlyTiers = isSlingshot ? {
-    '2hr':  { hours: 2,  price: price2hr  ?? 150, label: '2 Hours' },
-    '3hr':  { hours: 3,  price: price3hr  ?? 200, label: '3 Hours' },
-    '6hr':  { hours: 6,  price: price6hr  ?? 250, label: '6 Hours' },
-    '24hr': { hours: 24, price: price24hr ?? 350, label: '24 Hours' },
-  } : null;
 
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
@@ -5247,9 +5196,9 @@ async function saveNewVehicle() {
     msgEl.textContent = 'Vehicle Name is required.';
     return;
   }
-  if (!category || (category !== 'car' && category !== 'slingshot')) {
+  if (!category || category !== 'car') {
     msgEl.style.color = 'var(--danger)';
-    msgEl.textContent = 'Category is required — select Car or Slingshot.';
+    msgEl.textContent = 'Category is required — select Car.';
     return;
   }
 
@@ -5275,7 +5224,6 @@ async function saveNewVehicle() {
       ...(weeklyRate   ? { weeklyRate }   : {}),
       ...(biweeklyRate ? { biweeklyRate } : {}),
       ...(monthlyRate  ? { monthlyRate }  : {}),
-      ...(hourlyTiers  ? { hourlyTiers }  : {}),
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
@@ -11210,14 +11158,12 @@ async function loadAiInsights() {
     camry:     { vehicle_name: 'Camry 2012',            type: 'economy', status: 'active',      vehicle_year: 2012, purchase_price: 8500,  cover_image: '/images/car2.jpg', daily_rate: 55, weekly_rate: 350 },
     civic:     { vehicle_name: 'Honda Civic 2016',      type: 'economy', status: 'active',      vehicle_year: 2016, purchase_price: 9200,  cover_image: '',                daily_rate: 55, weekly_rate: 350 },
     rav4:      { vehicle_name: 'Toyota RAV4 2018',      type: 'suv',     status: 'active',      vehicle_year: 2018, purchase_price: 14000, cover_image: '',                daily_rate: 80, weekly_rate: 499 },
-    slingshot: { vehicle_name: 'Polaris Slingshot 2021',type: 'other',   status: 'maintenance', vehicle_year: 2021, purchase_price: 22000, cover_image: '',                daily_rate: 120, weekly_rate: 699 },
   };
 
   window.DEMO_BOOKINGS = [
     { bookingId: 'bk-demo-001', booking_ref: 'bk-demo-001', name: 'James Thornton',   phone: '(310) 555-0191', email: 'james.thornton@example.com', vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: ago(7), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', status: 'overdue',           amountPaid: 350, paymentMethod: 'stripe', paymentStatus: 'paid' },
     { bookingId: 'bk-demo-002', booking_ref: 'bk-demo-002', name: 'Sofia Reyes',       phone: '(213) 555-0142', email: 'sofia.reyes@example.com',    vehicleId: 'civic',     vehicle_id: 'civic',     pickupDate: ago(4), returnDate: fwd(3), pickupTime: '9:00 AM',  returnTime: '6:00 PM', status: 'active_rental',     amountPaid: 350, paymentMethod: 'cash',   paymentStatus: 'paid' },
     { bookingId: 'bk-demo-003', booking_ref: 'bk-demo-003', name: 'Aisha Williams',    phone: '(323) 555-0178', email: 'aisha.williams@example.com', vehicleId: 'rav4',      vehicle_id: 'rav4',      pickupDate: fwd(2), returnDate: fwd(9), pickupTime: '11:00 AM', returnTime: '4:00 PM', status: 'booked_paid',       amountPaid: 499, paymentMethod: 'stripe', paymentStatus: 'paid' },
-    { bookingId: 'bk-demo-004', booking_ref: 'bk-demo-004', name: 'Carlos Medina',     phone: '(424) 555-0163', email: 'carlos.medina@example.com',  vehicleId: 'slingshot', vehicle_id: 'slingshot', pickupDate: ago(14),returnDate: ago(7), pickupTime: '10:00 AM', returnTime: '5:00 PM', status: 'completed_rental',  amountPaid: 550, paymentMethod: 'zelle',  paymentStatus: 'paid' },
     { bookingId: 'bk-demo-005', booking_ref: 'bk-demo-005', name: 'Rachel Kim',        phone: '(818) 555-0109', email: 'rachel.kim@example.com',     vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '2:00 PM',  returnTime: '2:00 PM', status: 'reserved_unpaid',   amountPaid: 0,   paymentMethod: 'stripe', paymentStatus: 'unpaid' },
   ];
 
@@ -11225,18 +11171,15 @@ async function loadAiInsights() {
     { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry',     vehicle_id: 'camry',     date: ago(30), category: 'maintenance', amount: 120, notes: 'Oil change + tire rotation', receipt_url: 'demo/expense-1', receipt_filename: 'oil-change.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
     { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',      vehicle_id: 'rav4',      date: ago(15), category: 'insurance',   amount: 280, notes: 'Monthly insurance premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
     { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic',     vehicle_id: 'civic',     date: ago(8),  category: 'repair',      amount: 85,  notes: 'Brake pad replacement', receipt_url: 'demo/expense-3', receipt_filename: 'brake-pad.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
-    { expense_id: 'exp-demo-004', id: 4, vehicleId: 'slingshot', vehicle_id: 'slingshot', date: ago(5),  category: 'maintenance', amount: 220, notes: 'Belt inspection + fluid change', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
   ];
 
   window.DEMO_REVENUE = [
     { id: 1, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(7),  amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
     { id: 2, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(4),  amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
     { id: 3, booking_ref: 'bk-demo-003', vehicle_id: 'rav4',      date: ago(2),  amount_gross: 499, stripe_fee: 17, amount_net: 482, payment_type: 'reservation_deposit' },
-    { id: 4, booking_ref: 'bk-demo-004', vehicle_id: 'slingshot', date: ago(14), amount_gross: 550, stripe_fee: 0,  amount_net: 550, payment_type: 'zelle' },
     { id: 5, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(60), amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
     { id: 6, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(45), amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
     { id: 7, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(90), amount_gross: 700, stripe_fee: 24, amount_net: 676, payment_type: 'reservation_deposit' },
-    { id: 8, booking_ref: 'bk-demo-004', vehicle_id: 'slingshot', date: ago(75), amount_gross: 550, stripe_fee: 0,  amount_net: 550, payment_type: 'zelle' },
   ];
 
   window.DEMO_CUSTOMERS = [
@@ -11262,12 +11205,11 @@ async function loadAiInsights() {
       bookingsLast7Days: 4, bookingsLast30Days: 12,
     },
     revenueChart: revChart,
-    bookingsPerVehicle: { camry: 12, civic: 8, rav4: 5, slingshot: 3 },
+    bookingsPerVehicle: { camry: 12, civic: 8, rav4: 5 },
     vehicleStats: {
       camry:     { revenue: 3200, netProfit: 2100, bookingCount: 12, expenses: 340, roi: 8.2 },
       civic:     { revenue: 2800, netProfit: 1900, bookingCount: 8,  expenses: 280, roi: 7.1 },
       rav4:      { revenue: 1820, netProfit: 1100, bookingCount: 5,  expenses: 420, roi: 5.4 },
-      slingshot: { revenue: 600,  netProfit: 380,  bookingCount: 3,  expenses: 200, roi: 3.2 },
     },
     alerts: [
       { type: 'warning', message: 'James Thornton\'s Camry rental is 2 days overdue — contact customer.' },
@@ -11278,7 +11220,6 @@ async function loadAiInsights() {
       { name: 'James Thornton', vehicleId: 'camry',     pickupDate: ago(7),  returnDate: ago(2),  pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 350, status: 'overdue' },
       { name: 'Sofia Reyes',    vehicleId: 'civic',     pickupDate: ago(4),  returnDate: fwd(3),  pickupTime: '9:00 AM',  returnTime: '6:00 PM', amountPaid: 350, status: 'active_rental' },
       { name: 'Aisha Williams', vehicleId: 'rav4',      pickupDate: fwd(2),  returnDate: fwd(9),  pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 499, status: 'booked_paid' },
-      { name: 'Carlos Medina',  vehicleId: 'slingshot', pickupDate: ago(14), returnDate: ago(7),  pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 550, status: 'completed_rental' },
     ],
   };
 

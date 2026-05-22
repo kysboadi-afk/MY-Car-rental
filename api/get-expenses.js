@@ -17,13 +17,12 @@ import { enrichExpenseCategory, LEGACY_CATEGORY_MAP } from "./_expense-categorie
 import { adminErrorMessage } from "./_error-helpers.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
 
 function normalizeScope(scope) {
   const s = String(scope || "").trim().toLowerCase();
   if (s === "car" || s === "cars") return "car";
-  if (s === "slingshot") return "slingshot";
   return null;
 }
 
@@ -60,7 +59,7 @@ export default async function handler(req, res) {
             .filter((v) => {
               const t = String(v?.type || "").toLowerCase();
               if (normalizedScope === "car") return CAR_TYPES.has(t) || t === "";
-              return t === "slingshot";
+              return false;
             })
             .map((v) => v?.vehicle_id)
             .filter(Boolean)

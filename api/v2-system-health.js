@@ -64,8 +64,8 @@ import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const VALID_SCOPES = new Set(["car", "cars"]);
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 
@@ -98,11 +98,6 @@ function normalizeScope(scope) {
   return VALID_SCOPES.has(normalized) ? normalized : null;
 }
 
-function isSlingshotBooking(booking = {}) {
-  const category = String(booking.category || "").trim().toLowerCase();
-  const vehicleId = String(booking.vehicle_id || "").trim().toLowerCase();
-  return category === "slingshot" || vehicleId.includes("slingshot");
-}
 
 // ── Individual checks ──────────────────────────────────────────────────────
 
@@ -1165,7 +1160,6 @@ async function checkTicketChargeHealth(sb) {
 // missing based on the booking flow:
 //   • Car flow: valid if either (front+back ID pair) OR (insurance-only doc)
 //               OR Stripe Identity session is present.
-//   • Slingshot flow: valid when Stripe Identity session is present.
 //
 // Only bookings with statuses where manual action is still possible are checked.
 // Completed/cancelled bookings are excluded.  Bookings older than 90 days are
@@ -1203,9 +1197,7 @@ async function checkRenterIdDocuments(sb, scope = null) {
     const normalizedScope = normalizeScope(scope);
     const bookings = (paidBookings || []).filter((b) => {
       if (!normalizedScope) return true;
-      const isSlingshot = isSlingshotBooking(b);
-      if (normalizedScope === "slingshot") return isSlingshot;
-      return !isSlingshot; // "car" / "cars"
+      return normalizedScope === "car" || normalizedScope === "cars";
     });
     if (bookings.length === 0) {
       return check("Renter Verification Coverage", "ok", "No active/upcoming bookings to check.");
@@ -1292,38 +1284,29 @@ async function checkRenterIdDocuments(sb, scope = null) {
       const hasBookingDocInsurance = insuranceDocCount >= 1;
       const hasInsuranceCoverageChoice = String(doc?.insurance_coverage_choice || "").toLowerCase() === "yes";
       const hasInsuranceOnlyCoverage = hasInsuranceCoverageChoice && (hasPendingInsurance || hasBookingDocInsurance);
-      const isSlingshot = isSlingshotBooking(b);
       const hasIdentitySession = !!String(b.identity_session_id || "").trim();
       const renterDisplay = b.customer_name || "?";
       const baseInfo = `status=${b.status} vehicle=${b.vehicle_id || "?"} pickup=${b.pickup_date || "?"} name=${renterDisplay}`;
 
       const missing = [];
-      if (isSlingshot) {
-        if (!hasIdentitySession) {
-          missing.push("Stripe Identity verification session");
-        }
-      } else {
-        const hasValidCarCoverage = hasPendingPair || hasBookingDocPair || hasInsuranceOnlyCoverage || hasIdentitySession;
-        if (!hasValidCarCoverage) {
-          if (idCopyCount > 0) {
-            missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
-          } else if (!doc) {
-            missing.push("ID front + ID back or insurance document");
-          } else if (hasPendingFront !== hasPendingBack) {
-            if (!hasPendingFront) missing.push("ID front");
-            if (!hasPendingBack) missing.push("ID back");
-          } else if (hasInsuranceCoverageChoice && !hasPendingInsurance && !hasBookingDocInsurance) {
-            missing.push("insurance document");
-          } else {
-            missing.push("ID front + ID back or insurance document");
-          }
+      const hasValidCoverage = hasPendingPair || hasBookingDocPair || hasInsuranceOnlyCoverage || hasIdentitySession;
+      if (!hasValidCoverage) {
+        if (idCopyCount > 0) {
+          missing.push(`${idCopyCount} of 2 required ID copies uploaded`);
+        } else if (!doc) {
+          missing.push("ID front + ID back or insurance document");
+        } else if (hasPendingFront !== hasPendingBack) {
+          if (!hasPendingFront) missing.push("ID front");
+          if (!hasPendingBack) missing.push("ID back");
+        } else if (hasInsuranceCoverageChoice && !hasPendingInsurance && !hasBookingDocInsurance) {
+          missing.push("insurance document");
         } else {
-          // If ID uploads were attempted, enforce front/back pairing as data integrity.
-          if (hasPendingFront !== hasPendingBack) {
-            if (!hasPendingFront) missing.push("ID front");
-            if (!hasPendingBack) missing.push("ID back");
-          }
+          missing.push("ID front + ID back or insurance document");
         }
+      } else if (hasPendingFront !== hasPendingBack) {
+        // If ID uploads were attempted, enforce front/back pairing as data integrity.
+        if (!hasPendingFront) missing.push("ID front");
+        if (!hasPendingBack) missing.push("ID back");
       }
 
       if (missing.length > 0) {
@@ -1355,7 +1338,7 @@ async function checkRenterIdDocuments(sb, scope = null) {
       "warning",
       `${totalAffected} booking${totalAffected !== 1 ? "s" : ""} missing renter verification artifacts.`,
       allItems,
-      "Cars require either front+back ID documents, an insurance-only submission, or a Stripe Identity verification session; slingshot bookings require Stripe Identity verification. For flagged bookings, collect/verify the missing artifact before pickup.",
+      "Bookings require either front+back ID documents, an insurance-only submission, or a Stripe Identity verification session. For flagged bookings, collect or verify the missing artifact before pickup.",
       true,
     );
   } catch (err) {

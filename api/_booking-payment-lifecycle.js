@@ -38,8 +38,7 @@ export function deriveBookingPaymentLifecycle(input = {}) {
   const amountPaid = Math.max(0, toMoney(input.amountPaid));
   const remainingBalance = Math.max(0, toMoney(input.remainingBalance));
   const hasOutstandingBalance = remainingBalance > 0;
-  const isSlingshot = categoryKey === "slingshot";
-  const isManualPickupByStatus = MANUAL_PICKUP_STATUSES.has(statusKey) || (isSlingshot && statusKey === "agreement_pending");
+  const isManualPickupByStatus = MANUAL_PICKUP_STATUSES.has(statusKey);
   const isActiveRental = ACTIVE_RENTAL_STATUSES.has(statusKey);
   const isOverdue = OVERDUE_STATUSES.has(statusKey) || (!!input.paymentPlan?.isOverdue && hasOutstandingBalance);
   const paymentPlanStatus = normalizeKey(input.paymentPlan?.status);
@@ -92,7 +91,7 @@ export function deriveBookingPaymentLifecycle(input = {}) {
     isActiveRental,
     isOverdue,
     hasPaymentPlan,
-    canPayRemainingOnline: hasOutstandingBalance && !isManualPickup && !isSlingshot && lifecycleState !== "completed",
+    canPayRemainingOnline: hasOutstandingBalance && !isManualPickup && lifecycleState !== "completed",
     isPaidInFull: lifecycleState === "completed",
   };
 }

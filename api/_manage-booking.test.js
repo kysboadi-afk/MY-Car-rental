@@ -334,19 +334,6 @@ test("payment lifecycle: reserved_unpaid with no partial payment stays reservati
   assert.equal(state.canPayRemainingOnline, true);
 });
 
-test("payment lifecycle: slingshot pickup-due flow does not expose online remaining-balance payment", () => {
-  const state = deriveBookingPaymentLifecycle({
-    status: "pending_manual_payment",
-    paymentStatus: "partial",
-    category: "slingshot",
-    totalAmount: 300,
-    amountPaid: 50,
-    remainingBalance: 250,
-    paymentPlan: null,
-  });
-  assert.equal(state.lifecycleState, "pickup_due");
-  assert.equal(state.canPayRemainingOnline, false);
-});
 
 test("create_balance_payment_intent keeps automatic payment methods for remaining balance payments", async () => {
   process.env.STRIPE_SECRET_KEY = "sk_test_manage_booking";

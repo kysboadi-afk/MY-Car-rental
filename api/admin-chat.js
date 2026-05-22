@@ -24,7 +24,7 @@ import { executeAction } from "./_admin-actions.js";
 import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const VALID_SCOPES = new Set(["car", "cars"]);
 
 class OpenAiRoundTimeoutError extends Error {
   constructor(ms) {
@@ -653,7 +653,6 @@ Before the customer confirms payment, the booking form stores their documents in
 Validation rules:
 - Insurance-only submissions are valid when personal insurance is selected.
 - ID-only submissions are valid only when both front and back are present.
-- Slingshot reservations use Stripe Identity verification before payment intent creation.
 
 The Stripe webhook retrieves these documents from \`pending_booking_docs\` and attaches them to the **owner's booking confirmation email** — so the owner always receives a complete record with all documents even if the browser fails to call the email endpoint directly. Once the owner email is sent, \`email_sent\` is set to \`true\` so the email is never sent twice.
 
@@ -697,9 +696,7 @@ function normalizeScope(scope) {
 function buildSystemPrompt(scope = null) {
   const now = new Date().toISOString();
   const normalizedScope = normalizeScope(scope);
-  const scopePrompt = normalizedScope === "slingshot"
-    ? "\n\nYou are currently embedded in the SLYTRANS Slingshot Control admin dashboard. Unless the admin explicitly asks for a cross-fleet comparison, discuss only the slingshot fleet. Treat general requests about vehicles, bookings, revenue, customers, maintenance, GPS, analytics, and availability as slingshot-only. Use the word \"slingshot\" instead of \"car\" whenever the answer is specific to this workspace."
-    : "";
+  const scopePrompt = "";
   return `Current date/time: ${now}\n\n${SYSTEM_PROMPT_BASE}${scopePrompt}`;
 }
 

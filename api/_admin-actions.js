@@ -64,7 +64,7 @@ function revenueFromBooking(booking) {
   return 0;
 }
 
-const VALID_FLEET_SCOPES = new Set(["car", "cars", "slingshot"]);
+const VALID_FLEET_SCOPES = new Set(["car", "cars"]);
 
 function normalizeFleetScope(scope) {
   const value = String(scope || "").trim().toLowerCase();
@@ -73,22 +73,20 @@ function normalizeFleetScope(scope) {
 
 function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
   const explicit = String(vehicle.category || "").toLowerCase().trim();
-  if (explicit === "car" || explicit === "slingshot") return explicit;
+  if (explicit === "car") return explicit;
   const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
   const name = String(vehicle.vehicle_name || vehicle.name || "").toLowerCase();
-  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
   return "car";
 }
 
 function filterVehicleMapByScope(vehicles = {}, scope = null) {
   const normalizedScope = normalizeFleetScope(scope);
   if (!normalizedScope) return vehicles;
-  const onlySlingshot = normalizedScope === "slingshot";
   return Object.fromEntries(
     Object.entries(vehicles).filter(([vehicleId, vehicle]) => {
       const category = deriveVehicleCategory(vehicle, vehicleId);
-      return onlySlingshot ? category === "slingshot" : category === "car";
+      return category === "car";
     })
   );
 }
@@ -1482,7 +1480,7 @@ async function toolGetCustomers({ search, flagged, banned, limit = 50, scope } =
 
   // The customers table is global, not fleet-scoped. When a valid scope is
   // requested we derive the customer list from scoped bookings instead so the
-  // slingshot assistant does not leak car-fleet customers (and vice versa).
+  // fleet-scoped assistant requests should not leak unrelated customer data.
   if (sb && !normalizedScope) {
     try {
       let q = sb.from("customers").select("*").order("total_bookings", { ascending: false }).limit(safeLimit);
@@ -3885,7 +3883,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
   }
 
   // ── Build attachments ────────────────────────────────────────────────────
-  // Pre-fetch vehicle data from DB for non-CARS vehicles (e.g. slingshots) so
+  // Pre-fetch vehicle data from DB so
   // VIN, make, year, etc. are available for both PDF regeneration and email bodies.
   const _vehicleDbData = (vehicleId && CARS[vehicleId])
     ? null

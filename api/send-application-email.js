@@ -26,7 +26,7 @@ export const config = {
   api: { bodyParser: { sizeLimit: "30mb" } },
 };
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 // ~10 MB decoded — guard against oversized payloads
 const MAX_LICENSE_B64_LEN = 14_000_000;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;

@@ -25,7 +25,7 @@ import { getVehicleById } from "./_vehicles.js";
 import { getLedgerRemainingBalance } from "./_renter-balance-ledger.js";
 import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 const POSTGRES_UNDEFINED_TABLE_ERROR = "42P01";
 
