@@ -10402,6 +10402,7 @@ function loadBlockedDates() {
             from: row.start_date,
             to: row.end_date,
             reason: row.reason || '',
+            createdAt: row.created_at || '',
           }))
         : [];
       if (!entries.length) {
@@ -10413,7 +10414,7 @@ function loadBlockedDates() {
         list.style.display = '';
         list.innerHTML = `
           <table style="width:100%;" class="table-wrap">
-            <thead><tr><th>ID (numeric)</th><th>Vehicle</th><th>From</th><th>To</th><th>Reason</th><th>Action</th></tr></thead>
+          <thead><tr><th>ID (numeric)</th><th>Vehicle</th><th>From</th><th>To</th><th>Reason</th><th>Recorded (PT)</th><th>Action</th></tr></thead>
             <tbody>
               ${entries.map((e) => `
                 <tr>
@@ -10422,10 +10423,15 @@ function loadBlockedDates() {
                   <td>${esc(e.from)}</td>
                   <td>${esc(e.to)}</td>
                   <td>${esc(e.reason || '')}</td>
-                  <td>${getBlockedDateActionCell(e)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>`;
+                <td>${esc(
+                  e.createdAt && !Number.isNaN(new Date(e.createdAt).getTime())
+                    ? new Date(e.createdAt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })
+                    : "—"
+                )}</td>
+                <td>${getBlockedDateActionCell(e)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
       }
     })
     .catch((err) => {
