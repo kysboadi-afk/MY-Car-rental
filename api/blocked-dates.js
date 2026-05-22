@@ -2,6 +2,7 @@
 // Admin API for listing and deleting blocked_dates rows by ID.
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -11,16 +12,7 @@ function setCors(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-admin-secret");
-}
-
-function readSecret(req) {
-  return (
-    req.headers["x-admin-secret"] ||
-    req.query?.secret ||
-    req.body?.secret ||
-    ""
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-admin-secret, Authorization");
 }
 
 export default async function handler(req, res) {
@@ -45,10 +37,11 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
-  if (readSecret(req) !== process.env.ADMIN_SECRET) {
+  const suppliedAdminCredential = req.headers["x-admin-secret"] || extractAdminSecret(req);
+  if (!isAdminAuthorized(suppliedAdminCredential)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
