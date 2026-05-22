@@ -691,11 +691,6 @@ export default async function handler(req, res) {
   if (action === "get_agreement_url") {
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable" });
-    const bookingRow = await fetchBookingFromSupabase(bookingId);
-    if (!bookingRow) return res.status(404).json({ error: "Booking not found" });
-    if (!renterOwnsBooking(bookingRow, renterClaims)) {
-      return res.status(403).json({ error: "Renter session does not match this booking." });
-    }
 
     const { data: docRow, error: docErr } = await sb
       .from("pending_booking_docs")
