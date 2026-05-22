@@ -22,6 +22,7 @@ import { loadCategories, LEGACY_CATEGORY_MAP } from "./_expense-categories.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { getActiveVehicleIds } from "./_pricing.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 // Legacy flat categories still accepted for backward-compat
@@ -37,13 +38,13 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
   const { secret, vehicle_id, date, category_id, category, amount, notes } = req.body || {};
 
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
