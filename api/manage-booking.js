@@ -543,7 +543,34 @@ export default async function handler(req, res) {
     // where amountPaid was conflated with totalPrice during sync).
     const totalPriceNum  = Number(row.total_price   || 0);
     const depositPaidNum = Number(row.deposit_paid  || 0);
-    const balanceDue     = effectiveBalanceDue(row);
+    let balanceDue       = effectiveBalanceDue(row);
+    let resolvedTotal    = totalPriceNum;
+
+    // When remaining_balance is stale zero AND total_price equals the deposit amount
+    // (e.g. older bookings where full_rental_amount was absent from PI metadata so
+    // the webhook stored total_price = deposit_amount), fall back to live vehicle
+    // pricing so the manage-booking dashboard shows the correct outstanding balance
+    // and the customer can pay online.  This mirrors the identical fallback already
+    // present in the create_balance_payment_intent action below.
+    if (balanceDue <= 0 && row.payment_status === "partial" && vehicleData && row.pickup_date && row.return_date) {
+      try {
+        const repriced = await recomputePricing(
+          vehicleData,
+          row.pickup_date,
+          row.return_date,
+          !!row.has_protection_plan,
+          row.protection_plan_tier || null,
+          depositPaidNum
+        );
+        if (repriced && repriced.newBalanceDue > 0) {
+          balanceDue    = repriced.newBalanceDue;
+          resolvedTotal = repriced.newTotal;
+        }
+      } catch (repErr) {
+        console.warn("[manage-booking] get: pricing fallback for stale balance failed (non-fatal):", repErr.message);
+      }
+    }
+
     const paymentPlan = await fetchPaymentPlanSummary(getSupabaseAdmin(), bookingId, {
       missingTableErrorCode: POSTGRES_UNDEFINED_TABLE_ERROR,
     });
@@ -551,7 +578,7 @@ export default async function handler(req, res) {
       status: row.status,
       paymentStatus: row.payment_status,
       category: row.category,
-      totalAmount: totalPriceNum,
+      totalAmount: resolvedTotal,
       amountPaid: depositPaidNum,
       remainingBalance: balanceDue,
       paymentPlan,
@@ -573,7 +600,7 @@ export default async function handler(req, res) {
       paymentStatus: row.payment_status,
       category:      row.category || null,
       identitySessionId: row.identity_session_id || null,
-      totalPrice:    totalPriceNum,
+      totalPrice:    resolvedTotal,
       depositPaid:   depositPaidNum,
       balanceDue,
       customerName:  row.customer_name || "",
@@ -616,6 +643,11 @@ export default async function handler(req, res) {
     }
     let resolvedBalance = effectiveBalanceDue(row);
 
+    // Load vehicle data early — needed both for the pricing fallback below and
+    // for the Stripe PI description / metadata further down.
+    const uiVehicle = uiVehicleId(row.vehicle_id || "");
+    const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
+
     // The booking row fields (total_price, remaining_balance) can be 0 when the
     // balance is tracked exclusively via the ledger system.  Fall back to the
     // ledger's remaining_balance so renters are never incorrectly told there is
@@ -629,6 +661,28 @@ export default async function handler(req, res) {
         }
       } catch (ledgerErr) {
         console.warn("[manage-booking] create_balance_payment_intent: ledger fallback failed:", ledgerErr.message);
+      }
+    }
+
+    // Final fallback: for reservation-deposit bookings where the DB stored
+    // total_price = deposit_paid (because full_rental_amount was absent from the
+    // PI metadata) and no ledger entry was written, recompute from live pricing
+    // so the customer can still pay the outstanding balance online.
+    if ((!Number.isFinite(resolvedBalance) || resolvedBalance <= 0) && row.payment_status === "partial" && vehicleData && row.pickup_date && row.return_date) {
+      try {
+        const repriced = await recomputePricing(
+          vehicleData,
+          row.pickup_date,
+          row.return_date,
+          !!row.has_protection_plan,
+          row.protection_plan_tier || null,
+          Number(row.deposit_paid || 0)
+        );
+        if (repriced && repriced.newBalanceDue > 0) {
+          resolvedBalance = repriced.newBalanceDue;
+        }
+      } catch (repErr) {
+        console.warn("[manage-booking] create_balance_payment_intent: pricing fallback failed:", repErr.message);
       }
     }
 
@@ -651,9 +705,6 @@ export default async function handler(req, res) {
       paymentAmount = requested;
     }
     const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(resolvedBalance * 100);
-
-    const uiVehicle = uiVehicleId(row.vehicle_id || "");
-    const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(paymentAmount * 100),
