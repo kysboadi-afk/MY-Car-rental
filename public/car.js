@@ -58,10 +58,18 @@ const extensionTraceContext = {
   inventory_match_result: "not_attempted",
   redirect_reason: "",
 };
+const LEGACY_VEHICLE_LOOKUP_ALIASES = {
+  camry2012: "camry",
+};
 
 function normalizeStatusState(value, fallback) {
   const state = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
   return state || (fallback || "unknown");
+}
+
+function canonicalVehicleLookupKey(value) {
+  const lookup = normalizeVehicleLookupKey(value);
+  return LEGACY_VEHICLE_LOOKUP_ALIASES[lookup] || lookup;
 }
 
 function deriveExtensionTraceStates(booking) {
@@ -140,11 +148,7 @@ function normalizeVehicleLookupKey(value) {
 function resolveVehicleFromInventory(vehicles, requestedVehicleRef) {
   const requestedRaw = String(requestedVehicleRef || "").trim();
   if (!requestedRaw || !Array.isArray(vehicles)) return null;
-  const legacyToCanonical = {
-    camry2012: "camry",
-  };
-  const requestedLookup = normalizeVehicleLookupKey(requestedRaw);
-  const requestedCanonicalLookup = legacyToCanonical[requestedLookup] || requestedLookup;
+  const requestedCanonicalLookup = canonicalVehicleLookupKey(requestedRaw);
   const candidates = vehicles.filter(Boolean);
 
   const exact = candidates.find((v) => String(v.vehicle_id || v.id || "").trim() === requestedRaw);
@@ -154,13 +158,13 @@ function resolveVehicleFromInventory(vehicles, requestedVehicleRef) {
   if (ci) return { vehicle: ci, vehicleId: String(ci.vehicle_id || ci.id || "").trim() };
 
   const byId = candidates.find((v) => {
-    const idLookup = normalizeVehicleLookupKey(v.vehicle_id || v.id || "");
-    return idLookup === requestedCanonicalLookup || legacyToCanonical[idLookup] === requestedCanonicalLookup;
+    const idLookup = canonicalVehicleLookupKey(v.vehicle_id || v.id || "");
+    return idLookup === requestedCanonicalLookup;
   });
   if (byId) return { vehicle: byId, vehicleId: String(byId.vehicle_id || byId.id || "").trim() };
 
   const byName = candidates.find((v) => {
-    const nameLookup = normalizeVehicleLookupKey(v.vehicle_name || v.name || "");
+    const nameLookup = canonicalVehicleLookupKey(v.vehicle_name || v.name || "");
     return nameLookup === requestedCanonicalLookup;
   });
   if (byName) return { vehicle: byName, vehicleId: String(byName.vehicle_id || byName.id || "").trim() };
@@ -655,6 +659,41 @@ function dedupeVehicleRefs(values) {
   return refs;
 }
 
+function isValidExtensionBookingContext(booking) {
+  if (!booking || typeof booking !== "object") return false;
+  const bookingId = String(booking.bookingId || "").trim();
+  const bookingVehicleId = String(booking.vehicleId || "").trim();
+  const bookingVehicleName = String(booking.vehicleName || "").trim();
+  return !!bookingId && (!!bookingVehicleId || !!bookingVehicleName);
+}
+
+function buildVehicleCandidatesForLookup(requestedVehicleId, booking) {
+  const requested = String(requestedVehicleId || "").trim();
+  const bookingCandidates = dedupeVehicleRefs([
+    booking?.vehicleId,
+    booking?.vehicleName,
+  ]);
+  if (!IS_EXTENSION_FLOW || bookingCandidates.length === 0) {
+    return dedupeVehicleRefs([requested]);
+  }
+
+  if (!requested) return bookingCandidates;
+
+  const requestedKey = canonicalVehicleLookupKey(requested);
+  const matchesBookingVehicle = bookingCandidates.some((candidate) => {
+    return canonicalVehicleLookupKey(candidate) === requestedKey;
+  });
+
+  if (!matchesBookingVehicle) {
+    logExtensionTrace("vehicle_scope_enforced", {
+      requested_vehicle_ignored: requested,
+      booking_vehicle_scope: bookingCandidates,
+    });
+    return bookingCandidates;
+  }
+  return dedupeVehicleRefs([requested, ...bookingCandidates]);
+}
+
 function buildFallbackExtensionCarData(booking, resolvedVehicleId) {
   const displayName = String(booking?.vehicleName || resolvedVehicleId || "Your vehicle").trim();
   return {
@@ -696,13 +735,13 @@ function applyResolvedVehicleRoute(resolvedVehicleId, source) {
 }
 
 async function initializeVehicleContext() {
+  extensionBookingContext = await loadExtensionBookingContext();
+  const hasValidExtensionBookingContext = isValidExtensionBookingContext(extensionBookingContext);
+  const vehicleCandidates = buildVehicleCandidatesForLookup(
+    vehicleId,
+    hasValidExtensionBookingContext ? extensionBookingContext : null
+  );
   try {
-    extensionBookingContext = await loadExtensionBookingContext();
-    const vehicleCandidates = dedupeVehicleRefs([
-      vehicleId,
-      extensionBookingContext?.vehicleId,
-      extensionBookingContext?.vehicleName,
-    ]);
     if (vehicleCandidates.length === 0) {
       handleVehicleLookupFailure("missing_vehicle_query_param");
       return;
@@ -743,10 +782,10 @@ async function initializeVehicleContext() {
     }
 
     const fallbackVehicleId = String(
-      extensionBookingContext?.vehicleId || vehicleCandidates[0] || ""
+      extensionBookingContext?.vehicleId || extensionBookingContext?.vehicleName || vehicleCandidates[0] || ""
     ).trim();
 
-    if (IS_EXTENSION_FLOW && extensionBookingContext && fallbackVehicleId) {
+    if (IS_EXTENSION_FLOW && hasValidExtensionBookingContext && fallbackVehicleId) {
       applyResolvedVehicleRoute(fallbackVehicleId, "booking_context_fallback");
       extensionTraceContext.inventory_match_result = "booking_context_fallback";
       logExtensionTrace("inventory_lookup_fallback_applied", {
@@ -760,6 +799,21 @@ async function initializeVehicleContext() {
 
     throw new Error("not found");
   } catch (err) {
+    const fallbackVehicleId = String(
+      extensionBookingContext?.vehicleId || extensionBookingContext?.vehicleName || vehicleCandidates[0] || ""
+    ).trim();
+    if (IS_EXTENSION_FLOW && hasValidExtensionBookingContext && fallbackVehicleId) {
+      applyResolvedVehicleRoute(fallbackVehicleId, "booking_context_fallback_after_inventory_error");
+      extensionTraceContext.inventory_match_result = "booking_context_fallback_inventory_unavailable";
+      logExtensionTrace("inventory_lookup_fallback_after_error", {
+        inventory_match_result: extensionTraceContext.inventory_match_result,
+        inventory_error: err && err.message ? err.message : String(err),
+      });
+      carData = cars[vehicleId] = buildFallbackExtensionCarData(extensionBookingContext, vehicleId);
+      sliderContainer.innerHTML = "";
+      initCarPage();
+      return;
+    }
     extensionTraceContext.inventory_match_result = "not_found";
     handleVehicleLookupFailure("inventory_lookup_failed", {
       error: err && err.message ? err.message : String(err),

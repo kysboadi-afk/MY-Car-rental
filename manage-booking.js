@@ -259,7 +259,8 @@
       .replace(/[^a-z0-9]/g, "");
   }
 
-  function resolveVehicleRouteId(value) {
+  function resolveVehicleRouteId(value, options = {}) {
+    const allowRaw = options.allowRaw !== false;
     const raw = String(value || "").trim();
     if (!raw) return "";
     const exact = vehicleOptions.find((v) => String(v.id || "").trim() === raw);
@@ -272,11 +273,13 @@
     if (byId?.id) return String(byId.id).trim();
     const byName = vehicleOptions.find((v) => normalizeVehicleLookupKey(v.name) === lookup);
     if (byName?.id) return String(byName.id).trim();
-    return raw;
+    return allowRaw ? raw : "";
   }
 
   function buildExtensionHref(b) {
-    const resolvedVehicleId = resolveVehicleRouteId(b?.vehicleId || b?.vehicleName || "");
+    const resolvedById = resolveVehicleRouteId(b?.vehicleId || "", { allowRaw: false });
+    const resolvedByName = resolveVehicleRouteId(b?.vehicleName || "", { allowRaw: false });
+    const resolvedVehicleId = resolvedById || resolvedByName || resolveVehicleRouteId(b?.vehicleId || b?.vehicleName || "");
     const token = String(activeToken || params.get("t") || "").trim();
     const query = new URLSearchParams();
     if (resolvedVehicleId) query.set("vehicle", resolvedVehicleId);

@@ -371,3 +371,109 @@ test("extension CTA normalizes legacy vehicle ID for active rental", async () =>
   assert.equal(query.get("extend"), "1");
   assert.equal(query.get("t"), "test-token");
 });
+
+test("extension CTA remains available for overdue active booking", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "overdue",
+      paymentStatus: "partial",
+      balanceDue: 420,
+      paymentPlan: { status: "active", isOverdue: true },
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 120,
+        remaining_balance: 420,
+        transaction_count: 5,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+  });
+
+  const extensionCta = document.getElementById("extension-cta");
+  const query = getExtensionQuery(document);
+  assert.match(extensionCta.textContent, /Open Extension Flow/);
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
+  assert.equal(query.get("vehicle"), "camry");
+});
+
+test("extension CTA remains available for active partial-payment state", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      totalPrice: 600,
+      depositPaid: 250,
+      balanceDue: 350,
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 250,
+        remaining_balance: 350,
+        transaction_count: 3,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+  });
+
+  const extensionCta = document.getElementById("extension-cta");
+  const query = getExtensionQuery(document);
+  assert.match(extensionCta.textContent, /Open Extension Flow/);
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("vehicle"), "camry");
+});
+
+test("extension CTA keeps booking vehicle when inventory listing is unavailable/empty", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      vehicleId: "legacy-manual-car-001",
+      vehicleName: "Legacy Manual Car",
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 0,
+        remaining_balance: 275,
+        transaction_count: 0,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    vehiclesPayload: [],
+  });
+
+  const query = getExtensionQuery(document);
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
+  assert.equal(query.get("vehicle"), "legacy-manual-car-001");
+});
+
+test("extension CTA resolves renamed vehicle ID from booking vehicle name", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      vehicleId: "old-camry-id",
+      vehicleName: "Camry 2012",
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 100,
+        remaining_balance: 200,
+        transaction_count: 2,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    vehiclesPayload: [
+      { id: "camry", name: "Camry 2012" },
+    ],
+  });
+
+  const query = getExtensionQuery(document);
+  assert.equal(query.get("vehicle"), "camry");
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
+});
