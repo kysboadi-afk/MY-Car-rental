@@ -643,6 +643,11 @@ export default async function handler(req, res) {
     }
     let resolvedBalance = effectiveBalanceDue(row);
 
+    // Load vehicle data early — needed both for the pricing fallback below and
+    // for the Stripe PI description / metadata further down.
+    const uiVehicle = uiVehicleId(row.vehicle_id || "");
+    const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
+
     // The booking row fields (total_price, remaining_balance) can be 0 when the
     // balance is tracked exclusively via the ledger system.  Fall back to the
     // ledger's remaining_balance so renters are never incorrectly told there is
@@ -656,6 +661,28 @@ export default async function handler(req, res) {
         }
       } catch (ledgerErr) {
         console.warn("[manage-booking] create_balance_payment_intent: ledger fallback failed:", ledgerErr.message);
+      }
+    }
+
+    // Final fallback: for reservation-deposit bookings where the DB stored
+    // total_price = deposit_paid (because full_rental_amount was absent from the
+    // PI metadata) and no ledger entry was written, recompute from live pricing
+    // so the customer can still pay the outstanding balance online.
+    if ((!Number.isFinite(resolvedBalance) || resolvedBalance <= 0) && row.payment_status === "partial" && vehicleData && row.pickup_date && row.return_date) {
+      try {
+        const repriced = await recomputePricing(
+          vehicleData,
+          row.pickup_date,
+          row.return_date,
+          !!row.has_protection_plan,
+          row.protection_plan_tier || null,
+          Number(row.deposit_paid || 0)
+        );
+        if (repriced && repriced.newBalanceDue > 0) {
+          resolvedBalance = repriced.newBalanceDue;
+        }
+      } catch (repErr) {
+        console.warn("[manage-booking] create_balance_payment_intent: pricing fallback failed:", repErr.message);
       }
     }
 
@@ -678,9 +705,6 @@ export default async function handler(req, res) {
       paymentAmount = requested;
     }
     const isPartialPayment = Math.round(paymentAmount * 100) < Math.round(resolvedBalance * 100);
-
-    const uiVehicle = uiVehicleId(row.vehicle_id || "");
-    const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(paymentAmount * 100),
