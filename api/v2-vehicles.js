@@ -242,7 +242,7 @@ export default async function handler(req, res) {
 
       if (supabase) {
         const [{ data: rows, error }, { data: pricingRows }] = await Promise.all([
-          supabase.from("vehicles").select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage"),
+          supabase.from("vehicles").select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at, updated_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage"),
           supabase.from("vehicle_pricing").select("vehicle_id, daily_price, weekly_price, biweekly_price, monthly_price"),
         ]);
 
@@ -255,13 +255,40 @@ export default async function handler(req, res) {
           }
 
           const vehicles = {};
+          const serviceTimestampBackfills = [];
           for (const row of rows || []) {
             const type = row.data?.type || row.data?.vehicle_type || "";
             const rowCategory = row.data?.category || "";
             if (!scopeFilter(rowCategory, type, row.vehicle_id, row.data?.vehicle_name)) continue;
             const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+            const baseData = { ...(row.data || {}) };
+            const fallbackRecordedAt = row.last_synced_at || row.updated_at || new Date().toISOString();
+            const backfilledData = { ...baseData };
+            let needsServiceTimestampBackfill = false;
+            for (const { mileageCol, jsonMileageKey, recordedAtKey } of [
+              { mileageCol: "last_oil_change_mileage", jsonMileageKey: "last_oil_change_mileage", recordedAtKey: "last_oil_change_recorded_at" },
+              { mileageCol: "last_brake_check_mileage", jsonMileageKey: "last_brake_check_mileage", recordedAtKey: "last_brake_check_recorded_at" },
+              { mileageCol: "last_tire_change_mileage", jsonMileageKey: "last_tire_change_mileage", recordedAtKey: "last_tire_change_recorded_at" },
+            ]) {
+              const hasMileage =
+                row[mileageCol] != null
+                || (backfilledData[jsonMileageKey] != null && backfilledData[jsonMileageKey] !== "");
+              const hasRecordedAt =
+                typeof backfilledData[recordedAtKey] === "string"
+                && backfilledData[recordedAtKey].trim().length > 0;
+              if (hasMileage && !hasRecordedAt) {
+                backfilledData[recordedAtKey] = fallbackRecordedAt;
+                needsServiceTimestampBackfill = true;
+              }
+            }
+            if (needsServiceTimestampBackfill) {
+              serviceTimestampBackfills.push({
+                vehicle_id: row.vehicle_id,
+                data: backfilledData,
+              });
+            }
             const next = {
-              ...(row.data || {}),
+              ...backfilledData,
               bouncie_device_id:        row.bouncie_device_id        || row.data?.bouncie_device_id || null,
               total_mileage:            Number(row.mileage)          || 0,
               last_synced_at:           row.last_synced_at           || null,
@@ -284,6 +311,20 @@ export default async function handler(req, res) {
             if (next.cover_image) next.cover_image = normalizeCoverImage(next.cover_image);
             if (next.gallery_images) next.gallery_images = normalizeGalleryImages(next.gallery_images);
             vehicles[id] = mergeVehicleRecords(vehicles[id], next);
+          }
+          if (serviceTimestampBackfills.length > 0) {
+            await Promise.all(serviceTimestampBackfills.map(async (entry) => {
+              const { error: backfillErr } = await supabase
+                .from("vehicles")
+                .update({
+                  data: entry.data,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("vehicle_id", entry.vehicle_id);
+              if (backfillErr) {
+                console.warn(`v2-vehicles list: failed service timestamp backfill for ${entry.vehicle_id}:`, backfillErr.message);
+              }
+            }));
           }
           return res.status(200).json({ vehicles });
         }

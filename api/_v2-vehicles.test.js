@@ -221,6 +221,55 @@ test("list: falls back to GitHub when Supabase select returns an error", async (
   setSecret(REAL_ADMIN_SECRET);
 });
 
+test("list: backfills missing maintenance recorded timestamps from last_synced_at", async () => {
+  setSecret("testSecret");
+  const rows = [
+    {
+      vehicle_id: "camry",
+      data: { vehicle_id: "camry", vehicle_name: "Camry 2012", status: "active" },
+      mileage: 101234,
+      last_synced_at: "2026-05-21T10:00:00.000Z",
+      updated_at: "2026-05-20T09:00:00.000Z",
+      last_oil_change_mileage: 100000,
+      last_brake_check_mileage: null,
+      last_tire_change_mileage: null,
+      bouncie_device_id: "123456789012345",
+    },
+  ];
+  const updates = [];
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "vehicles") {
+        return {
+          select: () => Promise.resolve({ data: rows, error: null }),
+          update: (payload) => ({
+            eq: (column, value) => {
+              updates.push({ payload, column, value });
+              return Promise.resolve({ error: null });
+            },
+          }),
+        };
+      }
+      if (table === "vehicle_pricing") {
+        return { select: () => Promise.resolve({ data: [], error: null }) };
+      }
+      return { select: () => Promise.resolve({ data: [], error: null }) };
+    },
+  };
+
+  const req = makeReq({ body: { secret: "testSecret", action: "list", scope: "car" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.vehicles.camry.last_oil_change_recorded_at, "2026-05-21T10:00:00.000Z");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].column, "vehicle_id");
+  assert.equal(updates[0].value, "camry");
+  assert.equal(updates[0].payload.data.last_oil_change_recorded_at, "2026-05-21T10:00:00.000Z");
+  setSecret(REAL_ADMIN_SECRET);
+});
+
 // ─── update ───────────────────────────────────────────────────────────────────
 
 test("update: 400 on missing vehicleId", async () => {
@@ -685,6 +734,5 @@ test("create: defaults type to economy and status to active when omitted", async
   assert.equal(insertedPayload.data.status, "active");
   setSecret(REAL_ADMIN_SECRET);
 });
-
 
 
