@@ -26,7 +26,7 @@ import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-st
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
@@ -261,7 +261,8 @@ export default async function handler(req, res) {
 
     // All bookings limited to scoped vehicles (used for non-financial KPIs)
     const allBookings = allBookingsRaw
-      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
+      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId))
+      .filter((b) => !isIncompleteCheckoutAppStatus(b.status));
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
     const now = new Date();
@@ -285,10 +286,6 @@ export default async function handler(req, res) {
         // A completed_rental whose return date is in the past would otherwise be
         // incorrectly counted as overdue (now >= returnDateTime is true for any
         // past booking).  Only the revenue fallback loop below needs completed_rental.
-        continue;
-      }
-      if (isIncompleteCheckoutAppStatus(booking.status)) {
-        incompleteCheckouts++;
         continue;
       }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);

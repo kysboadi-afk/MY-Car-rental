@@ -30,6 +30,7 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { getVehicleById } from "./_vehicles.js";
 import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
 import { getLedgerSummary } from "./_renter-balance-ledger.js";
+import { deriveBookingPaymentLifecycle } from "./_booking-payment-lifecycle.js";
 import {
   loadPricingSettings,
   computeDppCostFromSettings,
@@ -38,7 +39,7 @@ import {
 import { computeRentalDays, getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -225,7 +226,7 @@ async function sendChangeConfirmationEmail({
     });
     const firstName = (renterName || "").split(" ")[0] || "there";
     await transporter.sendMail({
-      from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
       to: renterEmail,
       subject: "Your Booking Has Been Updated",
       html: `
@@ -448,6 +449,15 @@ export default async function handler(req, res) {
     const paymentPlan = await fetchPaymentPlanSummary(getSupabaseAdmin(), bookingId, {
       missingTableErrorCode: POSTGRES_UNDEFINED_TABLE_ERROR,
     });
+    const lifecycle = deriveBookingPaymentLifecycle({
+      status: row.status,
+      paymentStatus: row.payment_status,
+      category: row.category,
+      totalAmount: totalPriceNum,
+      amountPaid: depositPaidNum,
+      remainingBalance: balanceDue,
+      paymentPlan,
+    });
 
     return res.status(200).json({
       bookingId,
@@ -476,6 +486,12 @@ export default async function handler(req, res) {
       hasProtectionPlan: !!row.has_protection_plan,
       protectionPlanTier: row.protection_plan_tier || null,
       paymentPlan,
+      paymentLifecycleState: lifecycle.lifecycleState,
+      canPayRemainingOnline: lifecycle.canPayRemainingOnline,
+      isReservationStage: lifecycle.isReservationStage,
+      isActiveRentalStage: lifecycle.isActiveRental,
+      isOverdueStage: lifecycle.isOverdue,
+      isPickupDueStage: lifecycle.isManualPickup && lifecycle.lifecycleState === "pickup_due",
     });
   }
 
@@ -539,7 +555,7 @@ export default async function handler(req, res) {
       amount: Math.round(paymentAmount * 100),
       currency: "usd",
       receipt_email: row.customer_email || undefined,
-      description: `Sly Transportation Services LLC – ${vehicleData?.name || uiVehicle || "Rental"} ${isPartialPayment ? "Partial " : ""}Balance Payment`,
+      description: `Sly Car Rentals LLC – ${vehicleData?.name || uiVehicle || "Rental"} ${isPartialPayment ? "Partial " : ""}Balance Payment`,
       automatic_payment_methods: { enabled: true },
       metadata: {
         payment_type: isPartialPayment ? "partial_balance" : "rental_balance",
@@ -888,7 +904,7 @@ export default async function handler(req, res) {
       amount: Math.round(changeFee * 100),
       currency: "usd",
       receipt_email: row.customer_email || undefined,
-      description: `Sly Transportation Services LLC – Booking Change Fee (${bookingId})`,
+      description: `Sly Car Rentals LLC – Booking Change Fee (${bookingId})`,
       automatic_payment_methods: { enabled: true },
       metadata: {
         payment_type:    "booking_change_fee",

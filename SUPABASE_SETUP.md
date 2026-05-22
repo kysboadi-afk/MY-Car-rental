@@ -309,7 +309,7 @@ INSERT INTO public.content_blocks (type, title, body, sort_order, active) VALUES
 
 -- Example site settings
 INSERT INTO public.site_settings (key, value) VALUES
-  ('business_name',        'SLY Transportation Services'),
+  ('business_name',        'SLY Car Rentals'),
   ('phone',                ''),
   ('email',                ''),
   ('hero_title',           'Explore LA in Style'),
@@ -766,7 +766,7 @@ After setting env vars: **Vercel → Deployments → Redeploy**.
 If you want an AI assistant to help you make changes via Supabase SQL, paste the following:
 
 ```
-I am the owner of SLY Transportation Services LLC, a car rental company in Los Angeles.
+I am the owner of SLY Car Rentals LLC, a car rental company in Los Angeles.
 My website (slytrans.com) uses Supabase as its database. Here is what I want to change:
 
 [DESCRIBE YOUR CHANGE HERE — e.g., "I want to run a promotion where the Camry weekly rate is $300 instead of $350 for the next 2 weeks."]

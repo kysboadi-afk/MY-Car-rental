@@ -83,6 +83,7 @@ import {
   fetchRecentSmsLogs,
   buildSmsContext,
 } from "./_sms-scoring.js";
+import { shouldSendBalanceCollectionReminder } from "./_sms-lifecycle.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -547,6 +548,16 @@ async function safeSend(phone, body, logCtx = null) {
         error:        "[SMS SKIPPED — NO PHONE]",
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "skipped",
+      provider_id: null,
+      error: "missing_phone",
+    }));
     return false;
   }
   try {
@@ -563,6 +574,16 @@ async function safeSend(phone, body, logCtx = null) {
         provider_id:  providerId,
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "sent",
+      provider_id: providerId,
+      error: null,
+    }));
     return true;
   } catch (err) {
     console.error(`scheduled-reminders: SMS send failed to ${normalized}:`, err.message);
@@ -577,6 +598,16 @@ async function safeSend(phone, body, logCtx = null) {
         error:        err.message,
       });
     }
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: logCtx?.booking_ref || null,
+      template_key: logCtx?.message_type || null,
+      trigger_source: "scheduled_reminders",
+      payment_state: logCtx?.payment_state || null,
+      delivery_status: "failed",
+      provider_id: null,
+      error: err.message || String(err),
+    }));
     return false;
   }
 }
@@ -619,6 +650,7 @@ function vars(booking) {
   const bufferedReturnDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   return {
     customer_name: booking.name || "Customer",
+    booking_id:    booking.bookingId || booking.paymentIntentId || "",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
     pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
@@ -668,7 +700,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
       const escStr = (s) => String(s || "")
         .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      OWNER_EMAIL,
         subject: `[Action Required] Late Fee $${feeAmount} — ${renterName} (${vehicle})`,
         html: `
@@ -692,7 +724,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
             </a>
           </p>
           <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>
-          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+          <p><strong>Sly Car Rentals LLC 🚗</strong></p>
         `,
         text: [
           `Late Return — Approval Required`,
@@ -2040,7 +2072,7 @@ export async function processAutoCompletions(allBookings, now) {
             // Owner alert
             if (OWNER_EMAIL) {
               await transporter.sendMail({
-                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
                 to:      OWNER_EMAIL,
                 subject: `[Sly Car Rentals] ✅ Rental Completed — ${escStr(renterName)} (${escStr(vehicleName)})`,
                 html: `
@@ -2066,7 +2098,7 @@ export async function processAutoCompletions(allBookings, now) {
             if (renterEmail) {
               const firstName = renterName.split(" ")[0];
               await transporter.sendMail({
-                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
                 to:      renterEmail,
                 subject: "Thank you for renting with Sly Car Rentals!",
                 html: `
@@ -2081,7 +2113,7 @@ export async function processAutoCompletions(allBookings, now) {
                   </table>
                   <p>Ready to book again? Visit <a href="https://slycarrentals.com/cars.html">www.slytrans.com</a>.</p>
                   <p>Questions? Call us at <a href="tel:+18445114059">(844) 511-4059</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
-                  <p style="color:#666;font-size:13px">Sly Transportation Services LLC · Los Angeles, CA</p>
+                  <p style="color:#666;font-size:13px">Sly Car Rentals LLC · Los Angeles, CA</p>
                 `,
               });
             }
@@ -2563,7 +2595,7 @@ async function runReconciliation() {
           auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
         });
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           subject,
           html: `
@@ -2587,7 +2619,7 @@ async function runReconciliation() {
               : skippedPIIds.length > 0
                 ? `<p style="color:#e65100">⚠️ <strong>${skippedPIIds.length} payment(s) require manual review</strong> (type not eligible for auto-processing). Please review them in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`
                 : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://admin.slycarrentals.com/admin-v2/">Admin Panel</a>.</p>`}
-            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC 🚗</strong></p>
           `,
           text: [
             subject,
@@ -2821,6 +2853,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
     for (const booking of bookings) {
       if (!booking.balanceDue || booking.balanceDue <= 0) continue;
       if (!booking.phone) continue;
+      if (!shouldSendBalanceCollectionReminder(booking.status)) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
       if (!id) continue;
@@ -2860,6 +2893,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
             booking_ref:  id,
             vehicle_id:   vehicleId,
             message_type: templateKey,
+            payment_state: booking.status || null,
           });
           if (sent) {
             sentMarks.push({ vehicleId, id, key: templateKey });

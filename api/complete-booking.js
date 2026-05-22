@@ -22,7 +22,7 @@ import crypto from "crypto";
 import { loadBookings, updateBooking } from "./_bookings.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const FRONTEND_BASE   = "https://slycarrentals.com";
 
 export default async function handler(req, res) {
@@ -249,7 +249,7 @@ async function handleCreatePaymentIntent(req, res, booking) {
       amount: Math.round(remainingBalance * 100),
       currency: "usd",
       receipt_email: booking.email || undefined,
-      description: `Sly Transportation Services LLC – ${booking.vehicleName || booking.vehicleId} Rental Balance`,
+      description: `Sly Car Rentals LLC – ${booking.vehicleName || booking.vehicleId} Rental Balance`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },

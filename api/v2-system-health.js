@@ -64,7 +64,7 @@ import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
@@ -1979,7 +1979,7 @@ async function sendOwnerAlerts(checks, overallStatus, checkedAt) {
       }).join("");
 
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
         to:      OWNER_EMAIL,
         subject,
         html: `<div style="font-family:sans-serif;max-width:640px;margin:0 auto;">

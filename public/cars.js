@@ -9,6 +9,11 @@ const API_BASE = (
 ) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
+const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
+
+// Mark the session as car context so shared pages (manage-booking, contact)
+// can apply car branding when the user navigates there from this page.
+try { sessionStorage.setItem('slyCategory', 'car'); } catch (_) {}
 
 // ─── Fleet-status API contract ────────────────────────────────────────────────
 // Canonical fields returned per vehicle by api/fleet-status.js.
@@ -50,25 +55,34 @@ function fmtMoney(n) {
   return "$" + num.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function normalizeVehicleImageUrl(value) {
+  if (!value || typeof value !== "string") return "";
+  const url = String(value).trim();
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+  return "/" + url.replace(/^(\.\.\/)+/, "");
+}
+
 // ─── Card builders ────────────────────────────────────────────────────────────
 
 function buildEconomyCard(v, pricing) {
   const vid      = esc(v.vehicle_id);
   const name     = esc(v.vehicle_name || v.vehicle_id);
-  const img      = esc(v.cover_image || "/images/car1.jpg");
+  const resolvedImage = normalizeVehicleImageUrl(v.cover_image) || VEHICLE_IMAGE_PLACEHOLDER;
+  const img      = esc(resolvedImage);
   const subtitle = esc(v.subtitle || t("fleet.sedan5seater", "Sedan • 5 Seater"));
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
 
   // Per-vehicle pricing takes priority over global economy pricing so that
-  // newly added vehicles with custom rates display correctly. Falls back to
-  // the global economy rate, then to hard-coded defaults if both are absent.
+  // vehicles with custom rates (e.g. fusion2017) display correctly.
+  // Falls back to the global economy rate, then hard-coded defaults.
   const daily    = fmtMoney(v.daily_price    ?? v.pricePerDay  ?? pricing?.economy?.daily    ?? 55);
   const weekly   = fmtMoney(v.weekly_price   ?? v.weekly       ?? pricing?.economy?.weekly   ?? 350);
   const biweekly = fmtMoney(v.biweekly_price ?? v.biweekly     ?? pricing?.economy?.biweekly ?? 650);
   const monthly  = fmtMoney(v.monthly_price  ?? v.monthly      ?? pricing?.economy?.monthly  ?? 1300);
 
   return `<div class="car-card" data-category="economy" data-vehicle="${vid}">
-    <img src="${img}" alt="${name}" loading="lazy">
+    <img src="${img}" alt="${name}" loading="lazy" data-vehicle-image-id="${vid}">
     <div class="car-info">
       <span class="status-badge available" id="status-badge-${vid}" data-i18n="fleet.available">● ${t("fleet.available", "Available")}</span>
       <h3>${name}</h3>
@@ -221,6 +235,13 @@ function applyFleetStatus(fleetStatus) {
         const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
         nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
         badge.insertAdjacentElement("afterend", nextBadge);
+
+        const noteEl = document.createElement("span");
+        noteEl.className = "next-available-note";
+        noteEl.setAttribute("data-i18n", "fleet.nextAvailableNote");
+        noteEl.textContent = i18n.t("fleet.nextAvailableNote") ||
+          "This is the earliest pickup time — includes a 2-hour preparation window after the vehicle is returned.";
+        nextBadge.insertAdjacentElement("afterend", noteEl);
       }
 
       if (isReserved) {
@@ -267,7 +288,7 @@ async function loadFleet() {
 
   try {
     const [vRes, pRes, fleetRes] = await Promise.all([
-      fetch(API_BASE + "/api/v2-vehicles?scope=car"),
+      fetch(API_BASE + "/api/v2-vehicles?scope=car", { cache: "no-store", headers: { Accept: "application/json" } }),
       fetch(API_BASE + "/api/public-pricing"),
       fetch(API_BASE + "/api/fleet-status"),
     ]);
@@ -296,14 +317,16 @@ async function loadFleet() {
     return;
   }
 
-  try {
-    grid.innerHTML = activeAndAvailable.map(v => buildCardHTML(v, pricing)).join("");
-    captureButtonKeys();
-    applyFleetStatus(fleetStatus);
-  } catch (err) {
-    console.error("[loadFleet] error rendering car cards:", err);
-    // Keep whatever HTML is already in the grid (static fallback cards stay visible).
-  }
+  grid.innerHTML = activeAndAvailable.map(v => buildCardHTML(v, pricing)).join("");
+  Array.from(grid.querySelectorAll("img[data-vehicle-image-id]")).forEach((imgEl) => {
+    imgEl.addEventListener("error", () => {
+      imgEl.onerror = null;
+      imgEl.src = VEHICLE_IMAGE_PLACEHOLDER;
+    });
+  });
+  captureButtonKeys();
+  applyFleetStatus(fleetStatus);
+  applyVisibleFilters();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

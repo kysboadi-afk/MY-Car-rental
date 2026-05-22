@@ -10,6 +10,7 @@ const API_BASE = (
 ) ? "" : "https://slycarrentals.com";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
+const VEHICLE_IMAGE_PLACEHOLDER = "/images/logo.jpg";
 
 // Fallback deposit amount used only if neither the vehicle record nor the
 // system settings supply a booking_deposit value (prevents a broken button
@@ -38,6 +39,7 @@ const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
 const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
 const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per document
 const MAX_TOTAL_DOC_FILE_BYTES = 18 * 1024 * 1024; // 18 MB total for front/back/insurance
+const CANCEL_PENDING_BOOKING_ENDPOINT = API_BASE + "/api/cancel-pending-booking";
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -122,6 +124,28 @@ function _fmt(key, vars, fallback) {
       s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
     });
   }
+
+  function normalizeVehicleImageUrl(value) {
+    if (!value || typeof value !== "string") return "";
+    var url = String(value).trim();
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url) || url.startsWith("/")) return url;
+    return "/" + url.replace(/^(\.\.\/)+/, "");
+  }
+
+  function buildVehicleScopedImageList(v, expectedVehicleId) {
+    if (!v || String(v.vehicle_id || "") !== String(expectedVehicleId || "")) return [];
+    var images = [];
+    var pushIfSafe = function(url) {
+      var normalized = normalizeVehicleImageUrl(url);
+      if (normalized && images.indexOf(normalized) === -1) images.push(normalized);
+    };
+    pushIfSafe(v.cover_image);
+    if (Array.isArray(v.gallery_images)) {
+      v.gallery_images.forEach(pushIfSafe);
+    }
+    return images;
+  }
   return s;
 }
 
@@ -179,6 +203,10 @@ async function storeBookingDocsOrThrow(payload) {
   }
 }
 
+/**
+ * Only validation-size failures block checkout immediately.
+ * Other failures remain recoverable via the success-page/IndexedDB fallback.
+ */
 function shouldBlockPaymentForDocFailure(error) {
   const status = error && typeof error.status === "number" ? error.status : 0;
   return status === 400 || status === 413;
@@ -230,7 +258,7 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
   }
   const combinedBytes = (otherSelectedBytes || 0) + file.size;
   if (combinedBytes > MAX_TOTAL_DOC_FILE_BYTES) {
-    return `Combined document size is too large (${_formatDocSizeMB(combinedBytes)} MB). Maximum allowed is ${_formatDocSizeMB(MAX_TOTAL_DOC_FILE_BYTES)} MB across ID front, ID back, and insurance.`;
+    return `Combined document size is too large (${_formatDocSizeMB(combinedBytes)} MB). Maximum allowed is ${_formatDocSizeMB(MAX_TOTAL_DOC_FILE_BYTES)} MB across uploaded documents.`;
   }
   return null;
 }
@@ -309,6 +337,7 @@ let carData = null;
 // Builds a cars-compatible data object from a v2-vehicles API response entry.
 // All vehicles — existing and newly added — load through this path.
 function buildCarDataFromAPI(v) {
+  var scopedImages = buildVehicleScopedImageList(v, vehicleId);
   return {
     name:          v.vehicle_name || v.vehicle_id,
     subtitle:      v.subtitle     || "",
@@ -323,13 +352,7 @@ function buildCarDataFromAPI(v) {
     // deposit button is hidden. loadDynamicPricing() fills this from the system-wide
     // setting when no per-vehicle value is present.
     booking_deposit: Number(v.booking_deposit) > 0 ? Number(v.booking_deposit) : null,
-    images:        (function() {
-      var imgs = v.cover_image ? [v.cover_image] : [];
-      if (Array.isArray(v.gallery_images)) {
-        v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
-      }
-      return imgs.length ? imgs : ["/images/car1.jpg"];
-    })(),
+    images:        scopedImages.length ? scopedImages : [VEHICLE_IMAGE_PLACEHOLDER],
     make:          v.make          || "",
     model:         v.model         || v.vehicle_name || vehicleId,
     year:          v.vehicle_year  || null,
@@ -416,9 +439,15 @@ function initCarPage() {
   }
 
   // Load images into the slider
+  sliderContainer.innerHTML = "";
+  sliderDots.innerHTML = "";
   carData.images.forEach((imgSrc, idx) => {
     const img = document.createElement("img");
     img.src = imgSrc;
+    img.onerror = function() {
+      img.onerror = null;
+      img.src = VEHICLE_IMAGE_PLACEHOLDER;
+    };
     img.classList.add("slide");
     if (idx === 0) img.classList.add("active");
     sliderContainer.appendChild(img);
@@ -526,7 +555,8 @@ function goToSlide(idx){ showSlide(idx); }
 
 // Initialize page: fetch vehicle data from the API for all vehicles.
 sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
-fetch(API_BASE + "/api/v2-vehicles")
+// Fetch vehicle data without browser cache so a prior vehicle view cannot leak stale media.
+fetch(API_BASE + "/api/v2-vehicles", { cache: "no-store", headers: { Accept: "application/json" } })
   .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
   .then(function(vehicles) {
     var resolved = resolveVehicleFromInventory(vehicles, vehicleId);
@@ -578,9 +608,50 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Payment mode for the current payment attempt: 'deposit' | 'full'.
 // Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
 let _pendingPaymentMode = null;
+let pendingBookingId = null;
+let paymentFormSubmitted = false;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
+
+async function updatePendingBookingLifecycle(targetStatus, reason, options = {}) {
+  if (!pendingBookingId) return;
+  const bookingIdToCancel = pendingBookingId;
+  const useBeacon = !!options.useBeacon;
+  const source = options.source || "car_booking";
+  const shouldClearLocal = !options.preservePendingBookingId;
+  const body = JSON.stringify({ bookingId: bookingIdToCancel, targetStatus, reason, source });
+  if (useBeacon && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    const queued = navigator.sendBeacon(CANCEL_PENDING_BOOKING_ENDPOINT, blob);
+    if (queued) {
+      if (shouldClearLocal) pendingBookingId = null;
+      return true;
+    }
+    console.warn("cancel-pending-booking sendBeacon failed to queue; falling back to fetch");
+  }
+  try {
+    const res = await fetch(CANCEL_PENDING_BOOKING_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (!res.ok) {
+      throw new Error("HTTP " + res.status);
+    }
+    if (shouldClearLocal) pendingBookingId = null;
+    return true;
+  } catch (err) {
+    console.warn("cancel-pending-booking fetch error:", err);
+    return false;
+  }
+}
+
+window.addEventListener("pagehide", function () {
+  if (pendingBookingId && !paymentFormSubmitted) {
+    updatePendingBookingLifecycle("abandoned_checkout", "pagehide_before_payment", { useBeacon: true, source: "pagehide" });
+  }
+});
 
 
 // ----- Name Field Validation & Auto-correction -----
@@ -737,6 +808,7 @@ function isValidName(val) {
 // ----- File Upload Handling -----
 function resetFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
+  if (!fileInfoEl) return;
   fileInfoEl.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   fileInfoEl.querySelector(".file-size").textContent = "";
   fileInfoEl.classList.remove("has-file");
@@ -744,6 +816,7 @@ function resetFileInfo() {
 
 function resetBackFileInfo() {
   const el = document.getElementById("fileInfoBack");
+  if (!el) return;
   el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   el.querySelector(".file-size").textContent = "";
   el.classList.remove("has-file");
@@ -757,7 +830,7 @@ function resetInsuranceFileInfo() {
 }
 
 function clearInsuranceFile() {
-  insuranceUpload.value = "";
+  if (insuranceUpload) insuranceUpload.value = "";
   uploadedInsurance = null;
   resetInsuranceFileInfo();
 }
@@ -806,7 +879,7 @@ function _syncProtectionTierRadio(tier) {
   });
 }());
 
-idUpload.addEventListener("change", function(e) {
+if (idUpload) idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -850,7 +923,7 @@ idUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-idBackUpload.addEventListener("change", function(e) {
+if (idBackUpload) idBackUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -891,7 +964,7 @@ idBackUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-insuranceUpload.addEventListener("change", function(e) {
+if (insuranceUpload) insuranceUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
@@ -1486,12 +1559,16 @@ function initExtendRentalForm() {
   var extPayHint    = document.getElementById("extPayHint");
   var extPriceDisplay = document.getElementById("extPriceDisplay");
   var extPriceAmount  = document.getElementById("extPriceAmount");
+  var extPartialHint  = document.getElementById("extPartialHint");
 
   // Set today as the minimum new return date
   var todayISO = SlyLA.todayISO();
   if (extNewReturn && !extNewReturn.getAttribute("min")) {
     extNewReturn.setAttribute("min", todayISO);
   }
+
+  // Shared state updated by updatePriceEstimate() and read by updateExtBtn().
+  var extPriceData = { days: 0, dailyRate: 55, fullCost: 0, minPayment: 0 };
 
   function isValidEmailFmt(val) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -1502,6 +1579,7 @@ function initExtendRentalForm() {
   function updatePriceEstimate() {
     if (!extNewReturn || !extNewReturn.value) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
@@ -1509,11 +1587,13 @@ function initExtendRentalForm() {
     var newReturn = extNewReturn.value;
     if (newReturn <= today) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
     if (!carData) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      if (extPartialHint) extPartialHint.style.display = "none";
       return;
     }
 
@@ -1538,9 +1618,25 @@ function initExtendRentalForm() {
     if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
     cost2 += rem * daily;
 
+    // Phase 1: compute minimum partial payment (half of extension at daily rate).
+    var minDays = Math.ceil(extraDays / 2);
+    var minPayment = minDays * daily;
+
+    // Store for use in updateExtBtn().
+    extPriceData = { days: extraDays, dailyRate: daily, fullCost: cost2, minPayment: minPayment };
+
     if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
     if (extCustomAmount) {
       extCustomAmount.setAttribute("max", cost2.toFixed(2));
+    }
+
+    // Show minimum partial payment hint.
+    if (extPartialHint) {
+      extPartialHint.textContent = "Partial payment minimum: $" + minPayment.toFixed(0) +
+        " (" + minDays + " of " + extraDays + " day" + (extraDays !== 1 ? "s" : "") +
+        " × $" + daily + "/day)";
+      extPartialHint.style.color = "#aaa";
+      extPartialHint.style.display = "";
     }
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
@@ -1552,7 +1648,34 @@ function initExtendRentalForm() {
     var dateOk   = extNewReturn && extNewReturn.value;
     var customAmountRaw = extCustomAmount ? extCustomAmount.value.trim() : "";
     var customAmount = customAmountRaw ? Number(customAmountRaw) : null;
-    var customAmountOk = !customAmountRaw || (Number.isFinite(customAmount) && customAmount > 0);
+
+    // Phase 1: validate partial payment minimum when an amount is entered.
+    var customAmountOk = true;
+    if (customAmountRaw) {
+      if (!Number.isFinite(customAmount) || customAmount <= 0) {
+        customAmountOk = false;
+      } else if (extPriceData.days > 0 && customAmount < extPriceData.fullCost) {
+        // Partial payment — check minimum requirement.
+        if (customAmount < extPriceData.minPayment) {
+          customAmountOk = false;
+          if (extPartialHint) {
+            extPartialHint.textContent = "Partial extensions require payment covering at least half of the requested extension days. Minimum: $" +
+              extPriceData.minPayment.toFixed(0) + " (" + Math.ceil(extPriceData.days / 2) + " day" +
+              (Math.ceil(extPriceData.days / 2) !== 1 ? "s" : "") + " × $" + extPriceData.dailyRate + "/day).";
+            extPartialHint.style.color = "#f87171";
+            extPartialHint.style.display = "";
+          }
+        } else if (extPartialHint) {
+          // Amount is valid — restore informational hint color.
+          var minDays2 = Math.ceil(extPriceData.days / 2);
+          extPartialHint.textContent = "Partial payment minimum: $" + extPriceData.minPayment.toFixed(0) +
+            " (" + minDays2 + " of " + extPriceData.days + " day" + (extPriceData.days !== 1 ? "s" : "") +
+            " × $" + extPriceData.dailyRate + "/day)";
+          extPartialHint.style.color = "#aaa";
+        }
+      }
+    }
+
     var contactOk = emailOk || phoneOk;
     var ready    = contactOk && dateOk && customAmountOk;
     if (extSubmitBtn) extSubmitBtn.disabled = !ready;
@@ -1565,8 +1688,8 @@ function initExtendRentalForm() {
 
   if (extNewReturn) {
     extNewReturn.addEventListener("change", function() {
-      updateExtBtn();
       updatePriceEstimate();
+      updateExtBtn();
     });
   }
   updateExtBtn();
@@ -1604,7 +1727,19 @@ async function launchExtendRentalPayment() {
       }),
     });
     var data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Server error");
+    if (!resp.ok) {
+      // Phase 1: surface the minimum-payment error with a clear message.
+      var errMsg = data.error || "Server error";
+      if (data.minimumPayment) {
+        var partialHintEl = document.getElementById("extPartialHint");
+        if (partialHintEl) {
+          partialHintEl.textContent = errMsg;
+          partialHintEl.style.color = "#f87171";
+          partialHintEl.style.display = "";
+        }
+      }
+      throw new Error(errMsg);
+    }
 
     var {
       clientSecret,
@@ -1925,10 +2060,10 @@ window.addEventListener("pageshow", function(e) {
   pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
   pickupTime.value = "";
   returnTime.value = "";
-  idUpload.value = "";
+  if (idUpload) idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
-  idBackUpload.value = "";
+  if (idBackUpload) idBackUpload.value = "";
   uploadedFileBack = null;
   resetBackFileInfo();
   clearInsuranceFile();
@@ -1997,7 +2132,7 @@ function updatePayBtn() {
   //   "yes"  → requires an uploaded file (own insurance)
   //   "no"   → requires a valid tier selection (basic/standard/premium)
   const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
-  const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
+  const insuranceReady = (insuranceCoverageChoice === "yes" && (((insuranceUpload && insuranceUpload.files.length > 0) || uploadedInsurance !== null))) ||
                           (insuranceCoverageChoice === "no" && tierReady);
   const nameValid = isValidName(nameVal);
   const phoneVal = document.getElementById("phone").value.trim();
@@ -2006,7 +2141,7 @@ function updatePayBtn() {
   // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = pickup.value && hasTimeWindow;
-  const ready = datesReady && agreeCheckbox.checked && (!smsConsentCheck || smsConsentCheck.checked) && (idUpload.files.length > 0 || uploadedFile !== null) && (idBackUpload.files.length > 0 || uploadedFileBack !== null) && insuranceReady && nameValid && emailVal && phoneVal;
+  const ready = datesReady && agreeCheckbox.checked && (!smsConsentCheck || smsConsentCheck.checked) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
@@ -2164,12 +2299,8 @@ stripeBtn.addEventListener("click", async () => {
     });
   }
 
-  const idFrontSizeErr = validateDocUploadSelection(uploadedFile, (uploadedFileBack?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idFrontSizeErr) { showPayError(idFrontSizeErr); return; }
-  const idBackSizeErr = validateDocUploadSelection(uploadedFileBack, (uploadedFile?.size || 0) + (uploadedInsurance?.size || 0));
-  if (idBackSizeErr) { showPayError(idBackSizeErr); return; }
   if (insuranceCoverageChoice === "yes" && uploadedInsurance) {
-    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, (uploadedFile?.size || 0) + (uploadedFileBack?.size || 0));
+    const insuranceSizeErr = validateDocUploadSelection(uploadedInsurance, 0);
     if (insuranceSizeErr) { showPayError(insuranceSizeErr); return; }
   }
 
@@ -2177,48 +2308,6 @@ stripeBtn.addEventListener("click", async () => {
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
   const _reserveBtnLoading = document.getElementById("reserveBtn");
   if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
-
-  // Pre-encode the ID file so it's ready when the user submits payment
-  let idBase64 = null;
-  let idFileName = null;
-  let idMimeType = null;
-  if (uploadedFile) {
-    try {
-      const encodedFrontId = await encodeUploadFile(uploadedFile, "ID front");
-      idBase64 = encodedFrontId.base64;
-      idFileName = encodedFrontId.fileName;
-      idMimeType = encodedFrontId.mimeType;
-    } catch (err) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      const reserveBtn = document.getElementById("reserveBtn");
-      if (reserveBtn) reserveBtn.disabled = false;
-      _pendingPaymentMode = null;
-      showPayError("Could not read your ID file. Please try re-uploading it and try again.");
-      return;
-    }
-  }
-
-  // Pre-encode the back of ID file
-  let idBackBase64 = null;
-  let idBackFileName = null;
-  let idBackMimeType = null;
-  if (uploadedFileBack) {
-    try {
-      const encodedBackId = await encodeUploadFile(uploadedFileBack, "ID back");
-      idBackBase64 = encodedBackId.base64;
-      idBackFileName = encodedBackId.fileName;
-      idBackMimeType = encodedBackId.mimeType;
-    } catch (err) {
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-      const reserveBtn = document.getElementById("reserveBtn");
-      if (reserveBtn) reserveBtn.disabled = false;
-      _pendingPaymentMode = null;
-      showPayError("Could not read the back of your ID file. Please try re-uploading it and try again.");
-      return;
-    }
-  }
 
   // Pre-encode the insurance file
   let insuranceBase64 = null;
@@ -2254,9 +2343,6 @@ stripeBtn.addEventListener("click", async () => {
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
-        // Pass file names so the server can enforce upload requirements as a server-side gate.
-        idFileName: idFileName || null,
-        idBackFileName: idBackFileName || null,
         insuranceFileName: insuranceCoverageChoice === "yes" ? (insuranceFileName || null) : null,
         paymentMode,
         adminOverride: ADMIN_OVERRIDE,
@@ -2272,7 +2358,8 @@ stripeBtn.addEventListener("click", async () => {
       throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
     }
 
-    const { clientSecret, publishableKey, bookingId: pendingBookingId } = data;
+    const { clientSecret, publishableKey, bookingId } = data;
+    pendingBookingId = typeof bookingId === "string" ? bookingId : null;
     if (!clientSecret) {
       throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
     }
@@ -2280,8 +2367,8 @@ stripeBtn.addEventListener("click", async () => {
       throw new Error("No publishableKey returned from server. Check that STRIPE_PUBLISHABLE_KEY is set in your Vercel environment variables.");
     }
 
-    // Persist only the publishable key for success-page Stripe initialization.
-    // Never persist PaymentIntent client secrets in browser storage.
+    // Persist only the publishable key for success.html.
+    // Never persist the PaymentIntent client secret in web storage.
     sessionStorage.setItem("slyStripePublishable", publishableKey);
 
     // Initialize Stripe and mount the Payment Element
@@ -2358,10 +2445,6 @@ stripeBtn.addEventListener("click", async () => {
           pricePerMonthly: carData.monthly || null,
           deposit: carData.deposit || 0,
           days: currentDayCount,
-          idFileName,
-          idMimeType,
-          idBackFileName,
-          idBackMimeType,
           insuranceFileName,
           insuranceMimeType,
           insuranceCoverageChoice,
@@ -2371,7 +2454,7 @@ stripeBtn.addEventListener("click", async () => {
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
 
-        if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
+        if (insuranceBase64 && insuranceFileName) {
           try {
             await new Promise((resolve) => {
               const idbReq = indexedDB.open("slyRidesDB", 1);
@@ -2380,7 +2463,7 @@ stripeBtn.addEventListener("click", async () => {
                 const db = e.target.result;
                 try {
                   const tx = db.transaction("files", "readwrite");
-                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+                  tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
                   tx.oncomplete = () => { db.close(); resolve(); };
                   tx.onerror = () => { db.close(); resolve(); };
                 } catch (idbErr) { db.close(); resolve(); }
@@ -2388,24 +2471,18 @@ stripeBtn.addEventListener("click", async () => {
               idbReq.onerror = () => resolve();
             });
           } catch (idbErr) {
-            console.warn("Could not save ID to IndexedDB:", idbErr);
+            console.warn("Could not save documents to IndexedDB:", idbErr);
           }
         }
 
         // Upload booking docs server-side so the Stripe webhook can send the
-        // owner the full email (agreement PDF + ID + insurance) reliably,
+        // owner the full email (agreement PDF + uploaded docs) reliably,
         // even if the customer's browser does not reach success.html.
-        if (pendingBookingId) {
+        if (pendingBookingId && insuranceCoverageChoice === "yes" && insuranceBase64 && insuranceFileName) {
           try {
             await storeBookingDocsOrThrow({
               bookingId: pendingBookingId,
               signature: agreementSignature || null,
-              idBase64: idBase64 || null,
-              idFileName: idFileName || null,
-              idMimeType: idMimeType || null,
-              idBackBase64: idBackBase64 || null,
-              idBackFileName: idBackFileName || null,
-              idBackMimeType: idBackMimeType || null,
               insuranceBase64: insuranceBase64 || null,
               insuranceFileName: insuranceFileName || null,
               insuranceMimeType: insuranceMimeType || null,
@@ -2414,7 +2491,8 @@ stripeBtn.addEventListener("click", async () => {
           } catch (e) {
             console.warn("Could not upload booking docs:", e);
             if (shouldBlockPaymentForDocFailure(e)) {
-              const msg = "We could not securely save your ID documents. Please check your uploads and try again.";
+              const msg = "We could not securely save your uploaded documents. Please check your uploads and try again.";
+              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_request_button", preservePendingBookingId: true });
               showPayError(msg);
               ev.complete("fail");
               return;
@@ -2423,6 +2501,7 @@ stripeBtn.addEventListener("click", async () => {
           }
         }
 
+        paymentFormSubmitted = true;
         const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
           clientSecret,
           { payment_method: ev.paymentMethod.id },
@@ -2430,6 +2509,8 @@ stripeBtn.addEventListener("click", async () => {
         );
 
         if (confirmError) {
+          paymentFormSubmitted = false;
+          await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_payment_error", { source: "car_payment_request_button", preservePendingBookingId: true });
           ev.complete("fail");
           sessionStorage.setItem("slyRidesBooking", JSON.stringify({
             ...prBookingPayload,
@@ -2445,6 +2526,8 @@ stripeBtn.addEventListener("click", async () => {
               payment_method: ev.paymentMethod.id,
             });
             if (actionError) {
+              paymentFormSubmitted = false;
+              await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_action_error", { source: "car_payment_request_button", preservePendingBookingId: true });
               sessionStorage.setItem("slyRidesBooking", JSON.stringify({
                 ...prBookingPayload,
                 paymentFailed: true,
@@ -2523,10 +2606,6 @@ stripeBtn.addEventListener("click", async () => {
         pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
-        idFileName,
-        idMimeType,
-        idBackFileName,
-        idBackMimeType,
         insuranceFileName,
         insuranceMimeType,
         insuranceCoverageChoice,
@@ -2534,18 +2613,18 @@ stripeBtn.addEventListener("click", async () => {
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         signature: agreementSignature || null,
       };
-      // Store booking metadata in sessionStorage and the large ID binary in
+      // Store booking metadata in sessionStorage and large document data in
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if ((idBase64 && idFileName) || (idBackBase64 && idBackFileName) || (insuranceBase64 && insuranceFileName)) {
+      if (insuranceBase64 && insuranceFileName) {
         const idbReq = indexedDB.open("slyRidesDB", 1);
         idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
         idbReq.onsuccess = e => {
           const db = e.target.result;
           try {
             const tx = db.transaction("files", "readwrite");
-            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, idBackBase64, idBackFileName, idBackMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+            tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
             tx.oncomplete = () => db.close();
             tx.onerror = () => db.close();
           } catch (idbErr) { db.close(); }
@@ -2554,19 +2633,13 @@ stripeBtn.addEventListener("click", async () => {
       }
 
       // Upload booking docs server-side so the Stripe webhook can send the
-      // owner the full email (agreement PDF + ID + insurance) reliably,
+      // owner the full email (agreement PDF + uploaded docs) reliably,
       // even if the customer's browser does not reach success.html.
-        if (pendingBookingId) {
+        if (pendingBookingId && insuranceCoverageChoice === "yes" && insuranceBase64 && insuranceFileName) {
           try {
             await storeBookingDocsOrThrow({
             bookingId: pendingBookingId,
             signature: agreementSignature || null,
-            idBase64: idBase64 || null,
-            idFileName: idFileName || null,
-            idMimeType: idMimeType || null,
-            idBackBase64: idBackBase64 || null,
-            idBackFileName: idBackFileName || null,
-            idBackMimeType: idBackMimeType || null,
             insuranceBase64: insuranceBase64 || null,
             insuranceFileName: insuranceFileName || null,
             insuranceMimeType: insuranceMimeType || null,
@@ -2575,7 +2648,8 @@ stripeBtn.addEventListener("click", async () => {
           } catch (docsErr) {
             console.warn("store-booking-docs upload failed:", docsErr);
             if (shouldBlockPaymentForDocFailure(docsErr)) {
-              showPayError("We could not securely save your ID documents. Please check your uploads and try again.");
+              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_element", preservePendingBookingId: true });
+              showPayError("We could not securely save your uploaded documents. Please check your uploads and try again.");
               if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
               submitBtn.disabled = false;
               submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
@@ -2586,6 +2660,7 @@ stripeBtn.addEventListener("click", async () => {
           }
         }
 
+      paymentFormSubmitted = true;
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -2601,6 +2676,8 @@ stripeBtn.addEventListener("click", async () => {
       });
 
       if (error) {
+        paymentFormSubmitted = false;
+        await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "car_payment_element", preservePendingBookingId: true });
         // Keep booking data in sessionStorage with paymentFailed:true so the form
         // can be pre-filled automatically when the renter returns to try again.
         sessionStorage.setItem("slyRidesBooking", JSON.stringify({
@@ -2620,6 +2697,7 @@ stripeBtn.addEventListener("click", async () => {
 
     document.getElementById("cancel-payment").addEventListener("click", () => {
       paymentSubmitting = false; // reset in case cancelled mid-processing
+      paymentFormSubmitted = false;
       document.getElementById("submit-payment").removeEventListener("click", submitHandler);
       paymentElement.unmount();
       if (prButton) {
@@ -2634,6 +2712,7 @@ stripeBtn.addEventListener("click", async () => {
       const _reserveBtnCancel = document.getElementById("reserveBtn");
       if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
       _pendingPaymentMode = null;
+      updatePendingBookingLifecycle("abandoned_checkout", "cancel_button_before_payment", { source: "cancel_payment_button" });
       updatePayBtn();
     }, { once: true });
 

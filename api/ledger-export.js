@@ -30,7 +30,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { annotateLedgerTransactions } from "./_renter-balance-ledger.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const MAX_ROWS = 10000;
 
 export default async function handler(req, res) {

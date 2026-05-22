@@ -107,7 +107,7 @@ export function generateExtensionAgreementPdf({
 
     // ── Header ──────────────────────────────────────────────────────────────────
     doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND_BLACK)
-      .text("SLY TRANSPORTATION SERVICES — RENTAL EXTENSION AGREEMENT", { align: "center" });
+      .text("SLY CAR RENTALS — RENTAL EXTENSION AGREEMENT", { align: "center" });
     doc.moveDown(0.3);
     doc.font("Helvetica").fontSize(9).fillColor(SECTION_GRAY)
       .text(`Issued: ${issuedAt} (Pacific Time)`, { align: "center" });
@@ -287,7 +287,7 @@ export async function sendExtensionConfirmationEmails({
   // ── Owner notification ─────────────────────────────────────────────────────
   try {
     await transporter.sendMail({
-      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(renterEmail ? { replyTo: renterEmail } : {}),
       subject:     `\u23f1\ufe0f Rental Extension Confirmed \u2014 ${esc(vehicleName)} \u2014 ${esc(renterName || "Renter")}`,
@@ -329,7 +329,7 @@ export async function sendExtensionConfirmationEmails({
     if (pdfAttachment.length > 0 && isLikelyAttachmentDeliveryError(ownerEmailErr)) {
       try {
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           ...(renterEmail ? { replyTo: renterEmail } : {}),
           subject: `⏱️ Rental Extension Confirmed — ${esc(vehicleName)} — ${esc(renterName || "Renter")}`,
@@ -374,9 +374,9 @@ export async function sendExtensionConfirmationEmails({
   // ── Renter confirmation ────────────────────────────────────────────────────
   if (renterEmail) {
     const renterEmailOpts = {
-      from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
       to:          renterEmail,
-      subject:     "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+      subject:     "✅ Rental Extension Confirmed — Sly Car Rentals LLC",
       attachments: pdfAttachment,
       html: `
         <h2>✅ Rental Extension Confirmed</h2>
@@ -391,10 +391,10 @@ export async function sendExtensionConfirmationEmails({
         </table>
         <p style="margin-top:16px">Your rental period has been updated. Please return the vehicle by <strong>${esc(newReturnDisplay)}</strong>.</p>
         <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18445114059">(844) 511-4059</a>.</p>
-        <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+        <p><strong>Sly Car Rentals LLC 🚗</strong></p>
       `,
       text: [
-        "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+        "✅ Rental Extension Confirmed — Sly Car Rentals LLC",
         "",
         `Hi ${renterName ? renterName.split(" ")[0] : "there"}, your rental extension payment has been received!`,
         pdfBuffer ? "Your updated Rental Agreement is attached — please save it for your records." : "",
@@ -408,7 +408,7 @@ export async function sendExtensionConfirmationEmails({
         `Your rental period has been updated. Please return the vehicle by ${newReturnDisplay}.`,
         `Questions? Contact us at ${OWNER_EMAIL} or call (844) 511-4059.`,
         "",
-        "Sly Transportation Services LLC",
+        "Sly Car Rentals LLC",
       ].filter(Boolean).join("\n"),
     };
     try {

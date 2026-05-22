@@ -25,7 +25,7 @@ import { getVehicleById } from "./_vehicles.js";
 import { getLedgerRemainingBalance } from "./_renter-balance-ledger.js";
 import { fetchPaymentPlanSummary } from "./_payment-plan-summary.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 const POSTGRES_UNDEFINED_TABLE_ERROR = "42P01";
 
@@ -251,7 +251,7 @@ export default async function handler(req, res) {
       // Save the card for future off-session charges (damages, late fees, etc.).
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} Balance Payment`,
+      description: `Sly Car Rentals LLC – ${vehicleData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
       // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
       // based on the customer's billing address collected by the Payment Element.

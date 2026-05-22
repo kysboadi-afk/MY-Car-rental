@@ -255,7 +255,7 @@ export default async function handler(req, res) {
       // ── Approval email to customer ─────────────────────────────────────────
       try {
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      entry.email,
           subject: `✅ You're Approved! Waitlist Confirmed — ${entry.vehicleName || vehicleId} | Sly Car Rentals`,
           text: [
@@ -278,7 +278,7 @@ export default async function handler(req, res) {
             "",
             `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
             "",
-            "— Sly Transportation Services LLC Team",
+            "— Sly Car Rentals LLC Team",
           ].join("\n"),
           html: `
             <h2>✅ You're Approved!</h2>
@@ -303,7 +303,7 @@ export default async function handler(req, res) {
               <li>Your <strong>$50 deposit goes toward your total rental cost</strong>.</li>
             </ul>
             <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-            <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC Team 🚗</strong></p>
           `,
         });
       } catch (emailErr) {
@@ -316,27 +316,27 @@ export default async function handler(req, res) {
         : "";
       try {
         await transporter.sendMail({
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      entry.email,
           subject: `Waitlist Update — ${entry.vehicleName || vehicleId} | Sly Car Rentals`,
           text: [
             `Hi ${entry.name},`,
             "",
-            "Thank you for your interest in renting with Sly Transportation Services.",
+            "Thank you for your interest in renting with Sly Car Rentals.",
             "After reviewing your application, we are unable to approve your waitlist request at this time.",
             refundLine ? `\n${refundLine}` : "",
             "",
             `If you have questions, please contact us at (844) 511-4059 or ${OWNER_EMAIL}.`,
             "",
-            "— Sly Transportation Services LLC Team",
+            "— Sly Car Rentals LLC Team",
           ].filter(Boolean).join("\n"),
           html: `
             <h2>Waitlist Application Update</h2>
             <p>Hi <strong>${esc(entry.name)}</strong>,</p>
-            <p>Thank you for your interest in renting with Sly Transportation Services. After reviewing your application, we are unable to approve your waitlist request at this time.</p>
+            <p>Thank you for your interest in renting with Sly Car Rentals. After reviewing your application, we are unable to approve your waitlist request at this time.</p>
             ${refundLine ? `<p style="background:#d4edda;padding:10px;border-left:4px solid #28a745">💰 ${esc(refundLine)}</p>` : ""}
             <p>If you have questions, please contact us at <strong>(844) 511-4059</strong> or <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-            <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+            <p><strong>Sly Car Rentals LLC Team 🚗</strong></p>
           `,
         });
       } catch (emailErr) {

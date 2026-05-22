@@ -103,6 +103,11 @@ mock.module("./_sms-templates.js", {
   namedExports: {
     DEFAULT_LOCATION:           "Los Angeles, CA",
     render:                     (t) => t,
+    MANAGE_BOOKING_ACCESS:      "",
+    BOOKING_ONBOARDING:         "",
+    PAYMENT_EDUCATION:          "",
+    BOOKING_CONFIRMED:          "",
+    RESERVATION_DEPOSIT_CONFIRMED: "",
     EXTEND_CONFIRMED_ECONOMY:   "",
   },
 });
@@ -536,4 +541,3 @@ test("backfill_contacts: still_missing is empty when all bookings were repaired"
   assert.ok(Array.isArray(res._body.still_missing), "still_missing should always be present");
   assert.equal(res._body.still_missing.length, 0, "still_missing should be empty when all rows were repaired");
 });
-

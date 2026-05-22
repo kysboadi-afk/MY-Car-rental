@@ -17,7 +17,7 @@ import { toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 /**
  * Derive the canonical vehicle_id to embed in Stripe PaymentIntent metadata.
@@ -326,8 +326,8 @@ export default async function handler(req, res) {
       ...(setupFutureUsage ? { setup_future_usage: setupFutureUsage } : {}),
       receipt_email: email,
       description: isCamryDepositMode
-            ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
-            : `Sly Transportation Services LLC – ${vehicleData.name}`,
+            ? `Sly Car Rentals LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
+            : `Sly Car Rentals LLC – ${vehicleData.name}`,
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },

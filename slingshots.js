@@ -1,17 +1,15 @@
 // slingshots.js — Slingshot fleet page
-// Fetches active slingshot vehicles from /api/v2-vehicles and live pricing from
-// /api/public-pricing, then renders a card per vehicle so each slingshot can
-// be booked individually via the standard car.html booking flow (Stripe).
+// Fetches active slingshot vehicles from /api/v2-vehicles and renders a card
+// per vehicle so each slingshot can be booked via slingshot-book.html (package
+// pricing: 2hr $150 / 3hr $200 / 6hr $250 / 24hr $350).  No tax applies.
 
 const API_BASE = (
   window.location.hostname === "slycarrentals.com" ||
-  window.location.hostname === "www.slycarrentals.com"
+  window.location.hostname === "www.slycarrentals.com" ||
+  window.location.hostname === "slyslingshotrentals.com" ||
+  window.location.hostname === "www.slyslingshotrentals.com"
 ) ? "" : "https://slycarrentals.com";
 const SlyLA = window.SlyLA;
-
-// Mark the session as slingshot context so shared pages (manage-booking, contact)
-// can apply slingshot branding when the user navigates there from this page.
-try { sessionStorage.setItem('slyCategory', 'slingshot'); } catch (_) {}
 
 // ─── Fleet-status API contract ────────────────────────────────────────────────
 const FLEET_STATUS_EXPECTED_KEYS = ["available", "rental_status", "available_at", "next_available_display"];
@@ -51,13 +49,11 @@ function fmtMoney(n) {
 }
 
 // ─── Card builder ─────────────────────────────────────────────────────────────
-
-// Standard hourly tiers shown on every slingshot card.
 const STANDARD_SLINGSHOT_TIERS = [
-  { label: "2 hrs",   price: 150, tag: "Best Value" },
-  { label: "3 hrs",   price: 200, tag: "" },
-  { label: "6 hrs",   price: 250, tag: "" },
-  { label: "24 hrs",  price: 350, tag: "Popular" },
+  { label: "2 hrs",  price: 150, tag: "Best Value" },
+  { label: "3 hrs",  price: 200, tag: "" },
+  { label: "6 hrs",  price: 250, tag: "" },
+  { label: "24 hrs", price: 350, tag: "Popular" },
 ];
 
 function buildSlingshotCard(v, pricing) {
@@ -66,15 +62,10 @@ function buildSlingshotCard(v, pricing) {
   const img      = esc(v.cover_image || "/images/slingshot.jpg");
   const subtitle = esc(v.subtitle || "3-Wheeler \u2022 Open-Air");
   const scarcity = v.scarcity_text ? `<p class="scarcity-notice">${esc(v.scarcity_text)}</p>` : "";
-
-  const tierHtml = STANDARD_SLINGSHOT_TIERS.map(t => {
-    const amt = fmtMoney(t.price);
-    const lbl = esc(t.label);
-    const tag = esc(t.tag || "");
-    if (tag) {
-      return `<div class="price-item price-item--popular">${amt} / ${lbl} <span class="popular-tag">${tag}</span></div>`;
-    }
-    return `<div class="price-item">${amt} / ${lbl}</div>`;
+  const tierHtml = STANDARD_SLINGSHOT_TIERS.map(({ price, label, tag }) => {
+    const className = tag ? "price-item price-item--popular" : "price-item";
+    const badge = tag ? ` <span class="popular-tag">${esc(tag)}</span>` : "";
+    return `<div class="${className}">${fmtMoney(price)} / ${esc(label)}${badge}</div>`;
   }).join("");
 
   return `<div class="car-card" data-category="slingshot" data-vehicle="${vid}">
@@ -91,8 +82,9 @@ function buildSlingshotCard(v, pricing) {
       <div class="price-list">
         ${tierHtml}
       </div>
+      <p style="font-size:12px;color:#aaa;margin:4px 0 8px">+$500 refundable deposit required</p>
       ${scarcity}
-      <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
+      <a href="slingshot-book.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
         <button class="select-btn" id="select-btn-${vid}">Reserve Now</button>
       </a>
     </div>
@@ -144,7 +136,7 @@ function applyFleetStatus(fleetStatus) {
       btn.style.display = "";
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
-      link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
+      link.href = `slingshot-book.html?vehicle=${encodeURIComponent(vid)}`;
 
       const todayBadge = document.createElement("span");
       todayBadge.className = "available-today-badge";
@@ -170,7 +162,7 @@ function applyFleetStatus(fleetStatus) {
         link.href = "manage-booking.html";
       } else {
         btn.textContent = "\u23F1\uFE0F Extend Rental";
-        link.href = `car.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
+        link.href = `slingshot-book.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
       }
       btn.disabled = false;
       btn.style.display = "";
@@ -214,13 +206,10 @@ async function loadSlingshotFleet() {
   }
 
   const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
-    if (v.status && v.status !== "active") return false;
-    const cat = (v.category || "").toLowerCase();
-    if (!cat || (cat !== "car" && cat !== "slingshot")) {
-      console.error("[slingshots.js] Vehicle skipped — missing or invalid category:", v.vehicle_id, cat || "(none)");
-      return false;
-    }
-    return cat === "slingshot";
+    const category = String(v.category || "").toLowerCase();
+    const type = String(v.type || "").toLowerCase();
+    const isSlingshot = category === "slingshot" || type === "slingshot";
+    return isSlingshot && (!v.status || v.status === "active");
   });
 
   if (!active.length) {

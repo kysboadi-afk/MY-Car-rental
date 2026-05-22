@@ -13,7 +13,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 const PRICE_FIELDS = ["daily_price", "weekly_price", "biweekly_price", "monthly_price"];
 const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);

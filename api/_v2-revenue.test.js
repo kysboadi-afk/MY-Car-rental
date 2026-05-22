@@ -227,6 +227,36 @@ test("list: returns GitHub records when Supabase is empty but GitHub file exists
   assert.equal(res._body.records[0].id, "gh-1");
 });
 
+test("list: defaults to showing only paid records", async () => {
+  resetState();
+  supabaseRecords = null; // force GitHub fallback filtering path
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "gh-paid-1", booking_id: "bk-gh-1", vehicle_id: "camry", gross_amount: 100, payment_status: "paid", created_at: "2026-03-01T00:00:00.000Z" },
+    { id: "gh-unpaid-1", booking_id: "bk-gh-2", vehicle_id: "camry", gross_amount: 80, payment_status: "unpaid", created_at: "2026-03-02T00:00:00.000Z" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+  assert.equal(res._status, 200);
+  assert.deepEqual((res._body.records || []).map((r) => r.id), ["gh-paid-1"]);
+});
+
+test("list_by_booking: excludes non-paid records from grouped results", async () => {
+  resetState();
+  supabaseRecords = null; // force GitHub fallback grouping path
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "gh-paid-base", booking_id: "bk-group-1", vehicle_id: "camry", gross_amount: 100, payment_status: "paid", pickup_date: "2026-05-01", return_date: "2026-05-03", created_at: "2026-05-01T00:00:00.000Z" },
+    { id: "gh-unpaid-base", booking_id: "bk-group-2", vehicle_id: "camry", gross_amount: 120, payment_status: "unpaid", pickup_date: "2026-05-05", return_date: "2026-05-07", created_at: "2026-05-05T00:00:00.000Z" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.deepEqual((res._body.groups || []).map((g) => g.booking_id), ["bk-group-1"]);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 5. CREATE — GitHub fallback when Supabase not configured
 // ═══════════════════════════════════════════════════════════════════════════════

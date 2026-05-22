@@ -6,7 +6,7 @@ export const SLINGSHOT_PICKUP_LOCATION = "475 The Promenade N, Long Beach, CA 90
 
 /**
  * Resolve pickup location by booking type / vehicle identifiers.
- * Cars default to SLY Transportation (Los Angeles), slingshots to Long Beach.
+ * Cars default to SLY Car Rentals (Los Angeles), slingshots to Long Beach.
  *
  * @param {{ bookingType?: string, vehicleId?: string, vehicleName?: string }} params
  * @returns {string}

@@ -10,7 +10,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured, extractAdminSecret } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

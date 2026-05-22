@@ -26,7 +26,7 @@ import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.
 import { getAllVehicleIds } from "./_pricing.js";
 import crypto from "crypto";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const RECORDS_FILE    = "revenue-records.json";
 
@@ -105,6 +105,7 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
+      const effectivePaymentStatus = String(body.status || "paid").trim();
       // When a scope filter is requested, resolve the matching vehicle IDs first.
       // scope='car' → car-type vehicles only; scope='slingshot' → slingshot only.
       let scopedVehicleIds = null;
@@ -132,7 +133,7 @@ export default async function handler(req, res) {
         try {
           let q = sb.from("revenue_records_effective").select("*").eq("is_orphan", false).order("created_at", { ascending: false });
           if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
-          if (body.status)     q = q.eq("payment_status", body.status);
+          q = q.eq("payment_status", effectivePaymentStatus);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
@@ -153,7 +154,7 @@ export default async function handler(req, res) {
       const { data: ghRecords } = await loadRecordsFromGitHub();
       let records = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
       if (body.vehicleId)  records = records.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
-      if (body.status)     records = records.filter((r) => r.payment_status === body.status);
+      records = records.filter((r) => String(r.payment_status || "").trim() === effectivePaymentStatus);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
       if (scopedVehicleIds) records = records.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
@@ -574,6 +575,7 @@ export default async function handler(req, res) {
     // does the grouping in SQL).  Falls back to loading all rows and grouping
     // in JavaScript when the view is unavailable (schema migration not yet run).
     if (action === "list_by_booking") {
+      const isPaidRevenue = (record) => String(record?.payment_status || "").trim().toLowerCase() === "paid";
       // Resolve scope → vehicle IDs (same logic as the list action).
       let scopedVehicleIds = null;
       if (body.scope) {
@@ -616,8 +618,26 @@ export default async function handler(req, res) {
               max_return_date: g.max_return_date || null,
               total_gross:     Number(g.gross_total || 0),
               record_count:    Number(g.record_count || 0),
-              records:         (g.records || []).filter(Boolean),
-            }));
+              records:         (g.records || []).filter(Boolean).filter(isPaidRevenue),
+            }))
+              .filter((g) => g.records.length > 0)
+              .map((g) => {
+                const records = g.records;
+                const pickupDates = records.map((r) => r.pickup_date || null).filter(Boolean).sort();
+                const returnDates = records.map((r) => r.return_date || null).filter(Boolean).sort();
+                const totalGross = Math.round(
+                  records
+                    .filter((r) => !r.is_cancelled && !r.is_no_show)
+                    .reduce((sum, r) => sum + Number(r.gross_amount || 0), 0) * 100
+                ) / 100;
+                return {
+                  ...g,
+                  min_pickup_date: pickupDates[0] || null,
+                  max_return_date: returnDates[returnDates.length - 1] || null,
+                  total_gross: totalGross,
+                  record_count: records.length,
+                };
+              });
             // Groups with a null start or end date are included intentionally —
             // they represent bookings missing date info and are still valid revenue.
             if (body.startDate) groups = groups.filter((g) => !g.max_return_date || g.max_return_date >= body.startDate);
@@ -658,6 +678,7 @@ export default async function handler(req, res) {
         if (scopedVehicleIds) allRows = allRows.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
         if (body.vehicleId) allRows = allRows.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       }
+      allRows = allRows.filter(isPaidRevenue);
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
       // Use booking_id as the primary group key (canonical booking_ref after migration 0084).

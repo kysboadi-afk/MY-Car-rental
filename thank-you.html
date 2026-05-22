@@ -5,8 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Thank you for your submission! Sly Car Rentals has received your information and will be in touch shortly.">
   <title>Thank You | Sly Car Rentals</title>
-  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg" id="faviconLink">
   <link rel="stylesheet" href="style.css">
+  <!-- Slingshot domain branding override: swap logo/title when on slyslingshotrentals.com -->
+  <script>
+    (function () {
+      var h = window.location.hostname;
+      if (h === "slyslingshotrentals.com" || h === "www.slyslingshotrentals.com") {
+        document.title = "Thank You | SLY Slingshot Rentals";
+        document.getElementById("faviconLink").href = "images/slingshot-logo.png";
+        document.getElementById("faviconLink").type = "image/png";
+      }
+    })();
+  </script>
   <style>
     .ty-wrapper {
       min-height: calc(100vh - 120px);
@@ -127,9 +138,9 @@
   <!-- End Meta Pixel Code -->
 </head>
 <body>
-  <header class="site-header">
-    <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Car Rentals Logo" class="site-logo"></a>
-    <nav class="site-nav">
+  <header class="site-header" id="tyHeader">
+    <a href="index.html" class="logo-link" id="tyHeaderLogoLink"><img src="images/logo.jpg" alt="Sly Car Rentals Logo" class="site-logo" id="tyHeaderLogo"></a>
+    <nav class="site-nav" id="tyHeaderNav">
       <a href="index.html" data-i18n="nav.homeLink">Home</a>
       <a href="cars.html">Browse Cars</a>
     </nav>
@@ -141,7 +152,7 @@
 
   <div class="ty-wrapper">
     <div class="ty-card" id="tyCard">
-      <img src="images/logo.jpg" alt="Sly Car Rentals" class="ty-logo">
+      <img src="images/logo.jpg" alt="Sly Car Rentals" class="ty-logo" id="tyCardLogo">
       <h1 id="tyTitle" data-i18n="thankyou.title">🎉 Thank You!</h1>
       <p class="ty-sub" id="tySub" data-i18n="thankyou.sub">Your submission has been received!</p>
       <p class="ty-detail" id="tyDetail" data-i18n="thankyou.detail">
@@ -166,12 +177,28 @@
   </div>
 
   <footer>
-    <span data-i18n="footer.copy">&copy; 2026 SLY Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+18445114059" class="footer-phone">(844) 511-4059</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a>
+    <span data-i18n="footer.copy">&copy; 2026 SLY Car Rentals LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+18445114059" class="footer-phone">(844) 511-4059</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a>
   </footer>
   <script src="la-date.js"></script>
 <script src="site-settings.js"></script>
 <script src="lang.js"></script>
   <script src="chatbot.js"></script>
+  <script>
+    // Apply slingshot domain branding when on slyslingshotrentals.com
+    (function () {
+      var h = window.location.hostname;
+      if (h === "slyslingshotrentals.com" || h === "www.slyslingshotrentals.com") {
+        var headerLogo = document.getElementById("tyHeaderLogo");
+        var headerLogoLink = document.getElementById("tyHeaderLogoLink");
+        var headerNav = document.getElementById("tyHeaderNav");
+        var cardLogo = document.getElementById("tyCardLogo");
+        if (headerLogo) { headerLogo.src = "images/slingshot-logo.png"; headerLogo.alt = "SLY Slingshot Rentals Logo"; }
+        if (headerLogoLink) headerLogoLink.href = "slingshots.html";
+        if (headerNav) headerNav.innerHTML = '<a href="slingshots.html">Home</a><a href="slingshots.html">Slingshots</a>';
+        if (cardLogo) { cardLogo.src = "images/slingshot-logo.png"; cardLogo.alt = "SLY Slingshot Rentals"; }
+      }
+    })();
+  </script>
   <script>
     (function () {
       var API_BASE = window.API_BASE || window.SLY_API_BASE || "https://sly-rides.vercel.app";

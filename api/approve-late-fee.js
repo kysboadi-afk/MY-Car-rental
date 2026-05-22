@@ -114,7 +114,7 @@ async function sendResultEmail(subject, html) {
       auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     });
     await transporter.sendMail({
-      from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
       to:      OWNER_EMAIL,
       subject,
       html,

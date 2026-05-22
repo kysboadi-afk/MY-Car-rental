@@ -32,7 +32,7 @@ import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { APP_TO_DB_STATUS, toAppBookingStatus } from "./_booking-status.js";
+import { APP_TO_DB_STATUS, isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import {
   autoCreateRevenueRecord,
   autoUpsertCustomer,
@@ -60,7 +60,7 @@ import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
 import { applySlingshotBookingStatusTransition } from "./_slingshot-booking-status-transitions.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const VEHICLE_NAMES    = {
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
@@ -140,7 +140,7 @@ async function sendStoredSlingshotAgreementEmail(sb, bookingRow, docsRow, manage
   const recipients = [String(bookingRow.customer_email || "").trim().toLowerCase()].filter(Boolean);
   if (!recipients.length) throw new Error("Booking has no renter email.");
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
     to: recipients.join(", "),
     subject: "Your signed Slingshot agreement",
     html: `
@@ -510,7 +510,8 @@ export default async function handler(req, res) {
               _source:         "supabase",
             };
           });
-          return res.status(200).json({ bookings });
+          const adminVisibleBookings = bookings.filter((b) => !isIncompleteCheckoutAppStatus(b.status));
+          return res.status(200).json({ bookings: adminVisibleBookings });
         }
 
         console.error("v2-bookings list: Supabase error, falling back to bookings.json:", error.message);
@@ -527,8 +528,10 @@ export default async function handler(req, res) {
         }
       }
 
+      result = result.filter((b) => !isIncompleteCheckoutAppStatus(toAppBookingStatus(b.status)));
+
       if (status) {
-        result = result.filter((b) => b.status === status);
+        result = result.filter((b) => toAppBookingStatus(b.status) === status);
       }
 
       // Newest first
@@ -1115,6 +1118,7 @@ export default async function handler(req, res) {
                 phone: updatedBooking.phone,
                 body: render(BOOKING_ONBOARDING, {
                   customer_name: (updatedBooking.name || "Customer").split(" ")[0],
+                  booking_id: updatedBooking.bookingId || updatedBooking.paymentIntentId || "",
                   manage_link: "https://slycarrentals.com/manage-booking.html",
                 }),
               });
@@ -2096,7 +2100,7 @@ export default async function handler(req, res) {
         });
         try {
           await transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      email,
             subject: customerTemplate.subject,
             html: customerTemplate.html,
@@ -2160,7 +2164,7 @@ export default async function handler(req, res) {
           });
           const balanceLink = bkRow.balance_payment_link || "";
           await transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      bkRow.customer_email,
             subject: "Your Booking Management Link",
             html: `
@@ -2341,7 +2345,7 @@ export default async function handler(req, res) {
             auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
           });
           await transporter.sendMail({
-            from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to: email,
             subject: isSlingshotManual ? "Manage Your Slingshot Booking" : "Manage & Pay Your Booking",
             html: `

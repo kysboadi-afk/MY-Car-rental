@@ -20,7 +20,7 @@ import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const GITHUB_REPO   = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const WAITLIST_PATH = "waitlist.json";
 const WAITLIST_DEPOSIT = 50;
@@ -187,7 +187,7 @@ export default async function handler(req, res) {
       // ── Admin alert ─────────────────────────────────────────────────────────
       try {
         const adminMailOpts = {
-          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
           subject: `🔔 New Waitlist Sign-up #${position}: ${vehicleData.name} — ${trimmedName} [PENDING REVIEW]`,
           text: [
@@ -276,9 +276,9 @@ export default async function handler(req, res) {
       if (email) {
         try {
           await transporter.sendMail({
-            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            from:    `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
             to:      email,
-            subject: `⏳ Waitlist Application Received — ${vehicleData.name} | SLY Transportation`,
+            subject: `⏳ Waitlist Application Received — ${vehicleData.name} | SLY Car Rentals`,
             text: [
               `Hi ${trimmedName},`,
               "",
@@ -304,7 +304,7 @@ export default async function handler(req, res) {
               "",
               `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
               "",
-              "— Sly Transportation Services LLC Team",
+              "— Sly Car Rentals LLC Team",
             ].join("\n"),
             html: `
               <h2>⏳ Waitlist Application Received</h2>
@@ -330,7 +330,7 @@ export default async function handler(req, res) {
                 <li>Your <strong>$50 deposit goes toward your total rental cost</strong>.</li>
               </ul>
               <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-              <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+              <p><strong>Sly Car Rentals LLC Team 🚗</strong></p>
             `,
           });
         } catch (err) {

@@ -65,7 +65,7 @@
     <a id="homeLinkSecondary" href="index.html" style="display:none;background:#333;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="nav.home">Back to Homepage</a>
   </div>
   <footer>
-    <span data-i18n="footer.copy">&copy; 2026 SLY Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+18445114059" class="footer-phone">(844) 511-4059</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+    <span data-i18n="footer.copy">&copy; 2026 SLY Car Rentals LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+18445114059" class="footer-phone">(844) 511-4059</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
   </footer>
   <script src="la-date.js"></script>
 <script src="site-settings.js"></script>
@@ -93,11 +93,9 @@
     //       Falls back to redirect_status URL param if the publishable key is
     //       not available in sessionStorage.
     //
-    //  3. Direct redirect for all payment methods (slyPiSecret in sessionStorage):
-    //       car.js saves the PaymentIntent client secret for ALL payment methods
-    //       (Apple Pay, Google Pay, card, Cash App, etc.) that redirect to this
-    //       page without Stripe appending URL params.  The same
-    //       stripe.retrievePaymentIntent() check is performed using the stored secret.
+    //  3. Legacy fallback (slyPiSecret in sessionStorage):
+    //       If a previously stored client secret exists from an older flow,
+    //       run the same stripe.retrievePaymentIntent() verification.
     //
     //  4. redirect_status fallback:
     //       Checked last; used when the publishable key was not cached and no
@@ -571,11 +569,8 @@
         return;
       }
 
-      // ── Path 3: Direct success redirect (all payment methods) ─────────────
-      // car.js saves the PaymentIntent client secret to sessionStorage as
-      // "slyPiSecret" for ALL payment methods (Apple Pay, Google Pay, card,
-      // Cash App, etc.) that redirect to this page without Stripe appending
-      // URL params.  The secret was read and cleared at the top of this IIFE.
+      // ── Path 3: Legacy fallback using any stored client secret ─────────────
+      // This path only runs when slyPiSecret already exists in sessionStorage.
       if (storedPiSecret) {
         var statusEl3 = document.getElementById("emailStatus");
         if (statusEl3) { statusEl3.textContent = getT()("success.verifying"); }

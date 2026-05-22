@@ -46,7 +46,7 @@ export const config = {
   },
 };
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 function esc(str) {
@@ -396,7 +396,7 @@ export default async function handler(req, res) {
   let ownerEmailSent = false;
   try {
     await transporter.sendMail({
-      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
       subject:     `🔁 [RECOVERED] ${ownerEmail.subject}`,

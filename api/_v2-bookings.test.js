@@ -1148,6 +1148,21 @@ test("list: filters by vehicleId", async () => {
   assert.equal(res._body.bookings[0].vehicleId, "camry");
 });
 
+test("list: excludes incomplete checkout statuses from fallback bookings.json results", async () => {
+  resetStore(); resetCalls();
+  bookingsStore.camry = [
+    { bookingId: "bk-paid", vehicleId: "camry", status: "booked_paid", amountPaid: 100, createdAt: "2026-05-01T10:00:00.000Z" },
+    { bookingId: "bk-pending", vehicleId: "camry", status: "pending_checkout", amountPaid: 0, createdAt: "2026-05-02T10:00:00.000Z" },
+    { bookingId: "bk-upload-failed", vehicleId: "camry", status: "upload_failed", amountPaid: 0, createdAt: "2026-05-03T10:00:00.000Z" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.bookings.length, 1, "incomplete checkout rows should be hidden from admin list");
+  assert.equal(res._body.bookings[0].bookingId, "bk-paid");
+});
+
 test("update: returnDate and returnTime are accepted and persisted", async () => {
   resetStore(); resetCalls();
   // Create a booking first

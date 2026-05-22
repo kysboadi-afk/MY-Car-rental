@@ -149,7 +149,7 @@ async function sendMailIfPossible({ to, subject, text, html, attachments = [] })
   const transporter = getTransporter();
   if (!transporter || !to) return false;
   await transporter.sendMail({
-    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    from: `"Sly Car Rentals LLC" <${process.env.SMTP_USER}>`,
     to,
     subject,
     text,
@@ -183,7 +183,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
     to: OWNER_EMAIL,
     subject: "🆕 New Application Submitted — Identity Verification Pending",
     text: [
-      "New Application Submitted — Sly Transportation Services LLC",
+      "New Application Submitted — Sly Car Rentals LLC",
       "",
       `Name                    : ${ctx.name}`,
       `Application ID          : ${ctx.applicationId || "Not available"}`,
@@ -240,7 +240,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
       text: [
         `Hi ${ctx.firstName},`,
         "",
-        "We’ve received your application with Sly Transportation Services LLC.",
+        "We’ve received your application with Sly Car Rentals LLC.",
         "Your next step is to complete secure identity verification so we can move your application into review.",
         ...(ctx.verificationLink ? ["", "Complete your verification here:", ctx.verificationLink] : []),
         "",
@@ -248,12 +248,12 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
         "",
         `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
         "",
-        "— Sly Transportation Services LLC Team",
+        "— Sly Car Rentals LLC Team",
       ].join("\n"),
       html: `
         <h2>Application Received</h2>
         <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
-        <p>We’ve received your application with <strong>Sly Transportation Services LLC</strong>.</p>
+        <p>We’ve received your application with <strong>Sly Car Rentals LLC</strong>.</p>
         <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
           <strong>Next step:</strong> complete secure identity verification so we can move your application into review.
         </p>
@@ -266,7 +266,7 @@ export async function sendSubmittedApplicationNotifications(application = {}, { 
         </p>` : ""}
         <p>After identity verification is completed, we’ll notify you when your application is under review.</p>
         <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
       `,
     });
   }
@@ -293,7 +293,7 @@ function buildIdentityIssueContent(kind, ctx) {
         "",
         `If you need help, call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
         "",
-        "— Sly Transportation Services LLC Team",
+        "— Sly Car Rentals LLC Team",
       ].join("\n"),
       applicantHtml: `
         <h2>Action Needed: Identity Verification</h2>
@@ -310,7 +310,7 @@ function buildIdentityIssueContent(kind, ctx) {
           </a>
         </p>` : ""}
         <p>If you need help, call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
       `,
       smsTemplate: APPLICATION_REQUIRES_INPUT,
     };
@@ -330,7 +330,7 @@ function buildIdentityIssueContent(kind, ctx) {
         "",
         `Support: (844) 511-4059 • ${OWNER_EMAIL}`,
         "",
-        "— Sly Transportation Services LLC Team",
+        "— Sly Car Rentals LLC Team",
       ].join("\n"),
       applicantHtml: `
         <h2>Identity Verification Issue</h2>
@@ -347,7 +347,7 @@ function buildIdentityIssueContent(kind, ctx) {
           </a>
         </p>` : ""}
         <p>Support: <strong>(844) 511-4059</strong> • <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
-        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
       `,
       smsTemplate: APPLICATION_IDENTITY_FAILED,
     };
@@ -366,7 +366,7 @@ function buildIdentityIssueContent(kind, ctx) {
       "",
       `Support: (844) 511-4059 • ${OWNER_EMAIL}`,
       "",
-      "— Sly Transportation Services LLC Team",
+      "— Sly Car Rentals LLC Team",
     ].join("\n"),
     applicantHtml: `
       <h2>Identity Verification Canceled</h2>
@@ -383,7 +383,7 @@ function buildIdentityIssueContent(kind, ctx) {
         </a>
       </p>` : ""}
       <p>Support: <strong>(844) 511-4059</strong> • <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
-      <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+      <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
     `,
     smsTemplate: APPLICATION_IDENTITY_CANCELED,
   };
@@ -439,7 +439,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
         "",
         `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
         "",
-        "— Sly Transportation Services LLC Team",
+        "— Sly Car Rentals LLC Team",
       ].join("\n"),
       html: `
         <h2>Application Under Review</h2>
@@ -450,7 +450,7 @@ export async function sendIdentityVerifiedNotifications(application = {}) {
         </p>
         <p>We’ll contact you with the next update.</p>
         <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
       `,
     });
   }
@@ -469,7 +469,7 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
     to: OWNER_EMAIL,
     subject: "🧾 Checkr Screening Started",
     text: [
-      "Checkr Screening Started — Sly Transportation Services LLC",
+      "Checkr Screening Started — Sly Car Rentals LLC",
       "",
       `Name            : ${ctx.name}`,
       `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -503,7 +503,7 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
         "",
         "This screening includes a consumer report and motor vehicle record review for your rental application.",
         "",
-        "— Sly Transportation Services LLC Team",
+        "— Sly Car Rentals LLC Team",
       ].join("\n"),
       html: `
         <h2>Complete Your Background Check</h2>
@@ -513,7 +513,7 @@ export async function sendCheckrInvitationNotifications(application = {}, { invi
           ${normalizedInvitationUrl ? `Complete your Checkr invite here:<br><a href="${esc(normalizedInvitationUrl)}">${esc(normalizedInvitationUrl)}</a>` : "Our team will send your Checkr invite shortly."}
         </p>
         <p>This screening includes a consumer report and motor vehicle record review for your rental application.</p>
-        <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+        <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
       `,
     });
   }
@@ -551,7 +551,7 @@ export async function sendCheckrStatusNotifications(application = {}, { eventTyp
     to: OWNER_EMAIL,
     subject: `🔎 Checkr Update — ${reportStatus || ctx.checkrReportStatus || "pending"}`,
     text: [
-      "Checkr Update — Sly Transportation Services LLC",
+      "Checkr Update — Sly Car Rentals LLC",
       "",
       `Name            : ${ctx.name}`,
       `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -618,7 +618,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       to: OWNER_EMAIL,
       subject: "✅ Application Approved",
       text: [
-        "Application Approved — Sly Transportation Services LLC",
+        "Application Approved — Sly Car Rentals LLC",
         "",
         `Name            : ${ctx.name}`,
         `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -653,7 +653,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           "",
           `Questions? Call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
           "",
-          "— Sly Transportation Services LLC Team",
+          "— Sly Car Rentals LLC Team",
         ].join("\n"),
         html: `
           <h2>&#x1F389; You're Approved!</h2>
@@ -664,7 +664,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
             <a href="https://slycarrentals.com/cars.html">https://slycarrentals.com/cars.html</a>
           </p>
           <p>Questions? Call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+          <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
         `,
       });
     }
@@ -684,8 +684,8 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       subject: isAdverseFinal ? "⚖️ Final Adverse Action Sent" : "❌ Application Rejected",
       text: [
         isAdverseFinal
-          ? "Final Adverse Action Sent — Sly Transportation Services LLC"
-          : "Application Rejected — Sly Transportation Services LLC",
+          ? "Final Adverse Action Sent — Sly Car Rentals LLC"
+          : "Application Rejected — Sly Car Rentals LLC",
         "",
         `Name            : ${ctx.name}`,
         `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -718,7 +718,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
         text: [
           `Hi ${ctx.firstName},`,
           "",
-          "Thank you for applying with Sly Transportation Services LLC.",
+          "Thank you for applying with Sly Car Rentals LLC.",
           isAdverseFinal
             ? "This email serves as your final adverse action notice regarding your rental application."
             : "After reviewing your application, we're unable to approve it at this time.",
@@ -727,12 +727,12 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           "",
           `If you have questions, please call us at (844) 511-4059 or email ${OWNER_EMAIL}.`,
           "",
-          "— Sly Transportation Services LLC Team",
+          "— Sly Car Rentals LLC Team",
         ].join("\n"),
         html: `
           <h2>${isAdverseFinal ? "Final Adverse Action Notice" : "Application Status Update"}</h2>
           <p>Hi <strong>${esc(ctx.firstName)}</strong>,</p>
-          <p>Thank you for applying with <strong>Sly Transportation Services LLC</strong>.</p>
+          <p>Thank you for applying with <strong>Sly Car Rentals LLC</strong>.</p>
           <p style="background:#f8d7da;padding:10px;border-left:4px solid #dc3545;margin-bottom:16px">
             ${isAdverseFinal
               ? "This email serves as your final adverse action notice regarding your rental application."
@@ -743,7 +743,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
                <p>Checkr did not make the decision and cannot explain why the decision was made.</p>`
             : ""}
           <p>If you have questions, please call us at <strong>(844) 511-4059</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+          <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
         `,
       });
     }
@@ -760,7 +760,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       to: OWNER_EMAIL,
       subject: "⚖️ Pre-Adverse Action Sent",
       text: [
-        "Pre-Adverse Action Sent — Sly Transportation Services LLC",
+        "Pre-Adverse Action Sent — Sly Car Rentals LLC",
         "",
         `Name            : ${ctx.name}`,
         `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -796,7 +796,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           "",
           `Questions? Contact us at ${OWNER_EMAIL}.`,
           "",
-          "— Sly Transportation Services LLC Team",
+          "— Sly Car Rentals LLC Team",
         ].join("\n"),
         html: `
           <h2>Pre-Adverse Action Notice</h2>
@@ -807,7 +807,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           <p>Checkr did not make the decision and cannot explain why the decision may be made.</p>
           <p>You have the right to dispute the accuracy or completeness of the report before any final decision is made.</p>
           <p>Questions? Contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
-          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+          <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
         `,
       });
     }
@@ -819,7 +819,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
       to: OWNER_EMAIL,
       subject: "⏸ Application — More Information Requested",
       text: [
-        "Application Needs More Information — Sly Transportation Services LLC",
+        "Application Needs More Information — Sly Car Rentals LLC",
         "",
         `Name            : ${ctx.name}`,
         `Application ID  : ${ctx.applicationId || "Not available"}`,
@@ -854,7 +854,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           "Call or text: (844) 511-4059",
           `Email: ${OWNER_EMAIL}`,
           "",
-          "— Sly Transportation Services LLC Team",
+          "— Sly Car Rentals LLC Team",
         ].join("\n"),
         html: `
           <h2>Additional Information Needed</h2>
@@ -865,7 +865,7 @@ export async function sendReviewDecisionNotifications(application = {}, action, 
           </p>
           <p>Call or text: <strong>(844) 511-4059</strong></p>
           <p>Email: <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a></p>
-          <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+          <p><strong>Sly Car Rentals LLC Team &#x1F697;</strong></p>
         `,
       });
     }

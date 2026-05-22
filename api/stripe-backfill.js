@@ -50,7 +50,7 @@ import { normalizePhone } from "./_bookings.js";
 import { DEFAULT_LOCATION } from "./_sms-templates.js";
 import { persistBooking } from "./_booking-pipeline.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 
 // Payment types that should NOT be backfilled as new bookings.
 // These match the payment types handled by specialized branches in stripe-webhook.js

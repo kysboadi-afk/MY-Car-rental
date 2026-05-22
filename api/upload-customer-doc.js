@@ -30,7 +30,7 @@ export const config = {
   api: { bodyParser: { sizeLimit: "10mb" } },
 };
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
 const BUCKET           = "customer-documents";
 const MAX_SIZE_BYTES   = 8 * 1024 * 1024; // 8 MB
 const DOC_TYPE_COLUMN = {

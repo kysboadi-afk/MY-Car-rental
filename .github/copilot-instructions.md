@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SLY RIDES is a static car rental website for **SLY Transportation Services**, a Los Angeles-based car rental company. The frontend is deployed on **GitHub Pages** with a custom domain at [www.slytrans.com](https://slycarrentals.com). The backend consists of Vercel serverless functions.
+SLY RIDES is a static car rental website for **SLY Car Rentals**, a Los Angeles-based car rental company. The frontend is deployed on **GitHub Pages** with a custom domain at [www.slytrans.com](https://slycarrentals.com). The backend consists of Vercel serverless functions.
 
 ## Tech Stack
 

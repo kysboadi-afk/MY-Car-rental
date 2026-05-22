@@ -30,8 +30,8 @@ import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { createManageToken } from "./_manage-booking-token.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
-const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://slycarrentals.com/slingshot-book.html";
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const DEFAULT_SLINGSHOT_IDENTITY_RETURN_URL = "https://www.slyslingshotrentals.com/slingshot-book.html";
 const SLINGSHOT_MANUAL_PAYMENT_ENABLED = /^(true|1|yes|on)$/i.test(String(process.env.SLINGSHOT_NO_PAYMENT || ""));
 const SLINGSHOT_IDENTITY_POLL_ATTEMPTS = 5;
 const SLINGSHOT_IDENTITY_POLL_DELAY_MS = 1500;
@@ -254,7 +254,7 @@ export default async function handler(req, res) {
         const outstanding = Number(balanceRows[0].balance_due || 0);
         return res.status(402).json({
           error: `You have an outstanding balance of $${outstanding.toFixed(2)} from a previous booking. ` +
-                 "Please complete your payment at https://slycarrentals.com/balance.html before booking again.",
+                 "Please complete your payment at https://www.slyslingshotrentals.com/balance.html before booking again.",
         });
       }
     } catch (balanceErr) {
@@ -275,7 +275,7 @@ export default async function handler(req, res) {
     const bookingId = "bk-" + crypto.randomBytes(6).toString("hex");
     const normalizedVehicleId = normalizeVehicleId(vehicleId) || vehicleId;
     const manageToken = createManageToken(bookingId);
-    const manageLink = `https://slycarrentals.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
+    const manageLink = `https://www.slyslingshotrentals.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
 
     const preWriteRow = {
       booking_ref:       bookingId,
@@ -367,7 +367,7 @@ export default async function handler(req, res) {
       customer: stripeCustomerId,
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${vehicleData.name} ${normalizedPaymentOption === "full" ? "Full Payment" : "Reservation Deposit"} – ${pkg.label}`,
+      description: `Sly Car Rentals LLC – ${vehicleData.name} ${normalizedPaymentOption === "full" ? "Full Payment" : "Reservation Deposit"} – ${pkg.label}`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },
