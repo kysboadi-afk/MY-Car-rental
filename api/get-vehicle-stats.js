@@ -32,7 +32,7 @@ import { isoDateInLA } from "./_time.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeVehiclePriority } from "../lib/ai/priority.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 /**
  * Load expenses from Supabase when available; fall back to GitHub expenses.json.

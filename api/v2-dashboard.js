@@ -26,7 +26,7 @@ import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-st
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
@@ -183,7 +183,7 @@ export default async function handler(req, res) {
           .then((r) => r, () => ({ data: null }))
       : Promise.resolve({ data: null });
 
-    const normalizedScope = (scope === "car" || scope === "cars" || scope === "slingshot")
+    const normalizedScope = (scope === "car" || scope === "cars")
       ? scope
       : null;
 
@@ -242,19 +242,15 @@ export default async function handler(req, res) {
     const viewOk = !!metricsView && !metricsViewResult?.error;
 
     // Scope prefix selects the right pre-aggregated column set:
-    //   "car"/"cars"    → car_ prefix
-    //   "slingshot"     → slingshot_ prefix (falls back to total_ if column absent)
-    //   (none)          → total_ prefix
-    const vp = (scope === "car" || scope === "cars") ? "car"
-             : (scope === "slingshot")               ? "slingshot"
-             : "total";
+    //   "car"/"cars" → car_ prefix
+    //   (none)        → total_ prefix
+    const vp = (scope === "car" || scope === "cars") ? "car" : "total";
 
-    // Filter vehicles by scope: "car" → car-type vehicles; "slingshot" → slingshot type; none → all
+    // Filter vehicles by scope: "car" → car-type vehicles; none → all
     const DASHBOARD_CAR_TYPES = new Set(["car", "economy", "luxury", "suv", "truck", "van"]);
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
       const type = (v.type || "").toLowerCase();
       if (scope === "car" || scope === "cars") return DASHBOARD_CAR_TYPES.has(type) || type === "";
-      if (scope === "slingshot") return type === "slingshot";
       return true;
     });
     const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);
@@ -626,8 +622,7 @@ export default async function handler(req, res) {
     // Otherwise slice from the full allBookings list.
     let recentBookings;
     if (viewOk && recentBkResult?.data) {
-      // Filter by scope so the slingshot dashboard only shows slingshot bookings
-      // (and the car dashboard only shows car bookings).  filteredVehicleIds already
+      // Filter by scope so the dashboard only shows bookings for the selected fleet.
       // reflects the scope-based vehicle set computed above.
       const scopedRecentData = filteredVehicleIds.size > 0
         ? recentBkResult.data.filter((r) => filteredVehicleIds.has(uiVehicleId(r.vehicle_id)))

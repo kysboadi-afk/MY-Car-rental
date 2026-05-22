@@ -11,8 +11,6 @@ const ALLOWED_ORIGINS = [
   "https://slycarrentals.com",
   "https://www.slycarrentals.com",
   "https://admin.slycarrentals.com",
-  "https://slyslingshotrentals.com",
-  "https://www.slyslingshotrentals.com",
 ];
 
 function esc(str) {

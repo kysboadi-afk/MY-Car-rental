@@ -35,7 +35,7 @@
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // Bookings in these statuses are still "live" — prioritise them but process all.
 const ACTIVE_STATUSES = new Set(["reserved", "pending", "active_rental", "overdue"]);

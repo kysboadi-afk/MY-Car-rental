@@ -64,16 +64,6 @@ export const INCOMPLETE_CHECKOUT_APP_STATUSES = new Set([
   "abandoned_checkout",
 ]);
 
-export const SLINGSHOT_LIFECYCLE_APP_STATUSES = new Set([
-  "inquiry_received",
-  "identity_pending",
-  "identity_verified",
-  "agreement_pending",
-  "agreement_signed",
-  "pending_manual_payment",
-  "ready_for_pickup",
-]);
-
 /**
  * Convert an app-layer booking status into the canonical DB status.
  * Falls back to pending_checkout for empty input and passes through unknown

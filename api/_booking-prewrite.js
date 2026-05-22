@@ -4,42 +4,18 @@ import { isSchemaError } from "./_error-helpers.js";
 // Dropped one at a time on schema errors.
 const OPTIONAL_SCHEMA_FALLBACK_COLUMNS = ["category", "identity_session_id"];
 
-// Slingshot lifecycle statuses added in migration 0159 that older DB schemas
-// may not yet recognise in the bookings_status_check constraint.
-const SLINGSHOT_LIFECYCLE_STATUSES = new Set([
-  "inquiry_received",
-  "identity_pending",
-  "identity_verified",
-  "agreement_pending",
-  "agreement_signed",
-  "pending_manual_payment",
-  "ready_for_pickup",
-]);
-
-function isBookingConflictTriggerError(err) {
-  if (!err) return false;
-  const code = String(err.code || "");
-  const msg  = String(err.message || "");
-  return code === "P0001" && /booking conflict/i.test(msg);
-}
-
 function isStatusConstraintError(err) {
-  if (!err) return false;
-  const code = String(err.code || "");
-  const msg  = String(err.message || "");
-  return (
-    code === "23514" ||
-    /violates check constraint/i.test(msg) ||
-    /bookings_status_check/i.test(msg)
-  );
+  const code = String(err?.code || "").trim();
+  const message = String(err?.message || "").toLowerCase();
+  return code === "23514" || message.includes("bookings_status_check");
 }
 
 function isLegacyPendingStatusConstraintError(err, attemptedRow) {
-  return attemptedRow?.status === "pending_checkout" && isStatusConstraintError(err);
+  return String(attemptedRow?.status || "").trim() === "pending_checkout" && isStatusConstraintError(err);
 }
 
-function isSlingshotStatusConstraintError(err, attemptedRow) {
-  return SLINGSHOT_LIFECYCLE_STATUSES.has(attemptedRow?.status) && isStatusConstraintError(err);
+function isBookingConflictTriggerError(err) {
+  return String(err?.code || "").trim() === "P0001";
 }
 
 /**
@@ -50,10 +26,7 @@ function isSlingshotStatusConstraintError(err, attemptedRow) {
  *  1. Drop `category` when the live DB is missing that newer column.
  *  2. Drop `identity_session_id` when the live DB is missing that column
  *     (migration 0158 not yet applied).
- *  3. Downgrade slingshot lifecycle statuses (e.g. `agreement_pending`) to
- *     `pending_checkout` when the bookings.status constraint hasn't been
- *     expanded (migration 0159 not yet applied).
- *  4. Downgrade pre-payment `pending_checkout` to legacy `pending` when the
+ *  3. Downgrade pre-payment `pending_checkout` to legacy `pending` when the
  *     bookings.status constraint has not yet been expanded (migration 0081).
  *
  * @param {object} sb
@@ -68,8 +41,8 @@ export async function upsertBookingPrewrite(sb, row, options = {}) {
   let attemptedRow = { ...row };
   let attempts = 0;
 
-  // Max retries: one per optional column drop + slingshot status + legacy pending + final attempt.
-  while (attempts < 5) {
+  // Max retries: one per optional column drop + legacy pending + final attempt.
+  while (attempts < 4) {
     attempts += 1;
     let query = sb.from("bookings").upsert(attemptedRow, { onConflict: "booking_ref" });
     if (select) query = query.select(select);
@@ -99,13 +72,6 @@ export async function upsertBookingPrewrite(sb, row, options = {}) {
       }
     }
 
-    // Slingshot lifecycle status not yet in the DB constraint: fall back to pending_checkout.
-    if (isSlingshotStatusConstraintError(result.error, attemptedRow)) {
-      console.warn(`[${context}] retrying with pending_checkout after slingshot status constraint error:`, result.error.message);
-      attemptedRow = { ...attemptedRow, status: "pending_checkout" };
-      fallbacksApplied.push("slingshot_status_to_pending_checkout");
-      continue;
-    }
 
     // Legacy pending_checkout not yet in the constraint: fall back to "pending".
     if (isLegacyPendingStatusConstraintError(result.error, attemptedRow)) {

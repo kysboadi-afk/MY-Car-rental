@@ -1,7 +1,5 @@
 // shared-page-context.js
 // Shared pages must always render the default SLY Car Rentals branding.
-// Slingshot-specific pages own their own branding directly and should not rely
-// on shared-session state to override shared headers, nav, or logo targets.
 (function () {
   'use strict';
 

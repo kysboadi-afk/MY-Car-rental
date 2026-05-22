@@ -134,10 +134,10 @@ async function findMostRecentCustomerByEmail(sb, email) {
   return { existing, error: null };
 }
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const CUSTOMERS_FILE  = "customers.json";
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const VALID_SCOPES = new Set(["car", "cars"]);
 
 function normalizeScope(scope) {
   const s = String(scope || "").trim().toLowerCase();
@@ -147,11 +147,10 @@ function normalizeScope(scope) {
 
 function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
   const explicit = String(vehicle.category || "").toLowerCase().trim();
-  if (explicit === "car" || explicit === "slingshot") return explicit;
+  if (explicit === "car") return explicit;
   const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
   const name = String(vehicle.vehicle_name || "").toLowerCase();
-  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
   return "car";
 }
 
@@ -160,12 +159,11 @@ async function resolveScopedVehicleIds(scope) {
   if (!normalized) return null;
   try {
     const { data } = await loadVehicles();
-    const wantSlingshot = normalized === "slingshot";
-    return new Set(
+      return new Set(
       Object.entries(data || {})
         .filter(([vehicleId, vehicle]) => {
           const category = deriveVehicleCategory(vehicle, vehicleId);
-          return wantSlingshot ? category === "slingshot" : category === "car";
+          return category === "car";
         })
         .map(([, vehicle]) => vehicle?.vehicle_id)
         .filter(Boolean)

@@ -23,11 +23,11 @@ import { render, VIOLATION_NOTICE, VIOLATION_TRANSFER_SUBMITTED } from "./_sms-t
 import { normalizePhone } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const VALID_STATUSES = ["new","matched","transfer_ready","submitted","approved","rejected","charged","closed"];
 const VALID_TYPES    = ["parking","toll","camera","other"];
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const VALID_SCOPES = new Set(["car", "cars"]);
 
 const STATUS_LABELS = {
   new:            "New",
@@ -48,11 +48,10 @@ function normalizeScope(scope) {
 
 function deriveVehicleCategory(vehicle = {}, fallbackVehicleId = "") {
   const explicit = String(vehicle.category || "").toLowerCase().trim();
-  if (explicit === "car" || explicit === "slingshot") return explicit;
+  if (explicit === "car") return explicit;
   const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
   const name = String(vehicle.vehicle_name || "").toLowerCase();
-  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
   return "car";
 }
 
@@ -61,12 +60,11 @@ async function scopedVehicleSet(scope) {
   if (!normalized) return null;
   try {
     const { data } = await loadVehicles();
-    const wantSlingshot = normalized === "slingshot";
-    return new Set(
+      return new Set(
       Object.entries(data || {})
         .filter(([vehicleId, vehicle]) => {
           const category = deriveVehicleCategory(vehicle, vehicleId);
-          return wantSlingshot ? category === "slingshot" : category === "car";
+          return category === "car";
         })
         .map(([, vehicle]) => vehicle?.vehicle_id)
         .filter(Boolean)

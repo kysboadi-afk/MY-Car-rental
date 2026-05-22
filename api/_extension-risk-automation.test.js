@@ -50,19 +50,6 @@ test("loadExtensionRiskAutomationSettings: reads configured overrides", async ()
   assert.equal(settings.extension_risk_manual_review_exposure, 425);
 });
 
-test("evaluateExtensionRiskAutomation: ignores non-car categories", () => {
-  const decision = evaluateExtensionRiskAutomation({
-    category: "slingshot",
-    currentState: "warning",
-    settings: { ...EXTENSION_RISK_AUTOMATION_DEFAULTS, extension_risk_automation_enabled: true },
-    currentExposure: 450,
-    partialExtensionCount: 4,
-  });
-
-  assert.equal(decision.appliesToRental, false);
-  assert.equal(decision.effectiveState, "clear");
-  assert.equal(decision.alerts.length, 0);
-});
 
 test("evaluateExtensionRiskAutomation: recommends warning for near-threshold exposure", () => {
   const decision = evaluateExtensionRiskAutomation({

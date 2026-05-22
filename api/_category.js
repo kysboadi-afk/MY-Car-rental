@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 
-const VALID_CATEGORIES = new Set(["car", "slingshot"]);
+const VALID_CATEGORIES = new Set(["car"]);
 
 export function normalizeFleetCategory(value) {
   const normalized = String(value || "").trim().toLowerCase();

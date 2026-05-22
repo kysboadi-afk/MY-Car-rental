@@ -13,7 +13,7 @@ import {
 } from "./_stripe-identity.js";
 import { launchCheckrForVerifiedFinalization } from "./_identity-verified-orchestration.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const DEFAULT_RETURN_URL = "https://slycarrentals.com/thank-you.html?from=apply";
 const TERMINAL_APPLICATION_STATUSES = new Set(["approved", "rejected", "expired", "withdrawn"]);
 

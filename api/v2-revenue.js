@@ -26,7 +26,7 @@ import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.
 import { getAllVehicleIds } from "./_pricing.js";
 import crypto from "crypto";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const RECORDS_FILE    = "revenue-records.json";
 
@@ -108,7 +108,7 @@ export default async function handler(req, res) {
     if (!action || action === "list") {
       const effectivePaymentStatus = String(body.status || "paid").trim();
       // When a scope filter is requested, resolve the matching vehicle IDs first.
-      // scope='car' → car-type vehicles only; scope='slingshot' → slingshot only.
+      // scope='car' → car-type vehicles only.
       let scopedVehicleIds = null;
       if (body.scope) {
         try {
@@ -119,7 +119,6 @@ export default async function handler(req, res) {
             .filter((v) => {
               const t = (v.type || "").toLowerCase();
               if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
               return true;
             })
             .map((v) => v.vehicle_id)
@@ -474,7 +473,7 @@ export default async function handler(req, res) {
     // with shared inclusion rules:
     //   payment_status='paid', sync_excluded=false, is_orphan=false,
     //   is_cancelled=false, is_no_show=false.
-    // When scope='slingshot' or scope='car' is provided, revenue is filtered to
+    // When scope='car' is provided, revenue is filtered to
     // only the matching fleet type by querying revenue_records directly.
     if (action === "kpi") {
       // Resolve scope → vehicle IDs when a scope filter is requested.
@@ -489,7 +488,6 @@ export default async function handler(req, res) {
               const t = (v.type || "").toLowerCase();
               // Vehicles with no type recorded default to the car fleet.
               if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_KPI.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
               return true;
             })
             .map((v) => v.vehicle_id)
@@ -588,7 +586,6 @@ export default async function handler(req, res) {
             .filter((v) => {
               const t = (v.type || "").toLowerCase();
               if (sc === "car" || sc === "cars") return REVENUE_CAR_TYPES_LB.has(t) || t === "";
-              if (sc === "slingshot") return t === "slingshot";
               return true;
             })
             .map((v) => v.vehicle_id)

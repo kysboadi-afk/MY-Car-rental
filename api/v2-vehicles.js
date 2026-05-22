@@ -23,11 +23,10 @@ import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "slingshot", "other"];
+const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "other"];
 // category is the single authoritative field that controls which page a vehicle
-// appears on.  "car" → cars page; "slingshot" → slingshots page.  No other
-// values are accepted so bad data can never cause mixing between pages.
-const ALLOWED_CATEGORIES    = ["car", "slingshot"];
+// appears on. Only the car category is accepted.
+const ALLOWED_CATEGORIES    = ["car"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
@@ -38,52 +37,13 @@ const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
 const BOUNCIE_IMEI_RE = /^\d{15}$/;
 
 
-/**
- * Derive the canonical category ("car" | "slingshot") for a vehicle.
- *
- * This is the ONLY function that should determine which page a vehicle
- * appears on.  It first checks the explicit `category` field; if that is
- * absent or invalid it falls back to inspecting `type`, `vehicleId`, and
- * `vehicleName` for backward compatibility with records that pre-date the
- * field.  All new and edited vehicles must always supply an explicit
- * `category` value so this fallback path is never reached for them.
- *
- * @param {string} category  - The vehicle's stored category value.
- * @param {string} type      - The vehicle's stored type (e.g. "economy", "slingshot").
- * @param {string} vehicleId - The vehicle's ID (e.g. "camry", "slingshot-red").
- * @param {string} vehicleName - The vehicle's display name.
- * @returns {"car"|"slingshot"}
- */
-function deriveCategory(category, type, vehicleId, vehicleName) {
-  const cat = (category || "").toLowerCase().trim();
-  if (cat === "car" || cat === "slingshot") return cat;
-  // Backward-compat: infer from type or id/name when category is absent
-  const t  = (type        || "").toLowerCase();
-  const id = (vehicleId   || "").toLowerCase();
-  const nm = (vehicleName || "").toLowerCase();
-  if (t === "slingshot" || id.includes("slingshot") || nm.includes("slingshot")) return "slingshot";
+function deriveCategory() {
   return "car";
 }
 
-function isSlingshotScope(scope) {
-  return String(scope || "").toLowerCase().trim() === "slingshot";
-}
-
-function enforceSlingshotCategoryInvariant({ existingData = null, updates = null, vehicleId = "", scope = "" } = {}) {
+function enforceVehicleCategoryInvariant({ updates = null } = {}) {
   const next = { ...(updates || {}) };
-  const existingType = existingData?.type || existingData?.vehicle_type || "";
-  const existingName = existingData?.vehicle_name || "";
-  const updatesType = next.type || "";
-  const updatesName = next.vehicle_name || existingName;
-
-  const existingLooksLikeSlingshot =
-    deriveCategory(existingData?.category || "", existingType, vehicleId, existingName) === "slingshot";
-  const updatesLookLikeSlingshot =
-    deriveCategory(next.category || "", updatesType, vehicleId, updatesName) === "slingshot";
-
-  if (isSlingshotScope(scope) || existingLooksLikeSlingshot || updatesLookLikeSlingshot) {
-    next.category = "slingshot";
-  }
+  if (Object.prototype.hasOwnProperty.call(next, "category")) next.category = "car";
   return next;
 }
 
@@ -147,15 +107,14 @@ export default async function handler(req, res) {
     // Prevent CDN/browser caches from serving stale vehicle lists after creation.
     res.setHeader("Cache-Control", "no-store");
 
-    // Optional scope filter: ?scope=car → car-category vehicles only; ?scope=slingshot → slingshots only
+    // Optional scope filter: ?scope=car → car-category vehicles only
     const scope = (req.query?.scope || "").toLowerCase();
     // Filtering is now entirely driven by the category field (derived via deriveCategory
     // when the field is absent) so bad type values can never cause cross-page leaks.
     function inScopeGET(category, type, vehicleId, vehicleName) {
       if (!scope) return true;
       const cat = deriveCategory(category, type, vehicleId, vehicleName);
-      if (scope === "car" || scope === "cars")   return cat === "car";
-      if (scope === "slingshot")                 return cat === "slingshot";
+      if (scope === "car" || scope === "cars") return cat === "car";
       return true;
     }
     const supabase = getSupabaseAdmin();
@@ -272,13 +231,12 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      // scope: "car" → category=car vehicles only; "slingshot" → category=slingshot; omit → all
+      // scope: "car" → category=car vehicles only; omit → all
       const scope = (body.scope || "").toLowerCase();
       const scopeFilter = (category, type, vehicleId, vehicleName) => {
         if (!scope) return true;
         const cat = deriveCategory(category, type, vehicleId, vehicleName);
         if (scope === "car" || scope === "cars") return cat === "car";
-        if (scope === "slingshot") return cat === "slingshot";
         return true;
       };
 
@@ -426,7 +384,7 @@ export default async function handler(req, res) {
         }
       }
 
-      let normalizedUpdates = enforceSlingshotCategoryInvariant({
+      let normalizedUpdates = enforceVehicleCategoryInvariant({
         updates: safeUpdates,
         vehicleId,
         scope: body.scope,
@@ -441,7 +399,7 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (!fetchErr && existing) {
-          normalizedUpdates = enforceSlingshotCategoryInvariant({
+          normalizedUpdates = enforceVehicleCategoryInvariant({
             existingData: existing.data || {},
             updates: normalizedUpdates,
             vehicleId,
@@ -517,7 +475,7 @@ export default async function handler(req, res) {
       if (!ghVehicles[vehicleId]) {
         return res.status(404).json({ error: "Vehicle not found" });
       }
-      normalizedUpdates = enforceSlingshotCategoryInvariant({
+      normalizedUpdates = enforceVehicleCategoryInvariant({
         existingData: ghVehicles[vehicleId] || {},
         updates: normalizedUpdates,
         vehicleId,
@@ -559,9 +517,7 @@ export default async function handler(req, res) {
       if (rawCategory && !ALLOWED_CATEGORIES.includes(rawCategory)) {
         return res.status(400).json({ error: `category must be one of: ${ALLOWED_CATEGORIES.join(", ")}` });
       }
-      const vehicleCategory = isSlingshotScope(body.scope)
-        ? "slingshot"
-        : (rawCategory || deriveCategory("", vehicleType, vehicleId, vehicleName));
+      const vehicleCategory = rawCategory || deriveCategory("", vehicleType, vehicleId, vehicleName);
 
       const vehicleStatus = status || "active";
       if (!ALLOWED_STATUSES.includes(vehicleStatus)) {

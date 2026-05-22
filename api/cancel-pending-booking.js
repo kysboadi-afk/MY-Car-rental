@@ -1,6 +1,6 @@
 // api/cancel-pending-booking.js
 // Public endpoint to cancel a pre-payment ("pending") booking that was
-// created by create-slingshot-booking.js (or create-payment-intent.js) but
+// created by create-payment-intent.js but
 // was never paid.
 //
 // This is called client-side when a renter clicks "Cancel" on the Stripe
@@ -18,7 +18,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const ALLOWED_TARGET_STATUSES = new Set(["abandoned_checkout", "upload_failed", "payment_failed"]);
 
 export default async function handler(req, res) {

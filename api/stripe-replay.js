@@ -55,7 +55,7 @@ import {
   sendWebhookNotificationEmails,
 } from "./stripe-webhook.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 // Payment types handled by webhook specialised branches that mutate an existing
 // booking rather than creating a new one — these must not be replayed here.

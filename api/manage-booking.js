@@ -44,7 +44,7 @@ import {
   verifyRenterSessionToken,
 } from "./_renter-auth.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
@@ -634,9 +634,6 @@ export default async function handler(req, res) {
     if (!row) return res.status(404).json({ error: "Booking not found" });
     if (!renterOwnsBooking(row, renterClaims)) {
       return res.status(403).json({ error: "Renter session does not match this booking." });
-    }
-    if (String(row.category || "").toLowerCase() === "slingshot") {
-      return res.status(409).json({ error: "Slingshot bookings are paid in person at pickup and do not support online balance payments." });
     }
     if (!MANAGE_ELIGIBLE_STATUSES.includes(row.status)) {
       return res.status(409).json({ error: "This booking is not eligible for balance payment." });

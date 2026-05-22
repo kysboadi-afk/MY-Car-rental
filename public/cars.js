@@ -403,11 +403,10 @@ async function loadFleet() {
   const activeAndAvailable = (Array.isArray(vehicles) ? vehicles : []).filter(v => {
     if (v.status && v.status !== "active") return false;
     const cat = (v.category || "").toLowerCase();
-    if (!cat || (cat !== "car" && cat !== "slingshot")) {
-      console.error("[cars.js] Vehicle skipped — missing or invalid category:", v.vehicle_id, cat || "(none)");
+    if (cat !== "car") {
+      if (!cat) console.error("[cars.js] Vehicle skipped — missing category:", v.vehicle_id);
       return false;
     }
-    if (cat !== "car") return false;
     const status = fleetStatus[v.vehicle_id];
     return !!status && status.available === true;
   });

@@ -27,7 +27,7 @@ import { computeFinalReturnDate } from "./_final-return-date.js";
 import { loadExtensionRiskSettings, evaluateExtensionRisk } from "./_extension-risk.js";
 import { getLedgerSummary } from "./_renter-balance-ledger.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 export default async function handler(req, res) {
   // CORS — allow requests from the production frontend only

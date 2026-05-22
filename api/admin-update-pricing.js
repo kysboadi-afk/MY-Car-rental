@@ -13,10 +13,10 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://slyslingshotrentals.com", "https://www.slyslingshotrentals.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
 const PRICE_FIELDS = ["daily_price", "weekly_price", "biweekly_price", "monthly_price"];
-const VALID_SCOPES = new Set(["car", "cars", "slingshot"]);
+const VALID_SCOPES = new Set(["car", "cars"]);
 
 // Pricing tiers that are not required — if omitted or left empty they are stored
 // as null, meaning getVehiclePricing falls through to daily × days for those
@@ -30,18 +30,16 @@ function normalizeScope(scope) {
 
 function deriveCategory(vehicle = {}, fallbackVehicleId = "") {
   const explicit = String(vehicle.category || "").trim().toLowerCase();
-  if (explicit === "car" || explicit === "slingshot") return explicit;
+  if (explicit === "car") return explicit;
   const type = String(vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const id = String(vehicle.vehicle_id || fallbackVehicleId || "").toLowerCase();
   const name = String(vehicle.vehicle_name || vehicle.name || "").toLowerCase();
-  if (type === "slingshot" || id.includes("slingshot") || name.includes("slingshot")) return "slingshot";
   return "car";
 }
 
 async function loadScopedVehicleIds(sb, scope) {
   const normalizedScope = normalizeScope(scope);
   if (!normalizedScope) return null;
-  const wantSlingshots = normalizedScope === "slingshot";
   const scopedIds = new Set();
 
   try {
@@ -52,7 +50,7 @@ async function loadScopedVehicleIds(sb, scope) {
       for (const row of data) {
         const vehicle = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
         const category = deriveCategory(vehicle, row.vehicle_id);
-        if ((wantSlingshots && category === "slingshot") || (!wantSlingshots && category === "car")) {
+        if (category === "car") {
           scopedIds.add(row.vehicle_id);
         }
       }
@@ -67,7 +65,7 @@ async function loadScopedVehicleIds(sb, scope) {
     const { data: vehicles } = await loadVehicles();
     for (const [vehicleId, vehicle] of Object.entries(vehicles || {})) {
       const category = deriveCategory(vehicle, vehicleId);
-      if ((wantSlingshots && category === "slingshot") || (!wantSlingshots && category === "car")) {
+      if (category === "car") {
         scopedIds.add(vehicleId);
       }
     }
