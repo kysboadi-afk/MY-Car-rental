@@ -177,6 +177,18 @@
     return String(value || "").toLowerCase().replace(/\s+/g, "_");
   }
 
+  function hasUsableLedgerSummary(summary) {
+    if (!summary || typeof summary !== "object") return false;
+    const txCount = Number(summary.transaction_count || 0);
+    const remaining = Number(summary.remaining_balance);
+    const totalPaid = Number(summary.total_paid);
+    const totalCharges = Number(summary.total_charges);
+    return txCount > 0
+      || (Number.isFinite(remaining) && remaining > 0)
+      || (Number.isFinite(totalPaid) && totalPaid > 0)
+      || (Number.isFinite(totalCharges) && totalCharges > 0);
+  }
+
   function toMoney(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
@@ -542,10 +554,10 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const statusKey = normalizeStatusKey(b.status);
     const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
     const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
-    const depositPaid = Number(b.depositPaid || 0);
-    const paidFromLedger = Number(ledgerSummary?.total_paid || 0);
-    const paid      = Math.max(depositPaid, paidFromLedger);
-    const balanceFromLedger = Number(ledgerSummary?.remaining_balance);
+    const ledgerSummaryUsable = hasUsableLedgerSummary(ledgerSummary);
+    const paidFromLedger = ledgerSummaryUsable ? Number(ledgerSummary?.total_paid || 0) : 0;
+    const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
+    const balanceFromLedger = ledgerSummaryUsable ? Number(ledgerSummary?.remaining_balance) : NaN;
     const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
     const paidPct   = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
     const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total, paid, balance });
