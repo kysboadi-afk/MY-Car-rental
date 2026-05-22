@@ -209,7 +209,6 @@
     if (token) query.set("t", token);
     return `car.html?${query.toString()}`;
   }
-
   function hasUsableLedgerSummary(summary) {
     if (!summary || typeof summary !== "object") return false;
     const txCount = Number(summary.transaction_count || 0);
