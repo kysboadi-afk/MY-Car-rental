@@ -22,6 +22,9 @@ test("normalizeVehicleId: canonical ID passes through unchanged", () => {
 test("normalizeVehicleId: display name resolves to canonical ID", () => {
   assert.equal(normalizeVehicleId("Camry 2012"),    "camry");
   assert.equal(normalizeVehicleId("Camry 2013 SE"), "camry2013");
+  assert.equal(normalizeVehicleId("camry 2013 se"), "camry2013");
+  assert.equal(normalizeVehicleId("CAMRY-2013-SE"), "camry2013");
+  assert.equal(normalizeVehicleId("Ford Fusion 2017"), "fusion2017");
 });
 
 test("normalizeVehicleId: legacy raw ID normalises to canonical", () => {
@@ -50,6 +53,12 @@ test("uiVehicleId: legacy DB ID 'camry2012' maps to canonical 'camry'", () => {
   // return "camry" so those bookings are grouped under the correct vehicle
   // in dashboard KPIs, vehicleStats, and alert generation.
   assert.equal(uiVehicleId("camry2012"), "camry");
+});
+
+test("uiVehicleId: display names and slug variants resolve to canonical IDs", () => {
+  assert.equal(uiVehicleId("Camry 2013 SE"), "camry2013");
+  assert.equal(uiVehicleId("camry-2013-se"), "camry2013");
+  assert.equal(uiVehicleId("ford_fusion_2017"), "fusion2017");
 });
 
 test("uiVehicleId: empty / null input returns empty string", () => {

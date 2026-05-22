@@ -1,5 +1,6 @@
 import { createManageToken } from "./_manage-booking-token.js";
 import { isFeatureEnabled } from "./_sms-rollout.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
 function normalizeValue(value) {
   return String(value || "").trim();
@@ -29,7 +30,7 @@ export function buildLegacyBalanceLink({ bookingId } = {}) {
 }
 
 export function buildLegacyExtendEntryLink({ vehicleId } = {}) {
-  const normalizedVehicleId = String(vehicleId || "").trim();
+  const normalizedVehicleId = String(uiVehicleId(vehicleId || "") || "").trim();
   if (!normalizedVehicleId) return "https://slycarrentals.com/manage-booking.html";
   return `https://slycarrentals.com/car.html?vehicle=${encodeURIComponent(normalizedVehicleId)}&extend=1`;
 }

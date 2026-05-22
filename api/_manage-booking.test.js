@@ -124,6 +124,56 @@ test("manage-booking get falls back to legacy booking columns when newer columns
   assert.deepEqual(selects.length, 2);
 });
 
+test("manage-booking get normalizes display-name vehicle IDs to canonical IDs", async () => {
+  const bookingRow = {
+    id: 2,
+    booking_ref: "bk-fallback-001",
+    vehicle_id: "Camry 2013 SE",
+    pickup_date: "2026-05-20",
+    return_date: "2026-05-24",
+    pickup_time: "10:00 AM",
+    return_time: "10:00 AM",
+    status: "active_rental",
+    payment_status: "partial",
+    total_price: 275,
+    deposit_paid: 100,
+    remaining_balance: 175,
+    change_count: 0,
+    customer_name: "Test Renter",
+    customer_email: "test@example.com",
+    customer_phone: "3105550100",
+    created_at: "2026-05-15T00:00:00.000Z",
+  };
+
+  supabaseClient = {
+    from(table) {
+      if (table === "payment_plans") {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          in() { return this; },
+          order() { return this; },
+          limit() { return Promise.resolve(makeQueryResult([])); },
+        };
+      }
+      assert.equal(table, "bookings");
+      return {
+        select() { return this; },
+        eq() { return this; },
+        async maybeSingle() {
+          return makeQueryResult(bookingRow);
+        },
+      };
+    },
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ action: "get", token: "valid-token" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.vehicleId, "camry2013");
+});
+
 test("manage-booking get_agreement_url returns a signed URL when agreement PDF exists", async () => {
   supabaseClient = {
     from(table) {

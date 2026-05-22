@@ -29,3 +29,11 @@ test("buildDashboardExtendLink falls back to the legacy vehicle link without boo
 
   assert.equal(link, "https://slycarrentals.com/car.html?vehicle=camry&extend=1");
 });
+
+test("buildDashboardExtendLink normalizes legacy/display vehicle references", () => {
+  const legacyLink = buildDashboardExtendLink({ vehicleId: "Camry 2013 SE" });
+  const slugLink = buildDashboardExtendLink({ vehicleId: "camry-2013-se" });
+
+  assert.equal(legacyLink, "https://slycarrentals.com/car.html?vehicle=camry2013&extend=1");
+  assert.equal(slugLink, "https://slycarrentals.com/car.html?vehicle=camry2013&extend=1");
+});

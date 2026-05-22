@@ -1,4 +1,4 @@
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { CARS, FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 // Map legacy IDs and user-facing names to canonical IDs before persistence.
 const VEHICLE_ID_ALIASES = {
@@ -14,6 +14,38 @@ const VEHICLE_ID_ALIASES = {
 const LEGACY_ID_NORMALIZE = {
   "camry2012": "camry",
 };
+
+function normalizeAliasKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function buildAliasMap() {
+  const map = {};
+  for (const id of FLEET_VEHICLE_IDS) {
+    const key = normalizeAliasKey(id);
+    if (key) map[key] = id;
+  }
+  for (const [alias, canonical] of Object.entries(VEHICLE_ID_ALIASES)) {
+    const key = normalizeAliasKey(alias);
+    if (key) map[key] = canonical;
+  }
+  for (const [legacy, canonical] of Object.entries(LEGACY_ID_NORMALIZE)) {
+    const key = normalizeAliasKey(legacy);
+    if (key) map[key] = canonical;
+  }
+  for (const [id, data] of Object.entries(CARS || {})) {
+    const idKey = normalizeAliasKey(id);
+    const nameKey = normalizeAliasKey(data?.name || "");
+    if (idKey) map[idKey] = id;
+    if (nameKey) map[nameKey] = id;
+  }
+  return map;
+}
+
+const NORMALIZED_ALIAS_MAP = buildAliasMap();
 
 // All DB-side vehicle IDs: canonical fleet IDs only.
 // "camry2012" was a legacy alias stored in old DB records before normalisation
@@ -37,7 +69,8 @@ const VEHICLE_ID_FAMILY = {
 export function normalizeVehicleId(vehicleId) {
   const raw = String(vehicleId || "").trim();
   if (!raw) return "";
-  return VEHICLE_ID_ALIASES[raw] || LEGACY_ID_NORMALIZE[raw] || raw;
+  const normalized = normalizeAliasKey(raw);
+  return NORMALIZED_ALIAS_MAP[normalized] || raw;
 }
 
 // Reverse map: DB-canonical ID → UI/vehicles.json key (e.g. "camry" → "camry").
@@ -60,7 +93,9 @@ const DB_TO_UI_MAP = Object.fromEntries(
  */
 export function uiVehicleId(dbId) {
   const raw = String(dbId || "").trim();
-  return DB_TO_UI_MAP[raw] || LEGACY_ID_NORMALIZE[raw] || raw;
+  if (!raw) return "";
+  const canonical = normalizeVehicleId(raw);
+  return DB_TO_UI_MAP[canonical] || canonical;
 }
 
 /**

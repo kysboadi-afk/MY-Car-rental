@@ -152,6 +152,39 @@
     return String(value || "").toLowerCase().replace(/\s+/g, "_");
   }
 
+  function normalizeVehicleLookupKey(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  }
+
+  function resolveVehicleRouteId(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const exact = vehicleOptions.find((v) => String(v.id || "").trim() === raw);
+    if (exact?.id) return String(exact.id).trim();
+    const lowered = raw.toLowerCase();
+    const ci = vehicleOptions.find((v) => String(v.id || "").trim().toLowerCase() === lowered);
+    if (ci?.id) return String(ci.id).trim();
+    const lookup = normalizeVehicleLookupKey(raw);
+    const byId = vehicleOptions.find((v) => normalizeVehicleLookupKey(v.id) === lookup);
+    if (byId?.id) return String(byId.id).trim();
+    const byName = vehicleOptions.find((v) => normalizeVehicleLookupKey(v.name) === lookup);
+    if (byName?.id) return String(byName.id).trim();
+    return raw;
+  }
+
+  function buildExtensionHref(b) {
+    const resolvedVehicleId = resolveVehicleRouteId(b?.vehicleId || b?.vehicleName || "");
+    const token = String(activeToken || params.get("t") || "").trim();
+    const query = new URLSearchParams();
+    if (resolvedVehicleId) query.set("vehicle", resolvedVehicleId);
+    query.set("extend", "1");
+    if (token) query.set("t", token);
+    return `car.html?${query.toString()}`;
+  }
+
   function buildBalanceLink(b) {
     if (b?.balancePaymentLink) return b.balancePaymentLink;
     const params = new URLSearchParams();
@@ -419,7 +452,7 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     renderLedgerSummary(b, total, paid, balance, overdueAmount);
 
     const extensionEligible = ["active", "active_rental", "overdue", "extended"].includes(statusKey);
-    const extensionHref = b.vehicleId ? `car.html?vehicle=${encodeURIComponent(b.vehicleId)}&extend=1` : "car.html?extend=1";
+    const extensionHref = buildExtensionHref(b);
     const extensionCta = document.getElementById("extension-cta");
     if (extensionCta) {
       extensionCta.href = extensionHref;

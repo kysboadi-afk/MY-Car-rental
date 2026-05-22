@@ -45,6 +45,71 @@ function getVehicleFromURL() {
   return pageParams.get("vehicle");
 }
 
+function normalizeVehicleLookupKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function resolveVehicleFromInventory(vehicles, requestedVehicleRef) {
+  const requestedRaw = String(requestedVehicleRef || "").trim();
+  if (!requestedRaw || !Array.isArray(vehicles)) return null;
+  const legacyToCanonical = {
+    camry2012: "camry",
+  };
+  const requestedLookup = normalizeVehicleLookupKey(requestedRaw);
+  const requestedCanonicalLookup = legacyToCanonical[requestedLookup] || requestedLookup;
+  const candidates = vehicles.filter(Boolean);
+
+  const exact = candidates.find((v) => String(v.vehicle_id || v.id || "").trim() === requestedRaw);
+  if (exact) return { vehicle: exact, vehicleId: String(exact.vehicle_id || exact.id || "").trim() };
+
+  const ci = candidates.find((v) => String(v.vehicle_id || v.id || "").trim().toLowerCase() === requestedRaw.toLowerCase());
+  if (ci) return { vehicle: ci, vehicleId: String(ci.vehicle_id || ci.id || "").trim() };
+
+  const byId = candidates.find((v) => {
+    const idLookup = normalizeVehicleLookupKey(v.vehicle_id || v.id || "");
+    return idLookup === requestedCanonicalLookup || legacyToCanonical[idLookup] === requestedCanonicalLookup;
+  });
+  if (byId) return { vehicle: byId, vehicleId: String(byId.vehicle_id || byId.id || "").trim() };
+
+  const byName = candidates.find((v) => {
+    const nameLookup = normalizeVehicleLookupKey(v.vehicle_name || v.name || "");
+    return nameLookup === requestedCanonicalLookup;
+  });
+  if (byName) return { vehicle: byName, vehicleId: String(byName.vehicle_id || byName.id || "").trim() };
+
+  return null;
+}
+
+function getVehicleLookupRecoveryUrl(isExtensionFlow) {
+  if (isExtensionFlow) {
+    const token = String(pageParams.get("t") || "").trim();
+    if (token) return `manage-booking.html?t=${encodeURIComponent(token)}`;
+    return "manage-booking.html";
+  }
+  return "cars.html";
+}
+
+function handleVehicleLookupFailure(reason, details) {
+  const isExtensionFlow = /^(true|1)$/i.test(pageParams.get("extend") || "");
+  const message = isExtensionFlow
+    ? "We couldn’t load your vehicle for extension right now. Redirecting you back to Manage Booking."
+    : "We couldn’t find that vehicle. Redirecting you to available vehicles.";
+  console.error("[car.js] Vehicle lookup failed:", {
+    reason,
+    requestedVehicle: String(getVehicleFromURL() || ""),
+    isExtensionFlow,
+    ...details,
+  });
+  showPayError(message);
+  const redirectTarget = getVehicleLookupRecoveryUrl(isExtensionFlow);
+  setTimeout(() => {
+    window.location.href = redirectTarget;
+  }, 1500);
+}
+
 // i18n helper — translates a key using lang.js if available, else returns fallback.
 function _t(key, fallback) {
   return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
@@ -238,10 +303,9 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
     });
 }());
 
-const vehicleId = getVehicleFromURL();
+let vehicleId = String(getVehicleFromURL() || "").trim();
 if (!vehicleId) {
-  alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
-  window.location.href = "index.html";
+  handleVehicleLookupFailure("missing_vehicle_query_param");
 }
 
 // carData is populated asynchronously after fetching from the API for all vehicles.
@@ -470,15 +534,25 @@ sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify
 fetch(API_BASE + "/api/v2-vehicles")
   .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
   .then(function(vehicles) {
-    var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;
-    if (!v) throw new Error("not found");
-    carData = cars[vehicleId] = buildCarDataFromAPI(v);
+    var resolved = resolveVehicleFromInventory(vehicles, vehicleId);
+    if (!resolved || !resolved.vehicle) throw new Error("not found");
+    var resolvedVehicleId = String(resolved.vehicleId || "").trim();
+    if (!resolvedVehicleId) throw new Error("resolved_vehicle_id_missing");
+    if (resolvedVehicleId !== vehicleId) {
+      const next = new URL(window.location.href);
+      next.searchParams.set("vehicle", resolvedVehicleId);
+      window.history.replaceState({}, "", `${next.pathname}${next.search}${next.hash}`);
+      console.warn("[car.js] normalized vehicle route:", { requested: vehicleId, resolved: resolvedVehicleId });
+      vehicleId = resolvedVehicleId;
+    }
+    carData = cars[vehicleId] = buildCarDataFromAPI(resolved.vehicle);
     sliderContainer.innerHTML = "";
     initCarPage();
   })
-  .catch(function() {
-    alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
-    window.location.href = "index.html";
+  .catch(function(err) {
+    handleVehicleLookupFailure("inventory_lookup_failed", {
+      error: err && err.message ? err.message : String(err),
+    });
   });
 
 // ----- Back Button -----
