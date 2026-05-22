@@ -18,6 +18,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { getAllVehicleIds } from "./_pricing.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -83,13 +84,14 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret, vehicleId, available } = req.body || {};
+  const { vehicleId, available } = req.body || {};
+  const suppliedAdminCredential = extractAdminSecret(req);
 
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(suppliedAdminCredential)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
