@@ -305,6 +305,48 @@
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
+  function deriveDisplayedFinancials(b, summary, statusKey) {
+    const total = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
+    const dbPaid = Math.max(0, toMoney(b.depositPaid));
+    const dbBalance = Math.max(0, toMoney(b.balanceDue));
+    const ledgerSummaryUsable = hasUsableLedgerSummary(summary);
+    const ledgerPaid = ledgerSummaryUsable ? Math.max(0, toMoney(summary?.total_paid)) : 0;
+    const ledgerBalance = ledgerSummaryUsable ? toMoney(summary?.remaining_balance) : NaN;
+    const ledgerCharges = ledgerSummaryUsable ? Math.max(0, toMoney(summary?.total_charges)) : 0;
+    const paid = Math.max(dbPaid, ledgerPaid);
+    const isReservationStage = [
+      "pending",
+      "pending_checkout",
+      "pending_verification",
+      "approved",
+      "reserved",
+      "reserved_unpaid",
+      "booked_paid",
+      "identity_pending",
+      "identity_verified",
+      "agreement_pending",
+      "agreement_signed",
+      "pending_manual_payment",
+      "ready_for_pickup",
+    ].includes(statusKey);
+
+    let balance = dbBalance;
+    if (ledgerSummaryUsable) {
+      if (Number.isFinite(ledgerBalance) && ledgerBalance > 0) {
+        balance = ledgerBalance;
+      } else if (ledgerCharges > 0 || dbBalance <= 0) {
+        balance = Math.max(0, ledgerBalance || 0);
+      } else if (isReservationStage && total > 0 && paid < total) {
+        balance = Math.max(0, toMoney(total - paid));
+      } else if (isReservationStage && total > 0 && paid >= total) {
+        balance = 0;
+      }
+    }
+
+    const paidPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
+    return { total, paid, balance, paidPct };
+  }
+
   function derivePaymentLifecycleState({ booking, statusKey, total, paid, balance }) {
     const paymentStatusKey = normalizeStatusKey(booking?.paymentStatus);
     const categoryKey = normalizeStatusKey(booking?.category);
@@ -668,14 +710,9 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
     const statusKey = normalizeStatusKey(b.status);
     const isSlingshot = String(b.category || "").toLowerCase() === "slingshot";
-    const total     = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
+    const { total, paid, balance } = deriveDisplayedFinancials(b, ledgerSummary, statusKey);
     const lateFee   = Number(b.lateFeeAmount || 0);
     const displayTotal = total + lateFee;
-    const ledgerSummaryUsable = hasUsableLedgerSummary(ledgerSummary);
-    const paidFromLedger = ledgerSummaryUsable ? Number(ledgerSummary?.total_paid || 0) : 0;
-    const paid      = Math.max(Number(b.depositPaid || 0), paidFromLedger);
-    const balanceFromLedger = ledgerSummaryUsable ? Number(ledgerSummary?.remaining_balance) : NaN;
-    const balance   = Number.isFinite(balanceFromLedger) ? balanceFromLedger : Number(b.balanceDue || 0);
     const paidPct   = displayTotal > 0 ? Math.min(100, Math.round((paid / displayTotal) * 100)) : (balance === 0 ? 100 : 0);
     const paymentState = derivePaymentUiState({ booking: b, statusKey, isSlingshot, total: displayTotal, paid, balance });
     const plan      = b.paymentPlan || null;
