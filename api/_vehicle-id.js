@@ -1,9 +1,10 @@
-import { CARS, FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 // Map legacy IDs and user-facing names to canonical IDs before persistence.
 const VEHICLE_ID_ALIASES = {
   "Camry 2012": "camry",
   "Camry 2013 SE": "camry2013",
+  "Ford Fusion 2017": "fusion2017",
 };
 
 // Legacy raw IDs (stored in old DB records) that must map to their canonical ID.
@@ -35,12 +36,6 @@ function buildAliasMap() {
   for (const [legacy, canonical] of Object.entries(LEGACY_ID_NORMALIZE)) {
     const key = normalizeAliasKey(legacy);
     if (key) map[key] = canonical;
-  }
-  for (const [id, data] of Object.entries(CARS || {})) {
-    const idKey = normalizeAliasKey(id);
-    const nameKey = normalizeAliasKey(data?.name || "");
-    if (idKey) map[idKey] = id;
-    if (nameKey) map[nameKey] = id;
   }
   return map;
 }

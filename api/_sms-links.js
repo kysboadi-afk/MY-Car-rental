@@ -1,6 +1,24 @@
 import { createManageToken } from "./_manage-booking-token.js";
 import { isFeatureEnabled } from "./_sms-rollout.js";
-import { uiVehicleId } from "./_vehicle-id.js";
+
+function normalizeVehicleLookupKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeExtendVehicleId(vehicleId) {
+  const raw = String(vehicleId || "").trim();
+  if (!raw) return "";
+  const aliases = {
+    camry2012: "camry",
+    camry2013se: "camry2013",
+    fordfusion2017: "fusion2017",
+  };
+  const lookup = normalizeVehicleLookupKey(raw);
+  return aliases[lookup] || raw;
+}
 
 function normalizeValue(value) {
   return String(value || "").trim();
@@ -30,7 +48,7 @@ export function buildLegacyBalanceLink({ bookingId } = {}) {
 }
 
 export function buildLegacyExtendEntryLink({ vehicleId } = {}) {
-  const normalizedVehicleId = String(uiVehicleId(vehicleId || "") || "").trim();
+  const normalizedVehicleId = normalizeExtendVehicleId(vehicleId);
   if (!normalizedVehicleId) return "https://slycarrentals.com/manage-booking.html";
   return `https://slycarrentals.com/car.html?vehicle=${encodeURIComponent(normalizedVehicleId)}&extend=1`;
 }
