@@ -25,8 +25,8 @@ function makeRes() {
   };
 }
 
-function makeReq(method, body = {}, origin = "https://slycarrentals.com") {
-  return { method, headers: { origin }, body };
+function makeReq(method, body = {}, origin = "https://slycarrentals.com", extraHeaders = {}) {
+  return { method, headers: { origin, ...extraHeaders }, body };
 }
 
 const MOCK_FILE_CONTENT = (data) =>
@@ -108,6 +108,19 @@ test("returns 401 when secret is wrong", async () => {
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 401);
+});
+
+test("accepts Authorization bearer admin credential", async () => {
+  const req = makeReq(
+    "POST",
+    { vehicleId: "camry", from: "2026-04-01", to: "2026-04-05" },
+    "https://slycarrentals.com",
+    { authorization: "Bearer test-admin-secret" },
+  );
+  const res = makeRes();
+  await handler(req, res);
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { success: true, added: 1 });
 });
 
 test("returns 400 when vehicleId is missing", async () => {

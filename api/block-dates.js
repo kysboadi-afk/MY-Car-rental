@@ -23,6 +23,7 @@ import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateBlockedDate } from "./_booking-automation.js";
+import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   // Guard: ADMIN_SECRET must be configured
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     console.error("ADMIN_SECRET environment variable is not set");
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
@@ -48,10 +49,11 @@ export default async function handler(req, res) {
   // Guard: GITHUB_TOKEN must be configured to write the file
   // (Phase 4: JSON write disabled, guard kept for compatibility but no longer blocks)
 
-  const { secret, vehicleId, from, to } = req.body || {};
+  const { vehicleId, from, to } = req.body || {};
+  const suppliedAdminCredential = extractAdminSecret(req);
 
   // Authenticate the caller
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(suppliedAdminCredential)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
