@@ -149,6 +149,31 @@ test("deposit-only booking keeps DB remaining balance when ledger is empty", asy
   assert.equal(document.getElementById("paid-in-full-notice").style.display, "none");
 });
 
+test("deposit-only reservation ignores zeroed ledger balance and keeps remaining amount actionable", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking(),
+    ledgerPayload: {
+      summary: {
+        total_paid: 50,
+        total_charges: 0,
+        remaining_balance: 0,
+        transaction_count: 1,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+  });
+
+  assert.equal(document.getElementById("s-balance").textContent, "$335.88");
+  assert.equal(document.getElementById("progress-paid-label").textContent, "Reservation Deposit Paid ✅");
+  assert.equal(document.getElementById("progress-pct-label").textContent, "$335.88 remaining");
+  assert.equal(document.getElementById("payment-progress-fill").style.width, "13%");
+  assert.equal(document.getElementById("btn-init-balance").textContent, "Pay Remaining Balance ($335.88)");
+  assert.equal(document.getElementById("pay-balance-section").style.display, "block");
+  assert.equal(document.getElementById("btn-open-partial").style.display, "");
+  assert.equal(document.getElementById("paid-in-full-notice").style.display, "none");
+});
+
 test("partial-balance ledger summary updates remaining amount and payment progress", async () => {
   const document = await bootDashboard({
     bookingPayload: baseBooking(),
@@ -167,6 +192,30 @@ test("partial-balance ledger summary updates remaining amount and payment progre
   assert.equal(document.getElementById("progress-paid-label").textContent, "Reservation Deposit Paid ✅");
   assert.equal(document.getElementById("progress-pct-label").textContent, "$185.88 remaining");
   assert.match(document.getElementById("hero-payment-chip").textContent, /\$185\.88.*remaining/);
+  assert.equal(document.getElementById("pay-balance-section").style.display, "block");
+});
+
+test("reservation partial payment derives remaining amount from total paid when ledger balance is zeroed", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking(),
+    ledgerPayload: {
+      summary: {
+        total_paid: 200,
+        total_charges: 0,
+        remaining_balance: 0,
+        transaction_count: 2,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+  });
+
+  assert.equal(document.getElementById("s-balance").textContent, "$185.88");
+  assert.equal(document.getElementById("progress-paid-label").textContent, "Reservation Deposit Paid ✅");
+  assert.equal(document.getElementById("progress-pct-label").textContent, "$185.88 remaining");
+  assert.equal(document.getElementById("payment-progress-fill").style.width, "52%");
+  assert.match(document.getElementById("hero-payment-chip").textContent, /\$185\.88.*remaining/);
+  assert.equal(document.getElementById("btn-init-balance").textContent, "Pay Remaining Balance ($185.88)");
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
 });
 
