@@ -16,7 +16,7 @@ function makeJsonResponse(status, payload) {
   };
 }
 
-async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload, createIntentPayload, setupWindow }) {
+async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload, createIntentPayload, setupWindow, vehiclesPayload }) {
   const dom = new JSDOM(`<!doctype html><html><body>
     <div id="verify-state"></div>
     <input id="verify-identifier" />
@@ -53,6 +53,14 @@ async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload, 
     <div id="partial-stripe-element" style="display:none"></div>
     <div id="partial-error" style="display:none"></div>
     <button id="btn-confirm-partial" style="display:none">Confirm Partial</button>
+    <a id="extension-cta" href="#"></a>
+    <div id="extension-status-pill"></div>
+    <div id="extension-balance"></div>
+    <div id="extension-overdue"></div>
+    <div id="extension-balance-note"></div>
+    <div id="extension-overdue-note"></div>
+    <div id="extension-cta-note"></div>
+    <div id="payment-balance-banner"></div>
   </body></html>`, {
     url: "https://slycarrentals.com/manage-booking.html?t=test-token",
     runScripts: "outside-only",
@@ -61,7 +69,7 @@ async function bootDashboard({ bookingPayload, ledgerPayload, agreementPayload, 
   const { window } = dom;
   window.fetch = async (url, options = {}) => {
     if (String(url).includes("/api/v2-vehicles")) {
-      return makeJsonResponse(200, [{ id: "camry", name: "Camry 2012" }]);
+      return makeJsonResponse(200, vehiclesPayload || [{ id: "camry", name: "Camry 2012" }]);
     }
     if (String(url).includes("/api/renter-ledger-summary")) {
       return makeJsonResponse(200, ledgerPayload);
@@ -112,6 +120,11 @@ function baseBooking(overrides = {}) {
     paymentPlan: null,
     ...overrides,
   };
+}
+
+function getExtensionQuery(document) {
+  const href = document.getElementById("extension-cta").href;
+  return new URL(href).searchParams;
 }
 
 test("deposit-only booking keeps DB remaining balance when ledger is empty", async () => {
@@ -265,4 +278,96 @@ test("payment init mounts express checkout for balance and partial flows", async
   assert.ok(expressCalls >= 2, "express checkout should be mounted for both balance and partial payment flows");
   assert.equal(document.getElementById("balance-express-wrap").style.display, "block");
   assert.equal(document.getElementById("partial-express-wrap").style.display, "block");
+});
+
+test("extension CTA stays active for active rental with overdue payment-plan balance and carries token context", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      paymentStatus: "partial",
+      totalPrice: 500,
+      depositPaid: 200,
+      balanceDue: 300,
+      paymentPlan: {
+        status: "past_due",
+        isOverdue: true,
+      },
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 200,
+        remaining_balance: 300,
+        transaction_count: 4,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    vehiclesPayload: [
+      { id: "camry", name: "Camry 2012" },
+      { id: "camry2013", name: "Camry 2013 SE" },
+    ],
+  });
+
+  const extensionCta = document.getElementById("extension-cta");
+  const query = getExtensionQuery(document);
+  assert.match(extensionCta.textContent, /Open Extension Flow/);
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
+  assert.equal(query.get("vehicle"), "camry");
+});
+
+test("extension CTA keeps canonical vehicle ID for active rental", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      vehicleId: "camry2013",
+      vehicleName: "Camry 2013 SE",
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 55,
+        remaining_balance: 110,
+        transaction_count: 2,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    vehiclesPayload: [
+      { id: "camry", name: "Camry 2012" },
+      { id: "camry2013", name: "Camry 2013 SE" },
+    ],
+  });
+
+  const query = getExtensionQuery(document);
+  assert.equal(query.get("vehicle"), "camry2013");
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
+});
+
+test("extension CTA normalizes legacy vehicle ID for active rental", async () => {
+  const document = await bootDashboard({
+    bookingPayload: baseBooking({
+      status: "active_rental",
+      vehicleId: "camry2012",
+      vehicleName: "Camry 2012",
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 50,
+        remaining_balance: 150,
+        transaction_count: 3,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    vehiclesPayload: [
+      { id: "camry", name: "Camry 2012" },
+      { id: "camry2013", name: "Camry 2013 SE" },
+    ],
+  });
+
+  const query = getExtensionQuery(document);
+  assert.equal(query.get("vehicle"), "camry");
+  assert.equal(query.get("extend"), "1");
+  assert.equal(query.get("t"), "test-token");
 });

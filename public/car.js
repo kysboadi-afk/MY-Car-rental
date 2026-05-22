@@ -34,6 +34,7 @@ const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
 const PROTECTION_PLAN_PREMIUM  = 50;   // Premium: $50/day
 
 const pageParams = new URLSearchParams(window.location.search);
+const IS_EXTENSION_FLOW = /^(true|1)$/i.test(pageParams.get("extend") || "");
 const ADMIN_OVERRIDE = /^(true|1)$/i.test(pageParams.get("admin_override") || "");
 const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
 const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
@@ -44,6 +45,89 @@ const CANCEL_PENDING_BOOKING_ENDPOINT = API_BASE + "/api/cancel-pending-booking"
 // ----- Helpers -----
 function getVehicleFromURL() {
   return pageParams.get("vehicle");
+}
+
+const extensionTraceContext = {
+  booking_id: "",
+  vehicle_id_raw: String(getVehicleFromURL() || "").trim(),
+  vehicle_id_normalized: "",
+  booking_status: "unknown",
+  overdue_state: "unknown",
+  payment_plan_state: "unknown",
+  extension_eligibility_state: "unknown",
+  inventory_match_result: "not_attempted",
+  redirect_reason: "",
+};
+
+function normalizeStatusState(value, fallback) {
+  const state = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  return state || (fallback || "unknown");
+}
+
+function deriveExtensionTraceStates(booking) {
+  const statusKey = normalizeStatusState(booking?.status, "unknown");
+  const paymentPlanStatus = normalizeStatusState(booking?.paymentPlan?.status, "none");
+  const isOverdue = statusKey === "overdue" || !!booking?.isOverdueStage || !!booking?.paymentPlan?.isOverdue;
+  const isExtensionEligible = ["active", "active_rental", "overdue", "extended"].includes(statusKey);
+  return {
+    booking_status: statusKey,
+    overdue_state: isOverdue ? "overdue" : "not_overdue",
+    payment_plan_state: paymentPlanStatus,
+    extension_eligibility_state: isExtensionEligible ? "eligible" : "restricted",
+  };
+}
+
+function logExtensionTrace(eventName, fields) {
+  if (!IS_EXTENSION_FLOW) return;
+  console.info("[car.js][extension-trace]", {
+    event: eventName,
+    ...extensionTraceContext,
+    ...(fields || {}),
+  });
+}
+
+async function loadExtensionBookingContext() {
+  if (!IS_EXTENSION_FLOW) return null;
+  const token = String(pageParams.get("t") || "").trim();
+  if (!token) {
+    logExtensionTrace("booking_context_missing_token", {
+      redirect_reason: "missing_extension_token",
+    });
+    return null;
+  }
+
+  try {
+    const resp = await fetch(API_BASE + "/api/manage-booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "get", token }),
+    });
+    if (!resp.ok) {
+      let payload = null;
+      try { payload = await resp.json(); } catch (_) {}
+      logExtensionTrace("booking_context_load_failed", {
+        redirect_reason: "manage_booking_context_error",
+        booking_context_http_status: resp.status,
+        booking_context_error: payload?.error || null,
+      });
+      return null;
+    }
+    const booking = await resp.json();
+    extensionTraceContext.booking_id = String(booking?.bookingId || "").trim();
+    const traceStates = deriveExtensionTraceStates(booking);
+    extensionTraceContext.booking_status = traceStates.booking_status;
+    extensionTraceContext.overdue_state = traceStates.overdue_state;
+    extensionTraceContext.payment_plan_state = traceStates.payment_plan_state;
+    extensionTraceContext.extension_eligibility_state = traceStates.extension_eligibility_state;
+    logExtensionTrace("booking_context_loaded", {});
+    return booking;
+  } catch (err) {
+    logExtensionTrace("booking_context_load_exception", {
+      redirect_reason: "manage_booking_context_exception",
+      booking_context_error: err && err.message ? err.message : String(err),
+    });
+    return null;
+  }
 }
 
 function normalizeVehicleLookupKey(value) {
@@ -94,10 +178,17 @@ function getVehicleLookupRecoveryUrl(isExtensionFlow) {
 }
 
 function handleVehicleLookupFailure(reason, details) {
-  const isExtensionFlow = /^(true|1)$/i.test(pageParams.get("extend") || "");
+  const isExtensionFlow = IS_EXTENSION_FLOW;
   const message = isExtensionFlow
     ? "We couldn’t load your vehicle for extension right now. Redirecting you back to Manage Booking."
     : "We couldn’t find that vehicle. Redirecting you to available vehicles.";
+  if (isExtensionFlow) {
+    extensionTraceContext.redirect_reason = String(reason || "unknown");
+    logExtensionTrace("vehicle_lookup_failed", {
+      redirect_reason: extensionTraceContext.redirect_reason,
+      inventory_match_result: extensionTraceContext.inventory_match_result || "not_found",
+    });
+  }
   console.error("[car.js] Vehicle lookup failed:", {
     reason,
     requestedVehicle: String(getVehicleFromURL() || ""),
@@ -327,12 +418,9 @@ function validateDocUploadSelection(file, otherSelectedBytes) {
 }());
 
 let vehicleId = String(getVehicleFromURL() || "").trim();
-if (!vehicleId) {
-  handleVehicleLookupFailure("missing_vehicle_query_param");
-}
-
 // carData is populated asynchronously after fetching from the API for all vehicles.
 let carData = null;
+let extensionBookingContext = null;
 
 // Builds a cars-compatible data object from a v2-vehicles API response entry.
 // All vehicles — existing and newly added — load through this path.
@@ -553,32 +641,135 @@ document.getElementById("nextSlide").addEventListener("click", nextSlide);
 document.getElementById("prevSlide").addEventListener("click", prevSlide);
 function goToSlide(idx){ showSlide(idx); }
 
-// Initialize page: fetch vehicle data from the API for all vehicles.
-sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
-// Fetch vehicle data without browser cache so a prior vehicle view cannot leak stale media.
-fetch(API_BASE + "/api/v2-vehicles", { cache: "no-store", headers: { Accept: "application/json" } })
-  .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
-  .then(function(vehicles) {
-    var resolved = resolveVehicleFromInventory(vehicles, vehicleId);
-    if (!resolved || !resolved.vehicle) throw new Error("not found");
-    var resolvedVehicleId = String(resolved.vehicleId || "").trim();
-    if (!resolvedVehicleId) throw new Error("resolved_vehicle_id_missing");
-    if (resolvedVehicleId !== vehicleId) {
-      const next = new URL(window.location.href);
-      next.searchParams.set("vehicle", resolvedVehicleId);
-      window.history.replaceState({}, "", `${next.pathname}${next.search}${next.hash}`);
-      console.warn("[car.js] normalized vehicle route:", { requested: vehicleId, resolved: resolvedVehicleId });
-      vehicleId = resolvedVehicleId;
+function dedupeVehicleRefs(values) {
+  const seen = new Set();
+  const refs = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return;
+    const key = raw.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    refs.push(raw);
+  });
+  return refs;
+}
+
+function buildFallbackExtensionCarData(booking, resolvedVehicleId) {
+  const displayName = String(booking?.vehicleName || resolvedVehicleId || "Your vehicle").trim();
+  return {
+    name: displayName,
+    subtitle: "",
+    pricePerDay: 55,
+    weekly: 350,
+    biweekly: 650,
+    monthly: 1300,
+    minRentalDays: 1,
+    booking_deposit: null,
+    images: [VEHICLE_IMAGE_PLACEHOLDER],
+    make: String(booking?.vehicleMake || "").trim(),
+    model: String(booking?.vehicleModel || displayName || resolvedVehicleId || "").trim(),
+    year: booking?.vehicleYear || null,
+    vin: "",
+    color: String(booking?.vehicleColor || "").trim(),
+    earnings_tagline: "",
+    earnings_title: "",
+    earnings_row1: "",
+    earnings_cta: "",
+    category: "car",
+  };
+}
+
+function applyResolvedVehicleRoute(resolvedVehicleId, source) {
+  if (!resolvedVehicleId) return;
+  const priorVehicleId = String(vehicleId || "").trim();
+  if (!priorVehicleId || priorVehicleId !== resolvedVehicleId) {
+    const next = new URL(window.location.href);
+    next.searchParams.set("vehicle", resolvedVehicleId);
+    window.history.replaceState({}, "", `${next.pathname}${next.search}${next.hash}`);
+    if (priorVehicleId && priorVehicleId !== resolvedVehicleId) {
+      console.warn("[car.js] normalized vehicle route:", { requested: priorVehicleId, resolved: resolvedVehicleId, source });
     }
-    carData = cars[vehicleId] = buildCarDataFromAPI(resolved.vehicle);
-    sliderContainer.innerHTML = "";
-    initCarPage();
-  })
-  .catch(function(err) {
+    vehicleId = resolvedVehicleId;
+  }
+  extensionTraceContext.vehicle_id_normalized = resolvedVehicleId;
+}
+
+async function initializeVehicleContext() {
+  try {
+    extensionBookingContext = await loadExtensionBookingContext();
+    const vehicleCandidates = dedupeVehicleRefs([
+      vehicleId,
+      extensionBookingContext?.vehicleId,
+      extensionBookingContext?.vehicleName,
+    ]);
+    if (vehicleCandidates.length === 0) {
+      handleVehicleLookupFailure("missing_vehicle_query_param");
+      return;
+    }
+
+    logExtensionTrace("inventory_lookup_started", {
+      vehicle_candidates: vehicleCandidates,
+    });
+
+    const response = await fetch(API_BASE + "/api/v2-vehicles", { cache: "no-store", headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const vehicles = await response.json();
+
+    let resolved = null;
+    let matchedCandidate = "";
+    for (const candidate of vehicleCandidates) {
+      const match = resolveVehicleFromInventory(vehicles, candidate);
+      if (match && match.vehicle) {
+        resolved = match;
+        matchedCandidate = candidate;
+        break;
+      }
+    }
+
+    if (resolved && resolved.vehicle) {
+      const resolvedVehicleId = String(resolved.vehicleId || "").trim();
+      if (!resolvedVehicleId) throw new Error("resolved_vehicle_id_missing");
+      applyResolvedVehicleRoute(resolvedVehicleId, "inventory_match");
+      extensionTraceContext.inventory_match_result = "matched_inventory";
+      logExtensionTrace("inventory_lookup_succeeded", {
+        inventory_match_result: extensionTraceContext.inventory_match_result,
+        matched_candidate: matchedCandidate || null,
+      });
+      carData = cars[vehicleId] = buildCarDataFromAPI(resolved.vehicle);
+      sliderContainer.innerHTML = "";
+      initCarPage();
+      return;
+    }
+
+    const fallbackVehicleId = String(
+      extensionBookingContext?.vehicleId || vehicleCandidates[0] || ""
+    ).trim();
+
+    if (IS_EXTENSION_FLOW && extensionBookingContext && fallbackVehicleId) {
+      applyResolvedVehicleRoute(fallbackVehicleId, "booking_context_fallback");
+      extensionTraceContext.inventory_match_result = "booking_context_fallback";
+      logExtensionTrace("inventory_lookup_fallback_applied", {
+        inventory_match_result: extensionTraceContext.inventory_match_result,
+      });
+      carData = cars[vehicleId] = buildFallbackExtensionCarData(extensionBookingContext, vehicleId);
+      sliderContainer.innerHTML = "";
+      initCarPage();
+      return;
+    }
+
+    throw new Error("not found");
+  } catch (err) {
+    extensionTraceContext.inventory_match_result = "not_found";
     handleVehicleLookupFailure("inventory_lookup_failed", {
       error: err && err.message ? err.message : String(err),
     });
-  });
+  }
+}
+
+// Initialize page: fetch vehicle data from the API for all vehicles.
+sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
+initializeVehicleContext();
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
