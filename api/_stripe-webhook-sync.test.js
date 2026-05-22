@@ -30,6 +30,7 @@ process.env.GITHUB_TOKEN          = "ghs_fake_for_tests";
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json
 const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [], released: [] };
+const ledgerCalls = { payments: [], refunds: [] };
 let bookedDatesStore = {};
 let fleetStatusStore = {};
 const supabaseBookingsStore = {};
@@ -175,6 +176,32 @@ mock.module("./_booking-automation.js", {
       if (ampm === "PM" && hours < 12) hours += 12;
       if (ampm === "AM" && hours === 12) hours = 0;
       return `${String(hours).padStart(2, "0")}:${m[2]}:${m[3] || "00"}`;
+    },
+  },
+});
+
+mock.module("./_renter-balance-ledger.js", {
+  namedExports: {
+    addLedgerPayment: async (_sb, input = {}) => {
+      ledgerCalls.payments.push({ ...input });
+      const piId = String(input.paymentIntentId || input.payment_intent_id || "");
+      return {
+        transaction: {
+          id: `ledger_${piId || Math.random().toString(36).slice(2)}`,
+          metadata: input.metadata || {},
+        },
+        duplicate: false,
+      };
+    },
+    addLedgerRefund: async (_sb, input = {}) => {
+      ledgerCalls.refunds.push({ ...input });
+      return {
+        transaction: {
+          id: `refund_${Math.random().toString(36).slice(2)}`,
+          metadata: input.metadata || {},
+        },
+        duplicate: false,
+      };
     },
   },
 });
@@ -392,6 +419,8 @@ function resetCalls() {
   automationCalls.blocked.length = 0;
   automationCalls.activated.length = 0;
   automationCalls.released.length = 0;
+  ledgerCalls.payments.length = 0;
+  ledgerCalls.refunds.length = 0;
   supabaseDirectUpdates.length = 0;
   sentEmails.length = 0;
   skipSupabaseUpsertPi = null;
@@ -590,6 +619,10 @@ test("webhook reservation_deposit: creates reservation_deposit revenue and syncs
   assert.ok(rev, "reservation_deposit must create its own revenue record");
   assert.equal(rev.bookingId, bookingId);
   assert.equal(rev.amountPaid, 50);
+  const ledgerPayment = ledgerCalls.payments.find((p) => p.paymentIntentId === event.data.object.id);
+  assert.ok(ledgerPayment, "reservation_deposit must write a ledger payment transaction");
+  assert.equal(ledgerPayment.bookingId, bookingId);
+  assert.equal(ledgerPayment.amount, 50);
 
   const bookingSync = automationCalls.booking.find((b) => b.bookingId === bookingId);
   assert.ok(bookingSync, "reservation_deposit must sync booking state");
@@ -645,6 +678,10 @@ test("webhook reservation_deposit via wallet metadata still reconciles booking +
   const rev = automationCalls.revenue.find((r) => r.bookingId === bookingId && r.type === "reservation_deposit");
   assert.ok(rev, "wallet-backed reservation deposit should reconcile as reservation_deposit");
   assert.equal(rev.amountPaid, 50);
+  const ledgerPayment = ledgerCalls.payments.find((p) => p.paymentIntentId === event.data.object.id);
+  assert.ok(ledgerPayment, "wallet-backed reservation deposit must write a ledger payment transaction");
+  assert.equal(ledgerPayment.bookingId, bookingId);
+  assert.equal(ledgerPayment.amount, 50);
   assert.ok(automationCalls.booking.some((b) => b.bookingId === bookingId), "wallet-backed reservation deposit must sync booking");
 });
 
