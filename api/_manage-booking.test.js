@@ -302,6 +302,38 @@ test("payment lifecycle: overdue state takes precedence over other active states
   assert.equal(state.isOverdue, true);
 });
 
+test("payment lifecycle: reserved_unpaid with deposit paid hides online balance payment (balance due at pickup)", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "reserved_unpaid",
+    paymentStatus: "partial",
+    category: "car",
+    totalAmount: 350,
+    amountPaid: 50,
+    remainingBalance: 300,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "deposit_paid");
+  assert.equal(state.isManualPickup, true);
+  assert.equal(state.canPayRemainingOnline, false);
+  assert.equal(state.isPaidInFull, false);
+  assert.equal(state.hasOutstandingBalance, true);
+});
+
+test("payment lifecycle: reserved_unpaid with no partial payment stays reservation_pending and allows online payment", () => {
+  const state = deriveBookingPaymentLifecycle({
+    status: "reserved_unpaid",
+    paymentStatus: "unpaid",
+    category: "car",
+    totalAmount: 350,
+    amountPaid: 0,
+    remainingBalance: 350,
+    paymentPlan: null,
+  });
+  assert.equal(state.lifecycleState, "reservation_pending");
+  assert.equal(state.isManualPickup, false);
+  assert.equal(state.canPayRemainingOnline, true);
+});
+
 test("payment lifecycle: slingshot pickup-due flow does not expose online remaining-balance payment", () => {
   const state = deriveBookingPaymentLifecycle({
     status: "pending_manual_payment",

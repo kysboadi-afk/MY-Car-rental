@@ -39,20 +39,27 @@ export function deriveBookingPaymentLifecycle(input = {}) {
   const remainingBalance = Math.max(0, toMoney(input.remainingBalance));
   const hasOutstandingBalance = remainingBalance > 0;
   const isSlingshot = categoryKey === "slingshot";
-  const isManualPickup = MANUAL_PICKUP_STATUSES.has(statusKey) || (isSlingshot && statusKey === "agreement_pending");
+  const isManualPickupByStatus = MANUAL_PICKUP_STATUSES.has(statusKey) || (isSlingshot && statusKey === "agreement_pending");
   const isActiveRental = ACTIVE_RENTAL_STATUSES.has(statusKey);
   const isOverdue = OVERDUE_STATUSES.has(statusKey) || (!!input.paymentPlan?.isOverdue && hasOutstandingBalance);
   const paymentPlanStatus = normalizeKey(input.paymentPlan?.status);
   const hasPaymentPlan = !!input.paymentPlan && PAYMENT_PLAN_STATUSES.has(paymentPlanStatus);
-  const isReservationStage = RESERVATION_STATUSES.has(statusKey) || isManualPickup;
   const hasPartialIndicator = PAYMENT_STATUS_PARTIAL.has(paymentStatusKey);
   const hasFullIndicator = PAYMENT_STATUS_FULL.has(paymentStatusKey);
   const hasPositivePaid = amountPaid > 0;
   const isFullyPaidByBalance = remainingBalance <= 0;
+  // A reservation_deposit booking in reserved_unpaid status means the customer paid the
+  // booking deposit (e.g. $50) and the remaining balance is collected at pickup — not online.
+  const isReservationDepositPending = statusKey === "reserved_unpaid" && hasPositivePaid && hasOutstandingBalance;
+  const isManualPickup = isManualPickupByStatus || isReservationDepositPending;
+  const isReservationStage = RESERVATION_STATUSES.has(statusKey) || isManualPickup;
 
   let lifecycleState = "reservation_pending";
 
-  if (isOverdue) {
+  if (isReservationDepositPending) {
+    // Reservation deposit paid — treat as deposit_paid with balance due at pickup.
+    lifecycleState = "deposit_paid";
+  } else if (isOverdue) {
     lifecycleState = "overdue";
   } else if (hasPaymentPlan && hasOutstandingBalance) {
     lifecycleState = "payment_plan_active";

@@ -310,11 +310,19 @@
     const categoryKey = normalizeStatusKey(booking?.category);
     const isSlingshot = categoryKey === "slingshot";
     const paymentPlanStatus = normalizeStatusKey(booking?.paymentPlan?.status);
-    const isManualPickup = ["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey) || (isSlingshot && statusKey === "agreement_pending");
+    const isManualPickupByStatus = ["agreement_signed", "pending_manual_payment", "ready_for_pickup"].includes(statusKey) || (isSlingshot && statusKey === "agreement_pending");
     const isActiveRental = ["active", "active_rental", "extended"].includes(statusKey);
     const hasOutstandingBalance = balance > 0;
     const hasPaymentPlan = !!booking?.paymentPlan && ["active", "defaulted", "past_due", "overdue"].includes(paymentPlanStatus);
     const isOverdue = statusKey === "overdue" || (!!booking?.paymentPlan?.isOverdue && hasOutstandingBalance);
+    const hasPartialIndicator = ["partial", "deposit", "deposit_paid", "partially_paid"].includes(paymentStatusKey);
+    const hasFullIndicator = ["paid", "paid_in_full", "full", "completed", "succeeded"].includes(paymentStatusKey);
+    const hasPositivePaid = paid > 0;
+    const isFullyPaidByBalance = balance <= 0;
+    // A reservation_deposit booking in reserved_unpaid status means the customer paid the
+    // booking deposit (e.g. $50) and the remaining balance is collected at pickup — not online.
+    const isReservationDepositPending = statusKey === "reserved_unpaid" && hasPositivePaid && hasOutstandingBalance;
+    const isManualPickup = isManualPickupByStatus || isReservationDepositPending;
     const isReservationStage = [
       "pending",
       "pending_checkout",
@@ -330,14 +338,11 @@
       "pending_manual_payment",
       "ready_for_pickup",
     ].includes(statusKey) || isManualPickup;
-    const hasPartialIndicator = ["partial", "deposit", "deposit_paid", "partially_paid"].includes(paymentStatusKey);
-    const hasFullIndicator = ["paid", "paid_in_full", "full", "completed", "succeeded"].includes(paymentStatusKey);
-    const hasPositivePaid = paid > 0;
-    const isFullyPaidByBalance = balance <= 0;
 
     let lifecycleState = booking?.paymentLifecycleState || "reservation_pending";
 
-    if (isOverdue) lifecycleState = "overdue";
+    if (isReservationDepositPending) lifecycleState = "deposit_paid";
+    else if (isOverdue) lifecycleState = "overdue";
     else if (hasPaymentPlan && hasOutstandingBalance) lifecycleState = "payment_plan_active";
     else if (isActiveRental) lifecycleState = "active_rental";
     else if (isManualPickup && !isFullyPaidByBalance) lifecycleState = "pickup_due";
