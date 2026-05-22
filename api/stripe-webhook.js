@@ -32,7 +32,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, BOOKING_ONBOARDING, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, MANAGE_BOOKING_ACCESS, BOOKING_ONBOARDING, PAYMENT_EDUCATION, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, autoReleaseBlockedDateOnReturn, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -55,6 +55,7 @@ import { addLedgerPayment, addLedgerRefund } from "./_renter-balance-ledger.js";
 import { reconcilePaymentPlanPayment, computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
+import { normalizeLifecycleEvent, buildLifecycleTemplateSequence, SMS_LIFECYCLE_EVENT } from "./_sms-lifecycle.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -166,14 +167,92 @@ function hasSucceededPaymentForNotifications(paymentIntent) {
   return status === "succeeded" && Number.isFinite(receivedCents) && receivedCents > 0;
 }
 
-function shouldSendOnboardingSms(pickupDate, returnDate) {
-  const pickup = String(pickupDate || "").trim();
-  const ret = String(returnDate || "").trim();
-  if (!pickup || !ret) return false;
-  // Suppress onboarding for same-day rentals to avoid noisy messaging on trips
-  // that may start and complete within a single day.
-  if (pickup && ret && pickup === ret) return false;
-  return true;
+function buildLifecycleSmsBody(templateKey, ctx = {}) {
+  const {
+    customerName = "",
+    vehicleName = "your vehicle",
+    pickupDate = "",
+    pickupTime = "",
+    returnDate = "",
+    returnTime = "",
+    bookingType = "",
+    bookingId = "",
+    vehicleId = "",
+    manageLink = "",
+    paymentLink = "",
+  } = ctx;
+  switch (templateKey) {
+    case "reservation_deposit_confirmed":
+      return render(RESERVATION_DEPOSIT_CONFIRMED, {
+        customer_name: sanitizeSmsValue(customerName),
+        vehicle: sanitizeSmsValue(vehicleName),
+        remaining_balance: Number(ctx.remainingBalance || 0).toFixed(2),
+        payment_link: paymentLink,
+      });
+    case "booking_confirmed":
+      return render(BOOKING_CONFIRMED, {
+        customer_name: sanitizeSmsValue(customerName),
+        vehicle: sanitizeSmsValue(vehicleName),
+        pickup_date: pickupDate || "",
+        pickup_time: pickupTime || "",
+        return_date: returnDate || "",
+        return_time_line: returnTime ? ` at ${formatTime12h(returnTime) || returnTime}\n` : "\n",
+        location: resolvePickupLocation({
+          bookingType,
+          vehicleId,
+          vehicleName,
+        }),
+      });
+    case "manage_booking_access":
+      return render(MANAGE_BOOKING_ACCESS, {
+        customer_name: sanitizeSmsValue(customerName),
+        booking_id: sanitizeSmsValue(bookingId || ""),
+        manage_link: manageLink,
+      });
+    case "booking_onboarding":
+      return render(BOOKING_ONBOARDING, {
+        customer_name: sanitizeSmsValue(customerName),
+        booking_id: sanitizeSmsValue(bookingId || ""),
+        manage_link: manageLink,
+      });
+    case "payment_education":
+      return render(PAYMENT_EDUCATION, {
+        payment_link: paymentLink || manageLink,
+      });
+    default:
+      return "";
+  }
+}
+
+async function sendLifecycleSmsSequence({
+  bookingId,
+  phone,
+  eventType,
+  smsContext,
+  source,
+  paymentState,
+}) {
+  if (!phone || !bookingId) return;
+  const sequence = buildLifecycleTemplateSequence(eventType);
+  if (!sequence.length) return;
+  for (const templateKey of sequence) {
+    const body = buildLifecycleSmsBody(templateKey, smsContext);
+    if (!body) continue;
+    const sent = await sendDedupedSms({
+      bookingId,
+      templateKey,
+      phone,
+      body,
+      metadata: {
+        source,
+        payment_state: paymentState || null,
+        lifecycle_event: eventType,
+      },
+    });
+    if (!sent) {
+      console.log(`stripe-webhook: lifecycle SMS skipped (dedup) template=${templateKey} booking=${bookingId}`);
+    }
+  }
 }
 
 /**
@@ -2687,20 +2766,31 @@ export default async function handler(req, res) {
       // Renter SMS — includes balance payment link
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-          const depositSmsSent = await sendDedupedSms({
-            bookingId: resolvedBookingId || bookingRef || paymentIntent.id,
-            templateKey: "reservation_deposit_confirmed",
+          const smsBookingId = resolvedBookingId || bookingRef || paymentIntent.id;
+          await sendLifecycleSmsSequence({
+            bookingId: smsBookingId,
             phone: bookingForSync.phone,
-            body: render(RESERVATION_DEPOSIT_CONFIRMED, {
-              customer_name:     sanitizeSmsValue(bookingForSync.name || ""),
-              vehicle:           sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle"),
-              remaining_balance: remainingBalance.toFixed(2),
-              payment_link:      balanceLink,
-            }),
+            eventType: SMS_LIFECYCLE_EVENT.RESERVATION_DEPOSIT_PAID,
+            smsContext: {
+              customerName: bookingForSync.name || "",
+              vehicleName: bookingForSync.vehicleName || "your vehicle",
+              pickupDate: bookingForSync.pickupDate || "",
+              pickupTime: bookingForSync.pickupTime || "",
+              returnDate: bookingForSync.returnDate || "",
+              returnTime: bookingForSync.returnTime || "",
+              bookingId: smsBookingId,
+              bookingType: meta.booking_type || "",
+              vehicleId: bookingForSync.vehicleId || vehicle_id || "",
+              remainingBalance,
+              manageLink: buildRenterOnboardingLink({
+                bookingId: smsBookingId,
+                vehicleId: bookingForSync.vehicleId || vehicle_id || "",
+              }),
+              paymentLink: balanceLink,
+            },
+            source: "stripe_webhook:reservation_deposit",
+            paymentState: "partial",
           });
-          if (!depositSmsSent) {
-            console.log("stripe-webhook: reservation_deposit_confirmed SMS skipped (dedup)");
-          }
         }
       } catch (smsErr) {
         console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
@@ -3189,38 +3279,37 @@ export default async function handler(req, res) {
         // Renter SMS — booking confirmed
         if (preContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           try {
-            const bookingConfirmedSent = await sendDedupedSms({
-              bookingId: bookingRef || originalPiId || paymentIntent.id,
-              templateKey: "booking_confirmed",
-              phone: preContact.phone,
-              body: render(BOOKING_CONFIRMED, {
-                customer_name:    sanitizeSmsValue(preContact.name || ""),
-                vehicle:          sanitizeSmsValue(preContact.vehicleName || "your vehicle"),
-                pickup_date:      preContact.pickupDate || "",
-                pickup_time:      preContact.pickupTime || "",
-                return_date:      preContact.returnDate || "",
-                return_time_line: preContact.returnTime ? ` at ${formatTime12h(preContact.returnTime) || preContact.returnTime}\n` : "\n",
-                location:         resolvePickupLocation({
-                  bookingType: meta.booking_type,
-                  vehicleId: preContact.vehicleId,
-                  vehicleName: preContact.vehicleName,
-                }),
-              }),
+            const smsBookingId = bookingRef || originalPiId || paymentIntent.id;
+            const eventType = normalizeLifecycleEvent({
+              paymentType,
+              isPartialPayment: String(meta.is_partial_payment || "").toLowerCase() === "true",
             });
-            if (bookingConfirmedSent && shouldSendOnboardingSms(preContact.pickupDate, preContact.returnDate)) {
-              await sendDedupedSms({
-                bookingId: bookingRef || originalPiId || paymentIntent.id,
-                templateKey: "booking_onboarding",
-                phone: preContact.phone,
-                body: render(BOOKING_ONBOARDING, {
-                  customer_name: sanitizeSmsValue(preContact.name || ""),
-                  manage_link: buildRenterOnboardingLink({
-                    bookingId: bookingRef || originalPiId || paymentIntent.id,
-                    vehicleId: preContact.vehicleId,
-                  }),
+            await sendLifecycleSmsSequence({
+              bookingId: smsBookingId,
+              phone: preContact.phone,
+              eventType,
+              smsContext: {
+                customerName: preContact.name || "",
+                vehicleName: preContact.vehicleName || "your vehicle",
+                pickupDate: preContact.pickupDate || "",
+                pickupTime: preContact.pickupTime || "",
+                returnDate: preContact.returnDate || "",
+                returnTime: preContact.returnTime || "",
+                bookingId: smsBookingId,
+                bookingType: meta.booking_type || "",
+                vehicleId: preContact.vehicleId || vehicle_id || "",
+                manageLink: buildRenterOnboardingLink({
+                  bookingId: smsBookingId,
+                  vehicleId: preContact.vehicleId || vehicle_id || "",
                 }),
-              });
-            }
+                paymentLink: buildRenterOnboardingLink({
+                  bookingId: smsBookingId,
+                  vehicleId: preContact.vehicleId || vehicle_id || "",
+                }),
+              },
+              source: "stripe_webhook:balance_payment",
+              paymentState: String(meta.is_partial_payment || "").toLowerCase() === "true" ? "partial" : "paid",
+            });
           } catch (smsErr) {
             console.error("stripe-webhook: balance_paid SMS error (non-fatal):", smsErr.message);
           }
@@ -3760,38 +3849,31 @@ export default async function handler(req, res) {
       // ── Step 3: Renter SMS confirmation ───────────────────────────────────
       if (sl_renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          const bookingConfirmedSent = await sendDedupedSms({
-            bookingId: sl_booking_id || paymentIntent.id,
-            templateKey: "booking_confirmed",
-            phone: sl_renter_phone,
-            body: render(BOOKING_CONFIRMED, {
-              customer_name:    sanitizeSmsValue(sl_renter_name || ""),
-              vehicle:          sanitizeSmsValue(sl_vehicle_name || "your slingshot"),
-              pickup_date:      sl_pickup_date || "",
-              pickup_time:      sl_pickup_time || "",
-              return_date:      sl_return_date || "",
-              return_time_line: sl_return_time ? ` at ${sl_return_time}\n` : "\n",
-              location:         resolvePickupLocation({
-                bookingType: "slingshot",
-                vehicleId: sl_vehicle_id,
-                vehicleName: sl_vehicle_name,
-              }),
-            }),
+          const smsBookingId = sl_booking_id || paymentIntent.id;
+          const manageLink = buildRenterOnboardingLink({
+            bookingId: smsBookingId,
+            vehicleId: sl_vehicle_id,
           });
-          if (bookingConfirmedSent && shouldSendOnboardingSms(sl_pickup_date, sl_return_date)) {
-            await sendDedupedSms({
-              bookingId: sl_booking_id || paymentIntent.id,
-              templateKey: "booking_onboarding",
-              phone: sl_renter_phone,
-              body: render(BOOKING_ONBOARDING, {
-                customer_name: sanitizeSmsValue(sl_renter_name || ""),
-                manage_link: buildRenterOnboardingLink({
-                  bookingId: sl_booking_id || paymentIntent.id,
-                  vehicleId: sl_vehicle_id,
-                }),
-              }),
-            });
-          }
+          await sendLifecycleSmsSequence({
+            bookingId: smsBookingId,
+            phone: sl_renter_phone,
+            eventType: SMS_LIFECYCLE_EVENT.BOOKING_PAID_IN_FULL,
+            smsContext: {
+              customerName: sl_renter_name || "",
+              vehicleName: sl_vehicle_name || "your slingshot",
+              pickupDate: sl_pickup_date || "",
+              pickupTime: sl_pickup_time || "",
+              returnDate: sl_return_date || "",
+              returnTime: sl_return_time || "",
+              bookingType: "slingshot",
+              bookingId: smsBookingId,
+              vehicleId: sl_vehicle_id || "",
+              manageLink,
+              paymentLink: manageLink,
+            },
+            source: "stripe_webhook:slingshot_full_payment",
+            paymentState: "paid",
+          });
         } catch (slRenterSmsErr) {
           console.error("stripe-webhook: [SLINGSHOT] renter SMS error (non-fatal):", slRenterSmsErr.message);
         }
@@ -3883,38 +3965,35 @@ export default async function handler(req, res) {
       // Renter SMS — booking confirmation to the customer
       if (_notifyMeta.renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          const bookingConfirmedSent = await sendDedupedSms({
-            bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
-            templateKey: "booking_confirmed",
-            phone: _notifyMeta.renter_phone,
-            body: render(BOOKING_CONFIRMED, {
-              customer_name:    sanitizeSmsValue(_notifyMeta.renter_name || ""),
-              vehicle:          sanitizeSmsValue(_notifyMeta.vehicle_name || _notifyMeta.vehicle_id || "your vehicle"),
-              pickup_date:      _notifyMeta.pickup_date || "",
-              pickup_time:      _notifyMeta.pickup_time || "",
-              return_date:      _notifyMeta.return_date || "",
-              return_time_line: _notifyMeta.return_time ? ` at ${formatTime12h(_notifyMeta.return_time) || _notifyMeta.return_time}\n` : "\n",
-              location:         resolvePickupLocation({
-                bookingType: _notifyMeta.booking_type,
-                vehicleId: _notifyMeta.vehicle_id,
-                vehicleName: _notifyMeta.vehicle_name,
-              }),
-            }),
+          const smsBookingId = _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id;
+          const eventType = normalizeLifecycleEvent({
+            paymentType,
+            isPartialPayment: String(_notifyMeta.is_partial_payment || "").toLowerCase() === "true",
           });
-          if (bookingConfirmedSent && shouldSendOnboardingSms(_notifyMeta.pickup_date, _notifyMeta.return_date)) {
-            await sendDedupedSms({
-              bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
-              templateKey: "booking_onboarding",
-              phone: _notifyMeta.renter_phone,
-              body: render(BOOKING_ONBOARDING, {
-                customer_name: sanitizeSmsValue(_notifyMeta.renter_name || ""),
-                manage_link: buildRenterOnboardingLink({
-                  bookingId: _notifyMeta.booking_id || _notifyMeta.original_booking_id || paymentIntent.id,
-                  vehicleId: _notifyMeta.vehicle_id,
-                }),
-              }),
-            });
-          }
+          const manageLink = buildRenterOnboardingLink({
+            bookingId: smsBookingId,
+            vehicleId: _notifyMeta.vehicle_id,
+          });
+          await sendLifecycleSmsSequence({
+            bookingId: smsBookingId,
+            phone: _notifyMeta.renter_phone,
+            eventType,
+            smsContext: {
+              customerName: _notifyMeta.renter_name || "",
+              vehicleName: _notifyMeta.vehicle_name || _notifyMeta.vehicle_id || "your vehicle",
+              pickupDate: _notifyMeta.pickup_date || "",
+              pickupTime: _notifyMeta.pickup_time || "",
+              returnDate: _notifyMeta.return_date || "",
+              returnTime: _notifyMeta.return_time || "",
+              bookingType: _notifyMeta.booking_type || "",
+              bookingId: smsBookingId,
+              vehicleId: _notifyMeta.vehicle_id || "",
+              manageLink,
+              paymentLink: _notifyMeta.balance_payment_link || manageLink,
+            },
+            source: "stripe_webhook:generic_booking",
+            paymentState: String(_notifyMeta.is_partial_payment || "").toLowerCase() === "true" ? "partial" : "paid",
+          });
         } catch (renterSmsErr) {
           console.error("stripe-webhook: renter booking SMS error (non-fatal):", renterSmsErr.message);
         }

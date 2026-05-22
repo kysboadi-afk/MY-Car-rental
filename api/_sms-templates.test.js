@@ -18,6 +18,7 @@ import {
   WAITLIST_APPROVED,
   WAITLIST_DECLINED,
   BOOKING_CONFIRMED,
+  MANAGE_BOOKING_ACCESS,
   UNPAID_REMINDER_24H,
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
@@ -166,6 +167,12 @@ test("BOOKING_CONFIRMED references all key variables", () => {
   assert.ok(BOOKING_CONFIRMED.includes("{pickup_date}"));
   assert.ok(BOOKING_CONFIRMED.includes("{pickup_time}"));
   assert.ok(BOOKING_CONFIRMED.includes("{location}"));
+});
+
+test("MANAGE_BOOKING_ACCESS includes booking_id and manage link", () => {
+  assert.ok(MANAGE_BOOKING_ACCESS.includes("{booking_id}"));
+  assert.ok(MANAGE_BOOKING_ACCESS.includes("{manage_link}"));
+  assert.ok(MANAGE_BOOKING_ACCESS.includes("{customer_name}"));
 });
 
 test("render BOOKING_CONFIRMED fills correctly", () => {
@@ -395,7 +402,7 @@ test("TEMPLATES map contains all expected keys", () => {
   const expectedKeys = [
     "application_received", "application_approved", "application_denied",
     "waitlist_joined", "waitlist_approved", "waitlist_booking_reminder", "waitlist_declined",
-    "booking_confirmed", "booking_onboarding", "extension_education", "payment_education",
+    "booking_confirmed", "manage_booking_access", "booking_onboarding", "extension_education", "payment_education",
     "unpaid_reminder_24h", "unpaid_reminder_2h", "unpaid_reminder_final",
     "pickup_reminder_24h", "pickup_reminder_2h", "pickup_reminder_30min",
     "active_rental_mid", "active_rental_1h_before_end", "active_rental_15min_before_end", "return_expectations",

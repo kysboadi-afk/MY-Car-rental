@@ -4,6 +4,31 @@ import { sendSms } from "./_textmagic.js";
 
 export const SMS_LOGS_NO_RETURN_DATE = "1970-01-01";
 
+function traceSmsEvent({
+  bookingId = null,
+  templateKey = null,
+  source = null,
+  paymentState = null,
+  status = null,
+  providerId = null,
+  error = null,
+}) {
+  try {
+    console.log("[SMS_EVENT_TRACE]", JSON.stringify({
+      ts: new Date().toISOString(),
+      booking_id: bookingId || null,
+      template_key: templateKey || null,
+      trigger_source: source || null,
+      payment_state: paymentState || null,
+      delivery_status: status || null,
+      provider_id: providerId || null,
+      error: error || null,
+    }));
+  } catch {
+    // Never throw from tracing.
+  }
+}
+
 export async function isSmsLogged(bookingId, templateKey, returnDateAtSend = SMS_LOGS_NO_RETURN_DATE) {
   const sb = getSupabaseAdmin();
   if (!sb || !bookingId || !templateKey) return false;
@@ -78,6 +103,8 @@ export async function logSmsDeliveryToSupabase({
 export async function sendDedupedSms({ bookingId, templateKey, phone, body, returnDateAtSend, metadata, forceSend = false }) {
   const normalizedPhone = normalizePhone(phone || "");
   if (!normalizedPhone || !body) return false;
+  const source = metadata?.source || null;
+  const paymentState = metadata?.payment_state || metadata?.paymentStatus || null;
   if (!bookingId) {
     console.warn(`_sms-log: sendDedupedSms called without bookingId for template "${templateKey}"`);
   }
@@ -99,6 +126,14 @@ export async function sendDedupedSms({ bookingId, templateKey, phone, body, retu
   if (alreadyLogged) {
     console.log(`[SMS_SKIP] ${bookingId} ${templateKey}: already logged`);
     await logDelivery({ status: "skipped", error: "dedup_already_logged" });
+    traceSmsEvent({
+      bookingId,
+      templateKey,
+      source,
+      paymentState,
+      status: "skipped",
+      error: "dedup_already_logged",
+    });
     return false;
   }
   let tmResult = null;
@@ -106,10 +141,26 @@ export async function sendDedupedSms({ bookingId, templateKey, phone, body, retu
     tmResult = await sendSms(normalizedPhone, body);
   } catch (err) {
     await logDelivery({ status: "failed", error: err.message || String(err) });
+    traceSmsEvent({
+      bookingId,
+      templateKey,
+      source,
+      paymentState,
+      status: "failed",
+      error: err.message || String(err),
+    });
     throw err;
   }
   const providerId = tmResult && tmResult.id != null ? String(tmResult.id) : null;
   await logDelivery({ status: "sent", provider_id: providerId });
+  traceSmsEvent({
+    bookingId,
+    templateKey,
+    source,
+    paymentState,
+    status: "sent",
+    providerId,
+  });
   if (bookingId) {
     await logSmsToSupabase(bookingId, templateKey, returnDateAtSend || SMS_LOGS_NO_RETURN_DATE, metadata);
   }
