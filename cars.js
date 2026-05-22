@@ -123,6 +123,141 @@ function showLoadingState(grid) {
   </div>`;
 }
 
+function buildNextExpectedAvailability(vehicles, fleetStatus) {
+  const nameById = new Map(
+    (Array.isArray(vehicles) ? vehicles : []).map((v) => [String(v.vehicle_id || ""), String(v.vehicle_name || v.vehicle_id || "Vehicle")])
+  );
+
+  const rows = Object.entries(fleetStatus || {})
+    .map(([vehicleId, status]) => {
+      if (!status || status.available === true) return null;
+      const nextDisplay = SlyLA.formatTimestamp(status.available_at) || status.next_available_display || "";
+      if (!nextDisplay) return null;
+      const sortTs = status.available_at ? Date.parse(status.available_at) : Number.POSITIVE_INFINITY;
+      return {
+        vehicleId,
+        vehicleName: nameById.get(vehicleId) || vehicleId,
+        nextDisplay,
+        sortTs: Number.isFinite(sortTs) ? sortTs : Number.POSITIVE_INFINITY,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.sortTs - b.sortTs)
+    .slice(0, 3);
+
+  if (!rows.length) return "";
+  const items = rows
+    .map((row) => `<li><strong>${esc(row.vehicleName)}</strong><span>${esc(row.nextDisplay)}</span></li>`)
+    .join("");
+  return `<div class="fleet-empty-next-availability">
+    <p>Next Expected Availability</p>
+    <ul>${items}</ul>
+  </div>`;
+}
+
+function renderFleetEmptyState(grid, vehicles, fleetStatus) {
+  const preferredVehicleOptions = [
+    `<option value="">Any available vehicle</option>`,
+    ...(Array.isArray(vehicles) ? vehicles : [])
+      .filter((v) => String(v.status || "active") === "active" && String(v.category || "").toLowerCase() === "car")
+      .map((v) => `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`),
+  ].join("");
+  const nextAvailabilityMarkup = buildNextExpectedAvailability(vehicles, fleetStatus);
+
+  grid.innerHTML = `<div class="fleet-empty-state">
+    <article class="fleet-empty-card" aria-live="polite">
+      <p class="fleet-empty-eyebrow">Premium Fleet Update</p>
+      <h3>🚘 All Vehicles Currently Reserved</h3>
+      <p class="fleet-empty-subtext">Our rideshare fleet is currently fully booked. Vehicles become available frequently as rentals end or new inventory is added.</p>
+      <ul class="fleet-empty-points">
+        <li>Most vehicles stay rented 2–6 weeks</li>
+        <li>Reserve early for best availability</li>
+        <li>New inventory added regularly</li>
+      </ul>
+      ${nextAvailabilityMarkup}
+      <div class="fleet-empty-actions">
+        <a href="#fleetWaitlistForm" class="fleet-empty-btn fleet-empty-btn-primary">Join Waitlist</a>
+        <button type="button" class="fleet-empty-btn fleet-empty-btn-secondary" id="priorityNotificationBtn">Get Priority Notification</button>
+        <a href="tel:+18445114059" class="fleet-empty-btn fleet-empty-btn-call">Call Now</a>
+      </div>
+      <form id="fleetWaitlistForm" class="fleet-waitlist-form" novalidate>
+        <h4>Join the Priority Waitlist</h4>
+        <div class="fleet-waitlist-grid">
+          <label>Name<input type="text" name="name" autocomplete="name" required></label>
+          <label>Phone<input type="tel" name="phone" autocomplete="tel" required></label>
+          <label>Email<input type="email" name="email" autocomplete="email" required></label>
+          <label>Preferred vehicle
+            <select name="preferredVehicle">${preferredVehicleOptions}</select>
+          </label>
+          <label>Weekly budget<input type="text" name="weeklyBudget" placeholder="$350 - $500" maxlength="80"></label>
+          <label class="fleet-waitlist-honeypot">Company
+            <input type="text" name="company" tabindex="-1" autocomplete="off">
+          </label>
+        </div>
+        <button type="submit" class="fleet-empty-btn fleet-empty-btn-primary">Submit Waitlist Request</button>
+        <p id="fleetWaitlistStatus" class="fleet-waitlist-status" aria-live="polite"></p>
+      </form>
+    </article>
+  </div>`;
+
+  const priorityBtn = document.getElementById("priorityNotificationBtn");
+  const form = document.getElementById("fleetWaitlistForm");
+  const statusEl = document.getElementById("fleetWaitlistStatus");
+  if (priorityBtn && form) {
+    priorityBtn.addEventListener("click", () => {
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
+      const firstInput = form.querySelector("input[name='name']");
+      firstInput?.focus();
+    });
+  }
+
+  if (!form || !statusEl) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    statusEl.textContent = "";
+
+    const submitBtn = form.querySelector("button[type='submit']");
+    const formData = new FormData(form);
+    const payload = {
+      name: String(formData.get("name") || "").trim(),
+      phone: String(formData.get("phone") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      preferredVehicle: String(formData.get("preferredVehicle") || "").trim(),
+      weeklyBudget: String(formData.get("weeklyBudget") || "").trim(),
+      honeypot: String(formData.get("company") || "").trim(),
+      sourcePage: "cars-empty-state",
+    };
+
+    if (!payload.name || !payload.phone || !payload.email) {
+      statusEl.textContent = "Please complete name, phone, and email.";
+      statusEl.className = "fleet-waitlist-status error";
+      return;
+    }
+
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      const response = await fetch(API_BASE + "/api/fleet-waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || "Could not submit waitlist request.");
+      }
+
+      form.reset();
+      statusEl.textContent = "Thanks — your waitlist request was received. We’ll contact you as soon as inventory opens.";
+      statusEl.className = "fleet-waitlist-status success";
+    } catch (err) {
+      statusEl.textContent = err?.message || "Could not submit waitlist request. Please call (844) 511-4059.";
+      statusEl.className = "fleet-waitlist-status error";
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+}
+
 // ─── Filter + search controls ───────────────────────────────────────────────
 let activeFleetFilter = "all";
 let activeFleetSearch = "";
@@ -313,7 +448,7 @@ async function loadFleet() {
   });
 
   if (!activeAndAvailable.length) {
-    grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles currently available right now. Please check back later or contact us.")}</p>`;
+    renderFleetEmptyState(grid, vehicles, fleetStatus);
     return;
   }
 
