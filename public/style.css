@@ -4079,6 +4079,238 @@ button.hero-btn {
 }
 
 .fleet-empty a { color: #ffb400; }
+
+.fleet-empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 4px 0 8px;
+}
+
+.fleet-empty-card {
+  width: min(980px, 100%);
+  background: linear-gradient(165deg, #141414, #0d0d0d);
+  border: 1px solid #3a2a00;
+  border-radius: 14px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  padding: 28px;
+}
+
+.fleet-empty-eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.1px;
+  color: #c8a14a;
+}
+
+.fleet-empty-card h3 {
+  margin: 0;
+  color: #ffcc57;
+  font-size: 30px;
+}
+
+.fleet-empty-subtext {
+  margin: 14px 0 0;
+  color: #cfcfcf;
+  font-size: 16px;
+  line-height: 1.65;
+  max-width: 78ch;
+}
+
+.fleet-empty-points {
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: #e5e5e5;
+  line-height: 1.6;
+}
+
+.fleet-empty-points li + li {
+  margin-top: 6px;
+}
+
+.fleet-empty-next-availability {
+  margin-top: 18px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.fleet-empty-next-availability p {
+  margin: 0 0 10px;
+  color: #ffb400;
+  font-weight: 700;
+}
+
+.fleet-empty-next-availability ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fleet-empty-next-availability li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 14px;
+  color: #ddd;
+  font-size: 14px;
+}
+
+.fleet-empty-next-availability li + li {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #2c2c2c;
+}
+
+.fleet-empty-actions {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.fleet-empty-btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 11px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.fleet-empty-btn:hover {
+  transform: translateY(-1px);
+}
+
+.fleet-empty-btn-primary {
+  background: #ffb400;
+  color: #000;
+}
+
+.fleet-empty-btn-primary:hover {
+  background: #ffc933;
+}
+
+.fleet-empty-btn-secondary,
+.fleet-empty-btn-call {
+  background: transparent;
+  color: #ffcc57;
+  border: 1px solid #6d5120;
+}
+
+.fleet-empty-btn-secondary:hover,
+.fleet-empty-btn-call:hover {
+  border-color: #ffb400;
+  color: #ffd87d;
+  background: rgba(255, 180, 0, 0.08);
+}
+
+.fleet-waitlist-form {
+  margin-top: 22px;
+  background: #101010;
+  border: 1px solid #242424;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.fleet-waitlist-form h4 {
+  margin: 0 0 14px;
+  color: #ffcc57;
+  font-size: 18px;
+}
+
+.fleet-waitlist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fleet-waitlist-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #c7c7c7;
+}
+
+.fleet-waitlist-grid input,
+.fleet-waitlist-grid select {
+  width: 100%;
+  background: #181818;
+  border: 1px solid #343434;
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.fleet-waitlist-grid input:focus,
+.fleet-waitlist-grid select:focus {
+  outline: none;
+  border-color: #ffb400;
+  box-shadow: 0 0 0 2px rgba(255, 180, 0, 0.22);
+}
+
+.fleet-waitlist-honeypot {
+  position: absolute !important;
+  left: -10000px !important;
+  top: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}
+
+.fleet-waitlist-form button[type="submit"] {
+  margin-top: 14px;
+}
+
+.fleet-waitlist-status {
+  margin-top: 10px;
+  min-height: 20px;
+  font-size: 14px;
+}
+
+.fleet-waitlist-status.success {
+  color: #4ade80;
+}
+
+.fleet-waitlist-status.error {
+  color: #fb7185;
+}
+
+@media (max-width: 900px) {
+  .fleet-empty-card {
+    padding: 22px;
+  }
+
+  .fleet-empty-card h3 {
+    font-size: 24px;
+  }
+
+  .fleet-waitlist-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .fleet-empty-actions {
+    flex-direction: column;
+  }
+
+  .fleet-empty-btn {
+    width: 100%;
+  }
+}
 /* ===== MOBILE RESPONSIVE OVERHAUL ===== */
 
 /* ── Hamburger button (hidden on desktop) ─────────────────────────────── */
