@@ -1583,11 +1583,12 @@ CREATE INDEX IF NOT EXISTS payments_created_at_idx  ON payments (created_at DESC
 
 -- ── 5. Create blocked_dates table ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS blocked_dates (
-  id          uuid  PRIMARY KEY DEFAULT gen_random_uuid(),
-  vehicle_id  text  REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
-  start_date  date  NOT NULL,
-  end_date    date  NOT NULL,
-  reason      text  NOT NULL DEFAULT 'manual'
+  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  vehicle_id  text        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+  start_date  date        NOT NULL,
+  end_date    date        NOT NULL,
+  reason      text        NOT NULL DEFAULT 'manual',
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
 DO $$
