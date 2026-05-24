@@ -2152,6 +2152,7 @@ async function launchExtendRentalPayment() {
       locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
       ...(extEmail ? { defaultValues: { billingDetails: { email: extEmail } } } : {}),
     });
+    var successUrl = window.location.origin + "/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId);
 
     var paymentElement = elements.create("payment");
 
@@ -2190,11 +2191,57 @@ async function launchExtendRentalPayment() {
     var extPayAmount = document.getElementById("extPayAmount");
     if (extPayAmount) extPayAmount.textContent = payNowAmount;
 
-    paymentElement.mount("#ext-payment-element");
-
     var submitPayBtn = document.getElementById("ext-submit-payment");
     var cancelPayBtn = document.getElementById("ext-cancel-payment");
     var msgEl        = document.getElementById("ext-payment-message");
+    var extExpressWrap = document.getElementById("ext-express-wrap");
+    var extExpressContainer = document.getElementById("ext-express-checkout");
+    var extExpressEl = null;
+    if (extExpressWrap) extExpressWrap.style.display = "none";
+    if (extExpressContainer) extExpressContainer.innerHTML = "";
+    try {
+      extExpressEl = elements.create("expressCheckout", {
+        wallets: {
+          applePay: "auto",
+          googlePay: "auto",
+          cashApp: "auto",
+        },
+      });
+      extExpressEl.on("ready", function(event) {
+        var methods = event && event.availablePaymentMethods ? event.availablePaymentMethods : null;
+        var hasWalletMethod = !!(methods && Object.keys(methods).some(function(key) { return !!methods[key]; }));
+        if (extExpressWrap) extExpressWrap.style.display = hasWalletMethod ? "block" : "none";
+      });
+      extExpressEl.on("confirm", async function() {
+        if (msgEl) msgEl.textContent = "";
+        try {
+          var result = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+              return_url: successUrl,
+              ...(extEmail ? { receipt_email: extEmail } : {}),
+            },
+            redirect: "if_required",
+          });
+          if (result.error) {
+            if (msgEl) msgEl.textContent = result.error.message || "Payment failed. Please try again.";
+            return;
+          }
+          if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
+            window.location.href = successUrl;
+          }
+        } catch (err) {
+          if (msgEl) msgEl.textContent = "Payment failed. Please try again.";
+          console.error("[car.js] extension express checkout confirm error:", err);
+        }
+      });
+      extExpressEl.mount("#ext-express-checkout");
+    } catch (err) {
+      console.warn("[car.js] extension express checkout unavailable:", err && err.message ? err.message : err);
+      if (extExpressWrap) extExpressWrap.style.display = "none";
+    }
+
+    paymentElement.mount("#ext-payment-element");
 
     var submitting = false;
 
@@ -2208,7 +2255,7 @@ async function launchExtendRentalPayment() {
       var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + "/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          return_url: successUrl,
           ...(extEmail ? { receipt_email: extEmail } : {}),
         },
       });
@@ -2227,6 +2274,11 @@ async function launchExtendRentalPayment() {
       submitting = false;
       submitPayBtn.removeEventListener("click", handleExtSubmit);
       cancelPayBtn.removeEventListener("click", handleExtCancel);
+      if (extExpressEl) {
+        try { extExpressEl.unmount(); } catch (_err) {}
+      }
+      if (extExpressContainer) extExpressContainer.innerHTML = "";
+      if (extExpressWrap) extExpressWrap.style.display = "none";
       paymentElement.unmount();
       if (msgEl) msgEl.textContent = "";
       if (extPayForm) extPayForm.style.display = "none";
