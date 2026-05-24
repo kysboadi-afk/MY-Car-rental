@@ -338,9 +338,11 @@
     <p class="card-authorization-notice" data-i18n="booking.cardAuthorizationNotice">By booking, you authorize Sly Car Rentals to charge your card for any applicable late fees or extensions.</p>
     <p id="walletHint" style="margin:6px 0 0;font-size:12px;color:#9ca3af;">Apple Pay / Google Pay appear automatically at checkout on supported devices and browsers.</p>
 
-    <div id="payment-request-button" style="display:none"></div>
-
     <div id="payment-form" style="display:none">
+      <div id="payment-express-wrap" style="display:none;margin-bottom:12px">
+        <div id="payment-express-checkout"></div>
+        <p style="margin:8px 0 0;font-size:12px;color:#9ca3af;">Apple Pay, Google Pay, and Cash App Pay appear automatically on supported devices and browsers.</p>
+      </div>
       <div id="payment-element"></div>
       <div id="payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
       <button id="submit-payment" type="button">Pay $<span id="payAmount">0</span></button>

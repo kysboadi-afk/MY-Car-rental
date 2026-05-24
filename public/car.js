@@ -1859,7 +1859,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     "camryDepositNotice",
     "priceBreakdown", "subtotal", "taxLine", "taxNote",
     "payHint", "reserveBtn", "stripePay",
-    "payment-request-button", "payment-form",
+    "payment-express-wrap", "payment-form",
     "smsConsent",
   ];
   regularIds.forEach(function(id) {
@@ -2532,8 +2532,10 @@ window.addEventListener("pageshow", function(e) {
   if (smsConsentCheck) { smsConsentCheck.disabled = false; smsConsentCheck.checked = false; }
   const paymentForm = document.getElementById("payment-form");
   paymentForm.style.display = "none";
-  const prBtnContainer = document.getElementById("payment-request-button");
-  if (prBtnContainer) prBtnContainer.style.display = "none";
+  const paymentExpressWrap = document.getElementById("payment-express-wrap");
+  if (paymentExpressWrap) paymentExpressWrap.style.display = "none";
+  const paymentExpressContainer = document.getElementById("payment-express-checkout");
+  if (paymentExpressContainer) paymentExpressContainer.innerHTML = "";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
   stripeBtn.textContent = window.slyI18n.t("booking.payNow");
@@ -2822,41 +2824,46 @@ stripeBtn.addEventListener("click", async () => {
       },
     });
 
-    // ----- Payment Request Button (Apple Pay / Google Pay) -----
-    // Build a paymentRequest with a valid country ('US'), currency ('usd'), and
-    // the confirmed total in whole cents.  canMakePayment() returns null when
-    // the browser / device does not support any express wallet, so we guard
-    // before mounting the button — this is what prevents the "Unable to show
-    // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
-    // browsers or when the domain association file has not yet been verified.
-    const totalCents = isDepositMode
-        ? Math.round(depositAmount * 100)
-        : Math.round(parseFloat(totalEl.textContent) * 100);
-    const paymentReq = stripe.paymentRequest({
-      country: "US",
-      currency: "usd",
-      total: {
-        label: isDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
-        amount: totalCents,
+    // Collect the cardholder name from our booking form (already validated).
+    // Hide the duplicate name field inside the Stripe Payment Element so the
+    // customer cannot accidentally clear or override it.
+    const paymentElement = elements.create("payment", {
+      fields: {
+        billingDetails: { name: "never" },
       },
-      requestPayerName: true,
-      requestPayerEmail: true,
     });
 
-    const prContainer = document.getElementById("payment-request-button");
-    let prButton = null;
+    const paymentForm = document.getElementById("payment-form");
+    document.getElementById("payAmount").textContent = displayPayNow;
+    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+    paymentForm.style.display = "block";
+    stripeBtn.style.display = "none";
+    const successUrl = window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId);
+    const payHint = document.getElementById("payHint");
+    if (payHint) payHint.style.display = "none";
 
-    const canPay = await paymentReq.canMakePayment();
-    if (canPay && prContainer) {
-      prButton = elements.create("paymentRequestButton", { paymentRequest: paymentReq });
-      prButton.mount("#payment-request-button");
-      prContainer.style.display = "block";
-
-      // Handle the payment authorization from Apple Pay / Google Pay.
-      // We use handleActions:false so that Stripe does not attempt to render
-      // its own confirmation UI inside the native wallet sheet.
-      paymentReq.on("paymentmethod", async (ev) => {
-        const prBookingPayload = {
+    const paymentExpressWrapEl = document.getElementById("payment-express-wrap");
+    const paymentExpressContainerEl = document.getElementById("payment-express-checkout");
+    let paymentExpressEl = null;
+    if (paymentExpressWrapEl) paymentExpressWrapEl.style.display = "none";
+    if (paymentExpressContainerEl) paymentExpressContainerEl.innerHTML = "";
+    try {
+      paymentExpressEl = elements.create("expressCheckout", {
+        wallets: {
+          applePay: "auto",
+          googlePay: "auto",
+          cashApp: "auto",
+        },
+      });
+      paymentExpressEl.on("ready", function(event) {
+        const methods = event && event.availablePaymentMethods ? event.availablePaymentMethods : null;
+        const hasWalletMethod = !!(methods && Object.keys(methods).some(function(key) { return !!methods[key]; }));
+        if (paymentExpressWrapEl) paymentExpressWrapEl.style.display = hasWalletMethod ? "block" : "none";
+      });
+      paymentExpressEl.on("confirm", async function() {
+        const msgEl = document.getElementById("payment-message");
+        if (msgEl) msgEl.textContent = "";
+        const bookingPayload = {
           vehicleId,
           bookingId: pendingBookingId || null,
           car: carData.name,
@@ -2888,7 +2895,7 @@ stripeBtn.addEventListener("click", async () => {
           ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
           signature: agreementSignature || null,
         };
-        sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
         if (insuranceBase64 && insuranceFileName) {
           try {
@@ -2911,9 +2918,6 @@ stripeBtn.addEventListener("click", async () => {
           }
         }
 
-        // Upload booking docs server-side so the Stripe webhook can send the
-        // owner the full email (agreement PDF + uploaded docs) reliably,
-        // even if the customer's browser does not reach success.html.
         if (pendingBookingId && insuranceCoverageChoice === "yes" && insuranceBase64 && insuranceFileName) {
           try {
             await storeBookingDocsOrThrow({
@@ -2924,78 +2928,60 @@ stripeBtn.addEventListener("click", async () => {
               insuranceMimeType: insuranceMimeType || null,
               insuranceCoverageChoice,
             });
-          } catch (e) {
-            console.warn("Could not upload booking docs:", e);
-            if (shouldBlockPaymentForDocFailure(e)) {
-              const msg = "We could not securely save your uploaded documents. Please check your uploads and try again.";
-              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_payment_request_button", preservePendingBookingId: true });
-              showPayError(msg);
-              ev.complete("fail");
+          } catch (docsErr) {
+            console.warn("Could not upload booking docs:", docsErr);
+            if (shouldBlockPaymentForDocFailure(docsErr)) {
+              await updatePendingBookingLifecycle("upload_failed", "blocking_document_upload_failure", { source: "car_express_checkout", preservePendingBookingId: true });
+              showPayError("We could not securely save your uploaded documents. Please check your uploads and try again.");
+              if (msgEl) msgEl.textContent = "Could not save your uploaded documents. Please try again.";
               return;
             }
-            reportNonBlockingDocFailure(e);
+            reportNonBlockingDocFailure(docsErr);
           }
         }
 
         paymentFormSubmitted = true;
-        const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
-          clientSecret,
-          { payment_method: ev.paymentMethod.id },
-          { handleActions: false }
-        );
-
-        if (confirmError) {
-          paymentFormSubmitted = false;
-          await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_payment_error", { source: "car_payment_request_button", preservePendingBookingId: true });
-          ev.complete("fail");
-          sessionStorage.setItem("slyRidesBooking", JSON.stringify({
-            ...prBookingPayload,
-            paymentFailed: true,
-            insuranceCoverageChoice,
-          }));
-          document.getElementById("payment-message").textContent = confirmError.message;
-        } else {
-          ev.complete("success");
-          if (paymentIntent.status === "requires_action") {
-            // The payment requires additional action (e.g. 3D Secure).
-            const { error: actionError } = await stripe.confirmCardPayment(clientSecret, {
-              payment_method: ev.paymentMethod.id,
-            });
-            if (actionError) {
-              paymentFormSubmitted = false;
-              await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_card_action_error", { source: "car_payment_request_button", preservePendingBookingId: true });
-              sessionStorage.setItem("slyRidesBooking", JSON.stringify({
-                ...prBookingPayload,
-                paymentFailed: true,
-                insuranceCoverageChoice,
-              }));
-              document.getElementById("payment-message").textContent = actionError.message;
-            } else {
-              window.location.href = window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId);
-            }
-          } else {
-            window.location.href = window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId);
+        try {
+          const result = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+              return_url: successUrl,
+              receipt_email: email,
+              payment_method_data: {
+                billing_details: {
+                  name: nameVal,
+                  email: email,
+                },
+              },
+            },
+            redirect: "if_required",
+          });
+          if (result.error) {
+            paymentFormSubmitted = false;
+            await updatePendingBookingLifecycle("payment_failed", "stripe_confirm_payment_error", { source: "car_express_checkout", preservePendingBookingId: true });
+            sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+              ...bookingPayload,
+              paymentFailed: true,
+              insuranceCoverageChoice,
+              ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+            }));
+            if (msgEl) msgEl.textContent = result.error.message || "Payment failed. Please try again.";
+            return;
           }
+          if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
+            window.location.href = successUrl;
+          }
+        } catch (err) {
+          paymentFormSubmitted = false;
+          console.error("[car.js] booking express checkout confirm error:", err);
+          if (msgEl) msgEl.textContent = "Payment failed. Please try again.";
         }
       });
+      paymentExpressEl.mount("#payment-express-checkout");
+    } catch (err) {
+      console.warn("[car.js] booking express checkout unavailable:", err && err.message ? err.message : err);
+      if (paymentExpressWrapEl) paymentExpressWrapEl.style.display = "none";
     }
-
-    // Collect the cardholder name from our booking form (already validated).
-    // Hide the duplicate name field inside the Stripe Payment Element so the
-    // customer cannot accidentally clear or override it.
-    const paymentElement = elements.create("payment", {
-      fields: {
-        billingDetails: { name: "never" },
-      },
-    });
-
-    const paymentForm = document.getElementById("payment-form");
-    document.getElementById("payAmount").textContent = displayPayNow;
-    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
-    paymentForm.style.display = "block";
-    stripeBtn.style.display = "none";
-    const payHint = document.getElementById("payHint");
-    if (payHint) payHint.style.display = "none";
 
     paymentElement.mount("#payment-element");
     paymentForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3100,7 +3086,7 @@ stripeBtn.addEventListener("click", async () => {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: window.location.origin + "/success.html?vehicle=" + encodeURIComponent(vehicleId),
+          return_url: successUrl,
           receipt_email: email,
           payment_method_data: {
             billing_details: {
@@ -3136,11 +3122,12 @@ stripeBtn.addEventListener("click", async () => {
       paymentFormSubmitted = false;
       document.getElementById("submit-payment").removeEventListener("click", submitHandler);
       paymentElement.unmount();
-      if (prButton) {
-        prButton.unmount();
-        prButton = null;
+      if (paymentExpressEl) {
+        paymentExpressEl.unmount();
+        paymentExpressEl = null;
       }
-      if (prContainer) prContainer.style.display = "none";
+      if (paymentExpressContainerEl) paymentExpressContainerEl.innerHTML = "";
+      if (paymentExpressWrapEl) paymentExpressWrapEl.style.display = "none";
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
