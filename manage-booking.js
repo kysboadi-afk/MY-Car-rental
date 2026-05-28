@@ -105,6 +105,15 @@
     },
   });
 
+  const DEMO_PAYMENT_METHODS = [
+    { id: "stripe",  label: "💳 Card / Stripe",  badge: "Card (Stripe)" },
+    { id: "apple",   label: "🍎 Apple Pay",       badge: "Apple Pay" },
+    { id: "cashapp", label: "💚 Cash App",         badge: "Cash App" },
+    { id: "zelle",   label: "💜 Zelle",            badge: "Zelle" },
+    { id: "venmo",   label: "🔵 Venmo",            badge: "Venmo" },
+    { id: "cash",    label: "💵 Cash / Manual",    badge: "Cash / Manual" },
+  ];
+
   function cloneDemo(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
   }
@@ -194,6 +203,83 @@
         headers: { "Content-Type": "application/json" },
       });
     };
+  }
+
+  // ── Demo payment picker (demo-mode only) ────────────────────────────────────
+  function showDemoPaymentPicker({ amount, containerEl, onSuccess }) {
+    if (!containerEl) return;
+    const existing = containerEl.querySelector(".demo-pay-picker");
+    if (existing) existing.remove();
+    const fmtAmt = fmt(amount);
+    const picker = document.createElement("div");
+    picker.className = "demo-pay-picker";
+    picker.innerHTML = `
+      <p class="demo-pay-heading">⚡ Demo — Choose a simulated payment method</p>
+      <div class="demo-pay-methods" role="group" aria-label="Select payment method">
+        ${DEMO_PAYMENT_METHODS.map(m => `
+          <label class="demo-pay-method">
+            <input type="radio" name="demo-pay-method" value="${escapeHtml(m.id)}">
+            <span class="demo-pay-label">${escapeHtml(m.label)}</span>
+          </label>`).join("")}
+      </div>
+      <button class="btn-primary demo-pay-confirm-btn" type="button" disabled>
+        Confirm Demo Payment — ${escapeHtml(fmtAmt)}
+      </button>
+      <p class="demo-pay-note">🔒 Demo sandbox only — no real charge occurs.</p>
+    `;
+    containerEl.appendChild(picker);
+    containerEl.style.display = "block";
+
+    const radios = picker.querySelectorAll('input[name="demo-pay-method"]');
+    const confirmBtn = picker.querySelector(".demo-pay-confirm-btn");
+    radios.forEach(r => r.addEventListener("change", () => {
+      if (confirmBtn) confirmBtn.disabled = false;
+    }));
+
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", async () => {
+        const chosen = picker.querySelector('input[name="demo-pay-method"]:checked');
+        if (!chosen) return;
+        const method = DEMO_PAYMENT_METHODS.find(m => m.id === chosen.value) || DEMO_PAYMENT_METHODS[0];
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "Processing…";
+        await new Promise(res => setTimeout(res, 900));
+        const bookingId = resolveDemoBookingIdFromToken(activeToken);
+        const ledger = DEMO_LEDGER[bookingId];
+        if (ledger) {
+          const txId = `tx-demo-sim-${Date.now()}`;
+          ledger.transactions.push({
+            id: txId,
+            created_at: new Date().toISOString(),
+            transaction_type: "payment",
+            direction: "credit",
+            amount,
+            source: `demo_${method.id}`,
+            source_id: txId,
+            note: `Demo payment via ${method.badge}`,
+          });
+          ledger.summary.total_paid = Number(ledger.summary.total_paid || 0) + amount;
+          ledger.summary.remaining_balance = Math.max(0, Number(ledger.summary.remaining_balance || 0) - amount);
+          ledger.summary.overdue_amount = Math.max(0, Number(ledger.summary.overdue_amount || 0) - amount);
+        }
+        const b = findDemoBooking(bookingId);
+        if (b) {
+          b.total_paid = Number(b.total_paid || 0) + amount;
+          b.amountPaid = b.total_paid;
+          b.balanceDue = Math.max(0, Number(b.balanceDue || 0) - amount);
+          if (b.balanceDue <= 0) {
+            b.paymentStatus = "paid";
+            if (b.status === "overdue") b.status = "returned";
+          }
+          if (b.paymentPlan) {
+            b.paymentPlan.remaining_balance = Math.max(0, Number(b.paymentPlan.remaining_balance || 0) - amount);
+            if (b.paymentPlan.remaining_balance <= 0) b.paymentPlan.status = "completed";
+          }
+        }
+        picker.remove();
+        onSuccess(method);
+      });
+    }
   }
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
@@ -964,6 +1050,13 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       $payBalSection.style.display = "none";
     }
 
+    const secureNoteEl = $payBalSection ? $payBalSection.querySelector(".secure-note") : null;
+    if (secureNoteEl) {
+      secureNoteEl.textContent = DEMO_MODE
+        ? "⚡ Demo mode — simulated payment methods shown."
+        : "🔒 Payments secured by Stripe.";
+    }
+
     const pifEl = document.getElementById("paid-in-full-notice");
     if (pifEl) pifEl.style.display = paymentState.isPaidInFull ? "block" : "none";
     const depositBannerEl = document.getElementById("payment-balance-banner");
@@ -1540,6 +1633,20 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     $btnInitBalance.addEventListener("click", async () => {
       // Close partial payment section if open
       if ($partialSection) $partialSection.style.display = "none";
+
+      // Demo mode: show simulated payment method picker instead of Stripe
+      if (DEMO_MODE) {
+        showDemoPaymentPicker({
+          amount: currentBalance || Number(booking?.balanceDue || 0),
+          containerEl: $balanceWrap,
+          onSuccess(method) {
+            setActionMsg(`✅ Demo payment via ${method.badge} confirmed. Refreshing balance…`, "success", document.getElementById("action-msg-finance"));
+            setTimeout(() => loadBooking(), 1800);
+          },
+        });
+        return;
+      }
+
       $btnInitBalance.disabled    = true;
       $btnInitBalance.textContent = "Loading Payment…";
       if ($balanceError) $balanceError.style.display = "none";
@@ -1695,6 +1802,21 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       }
       if (requestedAmt > maxAmt) {
         if ($partialError) { $partialError.textContent = `Amount exceeds remaining balance (${fmt(maxAmt)}).`; $partialError.style.display = "block"; }
+        return;
+      }
+
+      // Demo mode: show simulated payment method picker instead of Stripe
+      if (DEMO_MODE) {
+        showDemoPaymentPicker({
+          amount: requestedAmt,
+          containerEl: $partialSection,
+          onSuccess(method) {
+            if ($partialAmtInput) $partialAmtInput.disabled = false;
+            if ($partialMaxBtn) $partialMaxBtn.disabled = false;
+            setActionMsg(`✅ Demo payment via ${method.badge} confirmed. Refreshing balance…`, "success", document.getElementById("action-msg-finance"));
+            setTimeout(() => loadBooking(), 1800);
+          },
+        });
         return;
       }
 

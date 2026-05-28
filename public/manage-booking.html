@@ -322,6 +322,51 @@
       margin-bottom: 10px;
     }
 
+    /* ── Demo payment picker ─────────────────────────────────────────────── */
+    .demo-pay-picker {
+      background: #f0f4ff;
+      border: 1.5px solid #4f46e5;
+      border-radius: 10px;
+      padding: 16px;
+      margin-top: 14px;
+    }
+    .demo-pay-heading {
+      font-size: 0.85em;
+      font-weight: 700;
+      color: #4f46e5;
+      margin: 0 0 12px;
+    }
+    .demo-pay-methods {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 480px) { .demo-pay-methods { grid-template-columns: 1fr; } }
+    .demo-pay-method {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1.5px solid #c7d2fe;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #fff;
+      transition: border-color 0.15s, background 0.15s;
+      font-size: 0.9em;
+    }
+    .demo-pay-method:hover { border-color: #818cf8; background: #eef2ff; }
+    .demo-pay-method input[type="radio"] { accent-color: #4f46e5; width: 16px; height: 16px; flex-shrink: 0; }
+    .demo-pay-method:has(input:checked) { border-color: #4f46e5; background: #eef2ff; }
+    .demo-pay-label { font-weight: 500; color: #111; }
+    .demo-pay-note {
+      font-size: 0.75em;
+      color: #6b7280;
+      margin: 10px 0 0;
+      text-align: center;
+    }
+    .demo-pay-confirm-btn { width: 100%; margin-top: 4px; }
+
     /* ── Modify booking (collapsible) ─────────────────────────────────────── */
     .modify-details {
       background: #fff;
