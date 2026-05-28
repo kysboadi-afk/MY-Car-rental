@@ -54,8 +54,13 @@ async function appendFleetWaitlistEntry(entry) {
     try {
       data = JSON.parse(Buffer.from(String(file.content || "").replace(/\n/g, ""), "base64").toString("utf-8"));
     } catch (_) {}
+    if (Array.isArray(data)) data = { entries: data };
     if (!data || typeof data !== "object") data = { ...EMPTY_FILE };
-    if (!Array.isArray(data.entries)) data.entries = [];
+    if (!Array.isArray(data.entries)) {
+      if (Array.isArray(data.submissions)) data.entries = data.submissions;
+      else if (Array.isArray(data.waitlistApplications)) data.entries = data.waitlistApplications;
+      else data.entries = [];
+    }
     return { data, sha: file.sha || null };
   }
 
