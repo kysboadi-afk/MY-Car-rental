@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import vm from "node:vm";
 
 import {
   buildApplicationLifecycleSummary,
@@ -146,4 +149,105 @@ test("approved and rejected filters default to newest reviewed first", () => {
   assert.deepEqual(getDefaultApplicationQueueSort("approved"), { sortField: "reviewed_at", sortDir: "desc" });
   assert.deepEqual(getDefaultApplicationQueueSort("rejected"), { sortField: "reviewed_at", sortDir: "desc" });
   assert.deepEqual(getDefaultApplicationQueueSort("", "new"), { sortField: "submitted_at", sortDir: "desc" });
+});
+
+function extractFunctionSource(source, functionName) {
+  const start = source.indexOf(`function ${functionName}`);
+  assert.notEqual(start, -1, `Expected function ${functionName} to exist in admin-v2/index.html`);
+  const bodyStart = source.indexOf("{", start);
+  assert.notEqual(bodyStart, -1, `Expected body for function ${functionName}`);
+  let depth = 0;
+  for (let i = bodyStart; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`Could not extract function ${functionName}`);
+}
+
+async function loadDemoQueueFunctionContext() {
+  const htmlPath = path.join(process.cwd(), "admin-v2", "index.html");
+  const html = await fs.readFile(htmlPath, "utf8");
+  const snippet = [
+    extractFunctionSource(html, "demoNormalizeQueueItem"),
+    extractFunctionSource(html, "demoBuildQueueSummary"),
+    extractFunctionSource(html, "normalizeDemoQueuePayload"),
+  ].join("\n");
+
+  const context = {
+    APP_QUEUE_SIZE: 50,
+    appQueueState: { page: 1 },
+    Date,
+    Number,
+    Math,
+    String,
+    Array,
+    console,
+    buildDemoReviewQueueResponse: () => ({
+      applications: [
+        {
+          id: "demo-app-seeded",
+          name: "Seeded Demo Applicant",
+          phone: "(555) 010-2999",
+          applicationStatus: "submitted",
+          identityStatus: "processing",
+          submittedAt: "2026-05-18T11:30:00.000Z",
+          updatedAt: "2026-05-18T11:45:00.000Z",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+      summary: {},
+      filters: {},
+    }),
+  };
+  vm.createContext(context);
+  vm.runInContext(snippet, context);
+  return context;
+}
+
+test("demo queue payload normalization guarantees array response and seeded fallback", async () => {
+  const context = await loadDemoQueueFunctionContext();
+  const payload = context.normalizeDemoQueuePayload({ applications: null, total: null }, 1);
+  assert.equal(Array.isArray(payload.applications), true);
+  assert.equal(payload.applications.length > 0, true);
+  assert.equal(typeof payload.applications[0].id, "string");
+  assert.equal(payload.success, true);
+});
+
+test("demo queue payload normalization tolerates malformed records without throwing", async () => {
+  const context = await loadDemoQueueFunctionContext();
+  const payload = context.normalizeDemoQueuePayload({
+    applications: [null, {}, { id: 42, name: "", phone: null, submittedAt: "bad-date", applicationStatus: "under_review" }],
+    total: "abc",
+  }, 3);
+  assert.equal(Array.isArray(payload.applications), true);
+  assert.equal(payload.applications.length, 3);
+  assert.equal(payload.page, 3);
+  payload.applications.forEach((row) => {
+    assert.equal(typeof row.id, "string");
+    assert.equal(typeof row.name, "string");
+    assert.equal(typeof row.phone, "string");
+  });
+});
+
+test("demo queue summary keeps review queue counters usable for rendering", async () => {
+  const context = await loadDemoQueueFunctionContext();
+  const summary = context.demoBuildQueueSummary([
+    { applicationStatus: "submitted", identityStatus: "processing", checkrReportStatus: "pending" },
+    { applicationStatus: "under_review", identityStatus: "verified", checkrReportStatus: "consider" },
+    { applicationStatus: "needs_info", identityStatus: "requires_input", checkrReportStatus: "not_started" },
+    { applicationStatus: "approved", identityStatus: "verified", checkrReportStatus: "clear" },
+    { applicationStatus: "rejected", identityStatus: "verified", checkrReportStatus: "consider" },
+  ]);
+  assert.equal(summary.total, 5);
+  assert.equal(summary.reviewQueueTotal, 3);
+  assert.equal(summary.underReview, 1);
+  assert.equal(summary.needsInfo, 1);
+  assert.equal(summary.approved, 1);
+  assert.equal(summary.rejected, 1);
 });
