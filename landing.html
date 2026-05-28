@@ -636,7 +636,7 @@
           </p>
           <div class="btns">
             <a href="/admin-v2/?demo=1" class="btn btn-primary">Launch Interactive Demo</a>
-            <a href="/contact.html" class="btn btn-ghost">Book Guided Walkthrough</a>
+            <a href="/fleet-control-onboarding.html" class="btn btn-ghost">Book Guided Walkthrough</a>
           </div>
           <div class="hero-proof">
             <span class="proof-chip">Operational visibility from booking to return</span>
@@ -960,7 +960,7 @@
         </div>
         <div class="btns" style="margin-top:4px;">
           <a href="/admin-v2/?demo=1" class="btn btn-primary">Launch Interactive Demo</a>
-          <a href="/contact.html" class="btn btn-light">Book Guided Walkthrough</a>
+          <a href="/fleet-control-onboarding.html" class="btn btn-light">Book Guided Walkthrough</a>
         </div>
       </article>
 
@@ -1000,7 +1000,7 @@
         <span>© 2026 Fleet Control</span>
         <div style="display:flex;gap:14px;flex-wrap:wrap;">
           <a href="/admin-v2/?demo=1">Interactive demo</a>
-          <a href="/contact.html">Contact</a>
+          <a href="/fleet-control-onboarding.html">Operator onboarding</a>
           <a href="/admin-v2/">Admin sign in</a>
         </div>
       </div>
@@ -1034,20 +1034,26 @@
           return;
         }
 
-        const combinedMessage = [
-          `Fleet size: ${fleetSize}`,
-          `Primary priority: ${priority}`,
-          message
-        ].join('\n');
+        const payload = {
+          contactName: name,
+          workEmail: email,
+          phone,
+          fleetSize,
+          operationalPriority: priority,
+          notes: message,
+          walkthroughRequested: true,
+          honeypot,
+          sourcePage: 'fleet-control-landing'
+        };
 
         statusEl.style.color = '#334155';
         statusEl.textContent = 'Sending...';
 
         try {
-          const res = await fetch(API_BASE + '/api/send-contact-email', {
+          const res = await fetch(API_BASE + '/api/operator-leads', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, phone, message: combinedMessage, honeypot })
+            body: JSON.stringify(payload)
           });
 
           if (!res.ok) {
@@ -1057,10 +1063,10 @@
 
           form.reset();
           statusEl.style.color = '#0f766e';
-          statusEl.textContent = 'Thanks — your request was received. We will reach out shortly with the next step.';
+          statusEl.textContent = 'Thanks — your operator onboarding request was received. We will reach out shortly with the next walkthrough step.';
         } catch (error) {
           statusEl.style.color = '#b91c1c';
-          statusEl.textContent = error.message || 'Network error. Please try again or use the contact page.';
+          statusEl.textContent = error.message || 'Network error. Please try again or use the operator onboarding page.';
         }
       });
     })();

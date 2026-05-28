@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Fleet Control onboarding for rental fleet operators. Request a guided walkthrough, share your fleet setup, and start the operator onboarding process.">
+  <title>Fleet Control Onboarding | Fleet Control</title>
+  <link rel="canonical" href="https://slycarrentals.com/fleet-control-onboarding.html">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: rgba(10, 22, 40, 0.92);
+      --panel-border: rgba(148, 163, 184, 0.18);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-strong: #22c55e;
+      --danger: #fca5a5;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 32%),
+        radial-gradient(circle at top right, rgba(34, 197, 94, 0.14), transparent 26%),
+        linear-gradient(180deg, #020817, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    a { color: inherit; }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 28px 20px 56px; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      text-decoration: none;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #f8fafc;
+    }
+    .topbar-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .topbar-links a,
+    .primary-btn,
+    .secondary-btn,
+    button[type="submit"] {
+      border-radius: 999px;
+      padding: 12px 18px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .primary-btn,
+    button[type="submit"] {
+      background: linear-gradient(135deg, #38bdf8, #2563eb);
+      color: #fff;
+      box-shadow: 0 18px 40px rgba(37, 99, 235, 0.2);
+    }
+    .secondary-btn,
+    .topbar-links a {
+      background: rgba(15, 23, 42, 0.72);
+      color: #dbeafe;
+      border-color: rgba(148, 163, 184, 0.24);
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 24px 60px rgba(2, 8, 23, 0.35);
+    }
+    .eyebrow {
+      color: #67e8f9;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 14px 0 14px;
+      font-size: clamp(34px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    .hero p,
+    .panel p,
+    .panel li,
+    .field-note {
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .signal-list,
+    .checklist {
+      display: grid;
+      gap: 12px;
+      padding: 0;
+      list-style: none;
+      margin: 24px 0 0;
+    }
+    .signal-list li,
+    .checklist li {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 18px;
+      padding: 14px 16px;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }
+    form {
+      display: grid;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      background: rgba(2, 8, 23, 0.66);
+      color: #f8fafc;
+      padding: 14px 15px;
+      font: inherit;
+      outline: none;
+    }
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+    }
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+    .full { grid-column: 1 / -1; }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #cbd5e1;
+      font-size: 14px;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .checkbox-row input {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+    }
+    .status {
+      min-height: 24px;
+      font-size: 14px;
+      margin: 0;
+    }
+    .status.error { color: var(--danger); }
+    .status.success { color: #86efac; }
+    .status.sending { color: #bae6fd; }
+    .small-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .small-card {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .small-card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+    @media (max-width: 920px) {
+      .hero { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .grid,
+      .small-grid { grid-template-columns: 1fr; }
+      .panel { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <a class="brand" href="/landing.html">Fleet Control</a>
+      <div class="topbar-links">
+        <a href="/landing.html">Back to Fleet Control</a>
+        <a href="/admin-v2/?demo=1">Open walkthrough</a>
+      </div>
+    </div>
+
+    <section class="hero">
+      <article class="panel">
+        <div class="eyebrow">Dedicated operator onboarding</div>
+        <h1>Start a Fleet Control walkthrough without entering consumer rental flows.</h1>
+        <p>
+          This intake is dedicated to rental fleet operators evaluating Fleet Control as operational infrastructure.
+          Share your fleet setup, collections pressure, and onboarding readiness so the walkthrough stays aligned to
+          operator workflows instead of public renter pages.
+        </p>
+        <div class="hero-actions">
+          <a class="primary-btn" href="#operator-lead-form">Request operator walkthrough</a>
+          <a class="secondary-btn" href="/admin-v2/?demo=1">Preview guided demo</a>
+        </div>
+        <ul class="signal-list">
+          <li><strong>Operational trust first.</strong><br>We focus on overdue balances, lifecycle continuity, collections, vehicle exposure, and daily action visibility.</li>
+          <li><strong>Separate onboarding channel.</strong><br>Fleet Control onboarding now stays isolated from SLY Transportation renter support and public booking workflows.</li>
+          <li><strong>Canonical backend capture.</strong><br>Operator leads are stored through a dedicated backend intake instead of being mixed into generic contact handling.</li>
+        </ul>
+        <div class="small-grid">
+          <div class="small-card">
+            <strong>Best fit</strong>
+            <span>Independent operators, multi-vehicle rideshare fleets, and teams moving away from spreadsheets and patchwork collections workflows.</span>
+          </div>
+          <div class="small-card">
+            <strong>What to share</strong>
+            <span>Fleet size, active vehicles, current tools, Stripe readiness, integration setup, and the operational bottlenecks you need to fix first.</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="eyebrow">Operator intake</div>
+        <h2 style="margin:14px 0 10px;">Request guided onboarding</h2>
+        <p class="field-note">Tell us enough to route you into the right walkthrough, onboarding path, and implementation follow-up.</p>
+        <form id="operator-lead-form" novalidate>
+          <div class="grid">
+            <label>Contact name
+              <input type="text" id="contactName" autocomplete="name" required>
+            </label>
+            <label>Company or fleet name
+              <input type="text" id="companyName" autocomplete="organization">
+            </label>
+            <label>Work email
+              <input type="email" id="workEmail" autocomplete="email" required>
+            </label>
+            <label>Phone
+              <input type="tel" id="phone" autocomplete="tel" required>
+            </label>
+            <label>Fleet size
+              <select id="fleetSize" required>
+                <option value="">Select fleet size</option>
+                <option value="1-3 vehicles">1–3 vehicles</option>
+                <option value="4-10 vehicles">4–10 vehicles</option>
+                <option value="11-25 vehicles">11–25 vehicles</option>
+                <option value="26+ vehicles">26+ vehicles</option>
+              </select>
+            </label>
+            <label>Active vehicles
+              <input type="number" id="activeVehicles" min="0" step="1" placeholder="14">
+            </label>
+            <label>Operational priority
+              <select id="operationalPriority" required>
+                <option value="">Select priority</option>
+                <option value="Overdue balances and collections">Overdue balances and collections</option>
+                <option value="Lifecycle control and renter accountability">Lifecycle control and renter accountability</option>
+                <option value="Vehicle profitability and fleet visibility">Vehicle profitability and fleet visibility</option>
+                <option value="Onboarding structure before scaling">Onboarding structure before scaling</option>
+              </select>
+            </label>
+            <label>Current tools
+              <input type="text" id="currentTools" placeholder="Spreadsheets, Stripe, text threads">
+            </label>
+            <label>Onboarding readiness
+              <select id="onboardingReadiness">
+                <option value="">Select readiness</option>
+                <option value="planning">Planning</option>
+                <option value="ready_now">Ready now</option>
+                <option value="needs_migration_support">Needs migration support</option>
+                <option value="evaluating">Evaluating</option>
+              </select>
+            </label>
+            <label>Integration setup
+              <select id="integrationSetupStatus">
+                <option value="">Select integration status</option>
+                <option value="not_started">Not started</option>
+                <option value="in_progress">In progress</option>
+                <option value="ready">Ready</option>
+                <option value="blocked">Blocked</option>
+              </select>
+            </label>
+            <label>Stripe readiness
+              <select id="stripeReadiness">
+                <option value="">Select Stripe readiness</option>
+                <option value="unknown">Unknown</option>
+                <option value="not_started">Not started</option>
+                <option value="needs_setup">Needs setup</option>
+                <option value="ready">Ready</option>
+              </select>
+            </label>
+            <label class="checkbox-row">Guided walkthrough requested
+              <input type="checkbox" id="walkthroughRequested" checked>
+            </label>
+            <label class="full">Operational notes
+              <textarea id="notes" required placeholder="Describe your fleet, current workflow, collections pressure, onboarding blockers, and what you want the walkthrough to focus on."></textarea>
+            </label>
+          </div>
+          <div style="position:absolute;left:-9999px;opacity:0;pointer-events:none;" aria-hidden="true">
+            <label>Website
+              <input type="text" id="honeypot" autocomplete="off" tabindex="-1">
+            </label>
+          </div>
+          <button type="submit">Submit operator lead</button>
+          <p id="form-status" class="status" role="status" aria-live="polite"></p>
+        </form>
+        <ul class="checklist">
+          <li><strong>What happens next</strong><br>We review your lead through the operator onboarding pipeline and follow up with the right walkthrough or implementation step.</li>
+          <li><strong>What this is not</strong><br>This is not the renter booking flow, public rental inquiry queue, or generic consumer contact path.</li>
+        </ul>
+      </article>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const form = document.getElementById("operator-lead-form");
+      const statusEl = document.getElementById("form-status");
+      if (!form || !statusEl) return;
+
+      const host = window.location.hostname;
+      const API_BASE = (host === "slytrans.com" || host === "www.slytrans.com")
+        ? "https://slycarrentals.com"
+        : "";
+
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const payload = {
+          companyName: document.getElementById("companyName").value.trim(),
+          contactName: document.getElementById("contactName").value.trim(),
+          workEmail: document.getElementById("workEmail").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          fleetSize: document.getElementById("fleetSize").value.trim(),
+          activeVehicles: document.getElementById("activeVehicles").value.trim(),
+          currentTools: document.getElementById("currentTools").value.trim(),
+          operationalPriority: document.getElementById("operationalPriority").value.trim(),
+          onboardingReadiness: document.getElementById("onboardingReadiness").value.trim(),
+          integrationSetupStatus: document.getElementById("integrationSetupStatus").value.trim(),
+          stripeReadiness: document.getElementById("stripeReadiness").value.trim(),
+          notes: document.getElementById("notes").value.trim(),
+          walkthroughRequested: document.getElementById("walkthroughRequested").checked,
+          honeypot: document.getElementById("honeypot").value,
+          sourcePage: "fleet-control-onboarding",
+        };
+
+        if (!payload.contactName || !payload.workEmail || !payload.phone || !payload.fleetSize || !payload.operationalPriority || !payload.notes) {
+          statusEl.textContent = "Please complete the required operator onboarding fields.";
+          statusEl.className = "status error";
+          return;
+        }
+
+        const submitBtn = form.querySelector("button[type='submit']");
+        if (submitBtn) submitBtn.disabled = true;
+        statusEl.textContent = "Submitting operator lead…";
+        statusEl.className = "status sending";
+
+        try {
+          const response = await fetch(API_BASE + "/api/operator-leads", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(result.error || "Unable to submit your operator lead right now.");
+          }
+
+          form.reset();
+          document.getElementById("walkthroughRequested").checked = true;
+          statusEl.textContent = "Thanks — your Fleet Control onboarding request was received. We’ll follow up with the right walkthrough next step.";
+          statusEl.className = "status success";
+        } catch (error) {
+          statusEl.textContent = error.message || "Unable to submit your operator lead right now.";
+          statusEl.className = "status error";
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
