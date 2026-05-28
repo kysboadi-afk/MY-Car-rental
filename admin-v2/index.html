@@ -13882,6 +13882,7 @@ async function loadAppQueue() {
       search: appQueueState.search,
       sortField: appQueueState.sortField,
       sortDir: appQueueState.sortDir,
+      includeWaitlist: '1',
     });
     const data = await apiGet(`/api/admin-review-queue?${params}`);
     if (!data.success) throw new Error(data.error || 'Failed to load queue.');

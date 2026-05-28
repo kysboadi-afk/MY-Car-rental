@@ -100,6 +100,7 @@ export default async function handler(req, res) {
     search,
     sortField,
     sortDir,
+    includeWaitlist,
   } = req.query || {};
   if (!isAdminAuthorized(extractAdminSecret(req))) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -169,11 +170,14 @@ export default async function handler(req, res) {
     returned: (result.data || []).length,
   });
 
+  const shouldIncludeWaitlist = String(includeWaitlist || "") === "1";
   let waitlistApplications = [];
-  try {
-    waitlistApplications = await listFleetWaitlistApplications();
-  } catch (waitlistErr) {
-    console.error("admin-review-queue waitlist fetch:", waitlistErr);
+  if (shouldIncludeWaitlist) {
+    try {
+      waitlistApplications = await listFleetWaitlistApplications();
+    } catch (waitlistErr) {
+      console.error("admin-review-queue waitlist fetch:", waitlistErr);
+    }
   }
 
   return res.status(200).json({
