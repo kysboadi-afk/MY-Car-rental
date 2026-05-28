@@ -30,15 +30,24 @@ const FLEET_WAITLIST_MAX = 200;
 
 function normalizeFleetWaitlistEntry(entry = {}) {
   return {
-    submissionId: String(entry.submissionId || "").trim(),
-    createdAt: String(entry.createdAt || "").trim(),
-    name: String(entry.name || "").trim(),
-    phone: String(entry.phone || "").trim(),
-    email: String(entry.email || "").trim(),
-    preferredVehicle: String(entry.preferredVehicle || "").trim(),
-    weeklyBudget: String(entry.weeklyBudget || "").trim(),
-    sourcePage: String(entry.sourcePage || "").trim(),
+    submissionId: String(entry.submissionId || entry.id || "").trim(),
+    createdAt: String(entry.createdAt || entry.created_at || entry.submittedAt || entry.timestamp || "").trim(),
+    name: String(entry.name || entry.fullName || "").trim(),
+    phone: String(entry.phone || entry.phoneNumber || "").trim(),
+    email: String(entry.email || entry.emailAddress || "").trim(),
+    preferredVehicle: String(entry.preferredVehicle || entry.vehicle || entry.desiredVehicle || "").trim(),
+    weeklyBudget: String(entry.weeklyBudget || entry.budget || entry.budgetPerWeek || "").trim(),
+    sourcePage: String(entry.sourcePage || entry.source || "").trim(),
   };
+}
+
+function getFleetWaitlistEntries(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return [];
+  if (Array.isArray(parsed.entries)) return parsed.entries;
+  if (Array.isArray(parsed.submissions)) return parsed.submissions;
+  if (Array.isArray(parsed.waitlistApplications)) return parsed.waitlistApplications;
+  return [];
 }
 
 async function listFleetWaitlistApplications() {
@@ -69,7 +78,7 @@ async function listFleetWaitlistApplications() {
     parsed = null;
   }
 
-  const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+  const entries = getFleetWaitlistEntries(parsed);
   return entries
     .map((entry) => normalizeFleetWaitlistEntry(entry))
     .filter((entry) => entry.submissionId || entry.name || entry.email || entry.phone)
