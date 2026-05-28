@@ -8557,7 +8557,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
       const profitAfterExpenses = vf.amount_net - ev.total;
       const profitMargin = vf.amount_net > 0 ? Math.round((profitAfterExpenses / vf.amount_net) * 1000) / 10 : null;
       const roiVal     = v.roi;
-      const roiDisplay = roiVal === null ? '—' : roiVal.toFixed(1) + '%';
+      const roiDisplay = roiVal == null ? '—' : roiVal.toFixed(1) + '%';
       const roiColor   = roiVal === null ? 'color:var(--text-sub)' : roiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
       const invRoiVal     = v.vehicle_roi;
       const invRoiDisplay = invRoiVal === null || invRoiVal === undefined ? '—' : invRoiVal.toFixed(1) + '%';
@@ -9146,7 +9146,9 @@ function loadVehiclePricing() {
 function renderVehiclePricing(rows) {
   const container = document.getElementById('vp-content');
   if (!rows.length) {
-    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing rows found. Add rows to the vehicle_pricing table in Supabase.</p>';
+    container.innerHTML = window.DEMO_MODE
+      ? '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing configured yet. Add rows to set per-vehicle daily, weekly, and monthly rates.</p>'
+      : '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing rows found. Add rows to the vehicle_pricing table in Supabase.</p>';
     return;
   }
 
@@ -9277,7 +9279,9 @@ function loadSystemSettings() {
 function renderSystemSettings() {
   const container = document.getElementById('sys-settings-content');
   if (!allSystemSettings.length) {
-    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No settings found. Run the migration to populate defaults.</p>';
+    container.innerHTML = window.DEMO_MODE
+      ? '<p style="color:var(--text-sub);padding:16px;">No system settings loaded. Settings will appear here once configured.</p>'
+      : '<p style="color:var(--text-sub);padding:16px;">No settings found. Run the migration to populate defaults.</p>';
     return;
   }
 
@@ -11333,12 +11337,48 @@ async function loadAiInsights() {
 
   window.DEMO_ANALYTICS = {
     fleet: {
-      camry: { bookings: 14, revenue: 1820, utilization_pct: 76 },
-      civic: { bookings: 9, revenue: 1512, utilization_pct: 71 },
-      rav4:  { bookings: 6, revenue: 1268, utilization_pct: 64 },
-      rogue: { bookings: 2, revenue: 600,  utilization_pct: 33 },
+      camry: {
+        vehicleId: 'camry', name: 'Camry 2019', status: 'active',
+        totalBookings: 14, activeNow: false,
+        gross_revenue: 1820, total_fees: 38.22, net_revenue: 1781.78,
+        expenses: 210, profit: 1571.78,
+        roi: 748.5,
+        purchase_price: 11111, months_active: 14,
+        vehicle_roi: 14.1, monthly_profit: 112.3, annual_roi: 169.5, payback_months: 7.1,
+        utilizationRate: 76, avgRevenuePerBooking: 130,
+      },
+      civic: {
+        vehicleId: 'civic', name: 'Honda Civic 2020', status: 'active',
+        totalBookings: 9, activeNow: true,
+        gross_revenue: 1512, total_fees: 10, net_revenue: 1502,
+        expenses: 125, profit: 1377,
+        roi: 1101.6,
+        purchase_price: 12345, months_active: 12,
+        vehicle_roi: 11.2, monthly_profit: 114.8, annual_roi: 133.8, payback_months: 9.0,
+        utilizationRate: 71, avgRevenuePerBooking: 168,
+      },
+      rav4: {
+        vehicleId: 'rav4', name: 'Toyota RAV4 2021', status: 'active',
+        totalBookings: 6, activeNow: false,
+        gross_revenue: 1268, total_fees: 24.88, net_revenue: 1243.12,
+        expenses: 340, profit: 903.12,
+        roi: 265.6,
+        purchase_price: 16666, months_active: 10,
+        vehicle_roi: 5.4, monthly_profit: 90.3, annual_roi: 64.9, payback_months: 18.5,
+        utilizationRate: 64, avgRevenuePerBooking: 211,
+      },
+      rogue: {
+        vehicleId: 'rogue', name: 'Nissan Rogue 2022', status: 'service',
+        totalBookings: 2, activeNow: false,
+        gross_revenue: 600, total_fees: 13, net_revenue: 587,
+        expenses: 0, profit: 587,
+        roi: null,
+        purchase_price: 17777, months_active: 4,
+        vehicle_roi: 3.3, monthly_profit: 146.8, annual_roi: 39.5, payback_months: 30.3,
+        utilizationRate: 33, avgRevenuePerBooking: 300,
+      },
     },
-    trend: revChart.map((row) => ({ month: row.month, amount: row.amount })),
+    trend: revChart.map((row) => ({ month: row.month, revenue: row.amount })),
     kpi_total_revenue: 5200,
   };
 
@@ -11609,9 +11649,32 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/booking-documents')) return Promise.resolve({ docs: [] });
   if (p.endsWith('/api/v2-mileage')) return Promise.resolve({ vehicles: [], alerts: [] });
   if (p.endsWith('/api/v2-system-health')) return Promise.resolve({ checks: [], status: 'ok', issues: [] });
-  if (p.endsWith('/api/v2-sms-templates')) return Promise.resolve({ templates: [] });
-  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [] });
-  if (p.endsWith('/api/v2-protection-plans')) return Promise.resolve({ plans: [] });
+  if (p.endsWith('/api/v2-sms-templates')) return Promise.resolve({ templates: [
+    { key: 'booking_confirmed',  message: 'Hi {name}, your booking for the {vehicle} is confirmed! Pickup: {pickup_date} at {pickup_time}. Ref: {booking_ref}.', enabled: true,  isCustomized: false },
+    { key: 'booking_reminder',   message: 'Reminder: Your {vehicle} rental starts tomorrow at {pickup_time}. Please bring your license and deposit. – Fleet Control', enabled: true,  isCustomized: false },
+    { key: 'overdue_notice',     message: 'Hi {name}, your {vehicle} rental is overdue. Please contact us immediately or a late fee will be applied. Ref: {booking_ref}.', enabled: true,  isCustomized: true  },
+    { key: 'payment_received',   message: 'Payment of ${amount} received for booking {booking_ref}. Remaining balance: ${remaining}. Thank you!', enabled: true,  isCustomized: false },
+    { key: 'return_reminder',    message: 'Hi {name}, your {vehicle} is due back today at {return_time}. Reply EXTEND if you need more time.', enabled: true,  isCustomized: false },
+    { key: 'extension_approved', message: 'Your rental extension has been approved. New return date: {return_date}. Updated balance: ${amount}.', enabled: false, isCustomized: false },
+  ] });
+  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [
+    { key: 'late_fee_daily_rate',       category: 'automation',   value: 25,    description: 'Daily late fee charged when rental is overdue ($)' },
+    { key: 'late_fee_grace_hours',      category: 'automation',   value: 2,     description: 'Hours of grace before late fee is applied' },
+    { key: 'auto_send_overdue_sms',     category: 'automation',   value: true,  description: 'Automatically send SMS when booking goes overdue' },
+    { key: 'auto_send_reminders',       category: 'automation',   value: true,  description: 'Automatically send pickup reminder SMS day before rental' },
+    { key: 'sales_tax_rate',            category: 'tax',          value: 8.25,  description: 'Sales tax percentage applied to bookings (%)' },
+    { key: 'tax_applies_to_extensions', category: 'tax',          value: false, description: 'Apply tax to extension charges' },
+    { key: 'notify_owner_on_booking',   category: 'notification', value: true,  description: 'Email owner when a new booking is confirmed' },
+    { key: 'notify_owner_on_overdue',   category: 'notification', value: true,  description: 'Email owner when a booking goes overdue' },
+    { key: 'oil_change_miles',          category: 'maintenance',  value: 5000,  description: 'Mileage interval for oil change alert' },
+    { key: 'tire_rotation_miles',       category: 'maintenance',  value: 7500,  description: 'Mileage interval for tire rotation alert' },
+  ] });
+  if (p.endsWith('/api/v2-protection-plans')) return Promise.resolve({ plans: [
+    { id: 'plan-prot-001', name: 'Basic Coverage',    description: 'Covers minor damage and theft. Great for budget-conscious renters.',                          daily_rate: 9.99,  liability_cap: 1000,  is_active: true  },
+    { id: 'plan-prot-002', name: 'Standard Shield',   description: 'Full collision + theft protection with $0 deductible up to liability cap.',                  daily_rate: 19.99, liability_cap: 5000,  is_active: true  },
+    { id: 'plan-prot-003', name: 'Premium Guard',     description: 'Comprehensive protection including roadside assistance, glass, and tire coverage.',           daily_rate: 34.99, liability_cap: 15000, is_active: true  },
+    { id: 'plan-prot-004', name: 'Liability Add-On',  description: 'Adds liability protection for renters who carry their own collision insurance.',              daily_rate: 7.99,  liability_cap: 0,     is_active: false },
+  ] });
   if (p.endsWith('/api/v2-pricing')) return Promise.resolve({ pricing: {} });
   if (p.endsWith('/api/v2-block-dates')) return Promise.resolve({ blocked: [] });
   if (p.endsWith('/api/v2-fleet-status')) return Promise.resolve({ fleet: [] });
@@ -11620,10 +11683,39 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Demo Fleet', phone: '(555) 010-0000', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings')) return Promise.resolve({ ok: true });
   if (p.endsWith('/api/add-expense') || p.endsWith('/api/update-expense') || p.endsWith('/api/upload-expense-receipt') || p.endsWith('/api/delete-expense-receipt') || p.endsWith('/api/delete-expense')) return Promise.resolve({ ok: true, success: true });
-  if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: {} });
-  if (p.endsWith('/api/admin-ai-insights')) return Promise.resolve({ summary: 'Demo mode — AI insights are simulated with seeded metrics.', problems: [], metrics: {} });
+  if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: [
+    { vehicle_id: 'camry', daily_price: 69,  weekly_price: 429,  biweekly_price: 799,  monthly_price: 1399, updated_at: new Date(Date.now() - 86400000 * 3).toISOString() },
+    { vehicle_id: 'civic', daily_price: 72,  weekly_price: 449,  biweekly_price: 829,  monthly_price: 1449, updated_at: new Date(Date.now() - 86400000 * 5).toISOString() },
+    { vehicle_id: 'rav4',  daily_price: 95,  weekly_price: 589,  biweekly_price: 1099, monthly_price: 1849, updated_at: new Date(Date.now() - 86400000 * 7).toISOString() },
+    { vehicle_id: 'rogue', daily_price: 99,  weekly_price: 619,  biweekly_price: 1149, monthly_price: 1949, updated_at: new Date(Date.now() - 86400000 * 7).toISOString() },
+  ] });
+  if (p.endsWith('/api/admin-ai-insights')) return Promise.resolve({
+    insights: {
+      revenue: { thisWeek: 1286, thisMonth: 5200, weeklyChangePct: 12, monthlyChangePct: 8 },
+      bookings: { active: 2, last7Days: 5 },
+    },
+    problems: [
+      'Jordan Miles (bk-demo-001) is overdue by 2 days — late fee of $85 applied',
+      'Taylor Brooks (bk-demo-004) has an unpaid reservation with $699 outstanding',
+      'Nissan Rogue 2022 is currently in service — no revenue this period',
+    ],
+    fraud: {
+      total: 4,
+      flagged: 1,
+      topRisks: [
+        { bookingId: 'bk-demo-001', name: 'Jordan Miles', risk_score: 62, risk_level: 'Medium' },
+      ],
+    },
+  });
   if (p.endsWith('/api/v2-diagnostics')) return Promise.resolve({ checks: [], status: 'ok' });
-  if (p.endsWith('/api/v2-sms-logs')) return Promise.resolve({ logs: [] });
+  if (p.endsWith('/api/v2-sms-logs') || p.endsWith('/api/sms-logs')) return Promise.resolve({ logs: [
+    { booking_ref: 'bk-demo-001', vehicle_id: 'camry', renter_phone: '(555) 010-1001', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_001a', created_at: new Date(Date.now() - 86400000 * 9).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-001', vehicle_id: 'camry', renter_phone: '(555) 010-1001', message_type: 'overdue_notice',      status: 'sent',   provider_id: 'SM_demo_001b', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-002', vehicle_id: 'civic', renter_phone: '(555) 010-1002', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_002a', created_at: new Date(Date.now() - 86400000 * 4).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-002', vehicle_id: 'civic', renter_phone: '(555) 010-1002', message_type: 'return_reminder',    status: 'sent',   provider_id: 'SM_demo_002b', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-003', vehicle_id: 'rav4',  renter_phone: '(555) 010-1003', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_003a', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-004', vehicle_id: 'camry', renter_phone: '(555) 010-1004', message_type: 'booking_confirmed',  status: 'failed', provider_id: null,           created_at: new Date(Date.now() - 86400000 * 0.5).toISOString(), error: 'Carrier rejected — invalid number format' },
+  ] });
   if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in demo mode.' });
 
   return Promise.resolve({ ok: true, _demo: true });
