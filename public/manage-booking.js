@@ -19,7 +19,182 @@
 
   // ── Parse token from URL ────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
+  const DEMO_MODE = params.has("demo");
+  const DEMO_BOOKING_ID = params.get("b") || "bk-demo-001";
   let activeToken = params.get("t") || "";
+  if (DEMO_MODE && !activeToken) activeToken = `demo-${DEMO_BOOKING_ID}`;
+
+  const DEMO_VEHICLE_LIST = [
+    { vehicle_id: "camry", vehicle_name: "Camry 2019", daily_price: 69, weekly_price: 429, cover_image: "/images/car2.jpg", gallery_images: ["/images/car2.jpg"] },
+    { vehicle_id: "civic", vehicle_name: "Honda Civic 2020", daily_price: 72, weekly_price: 449, cover_image: "", gallery_images: [] },
+    { vehicle_id: "rav4", vehicle_name: "Toyota RAV4 2021", daily_price: 95, weekly_price: 589, cover_image: "", gallery_images: [] },
+  ];
+
+  const DEMO_BOOKINGS = Object.assign(Object.create(null), {
+    "bk-demo-001": {
+      bookingId: "bk-demo-001",
+      booking_ref: "bk-demo-001",
+      name: "Jordan Miles",
+      email: "jordan.demo+001@example.test",
+      phone: "(555) 010-1001",
+      vehicleId: "camry",
+      pickupDate: new Date(Date.now() - 9 * 86400000).toISOString().slice(0, 10),
+      returnDate: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10),
+      pickupTime: "10:00 AM",
+      returnTime: "5:00 PM",
+      status: "overdue",
+      paymentStatus: "partial",
+      paymentMethod: "stripe",
+      totalPrice: 649,
+      total_paid: 420,
+      amountPaid: 420,
+      balanceDue: 229,
+      overdueAmount: 85,
+      lateFeeAmount: 85,
+      lateFeeStatus: "pending",
+      extensionCount: 2,
+      extensionRiskOverride: "review",
+      paymentPlan: { id: "plan-demo-001", status: "past_due", installments: 4, interval_days: 14, remaining_balance: 229, overdue_amount: 85, next_due_date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), isOverdue: true },
+      lockChanges: false,
+      canModify: true,
+    },
+    "bk-demo-004": {
+      bookingId: "bk-demo-004",
+      booking_ref: "bk-demo-004",
+      name: "Taylor Brooks",
+      email: "taylor.demo+004@example.test",
+      phone: "(555) 010-1004",
+      vehicleId: "camry",
+      pickupDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+      returnDate: new Date(Date.now() + 9 * 86400000).toISOString().slice(0, 10),
+      pickupTime: "2:00 PM",
+      returnTime: "2:00 PM",
+      status: "reserved_unpaid",
+      paymentStatus: "unpaid",
+      paymentMethod: "stripe",
+      totalPrice: 699,
+      total_paid: 0,
+      amountPaid: 0,
+      balanceDue: 699,
+      overdueAmount: 0,
+      lateFeeAmount: 0,
+      lateFeeStatus: "none",
+      extensionCount: 0,
+      extensionRiskOverride: "clear",
+      paymentPlan: { id: "plan-demo-002", status: "active", installments: 3, interval_days: 14, remaining_balance: 699, overdue_amount: 0, next_due_date: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10), isOverdue: false },
+      lockChanges: false,
+      canModify: true,
+    },
+  });
+
+  const DEMO_LEDGER = Object.assign(Object.create(null), {
+    "bk-demo-001": {
+      summary: { booking_id: "bk-demo-001", total_charges: 734, total_paid: 420, total_waived: 0, remaining_balance: 314, overdue_amount: 85 },
+      transactions: [
+        { id: "tx-demo-001", created_at: new Date(Date.now() - 9 * 86400000).toISOString(), transaction_type: "payment", direction: "credit", amount: 220, source: "demo_stripe", source_id: "pi_demo_001a", stripe_payment_intent_id: "pi_demo_001a", note: "Reservation payment" },
+        { id: "tx-demo-002", created_at: new Date(Date.now() - 7 * 86400000).toISOString(), transaction_type: "extension", direction: "debit", amount: 99, source: "demo_admin", source_id: "ext_demo_001", note: "Extension charge" },
+        { id: "tx-demo-003", created_at: new Date(Date.now() - 4 * 86400000).toISOString(), transaction_type: "payment", direction: "credit", amount: 200, source: "demo_card", source_id: "pi_demo_001b", stripe_payment_intent_id: "pi_demo_001b", note: "Balance payment" },
+        { id: "tx-demo-004", created_at: new Date(Date.now() - 1 * 86400000).toISOString(), transaction_type: "late_fee", direction: "debit", amount: 85, source: "demo_policy", source_id: "late_demo_001", note: "Auto late fee assessment" },
+      ],
+    },
+    "bk-demo-004": {
+      summary: { booking_id: "bk-demo-004", total_charges: 699, total_paid: 0, total_waived: 0, remaining_balance: 699, overdue_amount: 0 },
+      transactions: [
+        { id: "tx-demo-005", created_at: new Date().toISOString(), transaction_type: "booking", direction: "debit", amount: 699, source: "demo_system", source_id: "book_demo_004", note: "Reserved unpaid booking" },
+      ],
+    },
+  });
+
+  function cloneDemo(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function resolveDemoBookingIdFromToken(token) {
+    const value = String(token || "").trim();
+    if (!value) return DEMO_BOOKING_ID;
+    if (value.startsWith("demo-")) return value.slice(5) || DEMO_BOOKING_ID;
+    return value;
+  }
+
+  function findDemoBooking(ref) {
+    const id = String(ref || "").trim() || DEMO_BOOKING_ID;
+    if (Object.prototype.hasOwnProperty.call(DEMO_BOOKINGS, id)) return DEMO_BOOKINGS[id];
+    return DEMO_BOOKINGS[DEMO_BOOKING_ID];
+  }
+
+  async function installManageBookingDemoFetchInterceptor() {
+    if (!DEMO_MODE || window.__manageBookingDemoFetchPatched || typeof window.fetch !== "function") return;
+    window.__manageBookingDemoFetchPatched = true;
+    const nativeFetch = window.fetch.bind(window);
+
+    window.fetch = async function demoFetch(input, init = undefined) {
+      const requestUrl = typeof input === "string" ? input : (input && input.url) ? input.url : "";
+      if (!requestUrl) return nativeFetch(input, init);
+
+      let parsed;
+      try {
+        parsed = new URL(requestUrl, window.location.origin);
+      } catch (_err) {
+        return nativeFetch(input, init);
+      }
+
+      const path = parsed.pathname || "";
+      if (!path.startsWith("/api/")) return nativeFetch(input, init);
+
+      let body = {};
+      if (init && typeof init.body === "string" && init.body.trim()) {
+        try { body = JSON.parse(init.body); } catch (_err) { body = {}; }
+      }
+
+      let payload = { ok: true, _demo: true };
+      let status = 200;
+
+      if (path.endsWith("/api/v2-vehicles")) {
+        payload = parsed.search.includes("scope=cars") ? { vehicles: cloneDemo(DEMO_VEHICLE_LIST) } : { vehicles: cloneDemo(DEMO_VEHICLE_LIST) };
+      } else if (path.endsWith("/api/renter-ledger-summary")) {
+        const bookingId = String(body.booking_id || resolveDemoBookingIdFromToken(activeToken)).trim();
+        payload = cloneDemo(DEMO_LEDGER[bookingId] || { summary: {}, transactions: [] });
+      } else if (path.endsWith("/api/manage-booking")) {
+        const action = String(body.action || "").trim();
+        if (action === "verify") {
+          const bookingId = String(body.identifier || "").trim() || DEMO_BOOKING_ID;
+          payload = { token: `demo-${bookingId}` };
+        } else if (action === "get") {
+          const bookingId = resolveDemoBookingIdFromToken(body.token || activeToken);
+          payload = cloneDemo(findDemoBooking(bookingId));
+        } else if (action === "get_agreement_url") {
+          payload = { url: "/images/logo.jpg" };
+        } else if (action === "check_availability") {
+          const bookingId = resolveDemoBookingIdFromToken(body.token || activeToken);
+          const booking = findDemoBooking(bookingId);
+          const newTotal = Number(booking.totalPrice || 0) + 49;
+          const paid = Number(booking.total_paid || 0);
+          payload = { available: true, reason: null, newTotal, newBalanceDue: Math.max(0, newTotal - paid), changeFeeRequired: false, changeFee: 0 };
+        } else if (action === "apply_change") {
+          const bookingId = resolveDemoBookingIdFromToken(body.token || activeToken);
+          const booking = findDemoBooking(bookingId);
+          if (booking) {
+            booking.pickupDate = body.newPickupDate || booking.pickupDate;
+            booking.returnDate = body.newReturnDate || booking.returnDate;
+            if (body.newPickupTime) booking.pickupTime = body.newPickupTime;
+            if (body.newReturnTime) booking.returnTime = body.newReturnTime;
+            if (body.newVehicleId) booking.vehicleId = body.newVehicleId;
+          }
+          payload = { ok: true, booking: cloneDemo(booking) };
+        } else if (action === "initiate_paid_change" || action === "create_balance_payment_intent") {
+          payload = { error: "Demo sandbox: live Stripe payment intents are disabled." };
+          status = 400;
+        } else {
+          payload = { ok: true, _demo: true };
+        }
+      }
+
+      return new Response(JSON.stringify(payload || {}), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+  }
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const $verifyState      = document.getElementById("verify-state");
@@ -1665,6 +1840,8 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
       if (e.key === "Enter") verifyBooking();
     });
   }
+
+  if (DEMO_MODE) installManageBookingDemoFetchInterceptor();
 
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   (async function bootstrap() {

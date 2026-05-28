@@ -11186,193 +11186,489 @@ async function loadAiInsights() {
   const fmt   = (d) => d.toISOString().slice(0, 10);
   const ago   = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return fmt(d); };
   const fwd   = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return fmt(d); };
-  const mo    = (n) => { const d = new Date(today); d.setMonth(d.getMonth() - n); return fmt(d).slice(0,7); };
 
   window.DEMO_VEHICLES = {
-    camry:     { vehicle_name: 'Camry 2012',            type: 'economy', status: 'active',      vehicle_year: 2012, purchase_price: 8500,  cover_image: '/images/car2.jpg', daily_rate: 55, weekly_rate: 350 },
-    civic:     { vehicle_name: 'Honda Civic 2016',      type: 'economy', status: 'active',      vehicle_year: 2016, purchase_price: 9200,  cover_image: '',                daily_rate: 55, weekly_rate: 350 },
-    rav4:      { vehicle_name: 'Toyota RAV4 2018',      type: 'suv',     status: 'active',      vehicle_year: 2018, purchase_price: 14000, cover_image: '',                daily_rate: 80, weekly_rate: 499 },
+    camry:  { vehicle_name: 'Camry 2019',       type: 'economy', status: 'active',  vehicle_year: 2019, purchase_price: 11111, cover_image: '/images/car2.jpg', daily_rate: 69, weekly_rate: 429 },
+    civic:  { vehicle_name: 'Honda Civic 2020', type: 'economy', status: 'active',  vehicle_year: 2020, purchase_price: 12345, cover_image: '',                daily_rate: 72, weekly_rate: 449 },
+    rav4:   { vehicle_name: 'Toyota RAV4 2021', type: 'suv',     status: 'active',  vehicle_year: 2021, purchase_price: 16666, cover_image: '',                daily_rate: 95, weekly_rate: 589 },
+    rogue:  { vehicle_name: 'Nissan Rogue 2022',type: 'suv',     status: 'service', vehicle_year: 2022, purchase_price: 17777, cover_image: '',                daily_rate: 99, weekly_rate: 619 },
   };
 
   window.DEMO_BOOKINGS = [
-    { bookingId: 'bk-demo-001', booking_ref: 'bk-demo-001', name: 'James Thornton',   phone: '(310) 555-0191', email: 'james.thornton@example.com', vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: ago(7), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', status: 'overdue',           amountPaid: 350, paymentMethod: 'stripe', paymentStatus: 'paid' },
-    { bookingId: 'bk-demo-002', booking_ref: 'bk-demo-002', name: 'Sofia Reyes',       phone: '(213) 555-0142', email: 'sofia.reyes@example.com',    vehicleId: 'civic',     vehicle_id: 'civic',     pickupDate: ago(4), returnDate: fwd(3), pickupTime: '9:00 AM',  returnTime: '6:00 PM', status: 'active_rental',     amountPaid: 350, paymentMethod: 'cash',   paymentStatus: 'paid' },
-    { bookingId: 'bk-demo-003', booking_ref: 'bk-demo-003', name: 'Aisha Williams',    phone: '(323) 555-0178', email: 'aisha.williams@example.com', vehicleId: 'rav4',      vehicle_id: 'rav4',      pickupDate: fwd(2), returnDate: fwd(9), pickupTime: '11:00 AM', returnTime: '4:00 PM', status: 'booked_paid',       amountPaid: 499, paymentMethod: 'stripe', paymentStatus: 'paid' },
-    { bookingId: 'bk-demo-005', booking_ref: 'bk-demo-005', name: 'Rachel Kim',        phone: '(818) 555-0109', email: 'rachel.kim@example.com',     vehicleId: 'camry',     vehicle_id: 'camry',     pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '2:00 PM',  returnTime: '2:00 PM', status: 'reserved_unpaid',   amountPaid: 0,   paymentMethod: 'stripe', paymentStatus: 'unpaid' },
+    {
+      bookingId: 'bk-demo-001', booking_ref: 'bk-demo-001', booking_id: 'bk-demo-001', id: 'bk-demo-001',
+      name: 'Jordan Miles', phone: '(555) 010-1001', email: 'jordan.demo+001@example.test',
+      vehicleId: 'camry', vehicle_id: 'camry',
+      pickupDate: ago(9), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM',
+      status: 'overdue', paymentStatus: 'partial', paymentMethod: 'stripe',
+      totalPrice: 649, total_paid: 420, amountPaid: 420, remaining_balance: 229,
+      extensionCount: 2, extensionRiskOverride: 'review',
+      lateFeeAmount: 85, lateFeeStatus: 'pending',
+      paymentPlan: { id: 'plan-demo-001', status: 'past_due', installments: 4, interval_days: 14, remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), isOverdue: true },
+      flagged: false, custRiskFlag: 'medium',
+    },
+    {
+      bookingId: 'bk-demo-002', booking_ref: 'bk-demo-002', booking_id: 'bk-demo-002', id: 'bk-demo-002',
+      name: 'Avery Quinn', phone: '(555) 010-1002', email: 'avery.demo+002@example.test',
+      vehicleId: 'civic', vehicle_id: 'civic',
+      pickupDate: ago(4), returnDate: fwd(2), pickupTime: '9:00 AM', returnTime: '6:00 PM',
+      status: 'active_rental', paymentStatus: 'paid', paymentMethod: 'cash',
+      totalPrice: 512, total_paid: 512, amountPaid: 512, remaining_balance: 0,
+      extensionCount: 1, lateFeeAmount: 0, lateFeeStatus: 'none',
+      paymentPlan: null,
+      flagged: false, custRiskFlag: 'low',
+    },
+    {
+      bookingId: 'bk-demo-003', booking_ref: 'bk-demo-003', booking_id: 'bk-demo-003', id: 'bk-demo-003',
+      name: 'Sam Rivera', phone: '(555) 010-1003', email: 'sam.demo+003@example.test',
+      vehicleId: 'rav4', vehicle_id: 'rav4',
+      pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '11:00 AM', returnTime: '4:00 PM',
+      status: 'booked_paid', paymentStatus: 'paid', paymentMethod: 'stripe',
+      totalPrice: 774, total_paid: 774, amountPaid: 774, remaining_balance: 0,
+      extensionCount: 0, lateFeeAmount: 0, lateFeeStatus: 'none',
+      paymentPlan: null,
+      flagged: false, custRiskFlag: 'low',
+    },
+    {
+      bookingId: 'bk-demo-004', booking_ref: 'bk-demo-004', booking_id: 'bk-demo-004', id: 'bk-demo-004',
+      name: 'Taylor Brooks', phone: '(555) 010-1004', email: 'taylor.demo+004@example.test',
+      vehicleId: 'camry', vehicle_id: 'camry',
+      pickupDate: fwd(2), returnDate: fwd(9), pickupTime: '2:00 PM', returnTime: '2:00 PM',
+      status: 'reserved_unpaid', paymentStatus: 'unpaid', paymentMethod: 'stripe',
+      totalPrice: 699, total_paid: 0, amountPaid: 0, remaining_balance: 699,
+      extensionCount: 0, lateFeeAmount: 0, lateFeeStatus: 'none',
+      paymentPlan: { id: 'plan-demo-002', status: 'active', installments: 3, interval_days: 14, remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), isOverdue: false },
+      flagged: false, custRiskFlag: 'low',
+    },
+  ];
+
+  window.DEMO_LEDGER_BY_BOOKING = {
+    'bk-demo-001': {
+      summary: { booking_id: 'bk-demo-001', total_charges: 734, total_paid: 420, total_waived: 0, remaining_balance: 314, overdue_amount: 85 },
+      transactions: [
+        { id: 'tx-demo-001', booking_id: 'bk-demo-001', created_at: ago(9), transaction_type: 'payment', direction: 'credit', amount: 220, source: 'demo_stripe', source_id: 'pi_demo_001a', stripe_payment_intent_id: 'pi_demo_001a', note: 'Reservation payment' },
+        { id: 'tx-demo-002', booking_id: 'bk-demo-001', created_at: ago(7), transaction_type: 'extension', direction: 'debit', amount: 99, source: 'demo_admin', source_id: 'ext_demo_001', note: 'Extension charge' },
+        { id: 'tx-demo-003', booking_id: 'bk-demo-001', created_at: ago(4), transaction_type: 'payment', direction: 'credit', amount: 200, source: 'demo_card', source_id: 'pi_demo_001b', stripe_payment_intent_id: 'pi_demo_001b', note: 'Balance payment' },
+        { id: 'tx-demo-004', booking_id: 'bk-demo-001', created_at: ago(1), transaction_type: 'late_fee', direction: 'debit', amount: 85, source: 'demo_policy', source_id: 'late_demo_001', note: 'Auto late fee assessment' },
+      ],
+    },
+    'bk-demo-002': {
+      summary: { booking_id: 'bk-demo-002', total_charges: 512, total_paid: 512, total_waived: 0, remaining_balance: 0, overdue_amount: 0 },
+      transactions: [
+        { id: 'tx-demo-005', booking_id: 'bk-demo-002', created_at: ago(4), transaction_type: 'payment', direction: 'credit', amount: 512, source: 'demo_cash', source_id: 'cash_demo_002', note: 'Paid in full' },
+      ],
+    },
+    'bk-demo-003': {
+      summary: { booking_id: 'bk-demo-003', total_charges: 774, total_paid: 774, total_waived: 0, remaining_balance: 0, overdue_amount: 0 },
+      transactions: [
+        { id: 'tx-demo-006', booking_id: 'bk-demo-003', created_at: ago(1), transaction_type: 'payment', direction: 'credit', amount: 774, source: 'demo_stripe', source_id: 'pi_demo_003', stripe_payment_intent_id: 'pi_demo_003', note: 'Prepaid booking' },
+      ],
+    },
+    'bk-demo-004': {
+      summary: { booking_id: 'bk-demo-004', total_charges: 699, total_paid: 0, total_waived: 0, remaining_balance: 699, overdue_amount: 0 },
+      transactions: [
+        { id: 'tx-demo-007', booking_id: 'bk-demo-004', created_at: ago(0), transaction_type: 'booking', direction: 'debit', amount: 699, source: 'demo_system', source_id: 'book_demo_004', note: 'Reserved unpaid booking' },
+      ],
+    },
+  };
+
+  window.DEMO_PAYMENT_PLANS = [
+    { id: 'plan-demo-001', booking_id: 'bk-demo-001', customer_email: 'jordan.demo+001@example.test', total_amount: 420, installments: 4, interval_days: 14, status: 'past_due', remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), last_payment_at: ago(4), notes: 'Demo overdue plan' },
+    { id: 'plan-demo-002', booking_id: 'bk-demo-004', customer_email: 'taylor.demo+004@example.test', total_amount: 699, installments: 3, interval_days: 14, status: 'active', remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), last_payment_at: null, notes: 'Demo active plan' },
   ];
 
   window.DEMO_EXPENSES = [
-    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry',     vehicle_id: 'camry',     date: ago(30), category: 'maintenance', amount: 120, notes: 'Oil change + tire rotation', receipt_url: 'demo/expense-1', receipt_filename: 'oil-change.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
-    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',      vehicle_id: 'rav4',      date: ago(15), category: 'insurance',   amount: 280, notes: 'Monthly insurance premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
-    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic',     vehicle_id: 'civic',     date: ago(8),  category: 'repair',      amount: 85,  notes: 'Brake pad replacement', receipt_url: 'demo/expense-3', receipt_filename: 'brake-pad.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
+    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry', vehicle_id: 'camry', date: ago(30), category: 'maintenance', amount: 210, notes: 'Demo oil + rotation', receipt_url: 'demo/expense-1', receipt_filename: 'receipt-demo-1.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
+    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',  vehicle_id: 'rav4',  date: ago(15), category: 'insurance',   amount: 340, notes: 'Demo policy premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
+    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic', vehicle_id: 'civic', date: ago(8),  category: 'repair',      amount: 125, notes: 'Demo brake service', receipt_url: 'demo/expense-3', receipt_filename: 'receipt-demo-3.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
   ];
 
   window.DEMO_REVENUE = [
-    { id: 1, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(7),  amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
-    { id: 2, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(4),  amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
-    { id: 3, booking_ref: 'bk-demo-003', vehicle_id: 'rav4',      date: ago(2),  amount_gross: 499, stripe_fee: 17, amount_net: 482, payment_type: 'reservation_deposit' },
-    { id: 5, booking_ref: 'bk-demo-002', vehicle_id: 'civic',     date: ago(60), amount_gross: 350, stripe_fee: 0,  amount_net: 350, payment_type: 'cash' },
-    { id: 6, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(45), amount_gross: 350, stripe_fee: 12, amount_net: 338, payment_type: 'reservation_deposit' },
-    { id: 7, booking_ref: 'bk-demo-001', vehicle_id: 'camry',     date: ago(90), amount_gross: 700, stripe_fee: 24, amount_net: 676, payment_type: 'reservation_deposit' },
+    { id: 1, booking_ref: 'bk-demo-001', vehicle_id: 'camry', date: ago(9), amount_gross: 220, stripe_fee: 7.12, amount_net: 212.88, payment_type: 'reservation_deposit', payment_status: 'paid', payment_method: 'stripe' },
+    { id: 2, booking_ref: 'bk-demo-001', vehicle_id: 'camry', date: ago(4), amount_gross: 200, stripe_fee: 6.5, amount_net: 193.5, payment_type: 'balance_payment', payment_status: 'paid', payment_method: 'stripe' },
+    { id: 3, booking_ref: 'bk-demo-002', vehicle_id: 'civic', date: ago(4), amount_gross: 512, stripe_fee: 0, amount_net: 512, payment_type: 'cash', payment_status: 'paid', payment_method: 'cash' },
+    { id: 4, booking_ref: 'bk-demo-003', vehicle_id: 'rav4', date: ago(1), amount_gross: 774, stripe_fee: 24.88, amount_net: 749.12, payment_type: 'reservation_deposit', payment_status: 'paid', payment_method: 'stripe' },
   ];
 
   window.DEMO_CUSTOMERS = [
-    { id: 1, name: 'James Thornton', phone: '(310) 555-0191', email: 'james.thornton@example.com', total_bookings: 3, total_spent: 1050, risk_level: 'medium', last_booking: ago(7) },
-    { id: 2, name: 'Sofia Reyes',    phone: '(213) 555-0142', email: 'sofia.reyes@example.com',    total_bookings: 5, total_spent: 1750, risk_level: 'low',    last_booking: ago(4) },
-    { id: 3, name: 'Aisha Williams', phone: '(323) 555-0178', email: 'aisha.williams@example.com', total_bookings: 2, total_spent: 998,  risk_level: 'low',    last_booking: ago(2) },
-    { id: 4, name: 'Carlos Medina',  phone: '(424) 555-0163', email: 'carlos.medina@example.com',  total_bookings: 8, total_spent: 4400, risk_level: 'low',    last_booking: ago(14) },
-    { id: 5, name: 'Rachel Kim',     phone: '(818) 555-0109', email: 'rachel.kim@example.com',     total_bookings: 1, total_spent: 0,    risk_level: 'low',    last_booking: fwd(1) },
+    { id: 'cust-demo-001', name: 'Jordan Miles',  full_name: 'Jordan Miles',  phone: '(555) 010-1001', email: 'jordan.demo+001@example.test', total_bookings: 4, total_spent: 1420, total_profit: 390, total_gross_revenue: 1520, total_stripe_fees: 43, total_net_revenue: 1477, associated_vehicle_expenses: 1087, profit_per_booking: 97.5, avg_profit_per_day: 18.4, lifetime_value: 1420, no_show_count: 1, first_booking_date: ago(120), last_booking_date: ago(2), last_booking: ago(2), risk_flag: 'medium', flagged: false, banned: false },
+    { id: 'cust-demo-002', name: 'Avery Quinn',   full_name: 'Avery Quinn',   phone: '(555) 010-1002', email: 'avery.demo+002@example.test',  total_bookings: 3, total_spent: 1196, total_profit: 510, total_gross_revenue: 1250, total_stripe_fees: 10, total_net_revenue: 1240, associated_vehicle_expenses: 730, profit_per_booking: 170, avg_profit_per_day: 28.3, lifetime_value: 1196, no_show_count: 0, first_booking_date: ago(90),  last_booking_date: ago(4), last_booking: ago(4), risk_flag: 'low', flagged: false, banned: false },
+    { id: 'cust-demo-003', name: 'Sam Rivera',    full_name: 'Sam Rivera',    phone: '(555) 010-1003', email: 'sam.demo+003@example.test',    total_bookings: 2, total_spent: 774,  total_profit: 280, total_gross_revenue: 774, total_stripe_fees: 24.88, total_net_revenue: 749.12, associated_vehicle_expenses: 469.12, profit_per_booking: 140, avg_profit_per_day: 26.5, lifetime_value: 774,  no_show_count: 0, first_booking_date: ago(35),  last_booking_date: ago(1), last_booking: ago(1), risk_flag: 'low', flagged: false, banned: false },
+    { id: 'cust-demo-004', name: 'Taylor Brooks', full_name: 'Taylor Brooks', phone: '(555) 010-1004', email: 'taylor.demo+004@example.test', total_bookings: 1, total_spent: 0,    total_profit: -45, total_gross_revenue: 0, total_stripe_fees: 0, total_net_revenue: 0, associated_vehicle_expenses: 45, profit_per_booking: -45, avg_profit_per_day: -6.4, lifetime_value: 699,  no_show_count: 0, first_booking_date: fwd(2), last_booking_date: fwd(2), last_booking: fwd(2), risk_flag: 'low', flagged: false, banned: false },
   ];
 
   const revChart = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today); d.setMonth(d.getMonth() - (6 - i));
     const label = d.toLocaleString('default', { month: 'short' });
-    const amounts = [2800, 3100, 2450, 3200, 3700, 2980, 8420];
+    const amounts = [3100, 3600, 2900, 4100, 4550, 3890, 5200];
     return { month: label, amount: amounts[i] };
   });
 
   window.DEMO_DASHBOARD = {
     kpis: {
-      totalRevenue: 8420, netRevenue: 8181, totalExpenses: 705,
+      totalRevenue: 5200, netRevenue: 4980, totalExpenses: 675,
       pendingApprovals: 1, activeBookings: 2, availableVehicles: 2,
-      operationalROI: 21.4, pickupsToday: 1, returnsToday: 0, overdueCount: 1,
-      bookingsLast7Days: 4, bookingsLast30Days: 12,
+      operationalROI: 19.8, pickupsToday: 1, returnsToday: 1, overdueCount: 1,
+      bookingsLast7Days: 5, bookingsLast30Days: 16,
     },
     revenueChart: revChart,
-    bookingsPerVehicle: { camry: 12, civic: 8, rav4: 5 },
+    bookingsPerVehicle: { camry: 14, civic: 9, rav4: 6, rogue: 2 },
     vehicleStats: {
-      camry:     { revenue: 3200, netProfit: 2100, bookingCount: 12, expenses: 340, roi: 8.2 },
-      civic:     { revenue: 2800, netProfit: 1900, bookingCount: 8,  expenses: 280, roi: 7.1 },
-      rav4:      { revenue: 1820, netProfit: 1100, bookingCount: 5,  expenses: 420, roi: 5.4 },
+      camry: { revenue: 1820, netProfit: 740, bookingCount: 14, expenses: 230, roi: 6.4 },
+      civic: { revenue: 1512, netProfit: 660, bookingCount: 9,  expenses: 180, roi: 5.8 },
+      rav4:  { revenue: 1268, netProfit: 520, bookingCount: 6,  expenses: 265, roi: 4.9 },
+      rogue: { revenue: 600,  netProfit: 140, bookingCount: 2,  expenses: 90,  roi: 2.2 },
     },
     alerts: [
-      { type: 'warning', message: 'James Thornton\'s Camry rental is 2 days overdue — contact customer.' },
-      { type: 'info',    message: 'Toyota RAV4 oil change due in ~200 miles.' },
-      { type: 'success', message: 'Honda Civic returned on time — great customer.' },
+      { type: 'warning', message: 'Demo renter Jordan Miles has a past-due installment and open late fee.' },
+      { type: 'info',    message: 'Rogue is currently in service state for demo lifecycle rendering.' },
+      { type: 'success', message: 'Cash and Stripe demo payments are both represented in this dataset.' },
     ],
     recentBookings: [
-      { name: 'James Thornton', vehicleId: 'camry',     pickupDate: ago(7),  returnDate: ago(2),  pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 350, status: 'overdue' },
-      { name: 'Sofia Reyes',    vehicleId: 'civic',     pickupDate: ago(4),  returnDate: fwd(3),  pickupTime: '9:00 AM',  returnTime: '6:00 PM', amountPaid: 350, status: 'active_rental' },
-      { name: 'Aisha Williams', vehicleId: 'rav4',      pickupDate: fwd(2),  returnDate: fwd(9),  pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 499, status: 'booked_paid' },
+      { name: 'Jordan Miles', vehicleId: 'camry', pickupDate: ago(9), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 420, status: 'overdue' },
+      { name: 'Avery Quinn', vehicleId: 'civic', pickupDate: ago(4), returnDate: fwd(2), pickupTime: '9:00 AM', returnTime: '6:00 PM', amountPaid: 512, status: 'active_rental' },
+      { name: 'Sam Rivera', vehicleId: 'rav4', pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 774, status: 'booked_paid' },
     ],
   };
 
   window.DEMO_ANALYTICS = {
-    vehicles: Object.entries(window.DEMO_VEHICLES).map(([id, v]) => ({
-      vehicle_id: id, vehicle_name: v.vehicle_name,
-      utilization: Math.round(60 + Math.random() * 30),
-      revenue: window.DEMO_DASHBOARD.vehicleStats[id]?.revenue || 0,
-      roi: window.DEMO_DASHBOARD.vehicleStats[id]?.roi || 0,
-    })),
+    fleet: {
+      camry: { bookings: 14, revenue: 1820, utilization_pct: 76 },
+      civic: { bookings: 9, revenue: 1512, utilization_pct: 71 },
+      rav4:  { bookings: 6, revenue: 1268, utilization_pct: 64 },
+      rogue: { bookings: 2, revenue: 600,  utilization_pct: 33 },
+    },
+    trend: revChart.map((row) => ({ month: row.month, amount: row.amount })),
+    kpi_total_revenue: 5200,
   };
 
   window.DEMO_LATE_FEES = [
-    { id: 1, booking_ref: 'bk-demo-001', customer_name: 'James Thornton', vehicle_id: 'camry', days_overdue: 2, fee_amount: 110, status: 'pending', created_at: ago(1) },
+    { id: 1, booking_ref: 'bk-demo-001', customer_name: 'Jordan Miles', vehicle_id: 'camry', days_overdue: 2, fee_amount: 85, status: 'pending', created_at: ago(1) },
   ];
 })();
 
-// ── Demo API Interceptor ────────────────────────────────────────────────────
+function cloneDemo(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function findDemoBooking(id) {
+  const target = String(id || '').trim();
+  if (!target) return null;
+  return (window.DEMO_BOOKINGS || []).find((b) =>
+    String(b.bookingId || '') === target
+    || String(b.booking_ref || '') === target
+    || String(b.booking_id || '') === target
+    || String(b.id || '') === target,
+  ) || null;
+}
+
+function findDemoCustomer(id) {
+  const target = String(id || '').trim();
+  if (!target) return null;
+  return (window.DEMO_CUSTOMERS || []).find((c) => String(c.id || '') === target) || null;
+}
+
+function getDemoRevenueKpi() {
+  const records = window.DEMO_REVENUE || [];
+  const gross = records.reduce((sum, row) => sum + Number(row.amount_gross || 0), 0);
+  const stripeFees = records.reduce((sum, row) => sum + Number(row.stripe_fee || 0), 0);
+  const net = records.reduce((sum, row) => sum + Number(row.amount_net || 0), 0);
+  return { gross, net, stripe_fees: stripeFees, count: records.length };
+}
+
+function getDemoRevenueGroups() {
+  const byBooking = {};
+  (window.DEMO_REVENUE || []).forEach((row) => {
+    const ref = row.booking_ref || 'unknown';
+    if (!byBooking[ref]) byBooking[ref] = [];
+    byBooking[ref].push(row);
+  });
+  return Object.entries(byBooking).map(([booking_ref, records]) => ({
+    booking_ref,
+    records: cloneDemo(records),
+    count: records.length,
+    amount_gross: records.reduce((sum, row) => sum + Number(row.amount_gross || 0), 0),
+  }));
+}
+
+function getDemoOverdueBalancesPayload() {
+  const overdueRows = (window.DEMO_BOOKINGS || [])
+    .filter((b) => Number(b.remaining_balance || 0) > 0)
+    .map((b) => {
+      const overdueAmount = Number(b.paymentPlan?.overdue_amount || b.lateFeeAmount || 0);
+      return {
+        booking_id: b.bookingId,
+        customer_name: b.name,
+        customer_email: b.email,
+        net_balance: Number(b.remaining_balance || 0),
+        earliest_due_date: b.paymentPlan?.next_due_date || b.returnDate || null,
+        days_overdue: overdueAmount > 0 ? 2 : 0,
+        aging_bucket: overdueAmount > 0 ? '30-59' : 'current',
+      };
+    });
+
+  const bucket = { current: { count: 0, amount: 0 }, '30-59': { count: 0, amount: 0 }, '60-89': { count: 0, amount: 0 }, '90+': { count: 0, amount: 0 } };
+  overdueRows.forEach((row) => {
+    const key = row.aging_bucket || 'current';
+    if (!bucket[key]) bucket[key] = { count: 0, amount: 0 };
+    bucket[key].count += 1;
+    bucket[key].amount += Number(row.net_balance || 0);
+  });
+
+  return {
+    total_overdue: overdueRows.length,
+    bucket_totals: bucket,
+    results: overdueRows,
+  };
+}
+
+function getDemoReconcilePayload() {
+  const results = getDemoRevenueGroups().map((group) => {
+    const booking = findDemoBooking(group.booking_ref) || {};
+    const ledger = window.DEMO_LEDGER_BY_BOOKING?.[group.booking_ref]?.summary || {};
+    const sourceTotal = group.records.reduce((sum, row) => sum + Number(row.amount_gross || 0), 0);
+    const ledgerTotal = Number(ledger.total_paid || 0);
+    const discrepancy = Number((sourceTotal - ledgerTotal).toFixed(2));
+    const status = discrepancy === 0 ? 'matched' : discrepancy > 0 ? 'under' : 'over';
+    return {
+      booking_ref: group.booking_ref,
+      customer_name: booking.name || null,
+      customer_email: booking.email || null,
+      source_total: sourceTotal,
+      ledger_total: ledgerTotal,
+      discrepancy,
+      status,
+    };
+  });
+
+  const unresolved = results.filter((r) => r.status !== 'matched');
+  const matchedPct = results.length ? Math.round(((results.length - unresolved.length) / results.length) * 100) : 100;
+  return {
+    bookings_checked: results.length,
+    matched_pct: matchedPct,
+    unresolved_count: unresolved.length,
+    discrepancy_total: unresolved.reduce((sum, row) => sum + Math.abs(Number(row.discrepancy || 0)), 0),
+    results,
+  };
+}
+
 function getDemoResponse(path, body) {
   const p = path.split('?')[0];
-  const action = (body && body.action) || '';
+  const action = String((body && body.action) || '').trim();
 
-  if (p.endsWith('/api/v2-dashboard'))       return Promise.resolve(window.DEMO_DASHBOARD);
+  if (p.endsWith('/api/v2-dashboard')) return Promise.resolve(cloneDemo(window.DEMO_DASHBOARD));
   if (p.endsWith('/api/v2-vehicles')) {
-    if (!action || action === 'list')        return Promise.resolve({ vehicles: window.DEMO_VEHICLES });
-    if (action === 'update')                 return Promise.resolve({ ok: true, vehicle: window.DEMO_VEHICLES[body.vehicleId] || {} });
-    if (action === 'create')                 return Promise.resolve({ ok: true, vehicle: {} });
+    if (!action || action === 'list') return Promise.resolve({ vehicles: cloneDemo(window.DEMO_VEHICLES) });
+    if (action === 'update') {
+      const vehicle = window.DEMO_VEHICLES?.[body?.vehicleId] || null;
+      if (vehicle && body?.updates && typeof body.updates === 'object') Object.assign(vehicle, body.updates);
+      return Promise.resolve({ ok: true, vehicle: cloneDemo(vehicle || {}) });
+    }
+    if (action === 'create') return Promise.resolve({ ok: true, vehicle: {} });
     return Promise.resolve({ ok: true });
   }
-  if (p.endsWith('/api/v2-bookings'))        return Promise.resolve({ bookings: window.DEMO_BOOKINGS });
-  if (p.endsWith('/api/v2-revenue'))         return Promise.resolve({ records: window.DEMO_REVENUE, groups: [], kpi: { gross: 8420, net: 8181, stripe_fees: 239, count: 28 } });
-  if (p.endsWith('/api/v2-expenses'))        return Promise.resolve({ expenses: window.DEMO_EXPENSES });
-  if (p.endsWith('/api/v2-analytics'))       return Promise.resolve(window.DEMO_ANALYTICS);
-  if (p.endsWith('/api/v2-customers'))       return Promise.resolve({ customers: window.DEMO_CUSTOMERS });
-  if (p.endsWith('/api/v2-late-fees'))       return Promise.resolve({ fees: window.DEMO_LATE_FEES });
-  if (p.endsWith('/api/v2-mileage'))         return Promise.resolve({ vehicles: [], alerts: [] });
-  if (p.endsWith('/api/v2-system-health'))   return Promise.resolve({ checks: [], status: 'ok', issues: [] });
-  if (p.endsWith('/api/v2-sms-templates'))   return Promise.resolve({ templates: [] });
-  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [] });
-  if (p.endsWith('/api/v2-protection-plans'))return Promise.resolve({ plans: [] });
-  if (p.endsWith('/api/v2-pricing'))         return Promise.resolve({ pricing: {} });
-  if (p.endsWith('/api/v2-block-dates'))     return Promise.resolve({ blocked: [] });
-  if (p.endsWith('/api/v2-fleet-status'))    return Promise.resolve({ fleet: [] });
-  if (p.endsWith('/api/admin-chat'))         return Promise.resolve({ reply: '👋 This is **demo mode**. In the live system, I can query real bookings, revenue, customer data, and execute actions. Ask me anything — I\'ll show you what I can do!', messages: [], tool_calls: [] });
-  if (p.endsWith('/api/tts'))                return Promise.reject(new Error('TTS disabled in demo'));
-  if (p.endsWith('/api/site-content'))       return Promise.resolve({ business_name: '', phone: '', logo_url: '' });
-  if (p.endsWith('/api/admin-site-settings'))return Promise.resolve({ ok: true });
-  if (p.endsWith('/api/get-expenses'))       return Promise.resolve({ expenses: window.DEMO_EXPENSES });
-  if (p.endsWith('/api/add-expense')) {
-    const expense = {
-      expense_id: 'exp-demo-' + Date.now(),
-      vehicle_id: body.vehicle_id || 'camry',
-      date: body.date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date()),
-      category: body.category || 'misc',
-      amount: Number(body.amount || 0),
-      notes: body.notes || '',
-      receipt_url: null,
-    };
-    window.DEMO_EXPENSES.unshift(expense);
-    return Promise.resolve({ ok: true, expense });
-  }
-  if (p.endsWith('/api/update-expense')) {
-    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expense_id);
-    if (!expense) return Promise.reject(new Error('Expense not found'));
-    expense.vehicle_id = body.vehicle_id || expense.vehicle_id;
-    expense.date = body.date || expense.date;
-    expense.category = body.category || expense.category;
-    expense.amount = Number(body.amount || expense.amount || 0);
-    expense.notes = body.notes || '';
-    return Promise.resolve({ ok: true, expense });
-  }
-  if (p.endsWith('/api/upload-expense-receipt')) {
-    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
-    if (!expense) return Promise.reject(new Error('Expense not found'));
-    expense.receipt_url = `demo/${expense.expense_id}`;
-    expense.receipt_filename = body.fileName || 'receipt.jpg';
-    expense.receipt_uploaded_at = new Date().toISOString();
-    expense.receipt_size = 245760;
-    expense.receipt_mime_type = body.mimeType || 'image/jpeg';
-    return Promise.resolve({ success: true, expense });
-  }
-  if (p.endsWith('/api/get-expense-receipt-url')) {
-    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
-    if (!expense || !expense.receipt_url) return Promise.reject(new Error('No receipt attached to this expense'));
-    return Promise.resolve({
-      success: true,
-      url: expense.receipt_mime_type === 'image/png' ? '/images/car2.jpg' : '/images/logo.jpg',
-      fileName: expense.receipt_filename,
-      mimeType: expense.receipt_mime_type,
-      size: expense.receipt_size,
-      uploadedAt: expense.receipt_uploaded_at,
-      isImage: true,
-      isPdf: false,
-    });
-  }
-  if (p.endsWith('/api/delete-expense-receipt')) {
-    const expense = (window.DEMO_EXPENSES || []).find((item) => item.expense_id === body.expenseId);
-    if (!expense || !expense.receipt_url) return Promise.reject(new Error('No receipt attached to this expense'));
-    expense.receipt_url = null;
-    expense.receipt_filename = null;
-    expense.receipt_uploaded_at = null;
-    expense.receipt_size = null;
-    expense.receipt_mime_type = null;
-    return Promise.resolve({ success: true, expense });
-  }
-  if (p.endsWith('/api/delete-expense'))     return Promise.resolve({ ok: true });
-  if (p.endsWith('/api/admin-update-pricing'))  return Promise.resolve({ ok: true, pricing: {} });
-  if (p.endsWith('/api/admin-ai-insights'))  return Promise.resolve({ summary: 'Demo mode — live AI insights are not available.', problems: [], metrics: {} });
-  if (p.endsWith('/api/v2-diagnostics'))     return Promise.resolve({ checks: [], status: 'ok' });
-  if (p.endsWith('/api/v2-sms-logs'))        return Promise.resolve({ logs: [] });
-  if (p.endsWith('/api/bouncie-location'))   return Promise.resolve({ connected: false, message: 'GPS tracking not configured in demo mode.' });
 
-  // Catch-all — return silent success for any unmatched write
+  if (p.endsWith('/api/v2-bookings')) {
+    if (!action || action === 'list' || action === 'list_raw') return Promise.resolve({ bookings: cloneDemo(window.DEMO_BOOKINGS) });
+    if (action === 'send_payment_link') {
+      const bookingId = String(body?.bookingId || '').trim();
+      const customerId = String(body?.customerId || '').trim();
+      const booking = bookingId
+        ? findDemoBooking(bookingId)
+        : (window.DEMO_BOOKINGS || []).find((b) => String(b.email || '').trim() === String(findDemoCustomer(customerId)?.email || '').trim()) || null;
+      const resolvedId = booking?.bookingId || bookingId || 'bk-demo-001';
+      return Promise.resolve({
+        ok: true,
+        smsSent: true,
+        emailSent: !!body?.send_email,
+        bookingId: resolvedId,
+        manageLink: `${window.location.origin}/manage-booking.html?demo=1&b=${encodeURIComponent(resolvedId)}&t=demo-${encodeURIComponent(resolvedId)}`,
+      });
+    }
+    if (action === 'get_agreement_url') return Promise.resolve({ ok: true, url: '/images/logo.jpg' });
+    if (action === 'update') {
+      const booking = findDemoBooking(body?.bookingId || body?.id || body?.booking_ref);
+      if (booking && body?.updates && typeof body.updates === 'object') Object.assign(booking, body.updates);
+      return Promise.resolve({ ok: true, booking: cloneDemo(booking || {}) });
+    }
+    if (action === 'flag') {
+      const booking = findDemoBooking(body?.bookingId);
+      if (booking) booking.flagged = !!body?.flagged;
+      return Promise.resolve({ ok: true, booking: cloneDemo(booking || {}) });
+    }
+    if (action === 'set_late_fee') {
+      const booking = findDemoBooking(body?.bookingId);
+      if (booking) {
+        if (body?.lateFeeAmount != null) booking.lateFeeAmount = Number(body.lateFeeAmount || 0);
+        if (body?.lateFeeStatus) booking.lateFeeStatus = body.lateFeeStatus;
+      }
+      return Promise.resolve({ ok: true, booking: cloneDemo(booking || {}) });
+    }
+    if (action === 'dismiss_late_fee') {
+      const booking = findDemoBooking(body?.bookingId);
+      if (booking) {
+        booking.lateFeeStatus = 'dismissed';
+        booking.lateFeeAmount = 0;
+      }
+      return Promise.resolve({ ok: true, booking: cloneDemo(booking || {}) });
+    }
+    return Promise.resolve({ ok: true, _demo: true });
+  }
+
+  if (p.endsWith('/api/v2-revenue')) {
+    const kpi = getDemoRevenueKpi();
+    if (action === 'kpi') return Promise.resolve({ total_revenue: kpi.gross, ...kpi });
+    if (action === 'list_by_booking') return Promise.resolve({ groups: getDemoRevenueGroups(), kpi });
+    return Promise.resolve({ records: cloneDemo(window.DEMO_REVENUE), groups: getDemoRevenueGroups(), kpi });
+  }
+
+  if (p.endsWith('/api/v2-expenses') || p.endsWith('/api/get-expenses')) return Promise.resolve({ expenses: cloneDemo(window.DEMO_EXPENSES) });
+  if (p.endsWith('/api/v2-analytics')) {
+    if (action === 'fleet') return Promise.resolve({ fleet: cloneDemo(window.DEMO_ANALYTICS?.fleet || {}), kpi_total_revenue: window.DEMO_ANALYTICS?.kpi_total_revenue || 0 });
+    if (action === 'revenue_trend') return Promise.resolve({ trend: cloneDemo(window.DEMO_ANALYTICS?.trend || []) });
+    return Promise.resolve(cloneDemo(window.DEMO_ANALYTICS));
+  }
+
+  if (p.endsWith('/api/v2-customers')) {
+    if (!action || action === 'list') return Promise.resolve({ customers: cloneDemo(window.DEMO_CUSTOMERS) });
+    if (action === 'sync') return Promise.resolve({ ok: true, synced: 0, customers: cloneDemo(window.DEMO_CUSTOMERS) });
+    if (action === 'update') {
+      const customer = findDemoCustomer(body?.id);
+      if (customer && body?.updates && typeof body.updates === 'object') Object.assign(customer, body.updates);
+      return Promise.resolve({ ok: true, customer: cloneDemo(customer || {}) });
+    }
+    if (action === 'upsert') {
+      const id = `cust-demo-${Date.now()}`;
+      const customer = { id, ...(body || {}), flagged: false, banned: false };
+      window.DEMO_CUSTOMERS.push(customer);
+      return Promise.resolve({ ok: true, customer: cloneDemo(customer) });
+    }
+    return Promise.resolve({ ok: true });
+  }
+
+  if (p.endsWith('/api/v2-late-fees')) return Promise.resolve({ fees: cloneDemo(window.DEMO_LATE_FEES) });
+  if (p.endsWith('/api/overdue-balances')) return Promise.resolve(getDemoOverdueBalancesPayload());
+  if (p.endsWith('/api/ledger-reconcile-report')) return Promise.resolve(getDemoReconcilePayload());
+
+  if (p.endsWith('/api/payment-plan')) {
+    const plans = window.DEMO_PAYMENT_PLANS || [];
+    if (!action || action === 'list') {
+      const status = String(body?.status || '').trim();
+      return Promise.resolve({ plans: cloneDemo(status ? plans.filter((x) => x.status === status) : plans) });
+    }
+    if (action === 'get') return Promise.resolve({ plans: cloneDemo(plans.filter((x) => String(x.id || '') === String(body?.plan_id || ''))) });
+    if (action === 'create') {
+      const plan = {
+        id: `plan-demo-${Date.now()}`,
+        booking_id: body?.booking_id || 'bk-demo-new',
+        customer_email: body?.customer_email || 'demo@example.test',
+        total_amount: Number(body?.total_amount || 0),
+        installments: Number(body?.installments || 2),
+        interval_days: Number(body?.interval_days || 14),
+        status: 'active',
+        remaining_balance: Number(body?.total_amount || 0),
+        overdue_amount: 0,
+        next_due_date: new Date(Date.now() + 86400000 * 14).toISOString().slice(0, 10),
+        last_payment_at: null,
+        notes: null,
+      };
+      plans.unshift(plan);
+      return Promise.resolve({ ok: true, plans: [cloneDemo(plan)] });
+    }
+    if (action === 'update') {
+      const plan = plans.find((x) => String(x.id || '') === String(body?.plan_id || ''));
+      if (plan) {
+        plan.customer_email = body?.customer_email ?? plan.customer_email;
+        plan.total_amount = Number(body?.total_amount ?? plan.total_amount);
+        plan.installments = Number(body?.installments ?? plan.installments);
+        plan.interval_days = Number(body?.interval_days ?? plan.interval_days);
+        plan.next_due_date = body?.next_due_date || plan.next_due_date;
+        plan.notes = body?.notes ?? plan.notes;
+      }
+      return Promise.resolve({ ok: true, plans: plan ? [cloneDemo(plan)] : [] });
+    }
+    if (action === 'cancel') {
+      const plan = plans.find((x) => String(x.id || '') === String(body?.plan_id || ''));
+      if (plan) plan.status = 'cancelled';
+      return Promise.resolve({ ok: true, plans: plan ? [cloneDemo(plan)] : [] });
+    }
+    if (action === 'delete') {
+      const idx = plans.findIndex((x) => String(x.id || '') === String(body?.plan_id || ''));
+      if (idx >= 0) plans.splice(idx, 1);
+      return Promise.resolve({ ok: true });
+    }
+    return Promise.resolve({ ok: true, plans: cloneDemo(plans) });
+  }
+
+  if (p.endsWith('/api/renter-ledger-summary')) {
+    const bookingId = String(body?.booking_id || '').trim();
+    const ledger = window.DEMO_LEDGER_BY_BOOKING?.[bookingId] || { summary: {}, transactions: [] };
+    return Promise.resolve(cloneDemo(ledger));
+  }
+
+  if (p.endsWith('/api/booking-documents')) return Promise.resolve({ docs: [] });
+  if (p.endsWith('/api/v2-mileage')) return Promise.resolve({ vehicles: [], alerts: [] });
+  if (p.endsWith('/api/v2-system-health')) return Promise.resolve({ checks: [], status: 'ok', issues: [] });
+  if (p.endsWith('/api/v2-sms-templates')) return Promise.resolve({ templates: [] });
+  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [] });
+  if (p.endsWith('/api/v2-protection-plans')) return Promise.resolve({ plans: [] });
+  if (p.endsWith('/api/v2-pricing')) return Promise.resolve({ pricing: {} });
+  if (p.endsWith('/api/v2-block-dates')) return Promise.resolve({ blocked: [] });
+  if (p.endsWith('/api/v2-fleet-status')) return Promise.resolve({ fleet: [] });
+  if (p.endsWith('/api/admin-chat')) return Promise.resolve({ reply: '👋 Demo sandbox is active. This preview only uses seeded sample bookings, payments, customers, and analytics — no live records are queried or mutated.', messages: [], tool_calls: [] });
+  if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in demo sandbox'));
+  if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Demo Fleet', phone: '(555) 010-0000', logo_url: '' });
+  if (p.endsWith('/api/admin-site-settings')) return Promise.resolve({ ok: true });
+  if (p.endsWith('/api/add-expense') || p.endsWith('/api/update-expense') || p.endsWith('/api/upload-expense-receipt') || p.endsWith('/api/delete-expense-receipt') || p.endsWith('/api/delete-expense')) return Promise.resolve({ ok: true, success: true });
+  if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: {} });
+  if (p.endsWith('/api/admin-ai-insights')) return Promise.resolve({ summary: 'Demo mode — AI insights are simulated with seeded metrics.', problems: [], metrics: {} });
+  if (p.endsWith('/api/v2-diagnostics')) return Promise.resolve({ checks: [], status: 'ok' });
+  if (p.endsWith('/api/v2-sms-logs')) return Promise.resolve({ logs: [] });
+  if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in demo mode.' });
+
   return Promise.resolve({ ok: true, _demo: true });
 }
 
+function installDemoFetchInterceptor() {
+  if (!window.DEMO_MODE || window.__demoFetchPatched || typeof window.fetch !== 'function') return;
+  window.__demoFetchPatched = true;
+  const nativeFetch = window.fetch.bind(window);
+
+  window.fetch = async function demoFetchInterceptor(input, init = undefined) {
+    const requestUrl = typeof input === 'string' ? input : (input && input.url) ? input.url : '';
+    if (!requestUrl) return nativeFetch(input, init);
+
+    let parsed;
+    try {
+      parsed = new URL(requestUrl, window.location.origin);
+    } catch (_err) {
+      return nativeFetch(input, init);
+    }
+
+    const path = parsed.pathname || '';
+    if (!path.startsWith('/api/')) return nativeFetch(input, init);
+
+    const method = String((init && init.method) || 'GET').toUpperCase();
+    let body = {};
+    if (init && typeof init.body === 'string' && init.body.trim()) {
+      try { body = JSON.parse(init.body); } catch (_err) { body = {}; }
+    }
+
+    const payload = await getDemoResponse(path + (parsed.search || ''), body).catch((err) => ({ error: err?.message || 'Demo request failed' }));
+    const status = payload && payload.error ? 400 : 200;
+    return new Response(JSON.stringify(payload || {}), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+}
+
+// ── Demo API Interceptor ────────────────────────────────────────────────────
 // ── Demo Mode Initializer ──────────────────────────────────────────────────
 function initDemoMode() {
   if (!window.DEMO_MODE) return;
+
+  installDemoFetchInterceptor();
 
   // Adjust topbar position to account for demo banner height
   const banner = document.getElementById('demo-mode-banner');
