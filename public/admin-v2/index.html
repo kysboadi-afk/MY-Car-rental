@@ -5557,6 +5557,8 @@ function bookingReturnDateTime(b) {
 
 /** Compute derived operational status for a booking (overdue / extended / flagged / base status). */
 function bookingDerivedStatus(b, now) {
+  const canonical = String(b?.lifecycleState || '').trim();
+  if (canonical) return canonical;
   if (!(now instanceof Date)) now = new Date();
   if (b.flagged) return 'flagged';
   if (b.status === 'active_rental') {
@@ -5907,6 +5909,8 @@ function confirmLateFeeWaive() {
 
 /** Derive customer tier from booking customer fields. */
 function computeBookingCustomerTier(b) {
+  const canonicalTier = String(b?.customerTier || '').trim();
+  if (canonicalTier) return canonicalTier;
   if (b.custBanned)   return 'risky';
   if (b.custFlagged || b.custRiskFlag === 'high' || b.custNoShows >= 2) return 'risky';
   if (b.custTotalProfit != null && b.custTotalProfit < 0) return 'unprofitable';
