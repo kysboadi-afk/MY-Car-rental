@@ -3,20 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fleet Control | Start Your Own Rental System</title>
-  <meta name="description" content="Fleet Control helps independent rental operators run bookings, payments, and fleet operations from one dashboard.">
+  <title>Fleet Control | Rental Fleet Operations Command Center</title>
+  <meta name="description" content="Fleet Control gives Uber, Lyft, and delivery rental operators operational visibility across payments, overdue balances, renter workflows, extensions, and fleet activity.">
   <link rel="icon" href="/images/logo.png" type="image/png">
   <style>
     :root {
       --bg: #0b1020;
       --bg-soft: #121933;
+      --bg-deep: #020617;
       --panel: #ffffff;
+      --panel-dark: rgba(15, 23, 42, 0.74);
       --text: #0f172a;
       --muted: #475569;
       --line: #dbe3f1;
+      --line-dark: rgba(148, 163, 184, 0.22);
       --brand: #2563eb;
       --brand-dark: #1d4ed8;
+      --brand-soft: rgba(37, 99, 235, 0.14);
       --ok: #0f766e;
+      --warn: #b45309;
+      --danger: #b91c1c;
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: var(--text); background: #f8fafc; line-height: 1.55; }
@@ -24,15 +31,38 @@
     .wrap { width: min(1120px, 92%); margin: 0 auto; }
 
     .hero {
-      background: linear-gradient(145deg, var(--bg) 0%, var(--bg-soft) 55%, #1e293b 100%);
+      background:
+        radial-gradient(circle at top right, rgba(37,99,235,.24), transparent 28%),
+        linear-gradient(145deg, var(--bg) 0%, var(--bg-soft) 55%, #1e293b 100%);
       color: #fff;
-      padding: 88px 0 72px;
+      padding: 28px 0 72px;
     }
     .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 52px; gap: 18px; }
     .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .2px; }
     .brand img { width: 34px; height: 34px; border-radius: 8px; }
-    .hero h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; max-width: 760px; margin-bottom: 16px; }
-    .hero p { color: #cbd5e1; max-width: 680px; font-size: 1.05rem; margin-bottom: 28px; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+      gap: 28px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: #dbeafe;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .hero h1 { font-size: clamp(2.2rem, 5vw, 4.2rem); line-height: 1.03; max-width: 760px; margin-bottom: 18px; letter-spacing: -.03em; }
+    .hero p { color: #cbd5e1; max-width: 700px; font-size: 1.08rem; margin-bottom: 28px; }
     .btns { display: flex; flex-wrap: wrap; gap: 12px; }
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -41,17 +71,137 @@
     }
     .btn-primary { background: var(--brand); color: #fff; }
     .btn-primary:hover { background: var(--brand-dark); }
-    .btn-ghost { border-color: rgba(255,255,255,.25); color: #fff; }
+    .btn-ghost { border-color: rgba(255,255,255,.25); color: #fff; background: transparent; }
     .btn-ghost:hover { background: rgba(255,255,255,.08); }
+    .btn-light { border-color: #cbd5e1; color: var(--text); background: #fff; }
+    .btn-light:hover { background: #f8fafc; }
+    .hero-proof {
+      margin-top: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .proof-chip {
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.05);
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: #dbeafe;
+      font-size: .86rem;
+    }
+    .hero-side {
+      background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(15,23,42,.75));
+      border: 1px solid var(--line-dark);
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 24px 50px rgba(2,6,23,.38);
+      backdrop-filter: blur(10px);
+    }
+    .hero-side-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .hero-side-label {
+      color: #93c5fd;
+      font-size: .8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .hero-side-title {
+      margin-top: 6px;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+    .hero-side-note {
+      color: #94a3b8;
+      font-size: .88rem;
+    }
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .signal-card {
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148,163,184,.16);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .signal-card span {
+      display: block;
+      font-size: .8rem;
+      color: #94a3b8;
+      margin-bottom: 10px;
+    }
+    .signal-card strong {
+      display: block;
+      font-size: 1.6rem;
+      letter-spacing: -.03em;
+      margin-bottom: 6px;
+    }
+    .signal-card em {
+      display: block;
+      color: #cbd5e1;
+      font-style: normal;
+      font-size: .88rem;
+    }
+    .signal-card.alert strong { color: #fca5a5; }
+    .signal-card.money strong { color: #bfdbfe; }
+    .signal-card.success strong { color: #86efac; }
+    .signal-card.warn strong { color: #fcd34d; }
+    .ops-feed {
+      display: grid;
+      gap: 10px;
+    }
+    .ops-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      border: 1px solid rgba(148,163,184,.14);
+      background: rgba(15,23,42,.62);
+      border-radius: 14px;
+      padding: 12px 14px;
+    }
+    .ops-item strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: .95rem;
+    }
+    .ops-item p {
+      margin: 0;
+      color: #94a3b8;
+      font-size: .84rem;
+    }
+    .ops-pill {
+      white-space: nowrap;
+      align-self: flex-start;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: .76rem;
+      font-weight: 700;
+      background: rgba(37,99,235,.16);
+      color: #dbeafe;
+    }
 
     section { padding: 64px 0; }
     .section-title { font-size: clamp(1.5rem, 3vw, 2.1rem); margin-bottom: 12px; }
     .section-sub { color: var(--muted); max-width: 700px; }
+    .dark-section {
+      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      color: #fff;
+    }
+    .dark-section .section-sub,
+    .dark-section .muted-light { color: #cbd5e1; }
 
     .preview-grid {
       margin-top: 26px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 14px;
     }
     .preview-card {
@@ -61,44 +211,281 @@
       padding: 18px;
       box-shadow: 0 10px 24px rgba(15,23,42,.06);
     }
+    .preview-card .mini-label {
+      display: inline-flex;
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: .74rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: var(--brand-dark);
+      background: var(--brand-soft);
+    }
     .preview-card h3 { font-size: 1rem; margin-bottom: 7px; }
     .preview-card p { color: var(--muted); font-size: .92rem; }
+    .preview-layout {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+      gap: 18px;
+      align-items: start;
+    }
 
     .demo-shell {
-      margin-top: 22px;
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 18px;
       overflow: hidden;
       background: #fff;
-      box-shadow: 0 16px 30px rgba(15,23,42,.08);
+      box-shadow: var(--shadow);
     }
     .demo-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
       background: #f1f5f9;
-      padding: 10px 14px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--line);
       font-size: .82rem;
       color: #334155;
     }
+    .demo-indicators {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .demo-indicators span {
+      background: #fff;
+      border: 1px solid #dbe3f1;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: .72rem;
+      font-weight: 700;
+      color: #334155;
+    }
     iframe {
       width: 100%;
-      height: 440px;
+      height: 500px;
       border: 0;
       display: block;
       background: #fff;
     }
-
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .side-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .side-card h3 {
+      font-size: 1rem;
+      margin-bottom: 12px;
+    }
+    .side-card ul {
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+    .side-card li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: .9rem;
+      border-bottom: 1px solid #eef2f7;
+      padding-bottom: 10px;
+    }
+    .side-card li:last-child { border-bottom: 0; padding-bottom: 0; }
+    .side-card strong {
+      color: var(--text);
+      font-size: .92rem;
+    }
+    .side-badge {
+      white-space: nowrap;
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: .72rem;
+      font-weight: 700;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+    .side-badge.warn {
+      color: #92400e;
+      background: #fff7ed;
+      border-color: #fed7aa;
+    }
+    .side-badge.danger {
+      color: #991b1b;
+      background: #fef2f2;
+      border-color: #fecaca;
+    }
+    .insight-card {
+      background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 100%);
+    }
+    .insight-card p {
+      color: var(--muted);
+      margin-bottom: 12px;
+      font-size: .92rem;
+    }
+    .insight-points {
+      display: grid;
+      gap: 9px;
+    }
+    .insight-point {
+      border: 1px solid #dbeafe;
+      background: rgba(255,255,255,.8);
+      border-radius: 14px;
+      padding: 12px;
+      font-size: .9rem;
+      color: var(--text);
+    }
+    .trust-row {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .trust-card {
+      border: 1px solid rgba(148,163,184,.14);
+      background: rgba(255,255,255,.05);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .trust-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: .98rem;
+    }
+    .trust-card p {
+      color: #cbd5e1;
+      font-size: .88rem;
+      margin: 0;
+    }
+    .lifecycle-grid,
+    .audience-grid,
+    .compare-grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .lifecycle-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .audience-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .compare-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .step-card,
+    .audience-card,
+    .compare-card,
+    .ai-panel,
+    .cta-panel {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .step-index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+    .step-card h3,
+    .audience-card h3,
+    .compare-card h3,
+    .ai-panel h3,
+    .cta-panel h3 {
+      font-size: 1.02rem;
+      margin-bottom: 10px;
+    }
+    .step-card p,
+    .audience-card p,
+    .compare-card p,
+    .ai-panel p,
+    .cta-panel p {
+      color: var(--muted);
+      font-size: .93rem;
+      margin-bottom: 0;
+    }
+    .compare-card.before {
+      border-color: #fecaca;
+      background: linear-gradient(180deg, #fff7f7 0%, #fff 100%);
+    }
+    .compare-card.after {
+      border-color: #bfdbfe;
+      background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+    }
+    .compare-card ul,
+    .audience-card ul,
+    .ai-panel ul {
+      list-style: none;
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .compare-card li,
+    .audience-card li,
+    .ai-panel li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: .92rem;
+    }
+    .compare-card li::before,
+    .audience-card li::before,
+    .ai-panel li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: .52rem;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #60a5fa;
+    }
+    .compare-card.before li::before { background: #f87171; }
+    .audience-card .audience-tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: .72rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .ai-panel {
+      background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+      border-color: rgba(148,163,184,.16);
+      color: #fff;
+    }
+    .ai-panel p,
+    .ai-panel li { color: #cbd5e1; }
+    .ai-panel li::before { background: #60a5fa; }
     .funnel {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 20px;
       align-items: start;
     }
+    .funnel {
+    }
     .panel {
       background: #fff;
       border: 1px solid var(--line);
-      border-radius: 14px;
+      border-radius: 18px;
       padding: 22px;
-      box-shadow: 0 10px 24px rgba(15,23,42,.06);
+      box-shadow: var(--shadow);
     }
     .panel h3 { margin-bottom: 8px; }
     .panel p { color: var(--muted); margin-bottom: 14px; }
@@ -124,9 +511,36 @@
       font-size: .9rem;
     }
 
+    @media (max-width: 1080px) {
+      .hero-grid,
+      .preview-layout,
+      .trust-row,
+      .lifecycle-grid,
+      .audience-grid { grid-template-columns: 1fr 1fr; }
+    }
     @media (max-width: 900px) {
+      .hero { padding-top: 20px; }
+      .hero-grid,
+      .preview-layout,
       .funnel { grid-template-columns: 1fr; }
-      iframe { height: 340px; }
+      .compare-grid,
+      .trust-row,
+      .lifecycle-grid,
+      .audience-grid,
+      .signal-grid { grid-template-columns: 1fr; }
+      iframe { height: 380px; }
+    }
+    @media (max-width: 640px) {
+      section { padding: 56px 0; }
+      .topbar { margin-bottom: 34px; }
+      .hero h1 { font-size: clamp(2rem, 10vw, 2.9rem); }
+      .hero p { font-size: 1rem; }
+      .btns .btn { width: 100%; }
+      .hero-proof { flex-direction: column; }
+      .demo-bar { align-items: flex-start; }
+      .ops-item,
+      .side-card li { flex-direction: column; }
+      iframe { height: 320px; }
     }
   </style>
 </head>
@@ -138,67 +552,316 @@
           <img src="/images/logo.png" alt="Fleet Control logo">
           <span>Fleet Control</span>
         </a>
-        <a href="/admin-v2/?demo=1" class="btn btn-ghost">Open Demo Mode</a>
-      </div>
-      <h1>Start Your Own Rental System in Days, Not Months.</h1>
-      <p>
-        Fleet Control gives independent operators one clean platform for bookings, payments,
-        renter lifecycle, and fleet operations—without enterprise overhead.
-      </p>
-      <div class="btns">
-        <a href="/admin-v2/?demo=1" class="btn btn-primary">Watch Demo</a>
         <a href="#early-access" class="btn btn-ghost">Request Early Access</a>
+      </div>
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Built for Uber &amp; Lyft Rental Operators</div>
+          <h1>Run Your Rental Fleet Without Operational Chaos.</h1>
+          <p>
+            Fleet Control is the operational command center for rideshare rental businesses — giving you
+            visibility into overdue balances, renter tracking, payment recovery, extension workflows,
+            fleet activity, and daily follow-up from one organized dashboard.
+          </p>
+          <div class="btns">
+            <a href="/admin-v2/?demo=1" class="btn btn-primary">Launch Interactive Demo</a>
+            <a href="/contact.html" class="btn btn-ghost">Book Guided Walkthrough</a>
+          </div>
+          <div class="hero-proof">
+            <span class="proof-chip">Operational visibility from booking to return</span>
+            <span class="proof-chip">Built around real rideshare rental workflows</span>
+            <span class="proof-chip">Designed for independent operators scaling beyond spreadsheets</span>
+          </div>
+        </div>
+        <aside class="hero-side" aria-label="Operational preview">
+          <div class="hero-side-top">
+            <div>
+              <div class="hero-side-label">Demo signal board</div>
+              <div class="hero-side-title">What operators need to see before problems spread</div>
+            </div>
+            <div class="hero-side-note">Live-style sample</div>
+          </div>
+          <div class="signal-grid">
+            <div class="signal-card alert">
+              <span>Overdue balances</span>
+              <strong>$4,860</strong>
+              <em>6 renters require recovery follow-up today</em>
+            </div>
+            <div class="signal-card money">
+              <span>Payment plans active</span>
+              <strong>18</strong>
+              <em>Weekly collections and plan health visible</em>
+            </div>
+            <div class="signal-card success">
+              <span>Extensions pending</span>
+              <strong>4</strong>
+              <em>Approval, payment, and new return dates tracked</em>
+            </div>
+            <div class="signal-card warn">
+              <span>Operational alerts</span>
+              <strong>9</strong>
+              <em>Late returns, expiring documents, and risk signals</em>
+            </div>
+          </div>
+          <div class="ops-feed">
+            <div class="ops-item">
+              <div>
+                <strong>Renter payment recovery</strong>
+                <p>See who is late, what was paid, what is still outstanding, and which reminders were already sent.</p>
+              </div>
+              <span class="ops-pill">Collections</span>
+            </div>
+            <div class="ops-item">
+              <div>
+                <strong>Lifecycle accountability</strong>
+                <p>Applications, approvals, active rentals, extensions, overdue returns, and closeout stay in one workflow.</p>
+              </div>
+              <span class="ops-pill">Workflow</span>
+            </div>
+            <div class="ops-item">
+              <div>
+                <strong>Operational confidence</strong>
+                <p>Know what needs action first instead of chasing renters across spreadsheets, texts, and manual notes.</p>
+              </div>
+              <span class="ops-pill">Visibility</span>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   </header>
 
   <section>
     <div class="wrap">
-      <h2 class="section-title">Product Preview</h2>
-      <p class="section-sub">A lightweight look at the core modules operators use daily.</p>
+      <h2 class="section-title">An operational command center for rideshare rental fleets</h2>
+      <p class="section-sub">The dashboard preview is built to feel active, financially aware, and operationally credible — because real operators need visibility, follow-up structure, and renter accountability.</p>
       <div class="preview-grid">
         <article class="preview-card">
-          <h3>Booking &amp; renter pipeline</h3>
-          <p>Track each booking from request to return, including approvals and follow-up actions.</p>
+          <div class="mini-label">Overdue visibility</div>
+          <h3>Overdue balances and payment recovery</h3>
+          <p>See who owes, what reminder stage they are in, and which accounts need operator attention before balances spiral.</p>
         </article>
         <article class="preview-card">
-          <h3>Revenue and payment tracking</h3>
-          <p>View Stripe and manual payments in one place with clear balances and status visibility.</p>
+          <div class="mini-label">Renter workflows</div>
+          <h3>Extensions, payment plans, and renter follow-up</h3>
+          <p>Keep extension approvals, recurring balances, and renter communication tied to the same lifecycle record.</p>
         </article>
         <article class="preview-card">
-          <h3>Fleet &amp; maintenance visibility</h3>
-          <p>See active vehicles, service status, and operational health without leaving the dashboard.</p>
+          <div class="mini-label">Fleet alerts</div>
+          <h3>Operational alerts that surface what needs action now</h3>
+          <p>Spot late returns, risk signals, incomplete paperwork, and other issues before they become expensive chaos.</p>
+        </article>
+        <article class="preview-card">
+          <div class="mini-label">Financial visibility</div>
+          <h3>Revenue visibility and AI operational insight</h3>
+          <p>Track money movement, renter status, and recommended next actions without losing context between pages.</p>
         </article>
       </div>
 
-      <div class="demo-shell" aria-label="Demo preview">
-        <div class="demo-bar">Demo Preview · /admin-v2/?demo=1</div>
-        <iframe src="/admin-v2/?demo=1" title="Fleet Control demo preview" loading="lazy"></iframe>
+      <div class="preview-layout">
+        <div class="demo-shell" aria-label="Demo preview">
+          <div class="demo-bar">
+            <span>Interactive Demo · /admin-v2/?demo=1</span>
+            <div class="demo-indicators">
+              <span>Overdue balances</span>
+              <span>Extensions</span>
+              <span>Revenue visibility</span>
+              <span>AI insights</span>
+            </div>
+          </div>
+          <iframe src="/admin-v2/?demo=1" title="Fleet Control demo preview" loading="lazy"></iframe>
+        </div>
+        <div class="side-stack">
+          <article class="side-card">
+            <h3>What this preview should communicate immediately</h3>
+            <ul>
+              <li><div><strong>Payment accountability</strong><br>Outstanding balances, partial payments, and recovery status are visible.</div><span class="side-badge danger">Collections</span></li>
+              <li><div><strong>Operational structure</strong><br>Renter lifecycle is organized instead of scattered across notes and chats.</div><span class="side-badge">Lifecycle</span></li>
+              <li><div><strong>Daily decision support</strong><br>Alerts and AI recommendations highlight what operators should handle first.</div><span class="side-badge warn">Action Queue</span></li>
+            </ul>
+          </article>
+          <article class="side-card insight-card">
+            <h3>AI operational insights</h3>
+            <p>Positioned as operational intelligence — not gimmicks.</p>
+            <div class="insight-points">
+              <div class="insight-point">Flag renters with overdue balances, weak payment momentum, or repeated extension risk.</div>
+              <div class="insight-point">Highlight workflow gaps: unverified applicants, missing follow-ups, or pending returns.</div>
+              <div class="insight-point">Recommend the next operational step using revenue, status, and activity context already in the system.</div>
+            </div>
+          </article>
+        </div>
       </div>
+    </div>
+  </section>
+
+  <section class="dark-section">
+    <div class="wrap">
+      <h2 class="section-title">Operational trust built around real rideshare rental workflows</h2>
+      <p class="section-sub">This is for operators dealing with daily renter movement, payment collection, extension requests, and fleet-wide visibility — not generic software dashboards.</p>
+      <div class="trust-row">
+        <article class="trust-card">
+          <strong>Built around real rideshare rental workflows</strong>
+          <p>Designed for the actual sequence operators manage every day, from application to return and collections.</p>
+        </article>
+        <article class="trust-card">
+          <strong>Designed for independent operators</strong>
+          <p>Ideal for multi-vehicle businesses that need control before adding more cars and more renter complexity.</p>
+        </article>
+        <article class="trust-card">
+          <strong>Operational visibility from booking to return</strong>
+          <p>Keep lifecycle state, payment status, and renter follow-up tied together instead of fragmented.</p>
+        </article>
+        <article class="trust-card">
+          <strong>Track what’s happening across your fleet in real time</strong>
+          <p>Know where problems are building — overdue accounts, late returns, extension risk, and daily action items.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2 class="section-title">Built around the full renter lifecycle</h2>
+      <p class="section-sub">This workflow section matters because operators need structure, accountability, and visibility at every stage — not disconnected tools that hide where a renter stands.</p>
+      <div class="lifecycle-grid">
+        <article class="step-card">
+          <div class="step-index">1</div>
+          <h3>Application</h3>
+          <p>Capture renter intake with the details your team needs before a booking moves forward.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">2</div>
+          <h3>Verification</h3>
+          <p>Track approvals, identity review, documents, and operator follow-up without losing the thread.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">3</div>
+          <h3>Booking</h3>
+          <p>Move approved renters into assigned vehicles, scheduled dates, and confirmed payment expectations.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">4</div>
+          <h3>Payment</h3>
+          <p>See deposits, partial payments, plans, balances, and collection status in one financial workflow.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">5</div>
+          <h3>Active Rental</h3>
+          <p>Keep current renter status, account health, and outstanding action items visible while the car is out.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">6</div>
+          <h3>Extension</h3>
+          <p>Handle extension requests with new dates, approvals, payment updates, and operational risk in context.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">7</div>
+          <h3>Overdue Recovery</h3>
+          <p>Surface late balances, missed payments, reminder stages, and escalation needs before recovery gets messy.</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">8</div>
+          <h3>Return</h3>
+          <p>Close out rentals with a clear record of status, outstanding issues, and what happens next.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2 class="section-title">What operations feel like before and after Fleet Control</h2>
+      <p class="section-sub">This is designed to resonate with operators already carrying too much follow-up in spreadsheets, notes, screenshots, and disconnected systems.</p>
+      <div class="compare-grid">
+        <article class="compare-card before">
+          <h3>Before</h3>
+          <ul>
+            <li>Spreadsheets, text threads, and Cash App screenshots become the source of truth.</li>
+            <li>Missed follow-ups let overdue payments and extension issues slip through the cracks.</li>
+            <li>Renter confusion grows because lifecycle steps are tracked in different places.</li>
+            <li>Collections feel reactive instead of organized and operationally controlled.</li>
+            <li>Scaling adds more chaos instead of more confidence.</li>
+          </ul>
+        </article>
+        <article class="compare-card after">
+          <h3>After</h3>
+          <ul>
+            <li>Centralized workflows connect applications, bookings, payments, extensions, and returns.</li>
+            <li>Automated reminders and operational alerts reduce manual chasing and missed revenue.</li>
+            <li>Renter lifecycle stays organized with clear accountability at every stage.</li>
+            <li>Overdue balances and payment recovery efforts are visible and actionable.</li>
+            <li>The business feels more professional, scalable, and under control.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2 class="section-title">Who Fleet Control is for</h2>
+      <p class="section-sub">The positioning is intentionally specific: this is for operators running real rideshare or delivery rental workflows and growing beyond manual coordination.</p>
+      <div class="audience-grid">
+        <article class="audience-card">
+          <div class="audience-tag">Uber / Lyft</div>
+          <h3>Uber and Lyft rental operators</h3>
+          <p>For operators who need tighter visibility into renter status, weekly payments, and extension activity.</p>
+        </article>
+        <article class="audience-card">
+          <div class="audience-tag">Delivery fleets</div>
+          <h3>Delivery rental fleet businesses</h3>
+          <p>Useful when multiple renters, vehicle turnover, and recurring balances create daily operational drag.</p>
+        </article>
+        <article class="audience-card">
+          <div class="audience-tag">Independent operators</div>
+          <h3>Independent rental businesses</h3>
+          <p>Built for owners replacing manual tracking with real process maturity and renter accountability.</p>
+        </article>
+        <article class="audience-card">
+          <div class="audience-tag">Multi-vehicle growth</div>
+          <h3>Multi-car operators scaling operations</h3>
+          <p>Especially strong for fleets that have outgrown memory, spreadsheets, and ad hoc payment follow-up.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <article class="ai-panel">
+        <h3>AI that acts like operational intelligence</h3>
+        <p>The assistant is positioned to support workflow awareness, overdue detection, financial visibility, risk monitoring, and next-step recommendations — not as a gimmick bolted onto the dashboard.</p>
+        <ul>
+          <li>Spot overdue detection patterns and payment recovery risk earlier.</li>
+          <li>Surface workflow gaps across applications, bookings, active rentals, and returns.</li>
+          <li>Recommend the next operational action using lifecycle status, alerts, and payment context.</li>
+          <li>Help operators move faster without losing professional control of the business.</li>
+        </ul>
+      </article>
     </div>
   </section>
 
   <section id="early-access">
     <div class="wrap funnel">
       <article class="panel">
-        <h3>Request Demo / Early Access</h3>
-        <p>Tell us your fleet size and goals. We’ll follow up with a guided walkthrough and onboarding path.</p>
+        <h3>See how Fleet Control fits your operation</h3>
+        <p>Tell us your fleet size, renter workflow, and biggest operational pain points. We’ll follow up with a guided walkthrough focused on payment visibility, renter accountability, and scaling without chaos.</p>
         <div class="btns" style="margin-top:4px;">
           <a href="/admin-v2/?demo=1" class="btn btn-primary">Launch Interactive Demo</a>
-          <a href="/contact.html" class="btn" style="border-color:#cbd5e1;">Open Full Contact Page</a>
+          <a href="/contact.html" class="btn btn-light">Book Guided Walkthrough</a>
         </div>
       </article>
 
       <article class="panel">
-        <h3>Get contacted</h3>
-        <p class="small">Lead capture form (required fields only).</p>
+        <h3>Request Early Access</h3>
+        <p class="small">Share a few details and we’ll reach out with the right next step.</p>
         <form id="lead-form" class="form-grid" novalidate>
           <input type="text" id="lead-name" name="name" placeholder="Full name" required>
           <input type="email" id="lead-email" name="email" placeholder="Work email" required>
           <input type="tel" id="lead-phone" name="phone" placeholder="Phone number" required>
-          <textarea id="lead-message" name="message" placeholder="Tell us your fleet size and what you need" required></textarea>
+          <textarea id="lead-message" name="message" placeholder="Tell us your fleet size, your current workflow, and where operations feel chaotic" required></textarea>
           <input type="text" id="lead-honeypot" name="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;pointer-events:none;">
-          <button type="submit" class="btn btn-primary">Submit Request</button>
+          <button type="submit" class="btn btn-primary">Request Early Access</button>
         </form>
         <p id="lead-status" class="form-note" role="status" aria-live="polite"></p>
       </article>
@@ -210,7 +873,7 @@
       <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;">
         <span>© 2026 Fleet Control</span>
         <div style="display:flex;gap:14px;flex-wrap:wrap;">
-          <a href="/admin-v2/?demo=1">Demo mode</a>
+          <a href="/admin-v2/?demo=1">Interactive demo</a>
           <a href="/contact.html">Contact</a>
           <a href="/admin-v2/">Admin sign in</a>
         </div>
@@ -260,7 +923,7 @@
 
           form.reset();
           statusEl.style.color = '#0f766e';
-          statusEl.textContent = 'Thanks — your request was received. We will reach out shortly.';
+          statusEl.textContent = 'Thanks — your request was received. We will reach out shortly with the next step.';
         } catch (error) {
           statusEl.style.color = '#b91c1c';
           statusEl.textContent = error.message || 'Network error. Please try again or use the contact page.';
