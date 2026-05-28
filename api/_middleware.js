@@ -20,6 +20,7 @@
 //   without requiring any changes to handlers that already adopted it.
 
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { logOrgRolloutEvent } from "./_org-rollout-observability.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { resolveTenantContext } from "./_tenant-context.js";
 
@@ -81,6 +82,12 @@ function isSupabaseOperatorAuthConfigured() {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function resolveEndpointLabel(req) {
+  const raw = String(req?.url || req?.headers?.["x-forwarded-uri"] || "").trim();
+  if (!raw) return "unknown";
+  return raw.split("?")[0] || "unknown";
+}
+
 async function authenticateAdminRequest(req) {
   const credential = extractAdminSecret(req);
 
@@ -119,7 +126,12 @@ async function authenticateAdminRequest(req) {
 
   const tenantContext = await resolveTenantContext(supabase, authUser.id);
   if (!tenantContext?.organizationId) {
-    console.warn("[middleware] Supabase operator missing active organization:", authUser.id);
+    logOrgRolloutEvent("tenant_resolution", {
+      endpoint: resolveEndpointLabel(req),
+      outcome: "missing_membership",
+      authMode: "supabase_user",
+      userId: authUser.id,
+    }, "warn");
     return {
       error: {
         status: 403,
@@ -181,6 +193,15 @@ export function withAdminAuth(handler) {
       req.tenantContext = authResult?.tenantContext ?? null;
       req.authUser = authResult?.authUser ?? null;
       req.adminAuth = authResult?.adminAuth ?? null;
+
+      logOrgRolloutEvent("auth_mode", {
+        endpoint: resolveEndpointLabel(req),
+        authMode: req.adminAuth?.type || "unknown",
+        tenantResolved: Boolean(req.tenantContext?.organizationId),
+        organizationId: req.tenantContext?.organizationId || null,
+        role: req.adminAuth?.role || null,
+        userId: req.adminAuth?.userId || null,
+      });
 
       return await handler(req, res);
     } catch (err) {

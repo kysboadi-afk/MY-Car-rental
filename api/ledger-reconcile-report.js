@@ -27,26 +27,15 @@
 //   results (per-booking list, filtered by status param)
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { isAdminAuthorized } from "./_admin-auth.js";
+import { withAdminAuth } from "./_middleware.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const MATCH_TOLERANCE = 0.01;
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 const TOP_MISMATCHES = 10;
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
-
+export default withAdminAuth(async function handler(req, res) {
   const body = req.body || {};
-  if (!isAdminAuthorized(body.secret)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
 
   const sb = getSupabaseAdmin();
   if (!sb) {
@@ -157,7 +146,7 @@ export default async function handler(req, res) {
     console.error("[ledger-reconcile-report] error:", err.message);
     return res.status(500).json({ error: "Reconciliation report failed.", detail: err.message });
   }
-}
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

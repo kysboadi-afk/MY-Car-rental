@@ -20,14 +20,13 @@ import { loadBookings, isNetworkError } from "./_bookings.js";
 import { computeAmount, getAllVehicleIds } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { withAdminAuth } from "./_middleware.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import { deriveBookingPaymentLifecycle } from "./_booking-payment-lifecycle.js";
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
@@ -362,25 +361,8 @@ export function buildContractTransitionObservabilitySummary(input = {}) {
   };
 }
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
-  if (!isAdminConfigured()) {
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-  }
-
+export default withAdminAuth(async function handler(req, res) {
   const { scope } = req.body || {};
-  const suppliedAdminCredential = extractAdminSecret(req);
-  if (!isAdminAuthorized(suppliedAdminCredential)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
 
   try {
     const sb = getSupabaseAdmin();
@@ -1111,4 +1093,4 @@ export default async function handler(req, res) {
     console.error("v2-dashboard error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
-}
+});
