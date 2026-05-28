@@ -1119,8 +1119,9 @@
 
 <!-- Demo Mode Banner -->
 <div id="demo-mode-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:600;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:16px;font-size:13px;font-weight:600;text-align:center;flex-wrap:wrap;">
-  <span>🎯 Demo Mode — All actions are simulated. No real data is changed.</span>
-  <a href="../landing.html" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Start Your Own System →</a>
+  <span>🎯 Guided walkthrough — you’re viewing a prepared operations workspace. Live customer data stays untouched.</span>
+  <button type="button" onclick="restartDemoWalkthrough()" style="background:rgba(255,255,255,0.16);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.25);cursor:pointer;white-space:nowrap;">Restart walkthrough</button>
+  <a href="../landing.html" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Request live walkthrough →</a>
 </div>
 
 <!-- Preview Site Modal (full-screen iframe) -->
@@ -1401,7 +1402,7 @@
           </div>
           <div class="command-grid">
             <div class="card">
-              <div class="card-header"><div class="card-title">Data Consistency Audit</div><div class="card-sub">Demo relation health checks</div></div>
+              <div class="card-header"><div class="card-title">Data Consistency Audit</div><div class="card-sub">Operational integrity checks</div></div>
               <div class="audit-list" id="consistency-audit-list"></div>
             </div>
             <div class="card">
@@ -3951,6 +3952,8 @@ const MAINTENANCE_WARNING_THRESHOLD_PERCENT = 0.35;
 const ADMIN_SESSION_STORAGE_KEY = 'sly_admin_session_token';
 let adminSessionToken   = '';
 let dashboardData = null;
+const DASHBOARD_LOADING_HTML = '<div class="loading-spinner"></div><div>Loading dashboard…</div>';
+let dashboardRefreshRetryTimer = null;
 let allBookings   = [];
 let allExpenses   = [];
 let allExpenseCategories = [];
@@ -4420,12 +4423,54 @@ function navigateToUnpaidBookings() {
   }
 }
 
-function refreshDashboard() {
-  document.getElementById('dashboard-loading').style.display = '';
-  document.getElementById('dashboard-content').style.display = 'none';
+function refreshDashboard(retryAttempt = 0) {
+  const loadingEl = document.getElementById('dashboard-loading');
+  const contentEl = document.getElementById('dashboard-content');
+  if (dashboardRefreshRetryTimer) {
+    clearTimeout(dashboardRefreshRetryTimer);
+    dashboardRefreshRetryTimer = null;
+  }
+  if (loadingEl) {
+    loadingEl.style.display = '';
+    loadingEl.innerHTML = DASHBOARD_LOADING_HTML;
+  }
+  if (!dashboardData && contentEl) contentEl.style.display = 'none';
   apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' })
-    .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
-    .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
+    .then((data) => {
+      dashboardData = data;
+      if (loadingEl) loadingEl.innerHTML = DASHBOARD_LOADING_HTML;
+      renderDashboard(data);
+      renderChecklist();
+    })
+    .catch((err) => {
+      const message = err?.message || 'Unable to load dashboard right now.';
+      console.warn('admin-v2 dashboard refresh failed', err);
+      if (dashboardData && contentEl) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        contentEl.style.display = '';
+        showToast('Dashboard refresh failed. Showing the last successful operational snapshot.', 'warning');
+        return;
+      }
+      if (!window.DEMO_MODE && retryAttempt === 0) {
+        if (loadingEl) loadingEl.innerHTML = '<div class="loading-spinner"></div><div>Reconnecting dashboard…</div>';
+        dashboardRefreshRetryTimer = setTimeout(() => {
+          dashboardRefreshRetryTimer = null;
+          refreshDashboard(1);
+        }, 1200);
+        return;
+      }
+      if (loadingEl) {
+        loadingEl.style.display = '';
+        loadingEl.innerHTML = `
+          <div style="max-width:420px;margin:0 auto;padding:18px;border:1px solid #fecaca;border-radius:12px;background:#fff7f7;">
+            <div style="font-size:14px;font-weight:700;color:var(--danger);margin-bottom:6px;">Dashboard unavailable</div>
+            <div style="font-size:13px;color:var(--text-sub);margin-bottom:14px;">${esc(message)}</div>
+            <button class="btn btn-secondary" type="button" onclick="refreshDashboard()">Retry dashboard</button>
+          </div>
+        `;
+      }
+      showToast('Failed to load dashboard: ' + message, 'error');
+    });
 }
 
 function renderDashboard(data) {
@@ -4549,7 +4594,7 @@ function renderDashboard(data) {
   const auditChecks = Array.isArray(data.consistencyAudit) && data.consistencyAudit.length
     ? data.consistencyAudit
     : [
-        { status: 'pass', text: 'Customer balances align with ledger totals for active demo bookings.' },
+        { status: 'pass', text: 'Customer balances align with ledger totals for active renter bookings.' },
         { status: 'pass', text: 'Late fees map to overdue reservations and payment plans.' },
         { status: 'pass', text: 'Vehicle pricing and booking totals remain synchronized.' },
         { status: failedPayments > 0 ? 'warn' : 'pass', text: failedPayments > 0 ? `${failedPayments} payment event(s) need follow-up review.` : 'No unresolved payment failures in current view.' },
@@ -11012,7 +11057,7 @@ function toggleAiAutoMode(on) {
 function newAiChat() {
   if (window.DEMO_MODE) {
     aiSeedDemoConversation(true);
-    showToast('✅ Demo insights reset', 'info');
+    showToast('✅ Walkthrough insights reset', 'info');
     return;
   }
   aiClearHistory();
@@ -11025,6 +11070,19 @@ function newAiChat() {
   const chips = document.getElementById('ai-chips');
   if (chips) chips.style.display = '';
   showToast('🗑 Chat cleared', 'info');
+}
+
+function restartDemoWalkthrough() {
+  if (!window.DEMO_MODE) return;
+  navigate('dashboard');
+  dashboardData = cloneDemo(window.DEMO_DASHBOARD || {});
+  renderDashboard(dashboardData);
+  aiSeedDemoConversation(true);
+  showToast('Guided walkthrough restarted.', 'info');
+  requestAnimationFrame(() => {
+    if (typeof startFullTour === 'function') startFullTour();
+    else if (typeof startTour === 'function') startTour();
+  });
 }
 
 function aiChip(text) {
@@ -11729,14 +11787,14 @@ async function loadAiInsights() {
   };
 
   window.DEMO_PAYMENT_PLANS = [
-    { id: 'plan-demo-001', booking_id: 'bk-demo-001', customer_email: 'jordan.demo+001@example.test', total_amount: 420, installments: 4, interval_days: 14, status: 'past_due', remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), last_payment_at: ago(4), notes: 'Demo overdue plan' },
-    { id: 'plan-demo-002', booking_id: 'bk-demo-004', customer_email: 'taylor.demo+004@example.test', total_amount: 699, installments: 3, interval_days: 14, status: 'active', remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), last_payment_at: null, notes: 'Demo active plan' },
+    { id: 'plan-demo-001', booking_id: 'bk-demo-001', customer_email: 'jordan.demo+001@example.test', total_amount: 420, installments: 4, interval_days: 14, status: 'past_due', remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), last_payment_at: ago(4), notes: 'Past-due weekly recovery plan' },
+    { id: 'plan-demo-002', booking_id: 'bk-demo-004', customer_email: 'taylor.demo+004@example.test', total_amount: 699, installments: 3, interval_days: 14, status: 'active', remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), last_payment_at: null, notes: 'Three-part onboarding deposit plan' },
   ];
 
   window.DEMO_EXPENSES = [
-    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry', vehicle_id: 'camry', date: ago(30), category: 'maintenance', amount: 210, notes: 'Demo oil + rotation', receipt_url: 'demo/expense-1', receipt_filename: 'receipt-demo-1.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
-    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',  vehicle_id: 'rav4',  date: ago(15), category: 'insurance',   amount: 340, notes: 'Demo policy premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
-    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic', vehicle_id: 'civic', date: ago(8),  category: 'repair',      amount: 125, notes: 'Demo brake service', receipt_url: 'demo/expense-3', receipt_filename: 'receipt-demo-3.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
+    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry', vehicle_id: 'camry', date: ago(30), category: 'maintenance', amount: 210, notes: 'Oil change + tire rotation', receipt_url: 'demo/expense-1', receipt_filename: 'receipt-demo-1.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
+    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',  vehicle_id: 'rav4',  date: ago(15), category: 'insurance',   amount: 340, notes: 'Commercial policy premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
+    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic', vehicle_id: 'civic', date: ago(8),  category: 'repair',      amount: 125, notes: 'Brake service invoice', receipt_url: 'demo/expense-3', receipt_filename: 'receipt-demo-3.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
   ];
 
   window.DEMO_REVENUE = [
@@ -11778,9 +11836,9 @@ async function loadAiInsights() {
       rogue: { revenue: 600,  netProfit: 140, bookingCount: 2,  expenses: 90,  roi: 2.2 },
     },
     alerts: [
-      { type: 'warning', message: 'Demo renter Jordan Miles has a past-due installment and open late fee.' },
-      { type: 'info',    message: 'Rogue is currently in service state for demo lifecycle rendering.' },
-      { type: 'success', message: 'Cash and Stripe demo payments are both represented in this dataset.' },
+      { type: 'warning', message: 'Jordan Miles still carries a $314 balance, including an $85 overdue fee that needs same-day follow-up.' },
+      { type: 'info',    message: 'Nissan Rogue 2022 stays in service until tomorrow afternoon after brake inspection and detailing.' },
+      { type: 'success', message: 'Sam Rivera completed tomorrow’s RAV4 payment and verification steps ahead of handoff.' },
     ],
     recentBookings: [
       { name: 'Jordan Miles', vehicleId: 'camry', pickupDate: ago(9), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 420, status: 'overdue' },
@@ -11788,24 +11846,24 @@ async function loadAiInsights() {
       { name: 'Sam Rivera', vehicleId: 'rav4', pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 774, status: 'booked_paid' },
     ],
     operationsFeed: [
-      { title: 'New booking created', meta: 'Sam Rivera reserved Toyota RAV4 2021 for next week.' },
-      { title: 'Payment received', meta: '$512 Stripe payment posted for booking bk-demo-002.' },
-      { title: 'Extension approved', meta: 'Avery Quinn requested +2 days and extension was approved.' },
-      { title: 'SMS reminder sent', meta: 'Return reminder sent for booking bk-demo-002.' },
-      { title: 'Ticket added', meta: 'Late return review opened for booking bk-demo-001.' },
-      { title: 'Late fee triggered', meta: 'Jordan Miles charged $85 overdue fee.' },
+      { title: 'Collections escalation queued', meta: 'Jordan Miles received a same-day overdue follow-up after missing the latest installment.' },
+      { title: 'Payment posted', meta: '$512 was recorded against Avery Quinn’s active Civic rental and the ledger closed cleanly.' },
+      { title: 'Extension approved', meta: 'Avery Quinn’s Civic return moved out two days after payment confirmation.' },
+      { title: 'Return reminder sent', meta: 'Tomorrow morning reminder is queued for Avery Quinn with updated extension timing.' },
+      { title: 'Service reminder logged', meta: 'Rogue remains blocked while brake inspection, wash, and check-in photos finish.' },
+      { title: 'Onboarding payment plan started', meta: 'Taylor Brooks is on a three-part deposit plan before the Camry handoff.' },
     ],
     aiRecommendations: [
-      'Camry 2019 has the strongest ROI in the current demo month.',
-      'Jordan Miles is 2 days overdue and should receive priority outreach.',
-      'RAV4 utilization increased 18% this week compared to prior trend.',
+      'Jordan Miles remains the highest collection priority with $314 outstanding and a late fee already assessed.',
+      'Taylor Brooks should stay in onboarding review until the first payment-plan installment and check-in docs are confirmed.',
+      'Rogue can return to the availability pool as soon as tomorrow’s service closeout is logged.',
     ],
     consistencyAudit: [
-      { status: 'pass', text: 'Customer balances match renter ledger entries across demo bookings.' },
+      { status: 'pass', text: 'Customer balances match renter ledger entries across active walkthrough bookings.' },
       { status: 'pass', text: 'Overdue balances align with payment-plan overdue amounts.' },
       { status: 'pass', text: 'Late fees correspond to active overdue bookings.' },
       { status: 'pass', text: 'Vehicle pricing aligns with booking totals in revenue records.' },
-      { status: 'pass', text: 'AI insights and SMS logs reference valid demo customers/bookings.' },
+      { status: 'pass', text: 'AI insights and SMS logs reference valid renter and booking records.' },
     ],
     operationalMetrics: {
       renterLifetimeValue: 1134,
@@ -12176,9 +12234,9 @@ function getDemoResponse(path, body) {
           ? userPrompt.content.map((part) => part?.text || '').join(' ')
           : ''
     ).toLowerCase();
-    let reply = '👋 Demo sandbox is active with connected sample bookings, payments, customers, and analytics.';
+    let reply = '👋 You’re viewing a prepared operations workspace with connected renters, balances, bookings, and fleet activity.';
     if (promptText.includes('profitable')) {
-      reply = 'Avery Quinn is the most profitable renter in the demo dataset with the strongest profit per booking and no overdue balance.';
+      reply = 'Avery Quinn is the strongest profit contributor right now, with a clean payment history and no overdue balance on the active Civic rental.';
     } else if (promptText.includes('overdue') || promptText.includes('payment')) {
       reply = 'Jordan Miles is 2 days overdue with a late fee of $85, and Taylor Brooks has an unpaid reservation balance of $699.';
     } else if (promptText.includes('maintenance')) {
@@ -12188,8 +12246,8 @@ function getDemoResponse(path, body) {
     }
     return Promise.resolve({ reply, messages: [], tool_calls: [] });
   }
-  if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in demo sandbox'));
-  if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Demo Fleet', phone: '(555) 010-0000', logo_url: '' });
+  if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in walkthrough mode'));
+  if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Fleet Control Operations', phone: '(555) 010-0000', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings')) return Promise.resolve({ ok: true });
   if (p.endsWith('/api/add-expense') || p.endsWith('/api/update-expense') || p.endsWith('/api/upload-expense-receipt') || p.endsWith('/api/delete-expense-receipt') || p.endsWith('/api/delete-expense')) return Promise.resolve({ ok: true, success: true });
   if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: [
@@ -12225,7 +12283,7 @@ function getDemoResponse(path, body) {
     { booking_ref: 'bk-demo-003', vehicle_id: 'rav4',  renter_phone: '(555) 010-1003', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_003a', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
     { booking_ref: 'bk-demo-004', vehicle_id: 'camry', renter_phone: '(555) 010-1004', message_type: 'booking_confirmed',  status: 'failed', provider_id: null,           created_at: new Date(Date.now() - 86400000 * 0.5).toISOString(), error: 'Carrier rejected — invalid number format' },
   ] });
-  if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in demo mode.' });
+  if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in walkthrough mode.' });
 
   return Promise.resolve({ ok: true, _demo: true });
 }
@@ -12255,7 +12313,7 @@ function installDemoFetchInterceptor() {
       try { body = JSON.parse(init.body); } catch (_err) { body = {}; }
     }
 
-    const payload = await getDemoResponse(path + (parsed.search || ''), body).catch((err) => ({ error: err?.message || 'Demo request failed' }));
+    const payload = await getDemoResponse(path + (parsed.search || ''), body).catch((err) => ({ error: err?.message || 'Walkthrough request failed' }));
     const status = payload && payload.error ? 400 : 200;
     return new Response(JSON.stringify(payload || {}), {
       status,
@@ -12289,7 +12347,7 @@ function initDemoMode() {
   document.getElementById('app').classList.add('ready');
 
   // Strip all SLY-specific branding so demo visitors can't identify the seller
-  document.title = 'Fleet Control — Demo';
+  document.title = 'Fleet Control — Guided Walkthrough';
   const _demoFavicon = document.querySelector('link[rel="icon"]');
   if (_demoFavicon) _demoFavicon.remove();
   document.querySelectorAll('.auth-logo img, .sidebar-logo img').forEach(function(img) { img.style.display = 'none'; });
@@ -12300,7 +12358,7 @@ function initDemoMode() {
   const _demoAiTitle = document.querySelector('.ai-chat-title');
   if (_demoAiTitle) _demoAiTitle.textContent = 'AI Assistant';
   const _demoPreviewStrong = document.querySelector('#preview-topbar strong');
-  if (_demoPreviewStrong) _demoPreviewStrong.textContent = 'demo';
+  if (_demoPreviewStrong) _demoPreviewStrong.textContent = 'walkthrough';
   const _demoPreviewLink = document.getElementById('preview-open-link');
   if (_demoPreviewLink) _demoPreviewLink.style.display = 'none';
 
@@ -12326,7 +12384,7 @@ function initDemoMode() {
   // Disable AI input in demo (graceful degradation — just show a note)
   const aiInput = document.getElementById('ai-input');
   if (aiInput) {
-    aiInput.placeholder = 'Demo mode — AI responses are simulated…';
+    aiInput.placeholder = 'Guided walkthrough workspace — ask about collections, extensions, or renter risk.';
   }
 
   // Auto-start full tour after 800ms (gives voice-assistant.js time to load)
@@ -12368,7 +12426,7 @@ function checkFirstTimeUser(data) {
 function loadDemoDataAndClose() {
   closeModal('onboarding-modal');
   localStorage.setItem('sly_onboarding_done', '1');
-  showToast('Demo data loaded — explore the system!', 'success');
+  showToast('Walkthrough workspace loaded — explore the operation.', 'success');
   // Navigate to demo URL so the full demo mode kicks in
   window.location.href = window.location.pathname + '?demo=1';
 }

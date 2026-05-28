@@ -290,6 +290,34 @@
       display: grid;
       gap: 10px;
     }
+    .walkthrough-list {
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+    .walkthrough-link {
+      display: block;
+      border: 1px solid #dbeafe;
+      background: #f8fbff;
+      border-radius: 14px;
+      padding: 12px;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+    .walkthrough-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(37, 99, 235, .08);
+      border-color: #93c5fd;
+    }
+    .walkthrough-link strong {
+      display: block;
+      color: var(--text);
+      font-size: .92rem;
+      margin-bottom: 4px;
+    }
+    .walkthrough-link span {
+      color: var(--muted);
+      font-size: .86rem;
+    }
     .side-card li {
       display: flex;
       justify-content: space-between;
@@ -576,10 +604,10 @@
         <aside class="hero-side" aria-label="Operational preview">
           <div class="hero-side-top">
             <div>
-              <div class="hero-side-label">Demo signal board</div>
+              <div class="hero-side-label">Operator signal board</div>
               <div class="hero-side-title">What operators need to see before problems spread</div>
             </div>
-            <div class="hero-side-note">Live-style sample</div>
+            <div class="hero-side-note">Guided walkthrough snapshot</div>
           </div>
           <div class="signal-grid">
             <div class="signal-card alert">
@@ -659,9 +687,9 @@
       </div>
 
       <div class="preview-layout">
-        <div class="demo-shell" aria-label="Demo preview">
+        <div class="demo-shell" aria-label="Guided walkthrough preview">
           <div class="demo-bar">
-            <span>Interactive Demo · /admin-v2/?demo=1</span>
+            <span>Interactive walkthrough · /admin-v2/?demo=1</span>
             <div class="demo-indicators">
               <span>Overdue balances</span>
               <span>Extensions</span>
@@ -673,12 +701,25 @@
         </div>
         <div class="side-stack">
           <article class="side-card">
-            <h3>What this preview should communicate immediately</h3>
-            <ul>
-              <li><div><strong>Payment accountability</strong><br>Outstanding balances, partial payments, and recovery status are visible.</div><span class="side-badge danger">Collections</span></li>
-              <li><div><strong>Operational structure</strong><br>Renter lifecycle is organized instead of scattered across notes and chats.</div><span class="side-badge">Lifecycle</span></li>
-              <li><div><strong>Daily decision support</strong><br>Alerts and AI recommendations highlight what operators should handle first.</div><span class="side-badge warn">Action Queue</span></li>
-            </ul>
+            <h3>Recommended walkthrough</h3>
+            <div class="walkthrough-list">
+              <a class="walkthrough-link" href="/admin-v2/?demo=1">
+                <strong>1. Open the command center</strong>
+                <span>Start with the dashboard view for revenue visibility, overdue balances, and the live action queue.</span>
+              </a>
+              <a class="walkthrough-link" href="/admin-v2/?demo=1">
+                <strong>2. Review collections pressure</strong>
+                <span>Trace overdue renters, payment-plan exposure, and escalation history before cash flow slips.</span>
+              </a>
+              <a class="walkthrough-link" href="/admin-v2/?demo=1">
+                <strong>3. Follow active rental continuity</strong>
+                <span>Check extension handling, return reminders, and how renter status stays connected across the workflow.</span>
+              </a>
+              <a class="walkthrough-link" href="/admin-v2/?demo=1">
+                <strong>4. Restart the guided operator tour</strong>
+                <span>Use the walkthrough banner inside the demo anytime you want the recommended story path again.</span>
+              </a>
+            </div>
           </article>
           <article class="side-card insight-card">
             <h3>AI operational insights</h3>
