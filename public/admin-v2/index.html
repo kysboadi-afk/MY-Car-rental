@@ -12229,6 +12229,141 @@ async function loadAiInsights() {
     { id: 'cust-demo-004', name: 'Taylor Brooks', full_name: 'Taylor Brooks', phone: '(555) 010-1004', email: 'taylor.demo+004@example.test', total_bookings: 1, total_spent: 0,    total_profit: -45, total_gross_revenue: 0, total_stripe_fees: 0, total_net_revenue: 0, associated_vehicle_expenses: 45, profit_per_booking: -45, avg_profit_per_day: -6.4, lifetime_value: 699,  no_show_count: 0, first_booking_date: fwd(2), last_booking_date: fwd(2), last_booking: fwd(2), risk_flag: 'low', flagged: false, banned: false },
   ];
 
+  window.DEMO_APPLICATIONS = [
+    {
+      id: 'demo-app-001',
+      name: 'Maya Brooks',
+      phone: '(555) 010-2001',
+      email: 'maya.demo+app001@example.test',
+      age: 29,
+      experience: '3 years',
+      applicationStatus: 'submitted',
+      identityStatus: 'processing',
+      reviewVersion: 2,
+      submittedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+      zipcode: '90001',
+      apps: ['Uber', 'DoorDash'],
+      agreeBackgroundCheck: true,
+      hasLicenseUpload: true,
+      hasInsuranceProof: true,
+      licenseFileName: 'maya-license.jpg',
+      insuranceFileName: 'maya-insurance.pdf',
+      driverLicenseNumber: 'D1234567',
+      driverLicenseState: 'CA',
+      precheckDecision: 'manual_review',
+      needsInfoReason: null,
+      checkrReportStatus: 'pending',
+      checkrReportId: null,
+      checkrAdjudication: null,
+      reviewHistory: [
+        { id: 'demo-hist-001', action: 'submitted', performedBy: 'System', notes: 'Application submitted from onboarding flow.', previousStatus: null, newStatus: 'submitted', createdAt: new Date(Date.now() - 1000 * 60 * 18).toISOString() },
+      ],
+      incomeDocuments: [],
+    },
+    {
+      id: 'demo-app-002',
+      name: 'Noah Patel',
+      phone: '(555) 010-2002',
+      email: 'noah.demo+app002@example.test',
+      age: 34,
+      experience: '5 years',
+      applicationStatus: 'approved',
+      identityStatus: 'verified',
+      reviewVersion: 5,
+      reviewedBy: 'Underwriting Lead',
+      reviewedAt: new Date(Date.now() - 1000 * 60 * 70).toISOString(),
+      submittedAt: new Date(Date.now() - 1000 * 60 * 60 * 22).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 65).toISOString(),
+      zipcode: '90011',
+      apps: ['Lyft'],
+      agreeBackgroundCheck: true,
+      hasLicenseUpload: true,
+      hasInsuranceProof: true,
+      licenseFileName: 'noah-license.jpg',
+      insuranceFileName: 'noah-insurance.pdf',
+      driverLicenseNumber: 'P7654321',
+      driverLicenseState: 'CA',
+      precheckDecision: 'clear',
+      checkrReportStatus: 'clear',
+      checkrReportId: 'rpt_demo_approved_002',
+      checkrAdjudication: 'clear',
+      reviewHistory: [
+        { id: 'demo-hist-002a', action: 'submitted', performedBy: 'System', notes: null, previousStatus: null, newStatus: 'submitted', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 22).toISOString() },
+        { id: 'demo-hist-002b', action: 'approved', performedBy: 'Underwriting Lead', notes: 'Approved after identity + background clear.', previousStatus: 'under_review', newStatus: 'approved', createdAt: new Date(Date.now() - 1000 * 60 * 70).toISOString() },
+      ],
+      incomeDocuments: [],
+    },
+    {
+      id: 'demo-app-003',
+      name: 'Ethan Cole',
+      phone: '(555) 010-2003',
+      email: 'ethan.demo+app003@example.test',
+      age: 27,
+      experience: '1 year',
+      applicationStatus: 'under_review',
+      identityStatus: 'verified',
+      reviewVersion: 3,
+      reviewedBy: 'Risk Analyst',
+      reviewedAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
+      submittedAt: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 24).toISOString(),
+      zipcode: '90210',
+      apps: ['Uber'],
+      agreeBackgroundCheck: true,
+      hasLicenseUpload: true,
+      hasInsuranceProof: true,
+      licenseFileName: 'ethan-license.jpg',
+      insuranceFileName: 'ethan-insurance.pdf',
+      driverLicenseNumber: 'E5432199',
+      driverLicenseState: 'CA',
+      precheckDecision: 'high_risk',
+      needsInfoReason: 'Reviewing prior incidents from background report.',
+      checkrReportStatus: 'consider',
+      checkrReportId: 'rpt_demo_flagged_003',
+      checkrAdjudication: 'consider',
+      reviewHistory: [
+        { id: 'demo-hist-003a', action: 'submitted', performedBy: 'System', notes: null, previousStatus: null, newStatus: 'submitted', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString() },
+        { id: 'demo-hist-003b', action: 'under_review', performedBy: 'Risk Analyst', notes: 'Escalated for manual underwriting review.', previousStatus: 'submitted', newStatus: 'under_review', createdAt: new Date(Date.now() - 1000 * 60 * 40).toISOString() },
+      ],
+      incomeDocuments: [],
+    },
+    {
+      id: 'demo-app-004',
+      name: 'Olivia Reed',
+      phone: '(555) 010-2004',
+      email: 'olivia.demo+app004@example.test',
+      age: 31,
+      experience: '2 years',
+      applicationStatus: 'needs_info',
+      identityStatus: 'requires_input',
+      reviewVersion: 4,
+      reviewedBy: 'Underwriting Lead',
+      reviewedAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
+      submittedAt: new Date(Date.now() - 1000 * 60 * 60 * 14).toISOString(),
+      updatedAt: new Date(Date.now() - 1000 * 60 * 33).toISOString(),
+      zipcode: '90301',
+      apps: ['DoorDash', 'Instacart'],
+      agreeBackgroundCheck: true,
+      hasLicenseUpload: false,
+      hasInsuranceProof: true,
+      licenseFileName: null,
+      insuranceFileName: 'olivia-insurance.pdf',
+      driverLicenseNumber: 'R0004433',
+      driverLicenseState: 'CA',
+      precheckDecision: 'manual_review',
+      needsInfoReason: 'Driver license photo is missing.',
+      checkrReportStatus: 'not_started',
+      checkrReportId: null,
+      checkrAdjudication: null,
+      reviewHistory: [
+        { id: 'demo-hist-004a', action: 'submitted', performedBy: 'System', notes: null, previousStatus: null, newStatus: 'submitted', createdAt: new Date(Date.now() - 1000 * 60 * 60 * 14).toISOString() },
+        { id: 'demo-hist-004b', action: 'needs_info', performedBy: 'Underwriting Lead', notes: 'Requested clearer license upload.', previousStatus: 'under_review', newStatus: 'needs_info', createdAt: new Date(Date.now() - 1000 * 60 * 95).toISOString() },
+      ],
+      incomeDocuments: [],
+    },
+  ];
+
   const revChart = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today); d.setMonth(d.getMonth() - (6 - i));
     const label = d.toLocaleString('default', { month: 'short' });
@@ -12362,6 +12497,269 @@ function cloneDemo(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+function getDemoApplicationsStore() {
+  if (!Array.isArray(window.DEMO_APPLICATIONS) || window.DEMO_APPLICATIONS.length === 0) {
+    window.DEMO_APPLICATIONS = [];
+  }
+  return window.DEMO_APPLICATIONS;
+}
+
+function normalizeDemoLifecycleFilter(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'declined') return 'rejected';
+  return normalized;
+}
+
+function normalizeDemoQueueSort(sortField = '', sortDir = '') {
+  const safeField = ['priority', 'submitted_at', 'reviewed_at', 'updated_at'].includes(sortField)
+    ? sortField
+    : 'priority';
+  const safeDir = sortDir === 'desc' ? 'desc' : 'asc';
+  return { sortField: safeField, sortDir: safeDir };
+}
+
+function demoApplicationStatusPriority(status = '') {
+  const s = String(status || '').toLowerCase();
+  const weights = {
+    submitted: 1,
+    under_review: 2,
+    needs_info: 3,
+    identity_verified: 4,
+    approved: 5,
+    rejected: 6,
+    archived: 7,
+  };
+  return weights[s] || 9;
+}
+
+function getDemoReviewQueueApplications(params = {}) {
+  const all = cloneDemo(getDemoApplicationsStore()) || [];
+  const lifecycleFilter = normalizeDemoLifecycleFilter(params.lifecycleFilter);
+  const attentionFilter = String(params.attentionFilter || '').toLowerCase() === 'new' ? 'new' : '';
+  const search = String(params.search || '').trim().toLowerCase();
+  const { sortField, sortDir } = normalizeDemoQueueSort(params.sortField, params.sortDir);
+  const now = Date.now();
+
+  const filtered = all.filter((raw) => {
+    const status = String(raw.applicationStatus || '').toLowerCase();
+    const identityStatus = String(raw.identityStatus || '').toLowerCase();
+    const checkrStatus = String(raw.checkrReportStatus || '').toLowerCase();
+    const submittedMs = new Date(raw.submittedAt || raw.createdAt || 0).getTime();
+    const isRecent = Number.isFinite(submittedMs) && (now - submittedMs) <= 24 * 60 * 60 * 1000;
+    const reviewQueue = ['submitted', 'under_review', 'needs_info'].includes(status);
+    const archived = ['withdrawn', 'expired', 'archived'].includes(status);
+    const haystack = [
+      raw.name,
+      raw.phone,
+      raw.email,
+      raw.id,
+      raw.driverLicenseNumber,
+    ].join(' ').toLowerCase();
+
+    if (attentionFilter === 'new' && !isRecent) return false;
+    if (search && !haystack.includes(search)) return false;
+    if (!lifecycleFilter) return true;
+    if (lifecycleFilter === 'review_queue') return reviewQueue;
+    if (lifecycleFilter === 'identity_verified') return identityStatus === 'verified';
+    if (lifecycleFilter === 'checkr_consider') return checkrStatus === 'consider';
+    if (lifecycleFilter === 'checkr_pending') return ['pending', 'in_progress', 'invitation_sent'].includes(checkrStatus);
+    if (lifecycleFilter === 'checkr_issue') return ['consider', 'suspended', 'failed'].includes(checkrStatus);
+    if (lifecycleFilter === 'archived') return archived;
+    return status === lifecycleFilter;
+  });
+
+  const sorted = filtered.sort((a, b) => {
+    const dir = sortDir === 'desc' ? -1 : 1;
+    const compareTime = (left, right) => {
+      const l = new Date(left || 0).getTime();
+      const r = new Date(right || 0).getTime();
+      return ((Number.isFinite(l) ? l : 0) - (Number.isFinite(r) ? r : 0)) * dir;
+    };
+    if (sortField === 'submitted_at') return compareTime(a.submittedAt || a.createdAt, b.submittedAt || b.createdAt);
+    if (sortField === 'reviewed_at') return compareTime(a.reviewedAt, b.reviewedAt);
+    if (sortField === 'updated_at') return compareTime(a.updatedAt, b.updatedAt);
+    const pri = (demoApplicationStatusPriority(a.applicationStatus) - demoApplicationStatusPriority(b.applicationStatus)) * dir;
+    if (pri !== 0) return pri;
+    return compareTime(a.submittedAt || a.createdAt, b.submittedAt || b.createdAt);
+  });
+
+  return { all, filtered: sorted };
+}
+
+function buildDemoReviewQueueResponse(pathWithQuery = '/api/admin-review-queue') {
+  const parsed = new URL(pathWithQuery, window.location.origin);
+  const page = Math.max(1, Number(parsed.searchParams.get('page')) || 1);
+  const pageSize = Math.max(1, Number(parsed.searchParams.get('pageSize')) || 50);
+  const lifecycleFilter = parsed.searchParams.get('lifecycleFilter') || '';
+  const attentionFilter = parsed.searchParams.get('attentionFilter') || '';
+  const search = parsed.searchParams.get('search') || '';
+  const sortField = parsed.searchParams.get('sortField') || 'priority';
+  const sortDir = parsed.searchParams.get('sortDir') || 'asc';
+  const queue = getDemoReviewQueueApplications({ lifecycleFilter, attentionFilter, search, sortField, sortDir });
+  const start = (page - 1) * pageSize;
+  const paged = queue.filtered.slice(start, start + pageSize);
+  const summary = demoBuildQueueSummary(queue.all.map((row, idx) => demoNormalizeQueueItem(row, idx)));
+
+  return {
+    success: true,
+    applications: paged.map((row, idx) => demoNormalizeQueueItem(row, start + idx)),
+    total: queue.filtered.length,
+    page,
+    pageSize,
+    summary,
+    filters: { lifecycleFilter, attentionFilter, search, sortField, sortDir },
+  };
+}
+
+function buildDemoReviewDetailResponse(applicationId) {
+  const row = getDemoApplicationsStore().find((app) => String(app.id || '') === String(applicationId || ''));
+  if (!row) return { success: false, error: 'Application not found in demo queue.' };
+  return {
+    success: true,
+    applicationId: row.id,
+    name: row.name,
+    phone: row.phone,
+    email: row.email || null,
+    age: row.age ?? null,
+    experience: row.experience || null,
+    apps: Array.isArray(row.apps) ? cloneDemo(row.apps) : [],
+    agreeBackgroundCheck: !!row.agreeBackgroundCheck,
+    hasInsurance: row.hasInsurance ?? null,
+    protectionPlanPref: row.protectionPlanPref || null,
+    driverLicenseNumber: row.driverLicenseNumber || null,
+    driverLicenseState: row.driverLicenseState || null,
+    zipcode: row.zipcode || null,
+    hasLicenseUpload: !!row.hasLicenseUpload,
+    hasInsuranceProof: !!row.hasInsuranceProof,
+    licenseFileName: row.licenseFileName || null,
+    insuranceFileName: row.insuranceFileName || null,
+    precheckDecision: row.precheckDecision || null,
+    applicationStatus: row.applicationStatus || 'submitted',
+    identityStatus: row.identityStatus || 'not_started',
+    identitySessionId: row.identitySessionId || null,
+    identityVerifiedAt: row.identityVerifiedAt || null,
+    checkrPhase: row.checkrPhase || row.checkrReportStatus || 'not_started',
+    checkrCandidateId: row.checkrCandidateId || null,
+    checkrReportId: row.checkrReportId || null,
+    checkrInvitationUrl: row.checkrInvitationUrl || null,
+    checkrInvitationSentAt: row.checkrInvitationSentAt || null,
+    checkrInvitationSmsSentAt: row.checkrInvitationSmsSentAt || null,
+    checkrInvitationReminderSentAt: row.checkrInvitationReminderSentAt || null,
+    checkrReportStatus: row.checkrReportStatus || null,
+    checkrAdjudication: row.checkrAdjudication || null,
+    checkrCompletedAt: row.checkrCompletedAt || null,
+    checkrLastError: row.checkrLastError || null,
+    checkrLastLaunchError: row.checkrLastLaunchError || null,
+    checkrLastLaunchAttemptAt: row.checkrLastLaunchAttemptAt || null,
+    checkrLaunchAttemptCount: Number(row.checkrLaunchAttemptCount || 0),
+    checkrLastWebhookAt: row.checkrLastWebhookAt || null,
+    checkrMvrViolations: row.checkrMvrViolations || null,
+    adverseActionStep: row.adverseActionStep || null,
+    adverseActionSentAt: row.adverseActionSentAt || null,
+    reviewVersion: Number(row.reviewVersion || 1),
+    reviewedBy: row.reviewedBy || null,
+    reviewedAt: row.reviewedAt || null,
+    needsInfoReason: row.needsInfoReason || null,
+    lastReviewerNotes: row.lastReviewerNotes || null,
+    submittedAt: row.submittedAt || null,
+    createdAt: row.createdAt || row.submittedAt || null,
+    updatedAt: row.updatedAt || row.submittedAt || null,
+    reviewHistory: Array.isArray(row.reviewHistory) ? cloneDemo(row.reviewHistory) : [],
+    incomeDocuments: Array.isArray(row.incomeDocuments) ? cloneDemo(row.incomeDocuments) : [],
+  };
+}
+
+function applyDemoReviewAction(body = {}) {
+  const id = String(body.applicationId || '').trim();
+  const action = String(body.action || '').trim();
+  const row = getDemoApplicationsStore().find((app) => String(app.id || '') === id);
+  if (!row) return { success: false, error: 'Application not found in demo queue.' };
+  const statusByAction = {
+    approved: 'approved',
+    rejected: 'rejected',
+    needs_info: 'needs_info',
+    pre_adverse: row.applicationStatus || 'under_review',
+  };
+  const nextStatus = statusByAction[action];
+  if (!nextStatus) return { success: false, error: 'Unsupported demo action.' };
+  const nowIso = new Date().toISOString();
+  row.reviewVersion = Number(row.reviewVersion || 0) + 1;
+  row.reviewedBy = String(body.reviewedBy || 'Admin');
+  row.reviewedAt = nowIso;
+  row.updatedAt = nowIso;
+  row.lastReviewerNotes = body.notes ? String(body.notes) : row.lastReviewerNotes || null;
+  row.needsInfoReason = nextStatus === 'needs_info'
+    ? (body.notes ? String(body.notes) : (row.needsInfoReason || 'Additional information requested.'))
+    : null;
+  if (nextStatus !== 'under_review') row.applicationStatus = nextStatus;
+  if (nextStatus === 'approved') {
+    row.identityStatus = row.identityStatus || 'verified';
+    row.checkrReportStatus = row.checkrReportStatus || 'clear';
+  }
+  row.reviewHistory = Array.isArray(row.reviewHistory) ? row.reviewHistory : [];
+  row.reviewHistory.unshift({
+    id: `demo-hist-${Date.now()}`,
+    action,
+    performedBy: row.reviewedBy,
+    notes: body.notes || null,
+    previousStatus: body.expectedStatus || null,
+    newStatus: row.applicationStatus,
+    createdAt: nowIso,
+  });
+  return { success: true, applicationId: row.id, status: row.applicationStatus, reviewVersion: row.reviewVersion };
+}
+
+function applyDemoApplicationOps(body = {}) {
+  const action = String(body.action || '').trim();
+  const apps = getDemoApplicationsStore();
+  const id = String(body.applicationId || '').trim();
+  const nowIso = new Date().toISOString();
+  const row = apps.find((app) => String(app.id || '') === id);
+
+  if (action === 'clear_declined_applications') {
+    let archived = 0;
+    apps.forEach((app) => {
+      if (String(app.applicationStatus || '').toLowerCase() === 'rejected') {
+        app.applicationStatus = 'archived';
+        app.updatedAt = nowIso;
+        archived += 1;
+      }
+    });
+    return { success: true, archived, failed: [] };
+  }
+
+  if (!row) return { success: false, error: 'Application not found in demo queue.' };
+
+  if (action === 'archive_application') {
+    row.applicationStatus = 'archived';
+    row.updatedAt = nowIso;
+    row.reviewVersion = Number(row.reviewVersion || 0) + 1;
+    return { success: true, archived: 1 };
+  }
+  if (action === 'move_to_review') {
+    row.applicationStatus = 'under_review';
+    row.updatedAt = nowIso;
+    return { success: true };
+  }
+  if (action === 'restart_verification') {
+    row.identityStatus = 'processing';
+    row.updatedAt = nowIso;
+    return { success: true };
+  }
+  if (action === 'retry_checkr' || action === 'resend_checkr_invitation') {
+    row.checkrReportStatus = 'pending';
+    row.updatedAt = nowIso;
+    return { success: true };
+  }
+  if (action === 'manual_recovery') {
+    row.updatedAt = nowIso;
+    return { success: true, synced: false, alreadySynced: true };
+  }
+
+  return { success: true };
+}
+
 function findDemoBooking(id) {
   const target = String(id || '').trim();
   if (!target) return null;
@@ -12466,6 +12864,20 @@ function getDemoReconcilePayload() {
 function getDemoResponse(path, body) {
   const p = path.split('?')[0];
   const action = String((body && body.action) || '').trim();
+
+  if (p.endsWith('/api/admin-review-queue')) {
+    return Promise.resolve(buildDemoReviewQueueResponse(path));
+  }
+  if (p.endsWith('/api/admin-review-detail')) {
+    const parsed = new URL(path, window.location.origin);
+    return Promise.resolve(buildDemoReviewDetailResponse(parsed.searchParams.get('applicationId')));
+  }
+  if (p.endsWith('/api/review-application')) {
+    return Promise.resolve(applyDemoReviewAction(body));
+  }
+  if (p.endsWith('/api/admin-application-ops')) {
+    return Promise.resolve(applyDemoApplicationOps(body));
+  }
 
   if (p.endsWith('/api/v2-dashboard')) return Promise.resolve(cloneDemo(window.DEMO_DASHBOARD));
   if (p.endsWith('/api/v2-vehicles')) {
@@ -13620,6 +14032,9 @@ let appViewingId      = null;
 let appViewingData    = null;
 let appActionInFlight = false;
 let appQueueEventsBound = false;
+const DEMO_APP_QUEUE_SNAPSHOT_KEY = 'sly_demo_app_queue_snapshot_v1';
+const DEMO_APP_QUEUE_RETRY_MS = 3500;
+let demoAppQueueRetryTimer = null;
 
 const APP_PRESENCE_KEY_PREFIX = 'sly_app_presence_';
 const APP_PRESENCE_TTL_MS = 45000;
@@ -13770,7 +14185,7 @@ function applyAppQueueLifecyclePreset(lifecycleFilter = '', attentionFilter = ''
 }
 
 async function apiGet(path) {
-  if (window.DEMO_MODE) return {};
+  if (window.DEMO_MODE) return getDemoResponse(path, {});
   const resp = await fetch(API_BASE + path, {
     headers: { Authorization: 'Bearer ' + adminSessionToken },
   });
@@ -13833,6 +14248,141 @@ function bindAppQueueRowActions() {
   appQueueEventsBound = true;
 }
 
+function demoNormalizeQueueItem(raw, index = 0) {
+  const submittedAt = raw?.submittedAt || raw?.submitted_at || raw?.createdAt || raw?.created_at || new Date().toISOString();
+  const updatedAt = raw?.updatedAt || raw?.updated_at || submittedAt;
+  const reviewedAt = raw?.reviewedAt || raw?.reviewed_at || null;
+  const status = String(raw?.applicationStatus || raw?.application_status || 'submitted').toLowerCase();
+  const identityStatus = String(raw?.identityStatus || raw?.identity_status || 'not_started').toLowerCase();
+  const submittedMs = new Date(submittedAt).getTime();
+  const reviewedMs = new Date(reviewedAt || 0).getTime();
+  const now = Date.now();
+  return {
+    id: String(raw?.id || raw?.applicationId || `demo-app-${index + 1}`),
+    name: String(raw?.name || `Demo Applicant ${index + 1}`),
+    phone: String(raw?.phone || '(555) 010-0000'),
+    email: raw?.email ? String(raw.email) : null,
+    age: raw?.age == null ? null : Number(raw.age),
+    experience: raw?.experience ? String(raw.experience) : null,
+    applicationStatus: status,
+    identityStatus,
+    reviewVersion: Number(raw?.reviewVersion || raw?.review_version || 1),
+    reviewedBy: raw?.reviewedBy ? String(raw.reviewedBy) : null,
+    reviewedAt: reviewedAt || null,
+    needsInfoReason: raw?.needsInfoReason ? String(raw.needsInfoReason) : null,
+    precheckDecision: raw?.precheckDecision ? String(raw.precheckDecision) : null,
+    checkrReportStatus: raw?.checkrReportStatus ? String(raw.checkrReportStatus) : null,
+    checkrReportId: raw?.checkrReportId ? String(raw.checkrReportId) : null,
+    submittedAt,
+    updatedAt,
+    attention: {
+      isRecentHour: Number.isFinite(submittedMs) && (now - submittedMs) <= 60 * 60 * 1000,
+      isRecentDay: Number.isFinite(submittedMs) && (now - submittedMs) <= 24 * 60 * 60 * 1000,
+      isUnreviewed: !Number.isFinite(reviewedMs) || reviewedMs <= 0,
+      isNewAttention: status === 'submitted' && (Number.isFinite(submittedMs) && (now - submittedMs) <= 24 * 60 * 60 * 1000),
+    },
+  };
+}
+
+function demoBuildQueueSummary(records = []) {
+  const summary = {
+    total: records.length,
+    reviewQueueTotal: 0,
+    underReview: 0,
+    needsInfo: 0,
+    identityVerified: 0,
+    checkrConsider: 0,
+    approved: 0,
+    rejected: 0,
+  };
+  records.forEach((r) => {
+    const status = String(r.applicationStatus || '').toLowerCase();
+    if (['submitted', 'under_review', 'needs_info'].includes(status)) summary.reviewQueueTotal += 1;
+    if (status === 'under_review') summary.underReview += 1;
+    if (status === 'needs_info') summary.needsInfo += 1;
+    if (status === 'approved') summary.approved += 1;
+    if (status === 'rejected' || status === 'declined') summary.rejected += 1;
+    if (String(r.identityStatus || '').toLowerCase() === 'verified') summary.identityVerified += 1;
+    if (String(r.checkrReportStatus || '').toLowerCase() === 'consider') summary.checkrConsider += 1;
+  });
+  return summary;
+}
+
+function normalizeDemoQueuePayload(data, fallbackPage = appQueueState.page) {
+  const rawItems = Array.isArray(data?.applications) ? data.applications : [];
+  let applications = rawItems.map((row, idx) => demoNormalizeQueueItem(row, idx));
+  if (!applications.length && typeof buildDemoReviewQueueResponse === 'function') {
+    const seeded = buildDemoReviewQueueResponse(`/api/admin-review-queue?page=1&pageSize=${APP_QUEUE_SIZE}`);
+    applications = (Array.isArray(seeded?.applications) ? seeded.applications : [])
+      .map((row, idx) => demoNormalizeQueueItem(row, idx));
+  }
+  const summary = demoBuildQueueSummary(applications);
+  const total = Number.isFinite(Number(data?.total)) ? Number(data.total) : applications.length;
+  return {
+    success: true,
+    applications,
+    total,
+    page: Math.max(1, Number(data?.page) || Number(fallbackPage) || 1),
+    pageSize: Math.max(1, Number(data?.pageSize) || APP_QUEUE_SIZE),
+    summary: { ...summary, ...(data?.summary || {}) },
+    filters: data?.filters && typeof data.filters === 'object' ? data.filters : {},
+  };
+}
+
+function loadDemoQueueSnapshot() {
+  try {
+    const raw = localStorage.getItem(DEMO_APP_QUEUE_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return normalizeDemoQueuePayload(parsed, appQueueState.page);
+  } catch (err) {
+    console.warn('Demo queue snapshot unavailable:', err?.message || err);
+    return null;
+  }
+}
+
+function saveDemoQueueSnapshot(payload) {
+  try {
+    localStorage.setItem(DEMO_APP_QUEUE_SNAPSHOT_KEY, JSON.stringify({
+      applications: payload?.applications || [],
+      total: payload?.total || 0,
+      page: payload?.page || 1,
+      pageSize: payload?.pageSize || APP_QUEUE_SIZE,
+      summary: payload?.summary || {},
+      filters: payload?.filters || {},
+      savedAt: Date.now(),
+    }));
+  } catch (err) {
+    console.warn('Demo queue snapshot unavailable:', err?.message || err);
+  }
+}
+
+function scheduleDemoQueueRetry() {
+  if (!window.DEMO_MODE || demoAppQueueRetryTimer) return;
+  demoAppQueueRetryTimer = setTimeout(() => {
+    demoAppQueueRetryTimer = null;
+    loadAppQueue().catch(() => {});
+  }, DEMO_APP_QUEUE_RETRY_MS);
+}
+
+function applyAppQueuePayload(data) {
+  appQueueData = Array.isArray(data?.applications) ? data.applications : [];
+  appQueueTotal = Number(data?.total || appQueueData.length || 0);
+  appQueueSummary = data?.summary || {};
+  appQueueState = normalizeAppQueueState({
+    ...appQueueState,
+    ...(data?.filters || {}),
+    page: data?.page || appQueueState.page,
+  });
+  syncLegacyAppQueueState();
+  persistAppQueueState();
+  syncAppQueueControls();
+  updateAppsReviewBadge();
+  updateClearDeclinedButton();
+  renderAppQueueKpis();
+  renderAppQueue();
+}
+
 // ── Load queue from API ───────────────────────────────────────────────────────
 
 async function loadAppQueue() {
@@ -13854,24 +14404,31 @@ async function loadAppQueue() {
       sortDir: appQueueState.sortDir,
     });
     const data = await apiGet(`/api/admin-review-queue?${params}`);
-    if (!data.success) throw new Error(data.error || 'Failed to load queue.');
-
-    appQueueData = data.applications || [];
-    appQueueTotal = data.total || 0;
-    appQueueSummary = data.summary || {};
-    appQueueState = normalizeAppQueueState({
-      ...appQueueState,
-      ...(data.filters || {}),
-      page: data.page || appQueueState.page,
-    });
-    syncLegacyAppQueueState();
-    persistAppQueueState();
-    syncAppQueueControls();
-    updateAppsReviewBadge();
-    updateClearDeclinedButton();
-    renderAppQueueKpis();
-    renderAppQueue();
+    if (!data.success && !window.DEMO_MODE) throw new Error(data.error || 'Failed to load queue.');
+    const safePayload = window.DEMO_MODE
+      ? normalizeDemoQueuePayload(data, appQueueState.page)
+      : {
+        ...data,
+        applications: Array.isArray(data?.applications) ? data.applications : [],
+        total: Number(data?.total || 0),
+      };
+    applyAppQueuePayload(safePayload);
+    if (window.DEMO_MODE) {
+      saveDemoQueueSnapshot(safePayload);
+      if (demoAppQueueRetryTimer) {
+        clearTimeout(demoAppQueueRetryTimer);
+        demoAppQueueRetryTimer = null;
+      }
+    }
   } catch (err) {
+    if (window.DEMO_MODE) {
+      console.warn('Demo queue load fallback activated:', err?.message || err);
+      const fallbackPayload = loadDemoQueueSnapshot()
+        || normalizeDemoQueuePayload({}, appQueueState.page);
+      applyAppQueuePayload(fallbackPayload);
+      scheduleDemoQueueRetry();
+      return;
+    }
     if (loading) loading.style.display = 'none';
     showToast('Failed to load applications queue: ' + err.message, 'error');
   }
