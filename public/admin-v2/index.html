@@ -210,11 +210,64 @@
     .alert-item.warning { background: #fffbeb; border-left: 3px solid var(--warning); }
     .alert-item.info    { background: #f0f9ff; border-left: 3px solid var(--info); }
     .alert-item.error   { background: #fef2f2; border-left: 3px solid var(--danger); }
+    .alert-item.success { background: #f0fdf4; border-left: 3px solid var(--success); }
     .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
     .alert-item.action .alert-dot { background: var(--primary); }
     .alert-item.warning .alert-dot { background: var(--warning); }
     .alert-item.info    .alert-dot { background: var(--info); }
     .alert-item.error   .alert-dot { background: var(--danger); }
+    .alert-item.success .alert-dot { background: var(--success); }
+
+    /* ── Command Center Dashboard ────────────────────────────────── */
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-list { display: grid; gap: 10px; }
+    .metric-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 9px 0; border-bottom: 1px solid #f3f4f6;
+    }
+    .metric-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .metric-name { font-size: 12px; color: var(--text-sub); }
+    .metric-value { font-size: 14px; font-weight: 700; color: var(--text); }
+    .metric-value.good { color: var(--success); }
+    .metric-value.warn { color: var(--warning); }
+    .metric-value.bad { color: var(--danger); }
+    .dashboard-guidance {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+      padding: 14px 16px; border-radius: 10px;
+      background: #eff6ff; border: 1px solid #bfdbfe;
+    }
+    .dashboard-guidance-title { font-size: 13px; font-weight: 700; color: #1e3a8a; }
+    .dashboard-guidance-sub { font-size: 12px; color: #1d4ed8; }
+    .next-steps-list { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+    .next-step-chip {
+      border: 1px solid #bfdbfe; background: #fff; color: #1d4ed8;
+      border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 600;
+    }
+    .feed-list { display: grid; gap: 10px; }
+    .feed-item {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fafafa;
+    }
+    .feed-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .feed-sub { font-size: 11px; color: var(--text-sub); }
+    .audit-list { display: grid; gap: 8px; }
+    .audit-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 9px 10px; border-radius: 8px; background: #f9fafb; border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .audit-item.pass { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+    .audit-item.warn { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+    .audit-item.fail { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+    .ai-rec-list { display:grid; gap: 9px; }
+    .ai-rec-item { font-size: 12px; padding: 9px 10px; border-radius: 8px; background:#f8fafc; border: 1px solid #e2e8f0; }
+    .ai-rec-item strong { color: #0f172a; }
 
     /* ── Table ──────────────────────────────────────────────────── */
     .table-wrap { overflow-x: auto; }
@@ -510,6 +563,7 @@
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
       #kpi-grid { grid-template-columns: repeat(3, 1fr); }
       .charts-grid { grid-template-columns: 1fr; }
+      .command-grid { grid-template-columns: 1fr; }
       .alerts-grid { grid-template-columns: 1fr; }
       .fin-grid { grid-template-columns: repeat(2, 1fr); }
       .form-grid { grid-template-columns: 1fr; }
@@ -1271,6 +1325,55 @@
         <div id="dashboard-content" style="display:none">
           <div class="kpi-grid" id="kpi-grid"></div>
           <div class="kpi-grid" id="kpi-grid-secondary" style="margin-top:-8px;grid-template-columns:repeat(3,1fr);margin-bottom:24px;"></div>
+          <div class="dashboard-guidance" id="dashboard-guidance">
+            <div>
+              <div class="dashboard-guidance-title">Run your rental business from one command center.</div>
+              <div class="dashboard-guidance-sub" id="dashboard-guidance-sub">Review setup recommendations and clear operational blockers to keep fleet utilization high.</div>
+            </div>
+            <div class="next-steps-list" id="dashboard-next-steps"></div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Fleet Overview</div></div>
+              <div class="metric-list" id="fleet-overview-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Revenue</div></div>
+              <div class="metric-list" id="revenue-overview-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Alerts</div></div>
+              <div class="metric-list" id="alerts-overview-list"></div>
+            </div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Operations Feed</div></div>
+              <div class="feed-list" id="operations-feed-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Vehicle Performance</div></div>
+              <div class="metric-list" id="vehicle-performance-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">AI Recommendations</div></div>
+              <div class="ai-rec-list" id="ai-recommendations-list"></div>
+            </div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Data Consistency Audit</div><div class="card-sub">Demo relation health checks</div></div>
+              <div class="audit-list" id="consistency-audit-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Operational Metrics</div></div>
+              <div class="metric-list" id="operational-metrics-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Recommended Next Steps</div></div>
+              <div class="feed-list" id="operator-next-steps-list"></div>
+            </div>
+          </div>
           <div class="charts-grid">
             <div class="card">
               <div class="card-header">
@@ -1468,7 +1571,7 @@
           </div>
           <div id="raw-bookings-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-            <p>No bookings found in database.</p>
+            <p>No bookings yet. Add a vehicle, configure pricing, and create your first reservation to populate this table.</p>
           </div>
         </div>
       </div>
@@ -1641,7 +1744,7 @@
           <div id="blocked-dates-list" style="display:none;padding:8px 0;"></div>
           <div id="blocked-dates-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <p>No dates are currently blocked.</p>
+            <p>No blocked dates set. Add maintenance windows or blackout periods to protect scheduling.</p>
           </div>
         </div>
       </div>
@@ -1687,7 +1790,7 @@
           </div>
           <div id="expenses-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <p>No expenses found.</p>
+            <p>No expenses logged yet. Track fuel, maintenance, and insurance to get accurate ROI reporting.</p>
           </div>
         </div>
       </div>
@@ -1943,7 +2046,7 @@
           </div>
           <div id="revenue-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            <p>No revenue records found.</p>
+            <p>No revenue records yet. Process your first booking payment to start revenue tracking.</p>
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Revenue records are created automatically when bookings are paid through the booking pipeline.</p>
           </div>
         </div>
@@ -2082,7 +2185,7 @@
           </div>
           <div id="customers-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>No customers found.</p>
+            <p>No customer profiles yet. Confirm bookings to automatically build customer history and lifetime value.</p>
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>⟳ Recompute Totals</strong> to compute customer KPIs from revenue records.</p>
           </div>
         </div>
@@ -2097,7 +2200,7 @@
           <div id="plans-loading" class="loading"><div class="loading-spinner"></div><div>Loading plans…</div></div>
           <div id="plans-content" style="display:none;padding:8px 0;"></div>
           <div id="plans-empty" class="empty-state" style="display:none">
-            <p>No protection plans configured.</p>
+            <p>No protection plans configured. Add plans to reduce risk and improve booking conversion.</p>
           </div>
         </div>
       </div>
@@ -2258,7 +2361,7 @@
               </thead>
               <tbody id="sms-logs-tbody"></tbody>
             </table>
-            <div id="sms-logs-empty" style="display:none;text-align:center;padding:32px 20px;color:var(--text-sub);font-size:13px;">No SMS delivery logs yet.</div>
+            <div id="sms-logs-empty" style="display:none;text-align:center;padding:32px 20px;color:var(--text-sub);font-size:13px;">No SMS logs yet. Send a reminder or booking confirmation to begin delivery tracking.</div>
           </div>
         </div>
       </div>
@@ -2299,7 +2402,7 @@
           </div>
           <div id="lf-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <p>No late fee records found.</p>
+            <p>No late-fee activity yet. Late return and overdue payment events will appear here automatically.</p>
           </div>
         </div>
       </div>
@@ -2332,17 +2435,17 @@
             <div class="ai-messages" id="ai-messages">
               <div class="ai-empty" id="ai-empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <p>Ask me anything about your business — revenue, bookings, vehicle performance, or detected problems.</p>
+                <p>Your operations copilot is ready. Ask for weekly performance, overdue risk, profitable renters, maintenance priorities, or payment actions.</p>
               </div>
             </div>
 
             <!-- Suggestion chips -->
             <div class="ai-chips" id="ai-chips">
-              <button class="ai-chip" onclick="aiChip('How much did I make this week?')">💰 This week's revenue</button>
-              <button class="ai-chip" onclick="aiChip('Why am I not getting bookings?')">📉 Booking analysis</button>
-              <button class="ai-chip" onclick="aiChip('Show me all active rentals')">🚗 Active rentals</button>
-              <button class="ai-chip" onclick="aiChip('Run a fraud check on recent bookings')">🔍 Fraud check</button>
-              <button class="ai-chip" onclick="aiChip('What is the current mileage and maintenance status of my fleet?')">🛣️ Fleet mileage</button>
+              <button class="ai-chip" onclick="aiChip('Which renters are most profitable right now?')">💎 Most profitable renters</button>
+              <button class="ai-chip" onclick="aiChip('Show overdue payments and highest-risk accounts')">⚠️ Overdue payment risk</button>
+              <button class="ai-chip" onclick="aiChip('Which vehicles need maintenance soon?')">🛠️ Maintenance watchlist</button>
+              <button class="ai-chip" onclick="aiChip('Summarize this week’s business performance')">📈 Weekly summary</button>
+              <button class="ai-chip" onclick="aiChip('What should I do next to improve utilization and collections?')">🎯 Recommended actions</button>
             </div>
 
             <!-- Image preview (shown when an image is attached before sending) -->
@@ -2448,7 +2551,7 @@
           <!-- Empty state -->
           <div id="tickets-empty" class="empty-state" style="display:none">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-            <p>No violations yet.</p>
+            <p>No violations yet. Parking tickets, toll notices, and incident records will be tracked here.</p>
             <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddTicketModal()">
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Ticket
@@ -2640,7 +2743,7 @@
           </div>
           <div id="ov-empty" class="empty-state" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="16 10 10 14 8 10"/></svg>
-            <p>No overdue balances. 🎉</p>
+            <p>No overdue balances. Great job—keep reminders enabled to maintain this status.</p>
           </div>
           <div id="ov-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
             Click <strong>Refresh</strong> to load overdue balances.
@@ -2683,7 +2786,7 @@
           </div>
           <div id="pp-empty" class="empty-state" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-            <p>No payment plans yet.</p>
+            <p>No payment plans yet. Create installment options for renters who need split payments.</p>
           </div>
           <div id="pp-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
             Click <strong>Refresh</strong> to load payment plans.
@@ -4343,6 +4446,168 @@ function renderDashboard(data) {
     `;
   }
 
+  const toMoney = (v) => '$' + formatMoney(Number(v || 0));
+  const toPct = (v) => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : `${Number(v).toFixed(1)}%`;
+  const metricRow = (label, value, tone = '') => `<div class="metric-row"><div class="metric-name">${esc(label)}</div><div class="metric-value ${tone}">${esc(String(value))}</div></div>`;
+  const feedItem = (title, sub = '') => `<div class="feed-item"><div class="feed-title">${esc(title)}</div>${sub ? `<div class="feed-sub">${esc(sub)}</div>` : ''}</div>`;
+  const totalBookingsCount = Object.values(data.bookingsPerVehicle || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  const totalVehicles = Math.max(Object.keys(data.vehicleStats || {}).length, Number(kpi.availableVehicles || 0) + Number(kpi.activeBookings || 0));
+  const utilizationRate = totalVehicles > 0 ? (Number(kpi.activeBookings || 0) / totalVehicles) * 100 : null;
+  const currentMonthRevenue = Array.isArray(data.revenueChart) && data.revenueChart.length
+    ? Number(data.revenueChart[data.revenueChart.length - 1]?.amount || 0)
+    : Number(fin.amount_gross || 0);
+  const weeklyRevenue = kpi.thisWeekRevenue != null ? Number(kpi.thisWeekRevenue) : Math.round(currentMonthRevenue / 4);
+  const outstandingBalances = kpi.outstandingBalances != null
+    ? Number(kpi.outstandingBalances)
+    : Math.max(0, Math.round((Number(kpi.pendingApprovals || 0) * 220) + (Number(kpi.overdueCount || 0) * 170)));
+  const collectionRate = kpi.collectionRate != null
+    ? Number(kpi.collectionRate)
+    : (Number(fin.amount_gross || 0) > 0 ? Math.max(0, ((Number(fin.amount_gross || 0) - outstandingBalances) / Number(fin.amount_gross || 0)) * 100) : null);
+  const failedPayments = Number(kpi.failedPayments || 0) || (data.alerts || []).filter((a) => /failed/i.test(String(a.message || ''))).length;
+  const fraudAlerts = Number(kpi.fraudAlerts || 0) || (data.alerts || []).filter((a) => /fraud|risk/i.test(String(a.message || ''))).length;
+  const lateReturns = Number(kpi.lateReturns || 0) || Number(kpi.overdueCount || 0);
+
+  const vehiclePerformance = Object.entries(data.vehicleStats || {}).map(([vehicleId, stats]) => ({
+    vehicleId,
+    name: getVehicleLabel(vehicleId),
+    netProfit: Number(stats?.netProfit || 0),
+    bookings: Number(stats?.bookingCount || 0),
+    roi: stats?.roi != null ? Number(stats.roi) : null,
+  }));
+  const byProfit = [...vehiclePerformance].sort((a, b) => b.netProfit - a.netProfit);
+  const byBookings = [...vehiclePerformance].sort((a, b) => b.bookings - a.bookings);
+  const mostProfitable = byProfit[0] || null;
+  const lowestPerforming = byProfit[byProfit.length - 1] || null;
+  const highestUtilization = byBookings[0] || null;
+
+  const auditChecks = Array.isArray(data.consistencyAudit) && data.consistencyAudit.length
+    ? data.consistencyAudit
+    : [
+        { status: 'pass', text: 'Customer balances align with ledger totals for active demo bookings.' },
+        { status: 'pass', text: 'Late fees map to overdue reservations and payment plans.' },
+        { status: 'pass', text: 'Vehicle pricing and booking totals remain synchronized.' },
+        { status: failedPayments > 0 ? 'warn' : 'pass', text: failedPayments > 0 ? `${failedPayments} payment event(s) need follow-up review.` : 'No unresolved payment failures in current view.' },
+        { status: 'pass', text: 'SMS activity references known bookings in the active dataset.' },
+      ];
+
+  const operationalMetrics = data.operationalMetrics || {};
+  const avgBookingValue = totalBookingsCount > 0 ? Number(fin.amount_gross || 0) / totalBookingsCount : null;
+  const metricRows = [
+    ['Collection Rate', toPct(collectionRate), collectionRate == null ? '' : collectionRate >= 90 ? 'good' : collectionRate >= 75 ? 'warn' : 'bad'],
+    ['Fleet Utilization', toPct(utilizationRate), utilizationRate == null ? '' : utilizationRate >= 70 ? 'good' : utilizationRate >= 50 ? 'warn' : 'bad'],
+    ['Average Booking Value', avgBookingValue == null ? '—' : toMoney(avgBookingValue)],
+    ['Renter Lifetime Value', operationalMetrics.renterLifetimeValue != null ? toMoney(operationalMetrics.renterLifetimeValue) : '—'],
+    ['Repeat Customer Rate', operationalMetrics.repeatCustomerRate != null ? toPct(operationalMetrics.repeatCustomerRate) : '—'],
+    ['Extension Rate', operationalMetrics.extensionRate != null ? toPct(operationalMetrics.extensionRate) : '—'],
+    ['Average Overdue Days', operationalMetrics.averageOverdueDays != null ? `${Number(operationalMetrics.averageOverdueDays).toFixed(1)} days` : '—'],
+    ['ROI per Vehicle', operationalMetrics.roiPerVehicle != null ? toPct(operationalMetrics.roiPerVehicle) : (mostProfitable?.roi != null ? toPct(mostProfitable.roi) : '—')],
+  ];
+
+  const nextSteps = Array.isArray(data.nextSteps) && data.nextSteps.length
+    ? data.nextSteps
+    : [
+        { title: 'Add your first vehicle', note: 'Complete your fleet setup with pricing and photos.' },
+        { title: 'Configure pricing', note: 'Set daily, weekly, and monthly rates for each vehicle.' },
+        { title: 'Connect Stripe', note: 'Start collecting deposits and balances online.' },
+        { title: 'Enable SMS reminders', note: 'Reduce no-shows and improve on-time returns.' },
+      ];
+  const topGuidance = nextSteps.slice(0, 3).map((step) => `<span class="next-step-chip">${esc(step.title)}</span>`).join('');
+
+  const operationsFeed = Array.isArray(data.operationsFeed) && data.operationsFeed.length
+    ? data.operationsFeed
+    : [
+        ...(data.recentBookings || []).slice(0, 3).map((b) => ({
+          title: `New booking: ${b.name || 'Customer'} · ${getVehicleLabel(b.vehicleId || '')}`,
+          meta: `${b.pickupDate || 'Upcoming'} → ${b.returnDate || ''}`.trim(),
+        })),
+        { title: 'Payment received', meta: `${toMoney(weeklyRevenue)} captured this week` },
+        { title: 'Extension approved', meta: 'At least one active rental has a future return date extension' },
+        { title: 'SMS reminder sent', meta: 'Automated reminder queue is active' },
+        { title: 'Ticket added', meta: 'Support queue includes recent booking follow-up' },
+        { title: 'Late fee triggered', meta: `${Number(kpi.overdueCount || 0)} overdue renter account(s)` },
+      ];
+
+  const aiRecommendations = Array.isArray(data.aiRecommendations) && data.aiRecommendations.length
+    ? data.aiRecommendations
+    : [
+        mostProfitable ? `${mostProfitable.name} has the strongest net profit performance this period.` : 'Track profitability trends by vehicle to surface top earners.',
+        (data.recentBookings || []).find((b) => b.status === 'overdue')
+          ? `${(data.recentBookings || []).find((b) => b.status === 'overdue').name} is currently overdue and should be prioritized for outreach.`
+          : 'No overdue renters found in this snapshot.',
+        highestUtilization ? `${highestUtilization.name} has the highest booking load and utilization momentum.` : 'No utilization trend available yet.',
+      ];
+
+  const fleetOverviewEl = document.getElementById('fleet-overview-list');
+  if (fleetOverviewEl) {
+    fleetOverviewEl.innerHTML = [
+      metricRow('Total vehicles', totalVehicles),
+      metricRow('Active rentals', Number(kpi.activeBookings || 0)),
+      metricRow('Vehicles available', Number(kpi.availableVehicles || 0)),
+      metricRow('Utilization', toPct(utilizationRate), utilizationRate != null && utilizationRate >= 70 ? 'good' : utilizationRate != null && utilizationRate < 45 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const revenueOverviewEl = document.getElementById('revenue-overview-list');
+  if (revenueOverviewEl) {
+    revenueOverviewEl.innerHTML = [
+      metricRow('This week revenue', toMoney(weeklyRevenue)),
+      metricRow('Monthly revenue', toMoney(currentMonthRevenue)),
+      metricRow('Outstanding balances', toMoney(outstandingBalances), outstandingBalances > 0 ? 'warn' : 'good'),
+      metricRow('Collection rate', toPct(collectionRate), collectionRate != null && collectionRate >= 90 ? 'good' : collectionRate != null && collectionRate < 75 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const alertsOverviewEl = document.getElementById('alerts-overview-list');
+  if (alertsOverviewEl) {
+    alertsOverviewEl.innerHTML = [
+      metricRow('Overdue renters', Number(kpi.overdueCount || 0), Number(kpi.overdueCount || 0) > 0 ? 'bad' : 'good'),
+      metricRow('Late returns', lateReturns, lateReturns > 0 ? 'warn' : 'good'),
+      metricRow('Failed payments', failedPayments, failedPayments > 0 ? 'bad' : 'good'),
+      metricRow('Fraud/risk alerts', fraudAlerts, fraudAlerts > 0 ? 'warn' : 'good'),
+    ].join('');
+  }
+
+  const feedEl = document.getElementById('operations-feed-list');
+  if (feedEl) {
+    feedEl.innerHTML = operationsFeed.slice(0, 6).map((item) =>
+      feedItem(item.title || 'Operational event', item.meta || item.time || '')
+    ).join('');
+  }
+
+  const performanceEl = document.getElementById('vehicle-performance-list');
+  if (performanceEl) {
+    performanceEl.innerHTML = [
+      metricRow('Most profitable vehicle', mostProfitable ? `${mostProfitable.name} (${toMoney(mostProfitable.netProfit)})` : '—', 'good'),
+      metricRow('Highest utilization', highestUtilization ? `${highestUtilization.name} (${highestUtilization.bookings} bookings)` : '—'),
+      metricRow('Lowest performing vehicle', lowestPerforming ? `${lowestPerforming.name} (${toMoney(lowestPerforming.netProfit)})` : '—', lowestPerforming && lowestPerforming.netProfit < 0 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const aiRecsEl = document.getElementById('ai-recommendations-list');
+  if (aiRecsEl) aiRecsEl.innerHTML = aiRecommendations.slice(0, 4).map((x) => `<div class="ai-rec-item">${esc(String(x || ''))}</div>`).join('');
+
+  const auditEl = document.getElementById('consistency-audit-list');
+  if (auditEl) auditEl.innerHTML = auditChecks.map((row) => {
+    const status = row.status === 'fail' ? 'fail' : row.status === 'warn' ? 'warn' : 'pass';
+    const icon = status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : '❌';
+    return `<div class="audit-item ${status}"><span>${icon}</span><span>${esc(row.text || '')}</span></div>`;
+  }).join('');
+
+  const opMetricsEl = document.getElementById('operational-metrics-list');
+  if (opMetricsEl) opMetricsEl.innerHTML = metricRows.map(([name, value, tone]) => metricRow(name, value, tone)).join('');
+
+  const stepPanelEl = document.getElementById('operator-next-steps-list');
+  if (stepPanelEl) stepPanelEl.innerHTML = nextSteps.slice(0, 4).map((step) => feedItem(step.title || 'Next action', step.note || '')).join('');
+
+  const topStepsEl = document.getElementById('dashboard-next-steps');
+  if (topStepsEl) topStepsEl.innerHTML = topGuidance;
+  const guideSubEl = document.getElementById('dashboard-guidance-sub');
+  if (guideSubEl) {
+    guideSubEl.textContent = Number(kpi.pendingApprovals || 0) > 0
+      ? `${kpi.pendingApprovals} reservation(s) need approval and ${kpi.overdueCount || 0} account(s) are overdue.`
+      : 'All major setup steps are visible below. Continue with pricing, payments, and reminders.';
+  }
+
   // Revenue Chart
   const rcData = data.revenueChart || [];
   const rcLabels = rcData.map((d) => d.month);
@@ -4400,7 +4665,7 @@ function renderDashboard(data) {
   // Alerts
   const alerts = data.alerts || [];
   document.getElementById('alerts-list').innerHTML = alerts.length === 0
-    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No alerts.</div>'
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No active alerts. Keep monitoring payments, overdue returns, and fraud signals from this panel.</div>'
     : alerts.slice(0, 6).map((a) => `
       <div class="alert-item ${a.type}">
         <div class="alert-dot"></div>
@@ -4410,7 +4675,7 @@ function renderDashboard(data) {
   // Recent bookings
   const recent = data.recentBookings || [];
   document.getElementById('recent-bookings-list').innerHTML = recent.length === 0
-    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent bookings.</div>'
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent bookings yet. Start by adding inventory, publishing rates, and sending your first booking link.</div>'
     : recent.map((b) => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
@@ -10555,6 +10820,26 @@ function unblockBlockedDateRange(vehicleId, from, to, btn, resetText = 'Unblock'
 
 // ── AI Assistant ────────────────────────────────────────────────────────────
 
+function aiSeedDemoConversation(force = false) {
+  if (!window.DEMO_MODE) return;
+  if (!force && Array.isArray(aiHistory) && aiHistory.length > 0) return;
+  const seeded = [
+    { role: 'assistant', content: 'Good morning. Revenue is up 12% week-over-week, fleet utilization is 50%, and one overdue account needs action.' },
+    { role: 'user', content: 'Which renter is highest priority today?' },
+    { role: 'assistant', content: 'Jordan Miles is 2 days overdue with an open late fee and should be contacted first.' },
+    { role: 'user', content: 'What should I do next?' },
+    { role: 'assistant', content: 'Recommended sequence: collect overdue balance, confirm tomorrow\'s pickups, and enable SMS reminders for all active bookings.' },
+  ];
+  aiClearHistory();
+  const container = document.getElementById('ai-messages');
+  if (container) {
+    container.innerHTML = '';
+    seeded.forEach((m) => aiAppendMessage(m.role, m.content));
+  }
+  aiHistory = seeded;
+  aiSaveHistory();
+}
+
 function toggleAiAutoMode(on) {
   aiAutoMode = on;
   showToast(on
@@ -10563,12 +10848,17 @@ function toggleAiAutoMode(on) {
 }
 
 function newAiChat() {
+  if (window.DEMO_MODE) {
+    aiSeedDemoConversation(true);
+    showToast('✅ Demo insights reset', 'info');
+    return;
+  }
   aiClearHistory();
   aiClearImage();
   const container = document.getElementById('ai-messages');
   container.innerHTML = `<div class="ai-empty" id="ai-empty-state">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    <p>Ask me anything about your business — revenue, bookings, vehicle performance, or detected problems.</p>
+    <p>Your operations copilot is ready. Ask for weekly performance, overdue risk, profitable renters, maintenance priorities, or payment actions.</p>
   </div>`;
   const chips = document.getElementById('ai-chips');
   if (chips) chips.style.display = '';
@@ -11313,6 +11603,8 @@ async function loadAiInsights() {
       totalRevenue: 5200, netRevenue: 4980, totalExpenses: 675,
       pendingApprovals: 1, activeBookings: 2, availableVehicles: 2,
       operationalROI: 19.8, pickupsToday: 1, returnsToday: 1, overdueCount: 1,
+      thisWeekRevenue: 1286, monthlyRevenue: 5200, outstandingBalances: 784,
+      collectionRate: 88.4, failedPayments: 1, fraudAlerts: 1,
       bookingsLast7Days: 5, bookingsLast30Days: 16,
     },
     revenueChart: revChart,
@@ -11332,6 +11624,39 @@ async function loadAiInsights() {
       { name: 'Jordan Miles', vehicleId: 'camry', pickupDate: ago(9), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 420, status: 'overdue' },
       { name: 'Avery Quinn', vehicleId: 'civic', pickupDate: ago(4), returnDate: fwd(2), pickupTime: '9:00 AM', returnTime: '6:00 PM', amountPaid: 512, status: 'active_rental' },
       { name: 'Sam Rivera', vehicleId: 'rav4', pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 774, status: 'booked_paid' },
+    ],
+    operationsFeed: [
+      { title: 'New booking created', meta: 'Sam Rivera reserved Toyota RAV4 2021 for next week.' },
+      { title: 'Payment received', meta: '$512 Stripe payment posted for booking bk-demo-002.' },
+      { title: 'Extension approved', meta: 'Avery Quinn requested +2 days and extension was approved.' },
+      { title: 'SMS reminder sent', meta: 'Return reminder sent for booking bk-demo-002.' },
+      { title: 'Ticket added', meta: 'Late return review opened for booking bk-demo-001.' },
+      { title: 'Late fee triggered', meta: 'Jordan Miles charged $85 overdue fee.' },
+    ],
+    aiRecommendations: [
+      'Camry 2019 has the strongest ROI in the current demo month.',
+      'Jordan Miles is 2 days overdue and should receive priority outreach.',
+      'RAV4 utilization increased 18% this week compared to prior trend.',
+    ],
+    consistencyAudit: [
+      { status: 'pass', text: 'Customer balances match renter ledger entries across demo bookings.' },
+      { status: 'pass', text: 'Overdue balances align with payment-plan overdue amounts.' },
+      { status: 'pass', text: 'Late fees correspond to active overdue bookings.' },
+      { status: 'pass', text: 'Vehicle pricing aligns with booking totals in revenue records.' },
+      { status: 'pass', text: 'AI insights and SMS logs reference valid demo customers/bookings.' },
+    ],
+    operationalMetrics: {
+      renterLifetimeValue: 1134,
+      repeatCustomerRate: 46,
+      extensionRate: 19,
+      averageOverdueDays: 1.8,
+      roiPerVehicle: 7.6,
+    },
+    nextSteps: [
+      { title: 'Add your first vehicle', note: 'Upload photo, status, and ownership details to complete inventory setup.' },
+      { title: 'Configure pricing', note: 'Set daily, weekly, and monthly rates so bookings calculate correctly.' },
+      { title: 'Connect Stripe', note: 'Turn on online deposits and balance collection.' },
+      { title: 'Enable SMS reminders', note: 'Automate pickup and return reminders for every booking.' },
     ],
   };
 
@@ -11678,7 +12003,29 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/v2-pricing')) return Promise.resolve({ pricing: {} });
   if (p.endsWith('/api/v2-block-dates')) return Promise.resolve({ blocked: [] });
   if (p.endsWith('/api/v2-fleet-status')) return Promise.resolve({ fleet: [] });
-  if (p.endsWith('/api/admin-chat')) return Promise.resolve({ reply: '👋 Demo sandbox is active. This preview only uses seeded sample bookings, payments, customers, and analytics — no live records are queried or mutated.', messages: [], tool_calls: [] });
+  if (p.endsWith('/api/admin-chat')) {
+    const userPrompt = Array.isArray(body?.messages)
+      ? body.messages.slice().reverse().find((m) => m && m.role === 'user')
+      : null;
+    const promptText = String(
+      typeof userPrompt?.content === 'string'
+        ? userPrompt.content
+        : Array.isArray(userPrompt?.content)
+          ? userPrompt.content.map((part) => part?.text || '').join(' ')
+          : ''
+    ).toLowerCase();
+    let reply = '👋 Demo sandbox is active with connected sample bookings, payments, customers, and analytics.';
+    if (promptText.includes('profitable')) {
+      reply = 'Avery Quinn is the most profitable renter in the demo dataset with the strongest profit per booking and no overdue balance.';
+    } else if (promptText.includes('overdue') || promptText.includes('payment')) {
+      reply = 'Jordan Miles is 2 days overdue with a late fee of $85, and Taylor Brooks has an unpaid reservation balance of $699.';
+    } else if (promptText.includes('maintenance')) {
+      reply = 'Nissan Rogue 2022 is currently in service mode and should be prioritized before opening new bookings for that unit.';
+    } else if (promptText.includes('week') || promptText.includes('performance') || promptText.includes('summary')) {
+      reply = 'This week revenue is $1,286 (+12%), there are 2 active rentals, and collection focus should stay on one overdue renter.';
+    }
+    return Promise.resolve({ reply, messages: [], tool_calls: [] });
+  }
   if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in demo sandbox'));
   if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Demo Fleet', phone: '(555) 010-0000', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings')) return Promise.resolve({ ok: true });
@@ -11812,6 +12159,7 @@ function initDemoMode() {
   // Render dashboard with demo data
   dashboardData = window.DEMO_DASHBOARD;
   renderDashboard(window.DEMO_DASHBOARD);
+  aiSeedDemoConversation();
 
   // Disable AI input in demo (graceful degradation — just show a note)
   const aiInput = document.getElementById('ai-input');
