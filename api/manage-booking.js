@@ -158,12 +158,14 @@ function esc(str) {
 async function fetchBookingFromSupabase(bookingRef) {
   const sb = getSupabaseAdmin();
   if (!sb) return null;
+  let selectFallbackUsed = false;
   let result = await sb
     .from("bookings")
     .select(BOOKING_SELECT_COLS)
     .eq("booking_ref", bookingRef)
     .maybeSingle();
   if (result.error?.code === POSTGRES_UNDEFINED_COLUMN_ERROR) {
+    selectFallbackUsed = true;
     result = await sb
       .from("bookings")
       .select(BOOKING_SELECT_FALLBACK_COLS)
@@ -177,6 +179,7 @@ async function fetchBookingFromSupabase(bookingRef) {
   }
   if (!data) return null;
   return {
+    __selectFallbackUsed: selectFallbackUsed,
     manage_token: null,
     balance_payment_link: "",
     pending_change: null,
@@ -236,6 +239,62 @@ function effectiveBalanceDue(row) {
     balance = Math.round((totalPrice - depositPaid) * 100) / 100;
   }
   return balance;
+}
+
+function toObservabilityMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function logManageBookingContractTransition(eventName, fields = {}, level = "info") {
+  const logger = level === "warn" ? console.warn : console.info;
+  logger("[manage-booking][contract-transition]", {
+    event: eventName,
+    ...fields,
+  });
+}
+
+function buildManageBookingObservability({
+  row,
+  bookingId,
+  resolvedTotal,
+  depositPaid,
+  balanceDue,
+  lifecycle,
+  staleBalanceFallbackUsed,
+  pricingFallbackUsed,
+}) {
+  const fallbackPaths = [];
+  if (row?.__selectFallbackUsed) {
+    fallbackPaths.push({
+      path: "supabase_compat_columns",
+      source: "bookings_select",
+    });
+  }
+  if (staleBalanceFallbackUsed) {
+    fallbackPaths.push({
+      path: "remaining_balance_total_minus_paid",
+      source: "effectiveBalanceDue",
+    });
+  }
+  if (pricingFallbackUsed) {
+    fallbackPaths.push({
+      path: "pricing_recompute_for_stale_partial_balance",
+      source: "recomputePricing",
+    });
+  }
+  return {
+    bookingId,
+    canonicalLifecycleState: lifecycle.lifecycleState,
+    canonicalFinancialSnapshot: {
+      total:   toObservabilityMoney(resolvedTotal),
+      paid:    toObservabilityMoney(depositPaid),
+      balance: toObservabilityMoney(balanceDue),
+    },
+    fallbackPaths,
+    surfacesUsingLegacyDerivations: ["manage_booking_dashboard"],
+  };
 }
 
 /**
@@ -543,8 +602,12 @@ export default async function handler(req, res) {
     // where amountPaid was conflated with totalPrice during sync).
     const totalPriceNum  = Number(row.total_price   || 0);
     const depositPaidNum = Number(row.deposit_paid  || 0);
+    const staleBalanceFallbackUsed = Number(row.remaining_balance || 0) === 0
+      && totalPriceNum > 0
+      && depositPaidNum < totalPriceNum;
     let balanceDue       = effectiveBalanceDue(row);
     let resolvedTotal    = totalPriceNum;
+    let pricingFallbackUsed = false;
 
     // When remaining_balance is stale zero AND total_price equals the deposit amount
     // (e.g. older bookings where full_rental_amount was absent from PI metadata so
@@ -565,6 +628,7 @@ export default async function handler(req, res) {
         if (repriced && repriced.newBalanceDue > 0) {
           balanceDue    = repriced.newBalanceDue;
           resolvedTotal = repriced.newTotal;
+          pricingFallbackUsed = true;
         }
       } catch (repErr) {
         console.warn("[manage-booking] get: pricing fallback for stale balance failed (non-fatal):", repErr.message);
@@ -582,6 +646,26 @@ export default async function handler(req, res) {
       amountPaid: depositPaidNum,
       remainingBalance: balanceDue,
       paymentPlan,
+    });
+    const contractTransitionObservability = buildManageBookingObservability({
+      row,
+      bookingId,
+      resolvedTotal,
+      depositPaid: depositPaidNum,
+      balanceDue,
+      lifecycle,
+      staleBalanceFallbackUsed,
+      pricingFallbackUsed,
+    });
+    if (contractTransitionObservability.fallbackPaths.length > 0) {
+      logManageBookingContractTransition("fallback_path_used", {
+        booking_id: bookingId,
+        fallback_paths: contractTransitionObservability.fallbackPaths,
+      });
+    }
+    logManageBookingContractTransition("legacy_derivation_surface_exposed", {
+      booking_id: bookingId,
+      surfaces: contractTransitionObservability.surfacesUsingLegacyDerivations,
     });
 
     return res.status(200).json({
@@ -620,6 +704,7 @@ export default async function handler(req, res) {
       lateFeeStatus: row.late_fee_status || null,
       lateFeeAmount: Number(row.late_fee_amount || 0) > 0 ? Number(row.late_fee_amount) : null,
       extensionRiskOverride: row.extension_risk_override || null,
+      contractTransitionObservability,
     });
   }
 

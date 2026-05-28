@@ -76,6 +76,50 @@ function parseReturnDateTime(returnDate, returnTime) {
   return buildDateTimeLA(returnDate, returnTime || DEFAULT_RETURN_TIME);
 }
 
+function roundTransitionMetric(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function logDashboardContractTransition(eventName, fields = {}, level = "info") {
+  const logger = level === "warn" ? console.warn : console.info;
+  logger("[v2-dashboard][contract-transition]", {
+    event: eventName,
+    ...fields,
+  });
+}
+
+export function buildContractTransitionKpiMismatches(input = {}) {
+  const tolerance = Number.isFinite(Number(input.tolerance)) ? Number(input.tolerance) : 0.01;
+  const mismatches = [];
+  const appendMismatch = (metric, canonicalValue, legacyValue, meta = {}) => {
+    const canonical = roundTransitionMetric(canonicalValue);
+    const legacy = roundTransitionMetric(legacyValue);
+    if (canonical == null || legacy == null) return;
+    const diff = roundTransitionMetric(Math.abs(canonical - legacy));
+    if (diff != null && diff > tolerance) {
+      mismatches.push({
+        metric,
+        canonical,
+        legacy,
+        diff,
+        ...meta,
+      });
+    }
+  };
+
+  appendMismatch("available_vehicles", input.viewAvailableVehicles, input.jsAvailableVehicles, {
+    canonicalSource: "admin_metrics_v2",
+    legacySource: "js_booking_loop",
+  });
+  appendMismatch("total_revenue", input.canonicalTotalRevenue, input.aggregatedTotalRevenue, {
+    canonicalSource: input.canonicalTotalRevenueSource || "total_revenue_kpi_canonical",
+    legacySource: input.aggregatedTotalRevenueSource || "revenue_aggregation_loop",
+  });
+  return mismatches;
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -98,6 +142,8 @@ export default async function handler(req, res) {
 
   try {
     const sb = getSupabaseAdmin();
+    let bookingKpiSource = sb ? "supabase_bookings" : "bookings_json";
+    let financialSource = "uninitialized";
 
     // Resolve vehicle IDs dynamically so newly-added vehicles appear in dashboard
     // queries without requiring a code re-deploy.  Falls back to the static list
@@ -149,6 +195,12 @@ export default async function handler(req, res) {
           }));
         } catch (err) {
           if (isNetworkError(err)) {
+            bookingKpiSource = "bookings_json_network_fallback";
+            logDashboardContractTransition("fallback_path_used", {
+              path: "bookings_kpis",
+              fallback: "bookings_json",
+              reason: "supabase_network_error",
+            });
             console.error("[FALLBACK] Supabase unreachable in v2-dashboard, using bookings.json:", err.message);
             const { data } = await loadBookings();
             return Object.values(data).flat();
@@ -157,6 +209,12 @@ export default async function handler(req, res) {
         }
       }
       // Supabase not configured — use bookings.json directly
+      bookingKpiSource = "bookings_json";
+      logDashboardContractTransition("fallback_path_used", {
+        path: "bookings_kpis",
+        fallback: "bookings_json",
+        reason: "supabase_unconfigured",
+      });
       const { data } = await loadBookings();
       return Object.values(data).flat();
     }
@@ -164,6 +222,11 @@ export default async function handler(req, res) {
     const metricsPromise = sb
       ? sb.from("admin_metrics_v2").select("*").single()
           .then((r) => r, (e) => {
+            logDashboardContractTransition("fallback_path_used", {
+              path: "admin_metrics_v2",
+              fallback: "runtime_aggregations",
+              reason: e?.message || "query_failed",
+            });
             console.warn("v2-dashboard: admin_metrics_v2 query failed (non-fatal), falling back to revenue_records loop:", e?.message);
             return { data: null, error: e };
           })
@@ -192,6 +255,11 @@ export default async function handler(req, res) {
     const kpiPromise = sb && !normalizedScope
       ? sb.from("total_revenue_kpi_canonical").select("total_revenue").single()
           .then((r) => r, (e) => {
+            logDashboardContractTransition("fallback_path_used", {
+              path: "total_revenue_kpi_canonical",
+              fallback: "revenue_aggregation_loop",
+              reason: e?.message || "query_failed",
+            });
             console.warn("v2-dashboard: total_revenue_kpi_canonical query failed (non-fatal):", e?.message);
             return { data: null, error: e };
           })
@@ -336,6 +404,11 @@ export default async function handler(req, res) {
     // it is safe to re-introduce the view override for additional accuracy (e.g.
     // server-side timezone handling for returns/pickups today). Until then the
     // JS loop is the single source of truth for these counts.
+    logDashboardContractTransition("legacy_derivation_surface_used", {
+      surface: "v2_dashboard_booking_count_loop",
+      source: bookingKpiSource,
+      scope: vp,
+    });
 
     // Total expenses (scoped)
     const totalExpenses = expenses
@@ -377,10 +450,16 @@ export default async function handler(req, res) {
 
         if (rrErr) {
           const logFn = isSchemaError(rrErr) ? console.warn : console.error;
+          logDashboardContractTransition("fallback_path_used", {
+            path: "revenue_reporting_canonical",
+            fallback: "revenue_records_effective_or_bookings",
+            reason: rrErr.message,
+          });
           logFn("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrErr.message,
             isSchemaError(rrErr) ? "(migration 0142 not yet applied)" : "");
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
+          financialSource = "revenue_reporting_canonical";
           for (const r of rrRows) {
             const vid = uiVehicleId(r.vehicle_id) || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
@@ -412,6 +491,11 @@ export default async function handler(req, res) {
         }
         // If rrRows is empty (no paid records yet) we fall through to the orphan fallback.
       } catch (rrEx) {
+        logDashboardContractTransition("fallback_path_used", {
+          path: "revenue_reporting_canonical",
+          fallback: "revenue_records_effective_or_bookings",
+          reason: rrEx.message,
+        });
         console.warn("v2-dashboard: canonical revenue records unavailable, falling back to bookings.json:", rrEx.message);
       }
     }
@@ -429,6 +513,12 @@ export default async function handler(req, res) {
           .eq("payment_status", "paid");
         if (!rreErr && (rreRows || []).length > 0) {
           financialsFromRevRecords = true;
+          financialSource = "revenue_records_effective";
+          logDashboardContractTransition("fallback_path_used", {
+            path: "revenue_reporting_canonical",
+            fallback: "revenue_records_effective",
+            reason: "canonical_rows_empty_or_orphaned",
+          });
           for (const r of rreRows) {
             if (r.is_cancelled || r.is_no_show) continue;
             const vid      = uiVehicleId(r.vehicle_id) || "unknown";
@@ -460,6 +550,12 @@ export default async function handler(req, res) {
     // Last-resort fallback: compute from bookings.json when Supabase is unavailable.
     // Mirrors the same fallback used by api/v2-revenue.js.
     if (!financialsFromRevRecords) {
+      financialSource = "bookings_derived_financials";
+      logDashboardContractTransition("fallback_path_used", {
+        path: "financial_kpis",
+        fallback: "bookings_derived_financials",
+        reason: "canonical_reporting_unavailable",
+      });
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
       for (const booking of allBookings) {
         if (!paidStatuses.has(booking.status)) continue;
@@ -527,6 +623,7 @@ export default async function handler(req, res) {
     let availableVehicles = vehicleList.filter(
       (v) => v.status === "active" && !unavailableVehicleIds.has(v.vehicle_id)
     ).length;
+    const jsAvailableVehicles = availableVehicles;
 
     // When the admin_metrics_v2 view is healthy, prefer its pre-aggregated count
     // over the JS calculation above.  The view's avail CTE queries the Supabase
@@ -693,6 +790,19 @@ export default async function handler(req, res) {
     const kpiRevenue = kpiResult?.data?.total_revenue != null
       ? Number(kpiResult.data.total_revenue)
       : null;
+    const kpiMismatches = buildContractTransitionKpiMismatches({
+      viewAvailableVehicles: viewOk ? metricsView[`${vp}_available_vehicles`] : null,
+      jsAvailableVehicles,
+      canonicalTotalRevenue: kpiRevenue,
+      aggregatedTotalRevenue: totalRevenue,
+      aggregatedTotalRevenueSource: financialSource,
+    });
+    kpiMismatches.forEach((mismatch) => {
+      logDashboardContractTransition("kpi_aggregation_mismatch", {
+        scope: vp,
+        ...mismatch,
+      }, "warn");
+    });
     const finalTotalRevenue = kpiRevenue !== null
       ? Math.round(kpiRevenue * 100) / 100
       : Math.round(totalRevenue * 100) / 100;

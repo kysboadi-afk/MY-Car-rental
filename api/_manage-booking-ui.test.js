@@ -242,6 +242,87 @@ test("reservation partial payment derives remaining amount from total paid when 
   assert.equal(document.getElementById("pay-balance-section").style.display, "block");
 });
 
+test("contract transition observability logs lifecycle and financial mismatches", async () => {
+  const warns = [];
+  await bootDashboard({
+    bookingPayload: baseBooking({
+      paymentLifecycleState: "completed",
+      canPayRemainingOnline: false,
+      contractTransitionObservability: {
+        canonicalLifecycleState: "completed",
+        canonicalFinancialSnapshot: { total: 385.88, paid: 50, balance: 335.88 },
+        fallbackPaths: [],
+        surfacesUsingLegacyDerivations: ["manage_booking_dashboard"],
+      },
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 200,
+        total_charges: 0,
+        remaining_balance: 0,
+        transaction_count: 2,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    setupWindow(window) {
+      window.console = {
+        ...console,
+        log() {},
+        info() {},
+        error() {},
+        warn(...args) { warns.push(args); },
+      };
+    },
+  });
+
+  const warningEvents = warns
+    .filter(([msg]) => msg === "[manage-booking][contract-transition]")
+    .map(([, payload]) => payload?.event);
+  assert.ok(warningEvents.includes("financial_snapshot_mismatch"));
+  assert.ok(warningEvents.includes("lifecycle_state_mismatch"));
+});
+
+test("contract transition observability logs fallback usage and legacy derivation surfaces", async () => {
+  const infos = [];
+  await bootDashboard({
+    bookingPayload: baseBooking({
+      contractTransitionObservability: {
+        canonicalLifecycleState: "deposit_paid",
+        canonicalFinancialSnapshot: { total: 385.88, paid: 50, balance: 335.88 },
+        fallbackPaths: [{ path: "supabase_compat_columns", source: "bookings_select" }],
+        surfacesUsingLegacyDerivations: ["manage_booking_dashboard"],
+      },
+    }),
+    ledgerPayload: {
+      summary: {
+        total_paid: 200,
+        total_charges: 0,
+        remaining_balance: 0,
+        transaction_count: 2,
+      },
+      transactions: [],
+    },
+    agreementPayload: {},
+    setupWindow(window) {
+      window.console = {
+        ...console,
+        log() {},
+        warn() {},
+        error() {},
+        info(...args) { infos.push(args); },
+      };
+    },
+  });
+
+  const infoPayloads = infos
+    .filter(([msg]) => msg === "[manage-booking][contract-transition]")
+    .map(([, payload]) => payload || {});
+  assert.ok(infoPayloads.some((payload) => payload.event === "fallback_path_used" && payload.path === "reservation_total_minus_paid"));
+  assert.ok(infoPayloads.some((payload) => payload.event === "fallback_path_used" && payload.path === "supabase_compat_columns"));
+  assert.ok(infoPayloads.some((payload) => payload.event === "legacy_derivation_surface_used" && payload.surface === "manage_booking_dashboard"));
+});
+
 test("full-payment transition shows paid-in-full and hides pay-balance CTA", async () => {
   const document = await bootDashboard({
     bookingPayload: baseBooking({

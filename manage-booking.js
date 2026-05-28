@@ -566,6 +566,14 @@
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
+  function logContractTransition(eventName, fields, level) {
+    const logger = level === "warn" ? console.warn : console.info;
+    logger("[manage-booking][contract-transition]", {
+      event: eventName,
+      ...(fields || {}),
+    });
+  }
+
   function deriveDisplayedFinancials(b, summary, statusKey) {
     const total = Number(b.totalPrice || 0) || (Number(b.depositPaid || 0) + Number(b.balanceDue || 0)) || 0;
     const dbPaid = Math.max(0, toMoney(b.depositPaid));
@@ -592,20 +600,35 @@
     ].includes(statusKey);
 
     let balance = dbBalance;
+    let sourceKey = "database_remaining_balance";
+    let fallbackPathUsed = "";
     if (ledgerSummaryUsable) {
       if (Number.isFinite(ledgerBalance) && ledgerBalance > 0) {
         balance = ledgerBalance;
+        sourceKey = "ledger_remaining_balance";
       } else if (ledgerCharges > 0 || dbBalance <= 0) {
         balance = Math.max(0, ledgerBalance || 0);
+        sourceKey = "ledger_zero_balance";
       } else if (isReservationStage && total > 0 && paid < total) {
         balance = Math.max(0, toMoney(total - paid));
+        sourceKey = "reservation_total_minus_paid";
+        fallbackPathUsed = "reservation_total_minus_paid";
       } else if (isReservationStage && total > 0 && paid >= total) {
         balance = 0;
+        sourceKey = "reservation_paid_in_full";
       }
     }
 
     const paidPct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (balance === 0 ? 100 : 0);
-    return { total, paid, balance, paidPct };
+    return {
+      total,
+      paid,
+      balance,
+      paidPct,
+      sourceKey,
+      fallbackPathUsed,
+      ledgerSummaryUsable,
+    };
   }
 
   function derivePaymentLifecycleState({ booking, statusKey, total, paid, balance }) {
@@ -780,6 +803,87 @@
 
   function paymentStatusBadgeHtml(state) {
     return `<span class="status-badge ${escapeHtml(state.paymentBadgeClass)}">${escapeHtml(state.paymentBadgeLabel)}</span>`;
+  }
+
+  function observeContractTransition(b, financialSnapshot, paymentState, statusKey) {
+    const bookingId = b?.bookingId || b?.booking_ref || "";
+    const observability = b?.contractTransitionObservability || null;
+    logContractTransition("legacy_derivation_surface_used", {
+      booking_id: bookingId,
+      surface: "manage_booking_dashboard",
+      lifecycle_source: "client_legacy_derivation",
+      financial_source: financialSnapshot.sourceKey,
+      status: statusKey,
+    });
+    if (financialSnapshot.fallbackPathUsed) {
+      logContractTransition("fallback_path_used", {
+        booking_id: bookingId,
+        surface: "manage_booking_dashboard",
+        path: financialSnapshot.fallbackPathUsed,
+      });
+    }
+    if (Array.isArray(observability?.fallbackPaths)) {
+      observability.fallbackPaths.forEach((pathInfo) => {
+        logContractTransition("fallback_path_used", {
+          booking_id: bookingId,
+          surface: "manage_booking_api",
+          ...(pathInfo || {}),
+        });
+      });
+    }
+    if (Array.isArray(observability?.surfacesUsingLegacyDerivations)) {
+      observability.surfacesUsingLegacyDerivations.forEach((surface) => {
+        logContractTransition("legacy_derivation_surface_used", {
+          booking_id: bookingId,
+          surface,
+        });
+      });
+    }
+
+    const canonicalFinancials = observability?.canonicalFinancialSnapshot;
+    if (canonicalFinancials) {
+      const financialDiffs = {};
+      const comparable = {
+        total: financialSnapshot.total,
+        paid: financialSnapshot.paid,
+        balance: financialSnapshot.balance,
+      };
+      Object.entries(comparable).forEach(([key, legacyValue]) => {
+        const canonicalValue = toMoney(canonicalFinancials[key]);
+        if (Math.abs(toMoney(legacyValue) - canonicalValue) > 0.01) {
+          financialDiffs[key] = {
+            canonical: canonicalValue,
+            legacy: toMoney(legacyValue),
+          };
+        }
+      });
+      if (Object.keys(financialDiffs).length > 0) {
+        logContractTransition("financial_snapshot_mismatch", {
+          booking_id: bookingId,
+          canonical: canonicalFinancials,
+          legacy: comparable,
+          diffs: financialDiffs,
+        }, "warn");
+      }
+    }
+
+    const canonicalLifecycle = String(observability?.canonicalLifecycleState || b?.paymentLifecycleState || "").trim().toLowerCase();
+    const legacyLifecycle = String(paymentState.lifecycleState || "").trim().toLowerCase();
+    const lifecycleFlagsMismatch = typeof b?.canPayRemainingOnline === "boolean"
+      && b.canPayRemainingOnline !== !!paymentState.canPayRemainingOnline;
+    if ((canonicalLifecycle && canonicalLifecycle !== legacyLifecycle) || lifecycleFlagsMismatch) {
+      logContractTransition("lifecycle_state_mismatch", {
+        booking_id: bookingId,
+        canonical: {
+          lifecycleState: canonicalLifecycle || "",
+          canPayRemainingOnline: !!b?.canPayRemainingOnline,
+        },
+        legacy: {
+          lifecycleState: legacyLifecycle || "",
+          canPayRemainingOnline: !!paymentState.canPayRemainingOnline,
+        },
+      }, "warn");
+    }
   }
 
   function buildBalanceLink(b) {
@@ -966,11 +1070,13 @@ table{width:100%;border-collapse:collapse;margin-top:18px} td{border:1px solid #
     const firstName = (b.customerName || "").split(" ")[0];
     const greeting  = firstName ? `Hi, ${escapeHtml(firstName)}!` : "Your Rental Dashboard";
     const statusKey = normalizeStatusKey(b.status);
-    const { total, paid, balance } = deriveDisplayedFinancials(b, ledgerSummary, statusKey);
+    const financialSnapshot = deriveDisplayedFinancials(b, ledgerSummary, statusKey);
+    const { total, paid, balance } = financialSnapshot;
     const lateFee   = Number(b.lateFeeAmount || 0);
     const displayTotal = total + lateFee;
     const paidPct   = displayTotal > 0 ? Math.min(100, Math.round((paid / displayTotal) * 100)) : (balance === 0 ? 100 : 0);
     const paymentState = derivePaymentUiState({ booking: b, statusKey, total: displayTotal, paid, balance });
+    observeContractTransition(b, financialSnapshot, paymentState, statusKey);
     const plan      = b.paymentPlan || null;
     const overdueAmount = plan?.isOverdue
       ? Number(plan.nextInstallmentAmount || 0)
