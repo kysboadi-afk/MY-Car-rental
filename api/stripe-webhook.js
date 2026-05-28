@@ -55,6 +55,7 @@ import { reconcilePaymentPlanPayment, computePaymentPlanProgress } from "./_paym
 import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booking-status.js";
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeLifecycleEvent, buildLifecycleTemplateSequence, SMS_LIFECYCLE_EVENT } from "./_sms-lifecycle.js";
+import { logWebhookOrgFallback } from "./_org-rollout-observability.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1504,6 +1505,7 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
   // table convention (and existing callers) use "extension".
   const revenueType = type === "rental_extension" ? "extension" : (type || "rental");
 
+  logWebhookOrgFallback({ endpoint: "stripe-webhook:processStripePayment", action: "create_revenue_record", table: "revenue_records", bookingRef: booking_id, paymentIntentId: paymentIntent.id });
   try {
     await autoCreateRevenueRecord(
       {
@@ -1614,6 +1616,7 @@ function buildRenterOnboardingLink({ bookingId, vehicleId }) {
 }
 
 async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, amountDollars, paymentType }) {
+  logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "append_customer_ledger_payment", table: "customer_ledger", bookingRef, paymentIntentId: paymentIntent?.id });
   try {
     const sb = getSupabaseAdmin();
     if (!sb || !bookingRef || !paymentIntent?.id) return;
@@ -1654,6 +1657,7 @@ async function appendStripePaymentToCustomerLedger({ bookingRef, paymentIntent, 
 }
 
 async function appendStripeRefundToCustomerLedger({ bookingRef, charge, amountDollars }) {
+  logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "append_customer_ledger_refund", table: "customer_ledger", bookingRef, paymentIntentId: typeof charge?.payment_intent === "string" ? charge.payment_intent : null });
   try {
     const sb = getSupabaseAdmin();
     if (!sb || !bookingRef || !charge?.id) return;
@@ -2316,6 +2320,7 @@ export default async function handler(req, res) {
                 requireStripeFee: false,   // reconcile will fill in fees if missing
               });
               // Also recover the booking_extensions row if it was missed.
+              logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "recovery_upsert", table: "booking_extensions", bookingRef: resolvedBookingId, paymentIntentId: paymentIntent.id });
               try {
                 const sbBErecov = getSupabaseAdmin();
                 if (sbBErecov && resolvedBookingId && new_return_date) {
@@ -2448,6 +2453,7 @@ export default async function handler(req, res) {
           // original daily schedule.
           // The insert is idempotent via the UNIQUE constraint on payment_intent_id.
           // Fatal: return 500 on failure so Stripe retries and the row is never silently lost.
+          logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "upsert", table: "booking_extensions", bookingRef: resolvedBookingId, paymentIntentId: paymentIntent.id });
           try {
             const sbBE = getSupabaseAdmin();
             if (sbBE && resolvedBookingId && new_return_date) {
@@ -2600,6 +2606,7 @@ export default async function handler(req, res) {
           });
 
           // ── Ledger: record extension payment credit (idempotent on PI ID) ──
+          logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "add_ledger_payment", table: "renter_balance_ledger", bookingRef: resolvedBookingId, paymentIntentId: paymentIntent.id });
           try {
             const sbLedger = getSupabaseAdmin();
             if (sbLedger && resolvedBookingId) {
@@ -2839,6 +2846,7 @@ export default async function handler(req, res) {
       // ── Step 3b: Ledger + payment-plan reconciliation ───────────────────────
       // Route reservation deposits through the same authoritative financial
       // lifecycle used by other posted payments.
+      logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "reservation_deposit_ledger", table: "renter_balance_ledger", bookingRef: resolvedBookingId, paymentIntentId: paymentIntent.id });
       try {
         const sbLedger = getSupabaseAdmin();
         if (sbLedger && resolvedBookingId) {
@@ -3022,6 +3030,7 @@ export default async function handler(req, res) {
           reason,
         });
         // ── Ledger: record post-rental payment credit (idempotent on PI ID) ─
+        logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "post_rental_ledger", table: "renter_balance_ledger", bookingRef: resolvedRef, paymentIntentId: paymentIntent.id });
         try {
           const sbLedger = getSupabaseAdmin();
           if (sbLedger && resolvedRef) {
@@ -3477,6 +3486,7 @@ export default async function handler(req, res) {
             console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
           }
           // ── Ledger: record balance payment credit (idempotent on PI ID) ────
+          logWebhookOrgFallback({ endpoint: "stripe-webhook", action: "balance_payment_ledger", table: "renter_balance_ledger", bookingRef: bookingPatch.bookingId || bookingRef, paymentIntentId: paymentIntent.id });
           try {
             const sbLedger = getSupabaseAdmin();
             if (sbLedger && (bookingPatch.bookingId || bookingRef)) {
