@@ -3733,6 +3733,35 @@
     </div>
   </div>
 
+  <!-- Fleet waitlist submissions -->
+  <div class="card" id="apps-waitlist-card" style="margin-top:14px;display:none;">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Waitlist Applications</div>
+        <div class="card-sub" id="apps-waitlist-subtitle">Recent submissions from the fleet waitlist form.</div>
+      </div>
+    </div>
+    <div id="apps-waitlist-table-wrap" class="table-wrap" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Submitted</th>
+            <th>Name</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Preferred Vehicle</th>
+            <th>Budget</th>
+            <th>Submission ID</th>
+          </tr>
+        </thead>
+        <tbody id="apps-waitlist-tbody"></tbody>
+      </table>
+    </div>
+    <div id="apps-waitlist-empty" style="display:none;padding:20px;color:var(--text-sub);font-size:13px;">
+      No waitlist applications yet.
+    </div>
+  </div>
+
   <!-- Pagination -->
   <div class="app-pagination">
     <button id="apps-prev-btn" onclick="appsPrevPage()" disabled>← Prev</button>
@@ -14027,6 +14056,7 @@ let appFilterSearch   = '';
 let appSortField      = 'priority';
 let appSortDir        = 'asc';
 let appQueueSummary   = null;
+let appWaitlistData   = [];
 let appSelectedAction = '';
 let appViewingId      = null;
 let appViewingData    = null;
@@ -14402,6 +14432,7 @@ async function loadAppQueue() {
       search: appQueueState.search,
       sortField: appQueueState.sortField,
       sortDir: appQueueState.sortDir,
+      includeWaitlist: '1',
     });
     const data = await apiGet(`/api/admin-review-queue?${params}`);
     if (!data.success && !window.DEMO_MODE) throw new Error(data.error || 'Failed to load queue.');
@@ -14410,9 +14441,12 @@ async function loadAppQueue() {
       : {
         ...data,
         applications: Array.isArray(data?.applications) ? data.applications : [],
+        waitlistApplications: Array.isArray(data?.waitlistApplications) ? data.waitlistApplications : [],
         total: Number(data?.total || 0),
       };
+    appWaitlistData = Array.isArray(safePayload?.waitlistApplications) ? safePayload.waitlistApplications : [];
     applyAppQueuePayload(safePayload);
+    renderWaitlistApplications();
     if (window.DEMO_MODE) {
       saveDemoQueueSnapshot(safePayload);
       if (demoAppQueueRetryTimer) {
@@ -14431,6 +14465,49 @@ async function loadAppQueue() {
     }
     if (loading) loading.style.display = 'none';
     showToast('Failed to load applications queue: ' + err.message, 'error');
+  }
+
+  function renderWaitlistApplications() {
+    const card = document.getElementById('apps-waitlist-card');
+    const wrap = document.getElementById('apps-waitlist-table-wrap');
+    const empty = document.getElementById('apps-waitlist-empty');
+    const tbody = document.getElementById('apps-waitlist-tbody');
+    const subtitle = document.getElementById('apps-waitlist-subtitle');
+    if (!card || !wrap || !empty || !tbody) return;
+
+    const total = Number(appWaitlistData.length || 0);
+    card.style.display = '';
+    if (subtitle) {
+      subtitle.textContent = total > 0
+        ? `${total.toLocaleString()} recent waitlist submission${total === 1 ? '' : 's'}`
+        : 'Recent submissions from the fleet waitlist form.';
+    }
+
+    if (!total) {
+      wrap.style.display = 'none';
+      empty.style.display = '';
+      tbody.innerHTML = '';
+      return;
+    }
+
+    wrap.style.display = '';
+    empty.style.display = 'none';
+    tbody.innerHTML = appWaitlistData.map((entry) => {
+      const submitted = entry?.createdAt ? new Date(entry.createdAt).toLocaleString() : '—';
+      const emailValue = entry?.email || '';
+      const emailCell = emailValue
+        ? `<a href="mailto:${esc(emailValue)}">${esc(emailValue)}</a>`
+        : '—';
+      return `<tr>
+        <td>${esc(submitted)}</td>
+        <td>${esc(entry?.name || '—')}</td>
+        <td>${esc(entry?.phone || '—')}</td>
+        <td>${emailCell}</td>
+        <td>${esc(entry?.preferredVehicle || 'Any available vehicle')}</td>
+        <td>${esc(entry?.weeklyBudget || '—')}</td>
+        <td><code style="font-size:11px;">${esc(entry?.submissionId || '—')}</code></td>
+      </tr>`;
+    }).join('');
   }
 }
 
