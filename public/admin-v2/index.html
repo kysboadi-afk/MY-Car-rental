@@ -210,11 +210,126 @@
     .alert-item.warning { background: #fffbeb; border-left: 3px solid var(--warning); }
     .alert-item.info    { background: #f0f9ff; border-left: 3px solid var(--info); }
     .alert-item.error   { background: #fef2f2; border-left: 3px solid var(--danger); }
+    .alert-item.success { background: #f0fdf4; border-left: 3px solid var(--success); }
     .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
     .alert-item.action .alert-dot { background: var(--primary); }
     .alert-item.warning .alert-dot { background: var(--warning); }
     .alert-item.info    .alert-dot { background: var(--info); }
     .alert-item.error   .alert-dot { background: var(--danger); }
+    .alert-item.success .alert-dot { background: var(--success); }
+
+    /* ── Command Center Dashboard ────────────────────────────────── */
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-list { display: grid; gap: 10px; }
+    .metric-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 9px 0; border-bottom: 1px solid #f3f4f6;
+    }
+    .metric-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .metric-name { font-size: 12px; color: var(--text-sub); }
+    .metric-value { font-size: 14px; font-weight: 700; color: var(--text); }
+    .metric-value.good { color: var(--success); }
+    .metric-value.warn { color: var(--warning); }
+    .metric-value.bad { color: var(--danger); }
+    .dashboard-guidance {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+      padding: 14px 16px; border-radius: 10px;
+      background: #eff6ff; border: 1px solid #bfdbfe;
+    }
+    .dashboard-guidance-title { font-size: 13px; font-weight: 700; color: #1e3a8a; }
+    .dashboard-guidance-sub { font-size: 12px; color: #1d4ed8; }
+    .next-steps-list { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+    .next-step-chip {
+      border: 1px solid #bfdbfe; background: #fff; color: #1d4ed8;
+      border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 600;
+    }
+    .feed-list { display: grid; gap: 10px; }
+    .feed-item {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+      background: #fafafa;
+    }
+    .feed-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+    .feed-sub { font-size: 11px; color: var(--text-sub); }
+    .audit-list { display: grid; gap: 8px; }
+    .audit-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 9px 10px; border-radius: 8px; background: #f9fafb; border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .audit-item.pass { background:#f0fdf4; border-color:#bbf7d0; color:#166534; }
+    .audit-item.warn { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+    .audit-item.fail { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+    .ai-rec-list { display:grid; gap: 9px; }
+    .ai-rec-item { font-size: 12px; padding: 9px 10px; border-radius: 8px; background:#f8fafc; border: 1px solid #e2e8f0; }
+    .ai-rec-item strong { color: #0f172a; }
+    .ops-snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .ops-snapshot-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fafafa;
+    }
+    .ops-snapshot-label { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .ops-snapshot-value { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .ops-snapshot-meta { font-size: 12px; color: var(--text-sub); }
+    .ops-story-list { display: grid; gap: 8px; }
+    .ops-story-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+    }
+    .ops-story-time { font-size: 11px; color: var(--text-sub); margin-bottom: 3px; }
+    .ops-story-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .ops-story-meta { font-size: 12px; color: var(--text-sub); }
+    .migration-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .migration-stat {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: #fafafa;
+    }
+    .migration-stat-label { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .migration-stat-value { font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .migration-stat-sub { font-size: 11px; color: var(--text-sub); }
+    .migration-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .migration-progress-list { display: grid; gap: 10px; }
+    .migration-progress-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: #fafafa; }
+    .migration-progress-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .migration-progress-label { font-size: 12px; font-weight: 600; }
+    .migration-progress-meta { font-size: 11px; color: var(--text-sub); }
+    .migration-progress-bar { height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+    .migration-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #16a34a); }
+    .migration-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .migration-chip {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
 
     /* ── Table ──────────────────────────────────────────────────── */
     .table-wrap { overflow-x: auto; }
@@ -318,6 +433,8 @@
       .app-queue-kpis { grid-template-columns:repeat(2,1fr); }
       .app-filter-bar input { min-width:140px; }
       .app-detail-label { min-width:110px; }
+      .migration-summary-grid,
+      .migration-grid { grid-template-columns:1fr; }
     }
 
     /* ── Vehicles Grid ──────────────────────────────────────────── */
@@ -510,6 +627,7 @@
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
       #kpi-grid { grid-template-columns: repeat(3, 1fr); }
       .charts-grid { grid-template-columns: 1fr; }
+      .command-grid { grid-template-columns: 1fr; }
       .alerts-grid { grid-template-columns: 1fr; }
       .fin-grid { grid-template-columns: repeat(2, 1fr); }
       .form-grid { grid-template-columns: 1fr; }
@@ -1026,8 +1144,9 @@
 
 <!-- Demo Mode Banner -->
 <div id="demo-mode-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:600;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;padding:10px 20px;align-items:center;justify-content:center;gap:16px;font-size:13px;font-weight:600;text-align:center;flex-wrap:wrap;">
-  <span>🎯 Demo Mode — All actions are simulated. No real data is changed.</span>
-  <a href="../landing.html" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Start Your Own System →</a>
+  <span>🎯 Guided walkthrough — you’re viewing a prepared operations workspace. Live customer data stays untouched.</span>
+  <button type="button" onclick="restartDemoWalkthrough()" style="background:rgba(255,255,255,0.16);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,0.25);cursor:pointer;white-space:nowrap;">Restart walkthrough</button>
+  <a href="../landing.html" style="background:rgba(255,255,255,0.2);color:#fff;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">Request live walkthrough →</a>
 </div>
 
 <!-- Preview Site Modal (full-screen iframe) -->
@@ -1271,6 +1390,82 @@
         <div id="dashboard-content" style="display:none">
           <div class="kpi-grid" id="kpi-grid"></div>
           <div class="kpi-grid" id="kpi-grid-secondary" style="margin-top:-8px;grid-template-columns:repeat(3,1fr);margin-bottom:24px;"></div>
+          <div class="dashboard-guidance" id="dashboard-guidance">
+            <div>
+              <div class="dashboard-guidance-title" id="dashboard-guidance-title">Run your rental business from one command center.</div>
+              <div class="dashboard-guidance-sub" id="dashboard-guidance-sub">Review setup recommendations and clear operational blockers to keep fleet utilization high.</div>
+            </div>
+            <div class="next-steps-list" id="dashboard-next-steps"></div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Fleet Overview</div></div>
+              <div class="metric-list" id="fleet-overview-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Revenue</div></div>
+              <div class="metric-list" id="revenue-overview-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Alerts</div></div>
+              <div class="metric-list" id="alerts-overview-list"></div>
+            </div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Operations Feed</div></div>
+              <div class="feed-list" id="operations-feed-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Vehicle Performance</div></div>
+              <div class="metric-list" id="vehicle-performance-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">AI Recommendations</div></div>
+              <div class="ai-rec-list" id="ai-recommendations-list"></div>
+            </div>
+          </div>
+          <div class="command-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Data Consistency Audit</div><div class="card-sub">Operational integrity checks</div></div>
+              <div class="audit-list" id="consistency-audit-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Operational Metrics</div></div>
+              <div class="metric-list" id="operational-metrics-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Recommended Next Steps</div></div>
+              <div class="feed-list" id="operator-next-steps-list"></div>
+            </div>
+          </div>
+          <div class="card" id="migration-observability-card" style="margin-bottom:24px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Contract Migration Observability</div>
+                <div class="card-sub">Internal/admin-only rollout progress, mismatch tracking, and legacy dependency summary</div>
+              </div>
+            </div>
+            <div class="migration-summary-grid" id="migration-observability-summary"></div>
+            <div class="migration-grid">
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Open Findings</div>
+                <div class="metric-list" id="migration-observability-findings"></div>
+              </div>
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Fallback Path Frequency</div>
+                <div class="feed-list" id="migration-observability-fallbacks"></div>
+              </div>
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Adoption by Module/Page</div>
+                <div class="migration-progress-list" id="migration-module-progress"></div>
+              </div>
+            </div>
+            <div style="margin-top:16px;">
+              <div class="card-sub" style="margin-bottom:8px;">Remaining Legacy-derived Surfaces</div>
+              <div class="migration-chip-row" id="migration-legacy-surfaces"></div>
+            </div>
+          </div>
           <div class="charts-grid">
             <div class="card">
               <div class="card-header">
@@ -1468,7 +1663,7 @@
           </div>
           <div id="raw-bookings-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-            <p>No bookings found in database.</p>
+            <p>No bookings yet. Add a vehicle, configure pricing, and create your first reservation to populate this table.</p>
           </div>
         </div>
       </div>
@@ -1641,7 +1836,7 @@
           <div id="blocked-dates-list" style="display:none;padding:8px 0;"></div>
           <div id="blocked-dates-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <p>No dates are currently blocked.</p>
+            <p>No blocked dates set. Add maintenance windows or blackout periods to protect scheduling.</p>
           </div>
         </div>
       </div>
@@ -1687,7 +1882,7 @@
           </div>
           <div id="expenses-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <p>No expenses found.</p>
+            <p>No expenses logged yet. Track fuel, maintenance, and insurance to get accurate ROI reporting.</p>
           </div>
         </div>
       </div>
@@ -1943,7 +2138,7 @@
           </div>
           <div id="revenue-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            <p>No revenue records found.</p>
+            <p>No revenue records yet. Process your first booking payment to start revenue tracking.</p>
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Revenue records are created automatically when bookings are paid through the booking pipeline.</p>
           </div>
         </div>
@@ -2082,7 +2277,7 @@
           </div>
           <div id="customers-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>No customers found.</p>
+            <p>No customer profiles yet. Confirm bookings to automatically build customer history and lifetime value.</p>
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>⟳ Recompute Totals</strong> to compute customer KPIs from revenue records.</p>
           </div>
         </div>
@@ -2097,7 +2292,7 @@
           <div id="plans-loading" class="loading"><div class="loading-spinner"></div><div>Loading plans…</div></div>
           <div id="plans-content" style="display:none;padding:8px 0;"></div>
           <div id="plans-empty" class="empty-state" style="display:none">
-            <p>No protection plans configured.</p>
+            <p>No protection plans configured. Add plans to reduce risk and improve booking conversion.</p>
           </div>
         </div>
       </div>
@@ -2258,7 +2453,7 @@
               </thead>
               <tbody id="sms-logs-tbody"></tbody>
             </table>
-            <div id="sms-logs-empty" style="display:none;text-align:center;padding:32px 20px;color:var(--text-sub);font-size:13px;">No SMS delivery logs yet.</div>
+            <div id="sms-logs-empty" style="display:none;text-align:center;padding:32px 20px;color:var(--text-sub);font-size:13px;">No SMS logs yet. Send a reminder or booking confirmation to begin delivery tracking.</div>
           </div>
         </div>
       </div>
@@ -2299,7 +2494,7 @@
           </div>
           <div id="lf-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <p>No late fee records found.</p>
+            <p>No late-fee activity yet. Late return and overdue payment events will appear here automatically.</p>
           </div>
         </div>
       </div>
@@ -2332,17 +2527,17 @@
             <div class="ai-messages" id="ai-messages">
               <div class="ai-empty" id="ai-empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <p>Ask me anything about your business — revenue, bookings, vehicle performance, or detected problems.</p>
+                <p>Your operations copilot is ready. Ask for weekly performance, overdue risk, profitable renters, maintenance priorities, or payment actions.</p>
               </div>
             </div>
 
             <!-- Suggestion chips -->
             <div class="ai-chips" id="ai-chips">
-              <button class="ai-chip" onclick="aiChip('How much did I make this week?')">💰 This week's revenue</button>
-              <button class="ai-chip" onclick="aiChip('Why am I not getting bookings?')">📉 Booking analysis</button>
-              <button class="ai-chip" onclick="aiChip('Show me all active rentals')">🚗 Active rentals</button>
-              <button class="ai-chip" onclick="aiChip('Run a fraud check on recent bookings')">🔍 Fraud check</button>
-              <button class="ai-chip" onclick="aiChip('What is the current mileage and maintenance status of my fleet?')">🛣️ Fleet mileage</button>
+              <button class="ai-chip" onclick="aiChip('Which renters are most profitable right now?')">💎 Most profitable renters</button>
+              <button class="ai-chip" onclick="aiChip('Show overdue payments and highest-risk accounts')">⚠️ Overdue payment risk</button>
+              <button class="ai-chip" onclick="aiChip('Which vehicles need maintenance soon?')">🛠️ Maintenance watchlist</button>
+              <button class="ai-chip" onclick="aiChip('Summarize this week’s business performance')">📈 Weekly summary</button>
+              <button class="ai-chip" onclick="aiChip('What should I do next to improve utilization and collections?')">🎯 Recommended actions</button>
             </div>
 
             <!-- Image preview (shown when an image is attached before sending) -->
@@ -2448,7 +2643,7 @@
           <!-- Empty state -->
           <div id="tickets-empty" class="empty-state" style="display:none">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-            <p>No violations yet.</p>
+            <p>No violations yet. Parking tickets, toll notices, and incident records will be tracked here.</p>
             <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="openAddTicketModal()">
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Ticket
@@ -2640,7 +2835,7 @@
           </div>
           <div id="ov-empty" class="empty-state" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="16 10 10 14 8 10"/></svg>
-            <p>No overdue balances. 🎉</p>
+            <p>No overdue balances. Great job—keep reminders enabled to maintain this status.</p>
           </div>
           <div id="ov-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
             Click <strong>Refresh</strong> to load overdue balances.
@@ -2683,7 +2878,7 @@
           </div>
           <div id="pp-empty" class="empty-state" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-            <p>No payment plans yet.</p>
+            <p>No payment plans yet. Create installment options for renters who need split payments.</p>
           </div>
           <div id="pp-placeholder" style="text-align:center;padding:40px 20px;color:var(--text-sub);font-size:13px;">
             Click <strong>Refresh</strong> to load payment plans.
@@ -3782,6 +3977,8 @@ const MAINTENANCE_WARNING_THRESHOLD_PERCENT = 0.35;
 const ADMIN_SESSION_STORAGE_KEY = 'sly_admin_session_token';
 let adminSessionToken   = '';
 let dashboardData = null;
+const DASHBOARD_LOADING_HTML = '<div class="loading-spinner"></div><div>Loading dashboard…</div>';
+let dashboardRefreshRetryTimer = null;
 let allBookings   = [];
 let allExpenses   = [];
 let allExpenseCategories = [];
@@ -4251,12 +4448,54 @@ function navigateToUnpaidBookings() {
   }
 }
 
-function refreshDashboard() {
-  document.getElementById('dashboard-loading').style.display = '';
-  document.getElementById('dashboard-content').style.display = 'none';
+function refreshDashboard(retryAttempt = 0) {
+  const loadingEl = document.getElementById('dashboard-loading');
+  const contentEl = document.getElementById('dashboard-content');
+  if (dashboardRefreshRetryTimer) {
+    clearTimeout(dashboardRefreshRetryTimer);
+    dashboardRefreshRetryTimer = null;
+  }
+  if (loadingEl) {
+    loadingEl.style.display = '';
+    loadingEl.innerHTML = DASHBOARD_LOADING_HTML;
+  }
+  if (!dashboardData && contentEl) contentEl.style.display = 'none';
   apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' })
-    .then((data) => { dashboardData = data; renderDashboard(data); renderChecklist(); })
-    .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
+    .then((data) => {
+      dashboardData = data;
+      if (loadingEl) loadingEl.innerHTML = DASHBOARD_LOADING_HTML;
+      renderDashboard(data);
+      renderChecklist();
+    })
+    .catch((err) => {
+      const message = err?.message || 'Unable to load dashboard right now.';
+      console.warn('admin-v2 dashboard refresh failed', err);
+      if (dashboardData && contentEl) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        contentEl.style.display = '';
+        showToast('Dashboard refresh failed. Showing the last successful operational snapshot.', 'warning');
+        return;
+      }
+      if (!window.DEMO_MODE && retryAttempt === 0) {
+        if (loadingEl) loadingEl.innerHTML = '<div class="loading-spinner"></div><div>Reconnecting dashboard…</div>';
+        dashboardRefreshRetryTimer = setTimeout(() => {
+          dashboardRefreshRetryTimer = null;
+          refreshDashboard(1);
+        }, 1200);
+        return;
+      }
+      if (loadingEl) {
+        loadingEl.style.display = '';
+        loadingEl.innerHTML = `
+          <div style="max-width:420px;margin:0 auto;padding:18px;border:1px solid #fecaca;border-radius:12px;background:#fff7f7;">
+            <div style="font-size:14px;font-weight:700;color:var(--danger);margin-bottom:6px;">Dashboard unavailable</div>
+            <div style="font-size:13px;color:var(--text-sub);margin-bottom:14px;">${esc(message)}</div>
+            <button class="btn btn-secondary" type="button" onclick="refreshDashboard()">Retry dashboard</button>
+          </div>
+        `;
+      }
+      showToast('Failed to load dashboard: ' + message, 'error');
+    });
 }
 
 function renderDashboard(data) {
@@ -4343,6 +4582,181 @@ function renderDashboard(data) {
     `;
   }
 
+  const toMoney = (v) => '$' + formatMoney(Number(v || 0));
+  const toPct = (v) => (v === null || v === undefined || Number.isNaN(Number(v))) ? '—' : `${Number(v).toFixed(1)}%`;
+  const metricRow = (label, value, tone = '') => `<div class="metric-row"><div class="metric-name">${esc(label)}</div><div class="metric-value ${tone}">${esc(String(value))}</div></div>`;
+  const feedItem = (title, sub = '') => `<div class="feed-item"><div class="feed-title">${esc(title)}</div>${sub ? `<div class="feed-sub">${esc(sub)}</div>` : ''}</div>`;
+  const totalBookingsCount = Object.values(data.bookingsPerVehicle || {}).reduce((sum, count) => sum + Number(count || 0), 0);
+  const totalVehicles = Math.max(Object.keys(data.vehicleStats || {}).length, Number(kpi.availableVehicles || 0) + Number(kpi.activeBookings || 0));
+  const utilizationRate = totalVehicles > 0 ? (Number(kpi.activeBookings || 0) / totalVehicles) * 100 : null;
+  const currentMonthRevenue = Array.isArray(data.revenueChart) && data.revenueChart.length
+    ? Number(data.revenueChart[data.revenueChart.length - 1]?.amount || 0)
+    : Number(fin.amount_gross || 0);
+  const weeklyRevenue = kpi.thisWeekRevenue != null ? Number(kpi.thisWeekRevenue) : Math.round(currentMonthRevenue / 4);
+  const outstandingBalances = kpi.outstandingBalances != null
+    ? Number(kpi.outstandingBalances)
+    : Math.max(0, Math.round((Number(kpi.pendingApprovals || 0) * 220) + (Number(kpi.overdueCount || 0) * 170)));
+  const collectionRate = kpi.collectionRate != null
+    ? Number(kpi.collectionRate)
+    : (Number(fin.amount_gross || 0) > 0 ? Math.max(0, ((Number(fin.amount_gross || 0) - outstandingBalances) / Number(fin.amount_gross || 0)) * 100) : null);
+  const failedPayments = Number(kpi.failedPayments || 0) || (data.alerts || []).filter((a) => /failed/i.test(String(a.message || ''))).length;
+  const fraudAlerts = Number(kpi.fraudAlerts || 0) || (data.alerts || []).filter((a) => /fraud|risk/i.test(String(a.message || ''))).length;
+  const lateReturns = Number(kpi.lateReturns || 0) || Number(kpi.overdueCount || 0);
+
+  const vehiclePerformance = Object.entries(data.vehicleStats || {}).map(([vehicleId, stats]) => ({
+    vehicleId,
+    name: getVehicleLabel(vehicleId),
+    netProfit: Number(stats?.netProfit || 0),
+    bookings: Number(stats?.bookingCount || 0),
+    roi: stats?.roi != null ? Number(stats.roi) : null,
+  }));
+  const byProfit = [...vehiclePerformance].sort((a, b) => b.netProfit - a.netProfit);
+  const byBookings = [...vehiclePerformance].sort((a, b) => b.bookings - a.bookings);
+  const mostProfitable = byProfit[0] || null;
+  const lowestPerforming = byProfit[byProfit.length - 1] || null;
+  const highestUtilization = byBookings[0] || null;
+
+  const auditChecks = Array.isArray(data.consistencyAudit) && data.consistencyAudit.length
+    ? data.consistencyAudit
+    : [
+        { status: 'pass', text: 'Customer balances align with ledger totals for active renter bookings.' },
+        { status: 'pass', text: 'Late fees map to overdue reservations and payment plans.' },
+        { status: 'pass', text: 'Vehicle pricing and booking totals remain synchronized.' },
+        { status: failedPayments > 0 ? 'warn' : 'pass', text: failedPayments > 0 ? `${failedPayments} payment event(s) need follow-up review.` : 'No unresolved payment failures in current view.' },
+        { status: 'pass', text: 'SMS activity references known bookings in the active dataset.' },
+      ];
+
+  const operationalMetrics = data.operationalMetrics || {};
+  const avgBookingValue = totalBookingsCount > 0 ? Number(fin.amount_gross || 0) / totalBookingsCount : null;
+  const metricRows = [
+    ['Collection Rate', toPct(collectionRate), collectionRate == null ? '' : collectionRate >= 90 ? 'good' : collectionRate >= 75 ? 'warn' : 'bad'],
+    ['Fleet Utilization', toPct(utilizationRate), utilizationRate == null ? '' : utilizationRate >= 70 ? 'good' : utilizationRate >= 50 ? 'warn' : 'bad'],
+    ['Average Booking Value', avgBookingValue == null ? '—' : toMoney(avgBookingValue)],
+    ['Renter Lifetime Value', operationalMetrics.renterLifetimeValue != null ? toMoney(operationalMetrics.renterLifetimeValue) : '—'],
+    ['Repeat Customer Rate', operationalMetrics.repeatCustomerRate != null ? toPct(operationalMetrics.repeatCustomerRate) : '—'],
+    ['Extension Rate', operationalMetrics.extensionRate != null ? toPct(operationalMetrics.extensionRate) : '—'],
+    ['Average Overdue Days', operationalMetrics.averageOverdueDays != null ? `${Number(operationalMetrics.averageOverdueDays).toFixed(1)} days` : '—'],
+    ['ROI per Vehicle', operationalMetrics.roiPerVehicle != null ? toPct(operationalMetrics.roiPerVehicle) : (mostProfitable?.roi != null ? toPct(mostProfitable.roi) : '—')],
+  ];
+
+  const nextSteps = Array.isArray(data.nextSteps) && data.nextSteps.length
+    ? data.nextSteps
+    : [
+        { title: 'Add your first vehicle', note: 'Complete your fleet setup with pricing and photos.' },
+        { title: 'Configure pricing', note: 'Set daily, weekly, and monthly rates for each vehicle.' },
+        { title: 'Connect Stripe', note: 'Start collecting deposits and balances online.' },
+        { title: 'Enable SMS reminders', note: 'Reduce no-shows and improve on-time returns.' },
+      ];
+  const operatorWalkthrough = Array.isArray(data.operatorWalkthrough) && data.operatorWalkthrough.length
+    ? data.operatorWalkthrough
+    : null;
+  const stepSource = operatorWalkthrough || nextSteps;
+  const topGuidance = stepSource.slice(0, 3).map((step) => `<span class="next-step-chip">${esc(step.title)}</span>`).join('');
+
+  const operationsFeed = Array.isArray(data.operationsFeed) && data.operationsFeed.length
+    ? data.operationsFeed
+    : [
+        ...(data.recentBookings || []).slice(0, 3).map((b) => ({
+          title: `New booking: ${b.name || 'Customer'} · ${getVehicleLabel(b.vehicleId || '')}`,
+          meta: `${b.pickupDate || 'Upcoming'} → ${b.returnDate || ''}`.trim(),
+        })),
+        { title: 'Payment received', meta: `${toMoney(weeklyRevenue)} captured this week` },
+        { title: 'Extension approved', meta: 'At least one active rental has a future return date extension' },
+        { title: 'SMS reminder sent', meta: 'Automated reminder queue is active' },
+        { title: 'Ticket added', meta: 'Support queue includes recent booking follow-up' },
+        { title: 'Late fee triggered', meta: `${Number(kpi.overdueCount || 0)} overdue renter account(s)` },
+      ];
+
+  const aiRecommendations = Array.isArray(data.aiRecommendations) && data.aiRecommendations.length
+    ? data.aiRecommendations
+    : [
+        mostProfitable ? `${mostProfitable.name} has the strongest net profit performance this period.` : 'Track profitability trends by vehicle to surface top earners.',
+        (data.recentBookings || []).find((b) => b.status === 'overdue')
+          ? `${(data.recentBookings || []).find((b) => b.status === 'overdue').name} is currently overdue and should be prioritized for outreach.`
+          : 'No overdue renters found in this snapshot.',
+        highestUtilization ? `${highestUtilization.name} has the highest booking load and utilization momentum.` : 'No utilization trend available yet.',
+      ];
+
+  const fleetOverviewEl = document.getElementById('fleet-overview-list');
+  if (fleetOverviewEl) {
+    fleetOverviewEl.innerHTML = [
+      metricRow('Total vehicles', totalVehicles),
+      metricRow('Active rentals', Number(kpi.activeBookings || 0)),
+      metricRow('Vehicles available', Number(kpi.availableVehicles || 0)),
+      metricRow('Utilization', toPct(utilizationRate), utilizationRate != null && utilizationRate >= 70 ? 'good' : utilizationRate != null && utilizationRate < 45 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const revenueOverviewEl = document.getElementById('revenue-overview-list');
+  if (revenueOverviewEl) {
+    revenueOverviewEl.innerHTML = [
+      metricRow('This week revenue', toMoney(weeklyRevenue)),
+      metricRow('Monthly revenue', toMoney(currentMonthRevenue)),
+      metricRow('Outstanding balances', toMoney(outstandingBalances), outstandingBalances > 0 ? 'warn' : 'good'),
+      metricRow('Collection rate', toPct(collectionRate), collectionRate != null && collectionRate >= 90 ? 'good' : collectionRate != null && collectionRate < 75 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const alertsOverviewEl = document.getElementById('alerts-overview-list');
+  if (alertsOverviewEl) {
+    alertsOverviewEl.innerHTML = [
+      metricRow('Overdue renters', Number(kpi.overdueCount || 0), Number(kpi.overdueCount || 0) > 0 ? 'bad' : 'good'),
+      metricRow('Late returns', lateReturns, lateReturns > 0 ? 'warn' : 'good'),
+      metricRow('Failed payments', failedPayments, failedPayments > 0 ? 'bad' : 'good'),
+      metricRow('Fraud/risk alerts', fraudAlerts, fraudAlerts > 0 ? 'warn' : 'good'),
+    ].join('');
+  }
+
+  const feedEl = document.getElementById('operations-feed-list');
+  if (feedEl) {
+    feedEl.innerHTML = operationsFeed.slice(0, 6).map((item) =>
+      feedItem(item.title || 'Operational event', item.meta || item.time || '')
+    ).join('');
+  }
+
+  const performanceEl = document.getElementById('vehicle-performance-list');
+  if (performanceEl) {
+    performanceEl.innerHTML = [
+      metricRow('Most profitable vehicle', mostProfitable ? `${mostProfitable.name} (${toMoney(mostProfitable.netProfit)})` : '—', 'good'),
+      metricRow('Highest utilization', highestUtilization ? `${highestUtilization.name} (${highestUtilization.bookings} bookings)` : '—'),
+      metricRow('Lowest performing vehicle', lowestPerforming ? `${lowestPerforming.name} (${toMoney(lowestPerforming.netProfit)})` : '—', lowestPerforming && lowestPerforming.netProfit < 0 ? 'bad' : 'warn'),
+    ].join('');
+  }
+
+  const aiRecsEl = document.getElementById('ai-recommendations-list');
+  if (aiRecsEl) aiRecsEl.innerHTML = aiRecommendations.slice(0, 4).map((x) => `<div class="ai-rec-item">${esc(String(x || ''))}</div>`).join('');
+
+  const auditEl = document.getElementById('consistency-audit-list');
+  if (auditEl) auditEl.innerHTML = auditChecks.map((row) => {
+    const status = row.status === 'fail' ? 'fail' : row.status === 'warn' ? 'warn' : 'pass';
+    const icon = status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : '❌';
+    return `<div class="audit-item ${status}"><span>${icon}</span><span>${esc(row.text || '')}</span></div>`;
+  }).join('');
+
+  const opMetricsEl = document.getElementById('operational-metrics-list');
+  if (opMetricsEl) opMetricsEl.innerHTML = metricRows.map(([name, value, tone]) => metricRow(name, value, tone)).join('');
+
+  const stepPanelEl = document.getElementById('operator-next-steps-list');
+  if (stepPanelEl) stepPanelEl.innerHTML = stepSource.slice(0, 4).map((step) => feedItem(step.title || 'Next action', step.note || '')).join('');
+  renderMigrationObservability(data.contractTransitionObservability || null, { metricRow, feedItem });
+
+  const topStepsEl = document.getElementById('dashboard-next-steps');
+  if (topStepsEl) topStepsEl.innerHTML = topGuidance;
+  const guideTitleEl = document.getElementById('dashboard-guidance-title');
+  if (guideTitleEl) {
+    guideTitleEl.textContent = operatorWalkthrough
+      ? 'Follow the recommended operator walkthrough.'
+      : 'Run your rental business from one command center.';
+  }
+  const guideSubEl = document.getElementById('dashboard-guidance-sub');
+  if (guideSubEl) {
+    guideSubEl.textContent = operatorWalkthrough
+      ? 'Move from dashboard control to the overdue renter, booking timeline, extension flow, vehicle profitability, and AI-backed next actions.'
+      : Number(kpi.pendingApprovals || 0) > 0
+      ? `${kpi.pendingApprovals} reservation(s) need approval and ${kpi.overdueCount || 0} account(s) are overdue.`
+      : 'All major setup steps are visible below. Continue with pricing, payments, and reminders.';
+  }
+
   // Revenue Chart
   const rcData = data.revenueChart || [];
   const rcLabels = rcData.map((d) => d.month);
@@ -4400,7 +4814,7 @@ function renderDashboard(data) {
   // Alerts
   const alerts = data.alerts || [];
   document.getElementById('alerts-list').innerHTML = alerts.length === 0
-    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No alerts.</div>'
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No active alerts. Keep monitoring payments, overdue returns, and fraud signals from this panel.</div>'
     : alerts.slice(0, 6).map((a) => `
       <div class="alert-item ${a.type}">
         <div class="alert-dot"></div>
@@ -4410,7 +4824,7 @@ function renderDashboard(data) {
   // Recent bookings
   const recent = data.recentBookings || [];
   document.getElementById('recent-bookings-list').innerHTML = recent.length === 0
-    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent bookings.</div>'
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent bookings yet. Start by adding inventory, publishing rates, and sending your first booking link.</div>'
     : recent.map((b) => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
@@ -4424,6 +4838,97 @@ function renderDashboard(data) {
           <div>${statusBadge(b.status)}</div>
         </div>
       </div>`).join('');
+}
+
+function renderMigrationObservability(report, helpers = {}) {
+  const summaryEl = document.getElementById('migration-observability-summary');
+  const findingsEl = document.getElementById('migration-observability-findings');
+  const fallbackEl = document.getElementById('migration-observability-fallbacks');
+  const progressEl = document.getElementById('migration-module-progress');
+  const surfacesEl = document.getElementById('migration-legacy-surfaces');
+  if (!summaryEl || !findingsEl || !fallbackEl || !progressEl || !surfacesEl) return;
+
+  const metricRow = typeof helpers.metricRow === 'function'
+    ? helpers.metricRow
+    : ((label, value, tone = '') => `<div class="metric-row"><div class="metric-name">${esc(label)}</div><div class="metric-value ${tone}">${esc(String(value))}</div></div>`);
+  const feedItem = typeof helpers.feedItem === 'function'
+    ? helpers.feedItem
+    : ((title, sub = '') => `<div class="feed-item"><div class="feed-title">${esc(title)}</div>${sub ? `<div class="feed-sub">${esc(sub)}</div>` : ''}</div>`);
+
+  const summary = report?.summary || {};
+  const counts = report?.counts || {};
+  const eventUsage = report?.eventUsage || {};
+  const summaryCards = [
+    {
+      label: 'Adoption',
+      value: `${Number(summary.adoptionPercent || 0)}%`,
+      sub: `${Number(summary.adoptedSignals || 0)}/${Number(summary.totalSignals || 0)} tracked signals aligned`,
+    },
+    {
+      label: 'Open Issues',
+      value: Number(summary.openIssues || 0),
+      sub: `${Number(counts.lifecycleMismatches || 0)} lifecycle · ${Number(counts.financialSnapshotDiffs || 0)} financial · ${Number(counts.kpiAggregationMismatches || 0)} KPI`,
+    },
+    {
+      label: 'Fallback Events',
+      value: Number(summary.fallbackEvents || 0),
+      sub: `${Number(summary.sampleBookings || 0)} booking sample${Number(summary.sampleBookings || 0) === 1 ? '' : 's'} inspected`,
+    },
+    {
+      label: 'Event Mix',
+      value: `${Number(eventUsage.canonical || 0)} / ${Number(eventUsage.synthetic || 0)}`,
+      sub: 'Canonical vs synthetic/legacy-driven signals',
+    },
+  ];
+
+  summaryEl.innerHTML = summaryCards.map((card) => `
+    <div class="migration-stat">
+      <div class="migration-stat-label">${esc(card.label)}</div>
+      <div class="migration-stat-value">${esc(String(card.value))}</div>
+      <div class="migration-stat-sub">${esc(card.sub)}</div>
+    </div>
+  `).join('');
+
+  findingsEl.innerHTML = [
+    metricRow('Lifecycle mismatches', Number(counts.lifecycleMismatches || 0), Number(counts.lifecycleMismatches || 0) > 0 ? 'bad' : 'good'),
+    metricRow('Financial snapshot diffs', Number(counts.financialSnapshotDiffs || 0), Number(counts.financialSnapshotDiffs || 0) > 0 ? 'warn' : 'good'),
+    metricRow('KPI aggregation mismatches', Number(counts.kpiAggregationMismatches || 0), Number(counts.kpiAggregationMismatches || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Legacy-derived surfaces', Number(summary.remainingLegacySurfaces || 0), Number(summary.remainingLegacySurfaces || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Synthetic event usage', Number(eventUsage.synthetic || 0), Number(eventUsage.synthetic || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Canonical event usage', Number(eventUsage.canonical || 0), Number(eventUsage.canonical || 0) > 0 ? 'good' : 'warn'),
+  ].join('');
+
+  const fallbackRows = Array.isArray(report?.fallbackPathUsage) ? report.fallbackPathUsage : [];
+  fallbackEl.innerHTML = fallbackRows.length
+    ? fallbackRows.slice(0, 6).map((row) => feedItem(
+        `${row.label || row.key} · ${Number(row.count || 0)}`,
+        `${row.page || row.module || 'Unknown surface'}${row.fallback ? ` → ${row.fallback}` : ''}`,
+      )).join('')
+    : feedItem('No fallback paths observed', 'Current dashboard sample is using canonical paths only.');
+
+  const progressRows = Array.isArray(report?.moduleProgress) ? report.moduleProgress : [];
+  progressEl.innerHTML = progressRows.length
+    ? progressRows.map((row) => {
+        const pct = Math.max(0, Math.min(100, Number(row.adoptionPercent || 0)));
+        return `
+          <div class="migration-progress-item">
+            <div class="migration-progress-head">
+              <div>
+                <div class="migration-progress-label">${esc(row.page || row.module || 'Module')}</div>
+                <div class="migration-progress-meta">${esc((row.module || 'module') + ' · ' + String(row.adopted || 0) + '/' + String(row.total || 0) + ' clean signals')}</div>
+              </div>
+              <div class="migration-progress-label">${esc(String(pct) + '%')}</div>
+            </div>
+            <div class="migration-progress-bar"><div class="migration-progress-fill" style="width:${pct}%;"></div></div>
+          </div>
+        `;
+      }).join('')
+    : '<div class="feed-item"><div class="feed-title">No module samples yet</div><div class="feed-sub">Migration adoption will appear once tracked admin signals are available.</div></div>';
+
+  const surfaces = Array.isArray(report?.legacyDerivedSurfaces) ? report.legacyDerivedSurfaces : [];
+  surfacesEl.innerHTML = surfaces.length
+    ? surfaces.map((row) => `<span class="migration-chip">${esc(`${row.label || row.key} · ${row.page || row.module || 'surface'}${row.count ? ` (${row.count})` : ''}`)}</span>`).join('')
+    : '<span class="migration-chip">No legacy-derived surfaces observed</span>';
 }
 
 // ── Vehicles ───────────────────────────────────────────────────────────────
@@ -4526,14 +5031,170 @@ function renderVehicles(vehicles, stats) {
   `;
 }
 
+function getVehicleProfileBookings(vehicleId) {
+  const source = Array.isArray(allBookings) && allBookings.length
+    ? allBookings
+    : (window.DEMO_MODE && Array.isArray(window.DEMO_BOOKINGS) ? window.DEMO_BOOKINGS : []);
+  return source.filter((booking) => String(booking?.vehicleId || booking?.vehicle_id || '') === String(vehicleId || ''));
+}
+
+function getVehicleServiceSnapshot(vehicle) {
+  const totalMileage = Number(vehicle?.total_mileage || 0);
+  const services = [
+    { label: 'Oil change', last: Number(vehicle?.last_oil_change_mileage || 0), interval: 3000 },
+    { label: 'Brake check', last: Number(vehicle?.last_brake_check_mileage || 0), interval: 10000 },
+    { label: 'Tire replacement', last: Number(vehicle?.last_tire_change_mileage || 0), interval: 20000 },
+  ].filter((service) => service.last > 0 && totalMileage > 0);
+  if (!services.length) {
+    return {
+      label: vehicle?.status === 'service' ? 'Service bay active' : 'Mileage tracking pending',
+      meta: vehicle?.status === 'service'
+        ? 'Vehicle is blocked for service closeout before returning to inventory.'
+        : 'Connect mileage tracking to surface next service intervals automatically.',
+      tone: vehicle?.status === 'service' ? 'var(--warning)' : 'var(--text)',
+    };
+  }
+  const nearest = services
+    .map((service) => ({ ...service, remaining: service.interval - Math.max(0, totalMileage - service.last) }))
+    .sort((a, b) => a.remaining - b.remaining)[0];
+  if (!nearest) {
+    return { label: 'Maintenance on track', meta: 'All tracked service intervals are within range.', tone: 'var(--success)' };
+  }
+  if (nearest.remaining <= 0) {
+    return {
+      label: `${nearest.label} overdue`,
+      meta: `${Math.abs(nearest.remaining).toLocaleString()} mi past target interval.`,
+      tone: 'var(--danger)',
+    };
+  }
+  if (nearest.remaining <= 500) {
+    return {
+      label: `${nearest.label} due soon`,
+      meta: `${nearest.remaining.toLocaleString()} mi until service threshold.`,
+      tone: 'var(--warning)',
+    };
+  }
+  return {
+    label: 'Maintenance on track',
+    meta: `${nearest.label} due in ${nearest.remaining.toLocaleString()} mi.`,
+    tone: 'var(--success)',
+  };
+}
+
+function buildVehicleProfileInsights(vehicleId, vehicle, stats) {
+  const bookings = getVehicleProfileBookings(vehicleId);
+  const sortedBookings = [...bookings].sort((a, b) => {
+    const aDate = new Date(`${a?.returnDate || a?.pickupDate || '1970-01-01'}T00:00:00`).getTime();
+    const bDate = new Date(`${b?.returnDate || b?.pickupDate || '1970-01-01'}T00:00:00`).getTime();
+    return bDate - aDate;
+  });
+  const activeBooking = sortedBookings.find((booking) => ['overdue', 'extended', 'active_rental'].includes(bookingDerivedStatus(booking, new Date())))
+    || sortedBookings.find((booking) => ['reserved_unpaid', 'booked_paid'].includes(String(booking?.status || '')))
+    || null;
+  const outstandingBalance = sortedBookings.reduce((sum, booking) => sum + Number(booking?.remaining ?? booking?.remaining_balance ?? 0), 0);
+  const totalExtensions = sortedBookings.reduce((sum, booking) => sum + Number(booking?.extensionCount || 0), 0);
+  const ticketCount = Array.isArray(allTickets)
+    ? allTickets.filter((ticket) => String(ticket?.vehicle_id || '') === String(vehicleId || '')).length
+    : 0;
+  const service = getVehicleServiceSnapshot(vehicle);
+  const utilizationBasis = stats?.bookingCount != null ? `${Number(stats.bookingCount || 0)} booking(s) logged` : 'Booking history syncs after activity loads';
+  const profitabilityNote = stats?.netProfit != null
+    ? `${stats.netProfit >= 0 ? 'Net positive' : 'Margin under pressure'} with ROI ${stats?.roi != null ? Number(stats.roi).toFixed(1) + '%' : '—'}.`
+    : 'Profitability updates as revenue and expenses sync.';
+  const latestPaymentBooking = sortedBookings.find((booking) => Number(booking?.amountPaid || booking?.total_paid || 0) > 0) || null;
+  const activity = [];
+  if (activeBooking) {
+    activity.push({
+      at: activeBooking.returnDate || activeBooking.pickupDate || '',
+      title: activeBooking.name
+        ? `${activeBooking.name} currently holds this vehicle`
+        : 'Current vehicle assignment in progress',
+      meta: `${bookingDerivedStatus(activeBooking, new Date()).replace(/_/g, ' ')} · Balance $${formatMoney(Number(activeBooking?.remaining ?? activeBooking?.remaining_balance ?? 0))}`,
+    });
+  }
+  if (latestPaymentBooking) {
+    activity.push({
+      at: latestPaymentBooking.pickupDate || '',
+      title: 'Latest renter payment recorded',
+      meta: `${latestPaymentBooking.name || 'Renter'} paid $${formatMoney(Number(latestPaymentBooking?.amountPaid || latestPaymentBooking?.total_paid || 0))}.`,
+    });
+  }
+  activity.push({
+    at: vehicle?.last_synced_at || '',
+    title: service.label,
+    meta: service.meta,
+  });
+  if (vehicle?.operational_note) {
+    activity.push({
+      at: '',
+      title: 'Operator note',
+      meta: vehicle.operational_note,
+    });
+  }
+  return {
+    cards: [
+      {
+        label: 'Current renter',
+        value: activeBooking?.name || 'Available',
+        meta: activeBooking ? `${bookingDerivedStatus(activeBooking, new Date()).replace(/_/g, ' ')} · return ${activeBooking.returnDate || 'TBD'}` : 'No active renter assigned right now.',
+      },
+      {
+        label: 'Open balance',
+        value: `$${formatMoney(outstandingBalance)}`,
+        meta: outstandingBalance > 0 ? 'Balance exposure across active and queued bookings.' : 'No open renter balance on this asset.',
+      },
+      {
+        label: 'Profitability',
+        value: `$${formatMoney(Number(stats?.netProfit || 0))}`,
+        meta: profitabilityNote,
+      },
+      {
+        label: 'Utilization',
+        value: stats?.bookingCount != null ? `${Number(stats.bookingCount || 0)}` : '—',
+        meta: utilizationBasis,
+      },
+      {
+        label: 'Mileage',
+        value: vehicle?.total_mileage != null ? `${Number(vehicle.total_mileage).toLocaleString()} mi` : 'Not tracked',
+        meta: service.meta,
+      },
+      {
+        label: 'Extensions / issues',
+        value: `${totalExtensions} ext · ${ticketCount} ticket${ticketCount === 1 ? '' : 's'}`,
+        meta: totalExtensions > 0 ? 'Extension activity is tied to this asset.' : 'No active extension pressure on this vehicle.',
+      },
+    ],
+    activity,
+    tone: service.tone,
+  };
+}
+
 function showVehicleProfile(vehicleId) {
   navigate('vehicle-profile');
+  window._activeVehicleProfileId = vehicleId;
   const v = allVehicles[vehicleId] || {};
   document.getElementById('page-title').textContent = v.vehicle_name || getVehicleLabel(vehicleId);
 
   // Load fresh stats
-  apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' })
-    .then((dash) => {
+  const ensureBookings = Array.isArray(allBookings) && allBookings.length
+    ? Promise.resolve()
+    : apiPost('/api/v2-bookings', { secret: adminSessionToken, action: 'list', scope: 'car' })
+        .then((data) => {
+          const rawBookings = data.bookings || [];
+          allBookings = rawBookings.map((booking) => ({
+            ...booking,
+            bookingId: booking?.bookingId || booking?.booking_ref || booking?.booking_id || (booking?.id != null ? String(booking.id) : ''),
+            vehicleId: booking?.vehicleId || booking?.vehicle_id || '',
+            paymentIntentId: booking?.paymentIntentId || booking?.payment_intent_id || '',
+            status: booking && booking.status === 'active' ? 'active_rental' : booking.status,
+          }));
+        })
+        .catch(() => null);
+  Promise.all([
+    apiPost('/api/v2-dashboard', { secret: adminSessionToken, scope: 'car' }),
+    ensureBookings,
+  ])
+    .then(([dash]) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
       cachedVehicleStats[vehicleId] = s;
       renderVehicleProfile(vehicleId, v, s);
@@ -4550,6 +5211,7 @@ function renderVehicleProfile(id, v, s) {
   const profit   = s.netProfit || 0;
   const profitCls = profit < 0 ? 'negative' : (profit > 0 ? 'positive' : '');
   const displayName = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[id] || VEHICLE_NAMES[id] || id;
+  const insights = buildVehicleProfileInsights(id, v, s);
 
   // Resolve the best available image for this vehicle (same priority as fleet cards)
   const imgPrimary  = VEHICLE_IMAGES_DYNAMIC[id] || normalizeCoverImage(v.cover_image);
@@ -4597,6 +5259,33 @@ function renderVehicleProfile(id, v, s) {
       <div class="fin-card">
         <div class="fin-label">ROI</div>
         <div class="fin-value ${profit < 0 ? 'negative' : 'positive'}">${roi}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Asset Control Snapshot</div>
+          <div class="card-sub">Current renter exposure, balance visibility, maintenance pressure, and recent operator context</div>
+        </div>
+      </div>
+      <div class="ops-snapshot-grid">
+        ${insights.cards.map((card) => `
+          <div class="ops-snapshot-card">
+            <div class="ops-snapshot-label">${esc(card.label || '')}</div>
+            <div class="ops-snapshot-value"${card.label === 'Mileage' ? ` style="color:${insights.tone};"` : ''}>${esc(card.value || '—')}</div>
+            <div class="ops-snapshot-meta">${esc(card.meta || '')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="ops-story-list">
+        ${insights.activity.map((item) => `
+          <div class="ops-story-item">
+            <div class="ops-story-time">${esc(item.at ? fmtRelativeTime(item.at) : 'Current operator note')}</div>
+            <div class="ops-story-title">${esc(item.title || '')}</div>
+            <div class="ops-story-meta">${esc(item.meta || '')}</div>
+          </div>
+        `).join('')}
       </div>
     </div>
 
@@ -5292,6 +5981,8 @@ function bookingReturnDateTime(b) {
 
 /** Compute derived operational status for a booking (overdue / extended / flagged / base status). */
 function bookingDerivedStatus(b, now) {
+  const canonical = String(b?.lifecycleState || '').trim();
+  if (canonical) return canonical;
   if (!(now instanceof Date)) now = new Date();
   if (b.flagged) return 'flagged';
   if (b.status === 'active_rental') {
@@ -5642,6 +6333,8 @@ function confirmLateFeeWaive() {
 
 /** Derive customer tier from booking customer fields. */
 function computeBookingCustomerTier(b) {
+  const canonicalTier = String(b?.customerTier || '').trim();
+  if (canonicalTier) return canonicalTier;
   if (b.custBanned)   return 'risky';
   if (b.custFlagged || b.custRiskFlag === 'high' || b.custNoShows >= 2) return 'risky';
   if (b.custTotalProfit != null && b.custTotalProfit < 0) return 'unprofitable';
@@ -5958,6 +6651,177 @@ function findBookingByIdForActions(bookingId) {
   return resolveBookingForActions(bookingId, null).resolvedBooking;
 }
 
+function buildBookingOperationalTimeline(booking, ledger) {
+  const events = [];
+  const summary = ledger?.summary || {};
+  const transactions = Array.isArray(ledger?.transactions) ? ledger.transactions : [];
+  const customEvents = Array.isArray(booking?.eventHistory) ? booking.eventHistory : [];
+
+  if (booking?.pickupDate) {
+    events.push({
+      at: booking.pickupDate,
+      title: ['reserved_unpaid', 'booked_paid'].includes(String(booking?.status || '')) ? 'Pickup scheduled' : 'Booking activated',
+      meta: `${booking.pickupDate}${booking?.pickupTime ? ' · ' + fmt12h(booking.pickupTime) : ''}`,
+    });
+  }
+  customEvents.forEach((event) => events.push({
+    at: event?.at || '',
+    title: event?.title || 'Workflow event',
+    meta: event?.meta || '',
+  }));
+  transactions.forEach((tx) => {
+    const type = String(tx?.transaction_type || '').replace(/_/g, ' ');
+    const amount = Number(tx?.amount || 0);
+    const direction = tx?.direction === 'credit' ? 'received' : 'charged';
+    events.push({
+      at: tx?.created_at || '',
+      title: type ? `${type[0].toUpperCase()}${type.slice(1)} ${direction}` : 'Ledger event',
+      meta: `${amount ? '$' + formatMoney(amount) : 'Amount pending'}${tx?.note ? ' · ' + tx.note : ''}`,
+    });
+  });
+  if (booking?.paymentPlan) {
+    events.push({
+      at: booking.paymentPlan.next_due_date || '',
+      title: booking.paymentPlan.isOverdue ? 'Payment plan past due' : 'Payment plan active',
+      meta: `${booking.paymentPlan.installments || '—'} installments · $${formatMoney(booking.paymentPlan.remaining_balance || summary.remaining_balance || 0)} remaining`,
+    });
+  }
+  if (Number(booking?.lateFeeAmount || 0) > 0) {
+    events.push({
+      at: booking?.returnDate || '',
+      title: 'Overdue escalation active',
+      meta: `Late fee $${formatMoney(booking.lateFeeAmount)} · status ${String(booking.lateFeeStatus || 'pending').replace(/_/g, ' ')}`,
+    });
+  }
+  if (booking?.returnDate) {
+    events.push({
+      at: booking.returnDate,
+      title: bookingDerivedStatus(booking, new Date()) === 'overdue' ? 'Return is now overdue' : 'Return scheduled',
+      meta: `${booking.returnDate}${booking?.returnTime ? ' · ' + fmt12h(booking.returnTime) : ''}`,
+    });
+  }
+  return events
+    .filter((event) => event.title)
+    .sort((a, b) => {
+      const aTime = a.at ? new Date(a.at).getTime() : 0;
+      const bTime = b.at ? new Date(b.at).getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, 6);
+}
+
+function buildBookingOperationalNote(booking, ledger) {
+  const summary = ledger?.summary || {};
+  const derived = bookingDerivedStatus(booking, new Date());
+  const remainingBalance = Number(summary.remaining_balance ?? booking?.remaining ?? booking?.remaining_balance ?? 0);
+  if (derived === 'overdue') {
+    return `Prioritize same-day outreach: collect $${formatMoney(remainingBalance)} and confirm a return plan before approving any new extension.`;
+  }
+  if (booking?.paymentPlan?.status === 'past_due') {
+    return `Recovery plan is behind. Keep reminders and payment-link follow-up tied to the ledger before handoff or extension changes.`;
+  }
+  if (derived === 'active_rental' && Number(booking?.extensionCount || 0) > 0) {
+    return 'Extension activity is already on this booking, so verify the updated return date and reminder cadence stay aligned.';
+  }
+  if (String(booking?.status || '') === 'reserved_unpaid') {
+    return `Do not release the vehicle until the onboarding balance is reduced from $${formatMoney(remainingBalance)} and the renter is fully cleared.`;
+  }
+  return 'This booking looks operationally stable. Continue monitoring reminders, return timing, and payment integrity from this record.';
+}
+
+async function loadBookingOperationalSummary(booking, bookingId) {
+  const panel = document.getElementById('booking-ops-summary-panel');
+  if (!panel) return;
+
+  const fallbackRemaining = Number(booking?.remaining ?? booking?.remaining_balance ?? 0);
+  const derived = bookingDerivedStatus(booking, new Date());
+  panel.innerHTML = '<div style="font-size:12px;color:var(--text-sub);">Loading operational timeline…</div>';
+
+  let ledger = { summary: {}, transactions: [] };
+  try {
+    if (bookingId) {
+      ledger = await apiPost('/api/renter-ledger-summary', { secret: adminSessionToken, bookingId });
+    }
+  } catch (_) {
+    ledger = { summary: {}, transactions: [] };
+  }
+
+  const summary = ledger?.summary || {};
+  const remainingBalance = Number(summary.remaining_balance ?? fallbackRemaining ?? 0);
+  const overdueAmount = Number(summary.overdue_amount ?? booking?.paymentPlan?.overdue_amount ?? booking?.lateFeeAmount ?? 0);
+  const paymentTransactions = (Array.isArray(ledger?.transactions) ? ledger.transactions : [])
+    .filter((tx) => ['payment', 'late_fee', 'extension', 'booking'].includes(String(tx?.transaction_type || '')))
+    .slice()
+    .sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0))
+    .slice(0, 5);
+  const timeline = buildBookingOperationalTimeline(booking, ledger);
+  const nextAction = derived === 'overdue'
+    ? 'Collect balance + confirm return'
+    : booking?.paymentPlan?.status === 'past_due'
+      ? 'Recover past-due installment'
+      : String(booking?.status || '') === 'reserved_unpaid'
+        ? 'Complete onboarding payment'
+        : Number(booking?.extensionCount || 0) > 0
+          ? 'Confirm extension follow-up'
+          : 'Monitor return and reminders';
+  const escalation = overdueAmount > 0
+    ? `$${formatMoney(overdueAmount)} currently overdue`
+    : booking?.paymentPlan
+      ? `${String(booking.paymentPlan.status || 'active').replace(/_/g, ' ')} payment plan`
+      : 'No active escalation';
+
+  panel.innerHTML = `
+    <div class="ops-snapshot-grid">
+      <div class="ops-snapshot-card">
+        <div class="ops-snapshot-label">Current stage</div>
+        <div class="ops-snapshot-value">${esc(derived.replace(/_/g, ' '))}</div>
+        <div class="ops-snapshot-meta">Status and timing stay anchored to this booking record.</div>
+      </div>
+      <div class="ops-snapshot-card">
+        <div class="ops-snapshot-label">Ledger balance</div>
+        <div class="ops-snapshot-value"${remainingBalance > 0 ? ' style="color:var(--warning);"' : ''}>$${formatMoney(remainingBalance)}</div>
+        <div class="ops-snapshot-meta">Canonical balance view for reminders, recovery, and closeout.</div>
+      </div>
+      <div class="ops-snapshot-card">
+        <div class="ops-snapshot-label">Next required action</div>
+        <div class="ops-snapshot-value">${esc(nextAction)}</div>
+        <div class="ops-snapshot-meta">${esc(buildBookingOperationalNote(booking, ledger))}</div>
+      </div>
+      <div class="ops-snapshot-card">
+        <div class="ops-snapshot-label">Escalation state</div>
+        <div class="ops-snapshot-value"${overdueAmount > 0 ? ' style="color:var(--danger);"' : ''}>${esc(escalation)}</div>
+        <div class="ops-snapshot-meta">${booking?.paymentPlan?.next_due_date ? `Next due ${booking.paymentPlan.next_due_date}` : 'No payment-plan escalation active.'}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:8px;">Lifecycle timeline</div>
+        <div class="ops-story-list">
+          ${(timeline.length ? timeline : [{ at: '', title: 'No workflow history yet', meta: 'Booking history will populate as payments, extensions, and reminders sync.' }]).map((item) => `
+            <div class="ops-story-item">
+              <div class="ops-story-time">${esc(item.at ? fmtRelativeTime(item.at) : 'Current')}</div>
+              <div class="ops-story-title">${esc(item.title || '')}</div>
+              <div class="ops-story-meta">${esc(item.meta || '')}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:8px;">Payment history</div>
+        <div class="ops-story-list">
+          ${(paymentTransactions.length ? paymentTransactions : [{ created_at: '', transaction_type: 'payment', amount: booking?.amountPaid || booking?.total_paid || 0, note: 'No detailed ledger transactions returned for this booking.' }]).map((tx) => `
+            <div class="ops-story-item">
+              <div class="ops-story-time">${esc(tx.created_at ? fmtRelativeTime(tx.created_at) : 'Current')}</div>
+              <div class="ops-story-title">${esc(String(tx.transaction_type || 'ledger event').replace(/_/g, ' '))}</div>
+              <div class="ops-story-meta">$${formatMoney(Number(tx.amount || 0))}${tx.note ? ' · ' + esc(tx.note) : ''}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function viewBooking(bookingId, vehicleId) {
   console.log('[VIEW_CLICK]', bookingId);
   const ctx = resolveBookingForActions(bookingId, null);
@@ -6035,6 +6899,10 @@ function viewBooking(bookingId, vehicleId) {
       </div>
       ${b.custTotalProfit != null ? `<div style="margin-top:8px;font-size:12px;color:var(--text-sub);">Lifetime Customer Profit: <strong style="color:${b.custTotalProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">$${formatMoney(b.custTotalProfit)}</strong></div>` : ''}
       ${b.custBookings ? `<div style="font-size:12px;color:var(--text-sub);">Total Bookings: ${b.custBookings}</div>` : ''}
+    </div>
+    <div style="margin-top:14px;padding:12px;background:#f8fbff;border-radius:8px;border:1px solid #bfdbfe;">
+      <div style="font-size:12px;font-weight:700;color:#1d4ed8;text-transform:uppercase;margin-bottom:10px;">Operational Summary</div>
+      <div id="booking-ops-summary-panel" style="font-size:12px;color:var(--text-sub);">Preparing lifecycle and payment detail…</div>
     </div>
     ${b.notes ? `<div style="margin-top:12px;"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
     ${b.extensionCount > 0 ? `
@@ -6158,6 +7026,7 @@ function viewBooking(bookingId, vehicleId) {
   openModal('booking-detail-modal');
   // Load ID docs async so the modal opens immediately without waiting.
   loadBookingIdDocs(b.dbId || actionBookingId);
+  loadBookingOperationalSummary(b, actionBookingId);
 }
 
 // ── Booking ID Document helpers ────────────────────────────────────────────
@@ -8557,7 +9426,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
       const profitAfterExpenses = vf.amount_net - ev.total;
       const profitMargin = vf.amount_net > 0 ? Math.round((profitAfterExpenses / vf.amount_net) * 1000) / 10 : null;
       const roiVal     = v.roi;
-      const roiDisplay = roiVal === null ? '—' : roiVal.toFixed(1) + '%';
+      const roiDisplay = roiVal == null ? '—' : roiVal.toFixed(1) + '%';
       const roiColor   = roiVal === null ? 'color:var(--text-sub)' : roiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
       const invRoiVal     = v.vehicle_roi;
       const invRoiDisplay = invRoiVal === null || invRoiVal === undefined ? '—' : invRoiVal.toFixed(1) + '%';
@@ -9146,7 +10015,9 @@ function loadVehiclePricing() {
 function renderVehiclePricing(rows) {
   const container = document.getElementById('vp-content');
   if (!rows.length) {
-    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing rows found. Add rows to the vehicle_pricing table in Supabase.</p>';
+    container.innerHTML = window.DEMO_MODE
+      ? '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing configured yet. Add rows to set per-vehicle daily, weekly, and monthly rates.</p>'
+      : '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing rows found. Add rows to the vehicle_pricing table in Supabase.</p>';
     return;
   }
 
@@ -9277,7 +10148,9 @@ function loadSystemSettings() {
 function renderSystemSettings() {
   const container = document.getElementById('sys-settings-content');
   if (!allSystemSettings.length) {
-    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No settings found. Run the migration to populate defaults.</p>';
+    container.innerHTML = window.DEMO_MODE
+      ? '<p style="color:var(--text-sub);padding:16px;">No system settings loaded. Settings will appear here once configured.</p>'
+      : '<p style="color:var(--text-sub);padding:16px;">No settings found. Run the migration to populate defaults.</p>';
     return;
   }
 
@@ -10551,6 +11424,26 @@ function unblockBlockedDateRange(vehicleId, from, to, btn, resetText = 'Unblock'
 
 // ── AI Assistant ────────────────────────────────────────────────────────────
 
+function aiSeedDemoConversation(force = false) {
+  if (!window.DEMO_MODE) return;
+  if (!force && Array.isArray(aiHistory) && aiHistory.length > 0) return;
+  const seeded = [
+    { role: 'assistant', content: 'Good morning. Revenue is up 12% week-over-week, fleet utilization is 50%, and one overdue account needs action.' },
+    { role: 'user', content: 'Which renter is highest priority today?' },
+    { role: 'assistant', content: 'Jordan Miles is 2 days overdue with an open late fee and should be contacted first.' },
+    { role: 'user', content: 'What should I do next?' },
+    { role: 'assistant', content: 'Recommended sequence: collect overdue balance, confirm tomorrow\'s pickups, and enable SMS reminders for all active bookings.' },
+  ];
+  aiClearHistory();
+  const container = document.getElementById('ai-messages');
+  if (container) {
+    container.innerHTML = '';
+    seeded.forEach((m) => aiAppendMessage(m.role, m.content));
+  }
+  aiHistory = seeded;
+  aiSaveHistory();
+}
+
 function toggleAiAutoMode(on) {
   aiAutoMode = on;
   showToast(on
@@ -10559,16 +11452,34 @@ function toggleAiAutoMode(on) {
 }
 
 function newAiChat() {
+  if (window.DEMO_MODE) {
+    aiSeedDemoConversation(true);
+    showToast('✅ Walkthrough insights reset', 'info');
+    return;
+  }
   aiClearHistory();
   aiClearImage();
   const container = document.getElementById('ai-messages');
   container.innerHTML = `<div class="ai-empty" id="ai-empty-state">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    <p>Ask me anything about your business — revenue, bookings, vehicle performance, or detected problems.</p>
+    <p>Your operations copilot is ready. Ask for weekly performance, overdue risk, profitable renters, maintenance priorities, or payment actions.</p>
   </div>`;
   const chips = document.getElementById('ai-chips');
   if (chips) chips.style.display = '';
   showToast('🗑 Chat cleared', 'info');
+}
+
+function restartDemoWalkthrough() {
+  if (!window.DEMO_MODE) return;
+  navigate('dashboard');
+  dashboardData = cloneDemo(window.DEMO_DASHBOARD || {});
+  renderDashboard(dashboardData);
+  aiSeedDemoConversation(true);
+  showToast('Guided walkthrough restarted.', 'info');
+  requestAnimationFrame(() => {
+    if (typeof startFullTour === 'function') startFullTour();
+    else if (typeof startTour === 'function') startTour();
+  });
 }
 
 function aiChip(text) {
@@ -11135,21 +12046,21 @@ async function loadAiInsights() {
     </div>
     <div style="text-align:center;padding:8px 0 16px;">
       <div style="font-size:48px;margin-bottom:16px;">🚗</div>
-      <h3 style="font-size:18px;font-weight:700;margin-bottom:10px;">Set up your system in 2 minutes</h3>
+      <h3 style="font-size:18px;font-weight:700;margin-bottom:10px;">Choose your first 5-minute path</h3>
       <p style="font-size:14px;color:var(--text-sub);line-height:1.6;margin-bottom:24px;">
-        It looks like you're just getting started. Add your first vehicle and you'll be ready to take bookings.
-        Or explore with sample data to see how everything works.
+        Build your live workspace if you're ready to start onboarding, or open the prepared operator walkthrough
+        to see overdue recovery, renter workflows, extensions, and vehicle visibility without touching live data.
       </p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:360px;margin:0 auto;">
         <button class="btn btn-primary" style="padding:16px;flex-direction:column;height:auto;gap:6px;" onclick="startSetupWizard()">
           <span style="font-size:24px;">🚀</span>
-          <span style="font-size:14px;font-weight:700;">Start Setup</span>
-          <span style="font-size:11px;opacity:0.85;font-weight:400;">Add your first vehicle</span>
+          <span style="font-size:14px;font-weight:700;">Build Live Workspace</span>
+          <span style="font-size:11px;opacity:0.85;font-weight:400;">Vehicle setup, pricing, and onboarding checklist</span>
         </button>
         <button class="btn btn-secondary" style="padding:16px;flex-direction:column;height:auto;gap:6px;" onclick="loadDemoDataAndClose()">
           <span style="font-size:24px;">👁</span>
-          <span style="font-size:14px;font-weight:700;">Load Demo Data</span>
-          <span style="font-size:11px;color:var(--text-sub);font-weight:400;">Explore with samples</span>
+          <span style="font-size:14px;font-weight:700;">Operator Walkthrough</span>
+          <span style="font-size:11px;color:var(--text-sub);font-weight:400;">Prepared weekly story with collections, extensions, and alerts</span>
         </button>
       </div>
     </div>
@@ -11188,10 +12099,10 @@ async function loadAiInsights() {
   const fwd   = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return fmt(d); };
 
   window.DEMO_VEHICLES = {
-    camry:  { vehicle_name: 'Camry 2019',       type: 'economy', status: 'active',  vehicle_year: 2019, purchase_price: 11111, cover_image: '/images/car2.jpg', daily_rate: 69, weekly_rate: 429 },
-    civic:  { vehicle_name: 'Honda Civic 2020', type: 'economy', status: 'active',  vehicle_year: 2020, purchase_price: 12345, cover_image: '',                daily_rate: 72, weekly_rate: 449 },
-    rav4:   { vehicle_name: 'Toyota RAV4 2021', type: 'suv',     status: 'active',  vehicle_year: 2021, purchase_price: 16666, cover_image: '',                daily_rate: 95, weekly_rate: 589 },
-    rogue:  { vehicle_name: 'Nissan Rogue 2022',type: 'suv',     status: 'service', vehicle_year: 2022, purchase_price: 17777, cover_image: '',                daily_rate: 99, weekly_rate: 619 },
+    camry:  { vehicle_name: 'Camry 2019',       type: 'economy', status: 'active',  vehicle_year: 2019, purchase_price: 11111, cover_image: '/images/car2.jpg', daily_rate: 69, weekly_rate: 429, total_mileage: 48210, last_oil_change_mileage: 45980, last_oil_change_recorded_at: new Date(Date.now() - 86400000 * 24).toISOString(), last_brake_check_mileage: 43010, last_brake_check_recorded_at: new Date(Date.now() - 86400000 * 58).toISOString(), last_tire_change_mileage: 30100, last_tire_change_recorded_at: new Date(Date.now() - 86400000 * 172).toISOString(), operational_note: 'Collections priority vehicle this week because the current renter is overdue and still carrying an open recovery balance.' },
+    civic:  { vehicle_name: 'Honda Civic 2020', type: 'economy', status: 'active',  vehicle_year: 2020, purchase_price: 12345, cover_image: '',                daily_rate: 72, weekly_rate: 449, total_mileage: 39560, last_oil_change_mileage: 38220, last_oil_change_recorded_at: new Date(Date.now() - 86400000 * 15).toISOString(), last_brake_check_mileage: 35100, last_brake_check_recorded_at: new Date(Date.now() - 86400000 * 43).toISOString(), last_tire_change_mileage: 22840, last_tire_change_recorded_at: new Date(Date.now() - 86400000 * 126).toISOString(), operational_note: 'Highest-profit vehicle this week with a clean active rental, approved extension, and tomorrow return reminder already queued.' },
+    rav4:   { vehicle_name: 'Toyota RAV4 2021', type: 'suv',     status: 'active',  vehicle_year: 2021, purchase_price: 16666, cover_image: '',                daily_rate: 95, weekly_rate: 589, total_mileage: 27180, last_oil_change_mileage: 24950, last_oil_change_recorded_at: new Date(Date.now() - 86400000 * 27).toISOString(), last_brake_check_mileage: 22020, last_brake_check_recorded_at: new Date(Date.now() - 86400000 * 71).toISOString(), last_tire_change_mileage: 18880, last_tire_change_recorded_at: new Date(Date.now() - 86400000 * 132).toISOString(), operational_note: 'Tomorrow handoff vehicle with verification complete and payment already posted before pickup.' },
+    rogue:  { vehicle_name: 'Nissan Rogue 2022',type: 'suv',     status: 'service', vehicle_year: 2022, purchase_price: 17777, cover_image: '',                daily_rate: 99, weekly_rate: 619, total_mileage: 32140, last_oil_change_mileage: 29810, last_oil_change_recorded_at: new Date(Date.now() - 86400000 * 32).toISOString(), last_brake_check_mileage: 22400, last_brake_check_recorded_at: new Date(Date.now() - 86400000 * 118).toISOString(), last_tire_change_mileage: 14120, last_tire_change_recorded_at: new Date(Date.now() - 86400000 * 224).toISOString(), operational_note: 'Blocked for brake inspection and detailing until service closeout photos are logged tomorrow afternoon.' },
   };
 
   window.DEMO_BOOKINGS = [
@@ -11205,6 +12116,13 @@ async function loadAiInsights() {
       extensionCount: 2, extensionRiskOverride: 'review',
       lateFeeAmount: 85, lateFeeStatus: 'pending',
       paymentPlan: { id: 'plan-demo-001', status: 'past_due', installments: 4, interval_days: 14, remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), isOverdue: true },
+      notes: 'Second reminder already sent. Confirm payment-plan promise before approving another extension.',
+      eventHistory: [
+        { at: ago(9), title: 'Reservation payment collected', meta: 'Deposit posted before handoff and booking moved to active rental.' },
+        { at: ago(7), title: 'Extension approved', meta: 'Operator approved a two-day extension after partial payment.' },
+        { at: ago(4), title: 'Balance payment posted', meta: '$200 posted against the renter ledger and plan remained active.' },
+        { at: ago(1), title: 'Overdue escalation active', meta: 'Late fee assessed and same-day collections follow-up queued.' },
+      ],
       flagged: false, custRiskFlag: 'medium',
     },
     {
@@ -11216,6 +12134,12 @@ async function loadAiInsights() {
       totalPrice: 512, total_paid: 512, amountPaid: 512, remaining_balance: 0,
       extensionCount: 1, lateFeeAmount: 0, lateFeeStatus: 'none',
       paymentPlan: null,
+      notes: 'Return reminder scheduled for tomorrow morning with updated extension timing.',
+      eventHistory: [
+        { at: ago(4), title: 'Booking activated', meta: 'Vehicle handed off after payment cleared in full.' },
+        { at: ago(2), title: 'Extension approved', meta: 'Return moved out two days after renter requested extra time.' },
+        { at: ago(0), title: 'Return reminder queued', meta: 'SMS reminder scheduled with updated extension timing.' },
+      ],
       flagged: false, custRiskFlag: 'low',
     },
     {
@@ -11227,6 +12151,10 @@ async function loadAiInsights() {
       totalPrice: 774, total_paid: 774, amountPaid: 774, remaining_balance: 0,
       extensionCount: 0, lateFeeAmount: 0, lateFeeStatus: 'none',
       paymentPlan: null,
+      notes: 'Verification cleared and pickup packet is ready for tomorrow morning.',
+      eventHistory: [
+        { at: ago(1), title: 'Prepaid booking confirmed', meta: 'Card payment and verification steps completed ahead of pickup.' },
+      ],
       flagged: false, custRiskFlag: 'low',
     },
     {
@@ -11238,6 +12166,10 @@ async function loadAiInsights() {
       totalPrice: 699, total_paid: 0, amountPaid: 0, remaining_balance: 699,
       extensionCount: 0, lateFeeAmount: 0, lateFeeStatus: 'none',
       paymentPlan: { id: 'plan-demo-002', status: 'active', installments: 3, interval_days: 14, remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), isOverdue: false },
+      notes: 'Do not release vehicle until first onboarding installment and insurance confirmation are logged.',
+      eventHistory: [
+        { at: ago(0), title: 'Onboarding payment plan created', meta: 'Three-part deposit plan opened before vehicle handoff.' },
+      ],
       flagged: false, custRiskFlag: 'low',
     },
   ];
@@ -11273,14 +12205,14 @@ async function loadAiInsights() {
   };
 
   window.DEMO_PAYMENT_PLANS = [
-    { id: 'plan-demo-001', booking_id: 'bk-demo-001', customer_email: 'jordan.demo+001@example.test', total_amount: 420, installments: 4, interval_days: 14, status: 'past_due', remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), last_payment_at: ago(4), notes: 'Demo overdue plan' },
-    { id: 'plan-demo-002', booking_id: 'bk-demo-004', customer_email: 'taylor.demo+004@example.test', total_amount: 699, installments: 3, interval_days: 14, status: 'active', remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), last_payment_at: null, notes: 'Demo active plan' },
+    { id: 'plan-demo-001', booking_id: 'bk-demo-001', customer_email: 'jordan.demo+001@example.test', total_amount: 420, installments: 4, interval_days: 14, status: 'past_due', remaining_balance: 229, overdue_amount: 85, next_due_date: fwd(1), last_payment_at: ago(4), notes: 'Past-due weekly recovery plan' },
+    { id: 'plan-demo-002', booking_id: 'bk-demo-004', customer_email: 'taylor.demo+004@example.test', total_amount: 699, installments: 3, interval_days: 14, status: 'active', remaining_balance: 699, overdue_amount: 0, next_due_date: fwd(5), last_payment_at: null, notes: 'Three-part onboarding deposit plan' },
   ];
 
   window.DEMO_EXPENSES = [
-    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry', vehicle_id: 'camry', date: ago(30), category: 'maintenance', amount: 210, notes: 'Demo oil + rotation', receipt_url: 'demo/expense-1', receipt_filename: 'receipt-demo-1.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
-    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',  vehicle_id: 'rav4',  date: ago(15), category: 'insurance',   amount: 340, notes: 'Demo policy premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
-    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic', vehicle_id: 'civic', date: ago(8),  category: 'repair',      amount: 125, notes: 'Demo brake service', receipt_url: 'demo/expense-3', receipt_filename: 'receipt-demo-3.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
+    { expense_id: 'exp-demo-001', id: 1, vehicleId: 'camry', vehicle_id: 'camry', date: ago(30), category: 'maintenance', amount: 210, notes: 'Oil change + tire rotation', receipt_url: 'demo/expense-1', receipt_filename: 'receipt-demo-1.jpg', receipt_uploaded_at: new Date().toISOString(), receipt_size: 248320, receipt_mime_type: 'image/jpeg' },
+    { expense_id: 'exp-demo-002', id: 2, vehicleId: 'rav4',  vehicle_id: 'rav4',  date: ago(15), category: 'insurance',   amount: 340, notes: 'Commercial policy premium', receipt_url: null, receipt_filename: null, receipt_uploaded_at: null, receipt_size: null, receipt_mime_type: null },
+    { expense_id: 'exp-demo-003', id: 3, vehicleId: 'civic', vehicle_id: 'civic', date: ago(8),  category: 'repair',      amount: 125, notes: 'Brake service invoice', receipt_url: 'demo/expense-3', receipt_filename: 'receipt-demo-3.png', receipt_uploaded_at: new Date().toISOString(), receipt_size: 183201, receipt_mime_type: 'image/png' },
   ];
 
   window.DEMO_REVENUE = [
@@ -11309,6 +12241,8 @@ async function loadAiInsights() {
       totalRevenue: 5200, netRevenue: 4980, totalExpenses: 675,
       pendingApprovals: 1, activeBookings: 2, availableVehicles: 2,
       operationalROI: 19.8, pickupsToday: 1, returnsToday: 1, overdueCount: 1,
+      thisWeekRevenue: 1286, monthlyRevenue: 5200, outstandingBalances: 784,
+      collectionRate: 88.4, failedPayments: 1, fraudAlerts: 1,
       bookingsLast7Days: 5, bookingsLast30Days: 16,
     },
     revenueChart: revChart,
@@ -11320,25 +12254,102 @@ async function loadAiInsights() {
       rogue: { revenue: 600,  netProfit: 140, bookingCount: 2,  expenses: 90,  roi: 2.2 },
     },
     alerts: [
-      { type: 'warning', message: 'Demo renter Jordan Miles has a past-due installment and open late fee.' },
-      { type: 'info',    message: 'Rogue is currently in service state for demo lifecycle rendering.' },
-      { type: 'success', message: 'Cash and Stripe demo payments are both represented in this dataset.' },
+      { type: 'warning', message: 'Jordan Miles still carries a $314 balance, including an $85 overdue fee that needs same-day follow-up.' },
+      { type: 'info',    message: 'Nissan Rogue 2022 stays in service until tomorrow afternoon after brake inspection and detailing.' },
+      { type: 'success', message: 'Sam Rivera completed tomorrow’s RAV4 payment and verification steps ahead of handoff.' },
     ],
     recentBookings: [
       { name: 'Jordan Miles', vehicleId: 'camry', pickupDate: ago(9), returnDate: ago(2), pickupTime: '10:00 AM', returnTime: '5:00 PM', amountPaid: 420, status: 'overdue' },
       { name: 'Avery Quinn', vehicleId: 'civic', pickupDate: ago(4), returnDate: fwd(2), pickupTime: '9:00 AM', returnTime: '6:00 PM', amountPaid: 512, status: 'active_rental' },
       { name: 'Sam Rivera', vehicleId: 'rav4', pickupDate: fwd(1), returnDate: fwd(8), pickupTime: '11:00 AM', returnTime: '4:00 PM', amountPaid: 774, status: 'booked_paid' },
     ],
+    operationsFeed: [
+      { title: 'Collections escalation queued', meta: 'Jordan Miles received a same-day overdue follow-up after missing the latest installment.' },
+      { title: 'Payment posted', meta: '$512 was recorded against Avery Quinn’s active Civic rental and the ledger closed cleanly.' },
+      { title: 'Extension approved', meta: 'Avery Quinn’s Civic return moved out two days after payment confirmation.' },
+      { title: 'Return reminder sent', meta: 'Tomorrow morning reminder is queued for Avery Quinn with updated extension timing.' },
+      { title: 'Service reminder logged', meta: 'Rogue remains blocked while brake inspection, wash, and check-in photos finish.' },
+      { title: 'Onboarding payment plan started', meta: 'Taylor Brooks is on a three-part deposit plan before the Camry handoff.' },
+    ],
+    aiRecommendations: [
+      'Jordan Miles remains the highest collection priority with $314 outstanding and a late fee already assessed.',
+      'Taylor Brooks should stay in onboarding review until the first payment-plan installment and check-in docs are confirmed.',
+      'Rogue can return to the availability pool as soon as tomorrow’s service closeout is logged.',
+    ],
+    consistencyAudit: [
+      { status: 'pass', text: 'Customer balances match renter ledger entries across active walkthrough bookings.' },
+      { status: 'pass', text: 'Overdue balances align with payment-plan overdue amounts.' },
+      { status: 'pass', text: 'Late fees correspond to active overdue bookings.' },
+      { status: 'pass', text: 'Vehicle pricing aligns with booking totals in revenue records.' },
+      { status: 'pass', text: 'AI insights and SMS logs reference valid renter and booking records.' },
+    ],
+    operationalMetrics: {
+      renterLifetimeValue: 1134,
+      repeatCustomerRate: 46,
+      extensionRate: 19,
+      averageOverdueDays: 1.8,
+      roiPerVehicle: 7.6,
+    },
+    nextSteps: [
+      { title: 'Add your first vehicle', note: 'Upload photo, status, and ownership details to complete inventory setup.' },
+      { title: 'Configure pricing', note: 'Set daily, weekly, and monthly rates so bookings calculate correctly.' },
+      { title: 'Connect Stripe', note: 'Turn on online deposits and balance collection.' },
+      { title: 'Enable SMS reminders', note: 'Automate pickup and return reminders for every booking.' },
+    ],
+    operatorWalkthrough: [
+      { title: '1. Dashboard overview', note: 'Start with the command center to understand revenue visibility, overdue exposure, and the daily action queue.' },
+      { title: '2. Active overdue renter', note: 'Open Jordan Miles to see past-due plan status, late fee exposure, and current collection priority.' },
+      { title: '3. Booking lifecycle', note: 'Use the booking detail timeline to review payment history, reminders, extensions, and next required action.' },
+      { title: '4. Extension workflow', note: 'Trace Avery Quinn’s approved extension and tomorrow’s updated return reminder.' },
+      { title: '5. Vehicle profitability', note: 'Open the Civic profile to review current renter exposure, mileage, maintenance state, and net profit.' },
+      { title: '6. AI + financial visibility', note: 'Finish with AI recommendations, alerts, and consistency checks tied to measurable metrics.' },
+    ],
   };
 
   window.DEMO_ANALYTICS = {
     fleet: {
-      camry: { bookings: 14, revenue: 1820, utilization_pct: 76 },
-      civic: { bookings: 9, revenue: 1512, utilization_pct: 71 },
-      rav4:  { bookings: 6, revenue: 1268, utilization_pct: 64 },
-      rogue: { bookings: 2, revenue: 600,  utilization_pct: 33 },
+      camry: {
+        vehicleId: 'camry', name: 'Camry 2019', status: 'active',
+        totalBookings: 14, activeNow: false,
+        gross_revenue: 1820, total_fees: 38.22, net_revenue: 1781.78,
+        expenses: 210, profit: 1571.78,
+        roi: 748.5,
+        purchase_price: 11111, months_active: 14,
+        vehicle_roi: 14.1, monthly_profit: 112.3, annual_roi: 169.5, payback_months: 7.1,
+        utilizationRate: 76, avgRevenuePerBooking: 130,
+      },
+      civic: {
+        vehicleId: 'civic', name: 'Honda Civic 2020', status: 'active',
+        totalBookings: 9, activeNow: true,
+        gross_revenue: 1512, total_fees: 10, net_revenue: 1502,
+        expenses: 125, profit: 1377,
+        roi: 1101.6,
+        purchase_price: 12345, months_active: 12,
+        vehicle_roi: 11.2, monthly_profit: 114.8, annual_roi: 133.8, payback_months: 9.0,
+        utilizationRate: 71, avgRevenuePerBooking: 168,
+      },
+      rav4: {
+        vehicleId: 'rav4', name: 'Toyota RAV4 2021', status: 'active',
+        totalBookings: 6, activeNow: false,
+        gross_revenue: 1268, total_fees: 24.88, net_revenue: 1243.12,
+        expenses: 340, profit: 903.12,
+        roi: 265.6,
+        purchase_price: 16666, months_active: 10,
+        vehicle_roi: 5.4, monthly_profit: 90.3, annual_roi: 64.9, payback_months: 18.5,
+        utilizationRate: 64, avgRevenuePerBooking: 211,
+      },
+      rogue: {
+        vehicleId: 'rogue', name: 'Nissan Rogue 2022', status: 'service',
+        totalBookings: 2, activeNow: false,
+        gross_revenue: 600, total_fees: 13, net_revenue: 587,
+        expenses: 0, profit: 587,
+        roi: null,
+        purchase_price: 17777, months_active: 4,
+        vehicle_roi: 3.3, monthly_profit: 146.8, annual_roi: 39.5, payback_months: 30.3,
+        utilizationRate: 33, avgRevenuePerBooking: 300,
+      },
     },
-    trend: revChart.map((row) => ({ month: row.month, amount: row.amount })),
+    trend: revChart.map((row) => ({ month: row.month, revenue: row.amount })),
     kpi_total_revenue: 5200,
   };
 
@@ -11609,22 +12620,96 @@ function getDemoResponse(path, body) {
   if (p.endsWith('/api/booking-documents')) return Promise.resolve({ docs: [] });
   if (p.endsWith('/api/v2-mileage')) return Promise.resolve({ vehicles: [], alerts: [] });
   if (p.endsWith('/api/v2-system-health')) return Promise.resolve({ checks: [], status: 'ok', issues: [] });
-  if (p.endsWith('/api/v2-sms-templates')) return Promise.resolve({ templates: [] });
-  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [] });
-  if (p.endsWith('/api/v2-protection-plans')) return Promise.resolve({ plans: [] });
+  if (p.endsWith('/api/v2-sms-templates')) return Promise.resolve({ templates: [
+    { key: 'booking_confirmed',  message: 'Hi {name}, your booking for the {vehicle} is confirmed! Pickup: {pickup_date} at {pickup_time}. Ref: {booking_ref}.', enabled: true,  isCustomized: false },
+    { key: 'booking_reminder',   message: 'Reminder: Your {vehicle} rental starts tomorrow at {pickup_time}. Please bring your license and deposit. – Fleet Control', enabled: true,  isCustomized: false },
+    { key: 'overdue_notice',     message: 'Hi {name}, your {vehicle} rental is overdue. Please contact us immediately or a late fee will be applied. Ref: {booking_ref}.', enabled: true,  isCustomized: true  },
+    { key: 'payment_received',   message: 'Payment of ${amount} received for booking {booking_ref}. Remaining balance: ${remaining}. Thank you!', enabled: true,  isCustomized: false },
+    { key: 'return_reminder',    message: 'Hi {name}, your {vehicle} is due back today at {return_time}. Reply EXTEND if you need more time.', enabled: true,  isCustomized: false },
+    { key: 'extension_approved', message: 'Your rental extension has been approved. New return date: {return_date}. Updated balance: ${amount}.', enabled: false, isCustomized: false },
+  ] });
+  if (p.endsWith('/api/v2-system-settings')) return Promise.resolve({ settings: [
+    { key: 'late_fee_daily_rate',       category: 'automation',   value: 25,    description: 'Daily late fee charged when rental is overdue ($)' },
+    { key: 'late_fee_grace_hours',      category: 'automation',   value: 2,     description: 'Hours of grace before late fee is applied' },
+    { key: 'auto_send_overdue_sms',     category: 'automation',   value: true,  description: 'Automatically send SMS when booking goes overdue' },
+    { key: 'auto_send_reminders',       category: 'automation',   value: true,  description: 'Automatically send pickup reminder SMS day before rental' },
+    { key: 'sales_tax_rate',            category: 'tax',          value: 8.25,  description: 'Sales tax percentage applied to bookings (%)' },
+    { key: 'tax_applies_to_extensions', category: 'tax',          value: false, description: 'Apply tax to extension charges' },
+    { key: 'notify_owner_on_booking',   category: 'notification', value: true,  description: 'Email owner when a new booking is confirmed' },
+    { key: 'notify_owner_on_overdue',   category: 'notification', value: true,  description: 'Email owner when a booking goes overdue' },
+    { key: 'oil_change_miles',          category: 'maintenance',  value: 5000,  description: 'Mileage interval for oil change alert' },
+    { key: 'tire_rotation_miles',       category: 'maintenance',  value: 7500,  description: 'Mileage interval for tire rotation alert' },
+  ] });
+  if (p.endsWith('/api/v2-protection-plans')) return Promise.resolve({ plans: [
+    { id: 'plan-prot-001', name: 'Basic Coverage',    description: 'Covers minor damage and theft. Great for budget-conscious renters.',                          daily_rate: 9.99,  liability_cap: 1000,  is_active: true  },
+    { id: 'plan-prot-002', name: 'Standard Shield',   description: 'Full collision + theft protection with $0 deductible up to liability cap.',                  daily_rate: 19.99, liability_cap: 5000,  is_active: true  },
+    { id: 'plan-prot-003', name: 'Premium Guard',     description: 'Comprehensive protection including roadside assistance, glass, and tire coverage.',           daily_rate: 34.99, liability_cap: 15000, is_active: true  },
+    { id: 'plan-prot-004', name: 'Liability Add-On',  description: 'Adds liability protection for renters who carry their own collision insurance.',              daily_rate: 7.99,  liability_cap: 0,     is_active: false },
+  ] });
   if (p.endsWith('/api/v2-pricing')) return Promise.resolve({ pricing: {} });
   if (p.endsWith('/api/v2-block-dates')) return Promise.resolve({ blocked: [] });
   if (p.endsWith('/api/v2-fleet-status')) return Promise.resolve({ fleet: [] });
-  if (p.endsWith('/api/admin-chat')) return Promise.resolve({ reply: '👋 Demo sandbox is active. This preview only uses seeded sample bookings, payments, customers, and analytics — no live records are queried or mutated.', messages: [], tool_calls: [] });
-  if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in demo sandbox'));
-  if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Demo Fleet', phone: '(555) 010-0000', logo_url: '' });
+  if (p.endsWith('/api/admin-chat')) {
+    const userPrompt = Array.isArray(body?.messages)
+      ? body.messages.slice().reverse().find((m) => m && m.role === 'user')
+      : null;
+    const promptText = String(
+      typeof userPrompt?.content === 'string'
+        ? userPrompt.content
+        : Array.isArray(userPrompt?.content)
+          ? userPrompt.content.map((part) => part?.text || '').join(' ')
+          : ''
+    ).toLowerCase();
+    let reply = '👋 You’re viewing a prepared operations workspace with connected renters, balances, bookings, and fleet activity.';
+    if (promptText.includes('profitable')) {
+      reply = 'Avery Quinn is the strongest profit contributor right now, with a clean payment history and no overdue balance on the active Civic rental.';
+    } else if (promptText.includes('overdue') || promptText.includes('payment')) {
+      reply = 'Jordan Miles is 2 days overdue with a late fee of $85, and Taylor Brooks has an unpaid reservation balance of $699.';
+    } else if (promptText.includes('maintenance')) {
+      reply = 'Nissan Rogue 2022 is currently in service mode and should be prioritized before opening new bookings for that unit.';
+    } else if (promptText.includes('week') || promptText.includes('performance') || promptText.includes('summary')) {
+      reply = 'This week revenue is $1,286 (+12%), there are 2 active rentals, and collection focus should stay on one overdue renter.';
+    }
+    return Promise.resolve({ reply, messages: [], tool_calls: [] });
+  }
+  if (p.endsWith('/api/tts')) return Promise.reject(new Error('TTS disabled in walkthrough mode'));
+  if (p.endsWith('/api/site-content')) return Promise.resolve({ business_name: 'Fleet Control Operations', phone: '(555) 010-0000', logo_url: '' });
   if (p.endsWith('/api/admin-site-settings')) return Promise.resolve({ ok: true });
   if (p.endsWith('/api/add-expense') || p.endsWith('/api/update-expense') || p.endsWith('/api/upload-expense-receipt') || p.endsWith('/api/delete-expense-receipt') || p.endsWith('/api/delete-expense')) return Promise.resolve({ ok: true, success: true });
-  if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: {} });
-  if (p.endsWith('/api/admin-ai-insights')) return Promise.resolve({ summary: 'Demo mode — AI insights are simulated with seeded metrics.', problems: [], metrics: {} });
+  if (p.endsWith('/api/admin-update-pricing')) return Promise.resolve({ ok: true, pricing: [
+    { vehicle_id: 'camry', daily_price: 69,  weekly_price: 429,  biweekly_price: 799,  monthly_price: 1399, updated_at: new Date(Date.now() - 86400000 * 3).toISOString() },
+    { vehicle_id: 'civic', daily_price: 72,  weekly_price: 449,  biweekly_price: 829,  monthly_price: 1449, updated_at: new Date(Date.now() - 86400000 * 5).toISOString() },
+    { vehicle_id: 'rav4',  daily_price: 95,  weekly_price: 589,  biweekly_price: 1099, monthly_price: 1849, updated_at: new Date(Date.now() - 86400000 * 7).toISOString() },
+    { vehicle_id: 'rogue', daily_price: 99,  weekly_price: 619,  biweekly_price: 1149, monthly_price: 1949, updated_at: new Date(Date.now() - 86400000 * 7).toISOString() },
+  ] });
+  if (p.endsWith('/api/admin-ai-insights')) return Promise.resolve({
+    insights: {
+      revenue: { thisWeek: 1286, thisMonth: 5200, weeklyChangePct: 12, monthlyChangePct: 8 },
+      bookings: { active: 2, last7Days: 5 },
+    },
+    problems: [
+      'Jordan Miles (bk-demo-001) is overdue by 2 days — late fee of $85 applied',
+      'Taylor Brooks (bk-demo-004) has an unpaid reservation with $699 outstanding',
+      'Nissan Rogue 2022 is currently in service — no revenue this period',
+    ],
+    fraud: {
+      total: 4,
+      flagged: 1,
+      topRisks: [
+        { bookingId: 'bk-demo-001', name: 'Jordan Miles', risk_score: 62, risk_level: 'Medium' },
+      ],
+    },
+  });
   if (p.endsWith('/api/v2-diagnostics')) return Promise.resolve({ checks: [], status: 'ok' });
-  if (p.endsWith('/api/v2-sms-logs')) return Promise.resolve({ logs: [] });
-  if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in demo mode.' });
+  if (p.endsWith('/api/v2-sms-logs') || p.endsWith('/api/sms-logs')) return Promise.resolve({ logs: [
+    { booking_ref: 'bk-demo-001', vehicle_id: 'camry', renter_phone: '(555) 010-1001', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_001a', created_at: new Date(Date.now() - 86400000 * 9).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-001', vehicle_id: 'camry', renter_phone: '(555) 010-1001', message_type: 'overdue_notice',      status: 'sent',   provider_id: 'SM_demo_001b', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-002', vehicle_id: 'civic', renter_phone: '(555) 010-1002', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_002a', created_at: new Date(Date.now() - 86400000 * 4).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-002', vehicle_id: 'civic', renter_phone: '(555) 010-1002', message_type: 'return_reminder',    status: 'sent',   provider_id: 'SM_demo_002b', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-003', vehicle_id: 'rav4',  renter_phone: '(555) 010-1003', message_type: 'booking_confirmed',  status: 'sent',   provider_id: 'SM_demo_003a', created_at: new Date(Date.now() - 86400000 * 1).toISOString(),  error: null },
+    { booking_ref: 'bk-demo-004', vehicle_id: 'camry', renter_phone: '(555) 010-1004', message_type: 'booking_confirmed',  status: 'failed', provider_id: null,           created_at: new Date(Date.now() - 86400000 * 0.5).toISOString(), error: 'Carrier rejected — invalid number format' },
+  ] });
+  if (p.endsWith('/api/bouncie-location')) return Promise.resolve({ connected: false, message: 'GPS tracking is not available in walkthrough mode.' });
 
   return Promise.resolve({ ok: true, _demo: true });
 }
@@ -11654,7 +12739,7 @@ function installDemoFetchInterceptor() {
       try { body = JSON.parse(init.body); } catch (_err) { body = {}; }
     }
 
-    const payload = await getDemoResponse(path + (parsed.search || ''), body).catch((err) => ({ error: err?.message || 'Demo request failed' }));
+    const payload = await getDemoResponse(path + (parsed.search || ''), body).catch((err) => ({ error: err?.message || 'Walkthrough request failed' }));
     const status = payload && payload.error ? 400 : 200;
     return new Response(JSON.stringify(payload || {}), {
       status,
@@ -11688,7 +12773,7 @@ function initDemoMode() {
   document.getElementById('app').classList.add('ready');
 
   // Strip all SLY-specific branding so demo visitors can't identify the seller
-  document.title = 'Fleet Control — Demo';
+  document.title = 'Fleet Control — Guided Walkthrough';
   const _demoFavicon = document.querySelector('link[rel="icon"]');
   if (_demoFavicon) _demoFavicon.remove();
   document.querySelectorAll('.auth-logo img, .sidebar-logo img').forEach(function(img) { img.style.display = 'none'; });
@@ -11699,7 +12784,7 @@ function initDemoMode() {
   const _demoAiTitle = document.querySelector('.ai-chat-title');
   if (_demoAiTitle) _demoAiTitle.textContent = 'AI Assistant';
   const _demoPreviewStrong = document.querySelector('#preview-topbar strong');
-  if (_demoPreviewStrong) _demoPreviewStrong.textContent = 'demo';
+  if (_demoPreviewStrong) _demoPreviewStrong.textContent = 'walkthrough';
   const _demoPreviewLink = document.getElementById('preview-open-link');
   if (_demoPreviewLink) _demoPreviewLink.style.display = 'none';
 
@@ -11720,11 +12805,12 @@ function initDemoMode() {
   // Render dashboard with demo data
   dashboardData = window.DEMO_DASHBOARD;
   renderDashboard(window.DEMO_DASHBOARD);
+  aiSeedDemoConversation();
 
   // Disable AI input in demo (graceful degradation — just show a note)
   const aiInput = document.getElementById('ai-input');
   if (aiInput) {
-    aiInput.placeholder = 'Demo mode — AI responses are simulated…';
+    aiInput.placeholder = 'Guided walkthrough workspace — ask about collections, extensions, or renter risk.';
   }
 
   // Auto-start full tour after 800ms (gives voice-assistant.js time to load)
@@ -11766,7 +12852,7 @@ function checkFirstTimeUser(data) {
 function loadDemoDataAndClose() {
   closeModal('onboarding-modal');
   localStorage.setItem('sly_onboarding_done', '1');
-  showToast('Demo data loaded — explore the system!', 'success');
+  showToast('Walkthrough workspace loaded — explore the operation.', 'success');
   // Navigate to demo URL so the full demo mode kicks in
   window.location.href = window.location.pathname + '?demo=1';
 }

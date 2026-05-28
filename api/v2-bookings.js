@@ -101,6 +101,88 @@ function resolveBookingRemainingBalance(row = {}, fallback = 0) {
   return roundMoney(fallback || 0);
 }
 
+function parseBookingDateTimeInLA(dateValue, timeValue) {
+  if (!dateValue || !timeValue) return null;
+  const time = String(timeValue).trim();
+  const ampmMatch = time.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  let hhmm = null;
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = ampmMatch[2];
+    const period = ampmMatch[3].toUpperCase();
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    hhmm = `${String(hour).padStart(2, "0")}:${minute}`;
+  } else {
+    const h24Match = time.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (h24Match) hhmm = `${String(parseInt(h24Match[1], 10)).padStart(2, "0")}:${h24Match[2]}`;
+  }
+  if (!hhmm) return null;
+  const laAsUtcProbe = new Date(`${dateValue}T${hhmm}:00Z`);
+  if (Number.isNaN(laAsUtcProbe.getTime())) return null;
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      timeZoneName: "longOffset",
+    }).formatToParts(laAsUtcProbe).find((part) => part.type === "timeZoneName")?.value || "";
+    const offsetMatch = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    const offset = offsetMatch ? offsetMatch[1] : "-08:00";
+    const dt = new Date(`${dateValue}T${hhmm}:00${offset}`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  } catch {
+    const fallbackDt = new Date(`${dateValue}T${hhmm}:00-08:00`);
+    return Number.isNaN(fallbackDt.getTime()) ? null : fallbackDt;
+  }
+}
+
+function deriveBookingLifecycleState(row, now = new Date()) {
+  const baseStatus = toAppBookingStatus(row?.status);
+  if (row?.flagged) return "flagged";
+  if (baseStatus === "active_rental") {
+    const returnDateTime = parseBookingDateTimeInLA(row?.return_date, row?.return_time);
+    if (returnDateTime && now >= returnDateTime) return "overdue";
+    if (Number(row?.extension_count || 0) > 0) return "extended";
+  }
+  return baseStatus;
+}
+
+function deriveBookingWorkflowStatus(lifecycleState) {
+  const status = String(lifecycleState || "").toLowerCase();
+  if (["pending_checkout", "upload_failed", "payment_failed", "abandoned_checkout"].includes(status)) return "checkout";
+  if (["reserved_unpaid", "booked_paid"].includes(status)) return "reservation";
+  if (["active_rental", "overdue", "extended", "flagged"].includes(status)) return "in_rental";
+  if (status === "completed_rental") return "closed";
+  if (status === "cancelled_rental") return "cancelled";
+  return "unknown";
+}
+
+function deriveCustomerTier(cust = {}) {
+  if (cust.banned) return "risky";
+  if (cust.flagged || cust.risk_flag === "high" || Number(cust.no_show_count || 0) >= 2) return "risky";
+  const totalProfit = cust.total_profit != null ? Number(cust.total_profit) : null;
+  const totalBookings = Number(cust.total_bookings || 0);
+  if (totalProfit != null && totalProfit < 0) return "unprofitable";
+  if (totalProfit != null && totalProfit >= 500 && totalBookings >= 3) return "vip";
+  return "standard";
+}
+
+function buildOperationalEventHistory(row = {}) {
+  const events = [];
+  const pushIfPresent = (type, at, meta = null) => {
+    if (!at) return;
+    events.push({ type, at, meta });
+  };
+  pushIfPresent("booking_created", row.created_at);
+  pushIfPresent("booking_updated", row.updated_at);
+  if (row.pickup_date) pushIfPresent("pickup_scheduled", row.pickup_date, row.pickup_time ? { time: row.pickup_time } : null);
+  if (row.return_date) pushIfPresent("return_scheduled", row.return_date, row.return_time ? { time: row.return_time } : null);
+  pushIfPresent("late_fee_approved", row.late_fee_approved_at, row.late_fee_amount != null ? { amount: Number(row.late_fee_amount) } : null);
+  if (Number(row.extension_count || 0) > 0) {
+    pushIfPresent("extension_count_recorded", row.updated_at || row.created_at, { count: Number(row.extension_count || 0) });
+  }
+  return events;
+}
+
 function schemaMismatchDiagnostics(err) {
   const message = String(err?.message || "");
   const code = String(err?.code || "");
@@ -413,13 +495,18 @@ export default async function handler(req, res) {
           const bookings = (rows || []).map((r) => {
             const bookingRef = r.booking_ref || String(r.id);
             const rr = revenueByBookingId[bookingRef] || null;
+            const lifecycleState = deriveBookingLifecycleState(r);
+            const workflowStatus = deriveBookingWorkflowStatus(lifecycleState);
             const totalPrice = Number(r.total_price || 0);
+            const amountPaid = Number(r.deposit_paid || 0);
+            const remaining = resolveBookingRemainingBalance(r);
             const gross      = round2(rr ? Number(rr.gross_amount || 0) : totalPrice);
             const stripeFee  = rr && rr.stripe_fee != null ? round2(rr.stripe_fee) : null;
             const amountNet  = rr && rr.stripe_net != null
               ? round2(rr.stripe_net)
               : (stripeFee != null ? round2(gross - stripeFee) : null);
             const cust = r.customers || {};
+            const customerTier = deriveCustomerTier(cust);
             return {
               bookingId:       bookingRef,
               dbId:            r.id,
@@ -434,9 +521,11 @@ export default async function handler(req, res) {
               returnTime:      r.return_time  || "",
               location:        "",
               status:          toAppBookingStatus(r.status),
-              amountPaid:      Number(r.deposit_paid      || 0),
+              lifecycleState,
+              workflowStatus,
+              amountPaid,
               totalPrice,
-              remaining:       resolveBookingRemainingBalance(r),
+              remaining,
               paymentStatus:   r.payment_status  || "",
               paymentMethod:   r.payment_method  || "",
               paymentIntentId: r.payment_intent_id || "",
@@ -457,6 +546,16 @@ export default async function handler(req, res) {
               custTotalProfit: cust.total_profit != null ? Number(cust.total_profit) : null,
               custBookings:    cust.total_bookings || 0,
               custNoShows:     cust.no_show_count  || 0,
+              customerTier,
+              financialSnapshot: {
+                amountPaid,
+                totalPrice,
+                remaining,
+                amountGross: gross,
+                stripeFee,
+                amountNet,
+              },
+              operationalEventHistory: buildOperationalEventHistory(r),
               notes:           r.notes || "",
               smsSentAt:       {},
               createdAt:       r.created_at,

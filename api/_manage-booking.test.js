@@ -138,6 +138,21 @@ test("manage-booking get falls back to legacy booking columns when newer columns
   assert.equal(res._body.paymentLifecycleState, "deposit_paid");
   assert.equal(res._body.canPayRemainingOnline, true);
   assert.equal(res._body.isReservationStage, true);
+  assert.deepEqual(res._body.contractTransitionObservability.canonicalFinancialSnapshot, {
+    total: 275,
+    paid: 100,
+    balance: 175,
+  });
+  assert.equal(res._body.contractTransitionObservability.canonicalLifecycleState, "deposit_paid");
+  assert.deepEqual(res._body.contractTransitionObservability.fallbackPaths, [
+    {
+      path: "supabase_compat_columns",
+      source: "bookings_select",
+    },
+  ]);
+  assert.deepEqual(res._body.contractTransitionObservability.surfacesUsingLegacyDerivations, [
+    "manage_booking_dashboard",
+  ]);
   assert.deepEqual(selects.length, 2);
 });
 
