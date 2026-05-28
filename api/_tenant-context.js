@@ -39,32 +39,124 @@
  * @property {string} userId          — authenticated user's UUID
  */
 
-// ─── Phase 0 stub implementations ────────────────────────────────────────────
+const TENANT_MEMBERSHIP_SELECT = `
+  organization_id,
+  role,
+  status,
+  accepted_at,
+  invited_at,
+  created_at,
+  organizations!inner (
+    id,
+    slug,
+    status
+  )
+`;
+
+const ROLE_PRIORITY = {
+  owner: 0,
+  admin: 1,
+  member: 2,
+  staff: 3,
+};
+
+function getRolePriority(role) {
+  return ROLE_PRIORITY[String(role || "").toLowerCase()] ?? 99;
+}
+
+function parseSortTime(value) {
+  const ts = Date.parse(value || "");
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function isTenantSchemaError(err) {
+  const message = String(err?.message || "").toLowerCase();
+  const details = String(err?.details || "").toLowerCase();
+  const hint = String(err?.hint || "").toLowerCase();
+  const combined = `${message} ${details} ${hint}`;
+  return (
+    combined.includes("organization_users") ||
+    combined.includes("organizations") ||
+    combined.includes("schema cache") ||
+    combined.includes("does not exist")
+  );
+}
+
+function selectPreferredMembership(rows) {
+  const memberships = (Array.isArray(rows) ? rows : [])
+    .filter((row) => row?.organization_id)
+    .filter((row) => String(row?.status || "").toLowerCase() === "active")
+    .filter((row) => String(row?.organizations?.status || "").toLowerCase() === "active");
+
+  if (!memberships.length) return null;
+
+  memberships.sort((a, b) => {
+    const roleDiff = getRolePriority(a?.role) - getRolePriority(b?.role);
+    if (roleDiff !== 0) return roleDiff;
+
+    const acceptedDiff = parseSortTime(b?.accepted_at) - parseSortTime(a?.accepted_at);
+    if (acceptedDiff !== 0) return acceptedDiff;
+
+    const invitedDiff = parseSortTime(b?.invited_at) - parseSortTime(a?.invited_at);
+    if (invitedDiff !== 0) return invitedDiff;
+
+    return parseSortTime(b?.created_at) - parseSortTime(a?.created_at);
+  });
+
+  return memberships[0];
+}
+
+// ─── Phase 1-compatible implementations ──────────────────────────────────────
 
 /**
  * Resolves the organization and role for an authenticated user.
  *
- * Phase 0: always returns null (organizations table does not exist yet).
- *   Callers should treat null as "single-tenant / no org scope required".
+ * Returns null when organization membership tables are not ready yet so callers
+ * stay compatibility-safe during rollout.
  *
- * Phase 1 implementation (replace this body):
- *   const { data } = await supabase
- *     .from('organization_users')
- *     .select('organization_id, role, organizations(id, slug, status)')
- *     .eq('user_id', userId)
- *     .eq('organizations.status', 'active')
- *     .single();
- *   if (!data) return null;
- *   return { organizationId: data.organization_id, role: data.role, userId };
- *
- * @param {import('@supabase/supabase-js').SupabaseClient} _supabase
- * @param {string} _userId
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} userId
  * @returns {Promise<TenantContext|null>}
  */
-export async function resolveTenantContext(_supabase, _userId) {
-  // Phase 0 stub — safe to call everywhere.
-  // Returns null so all existing single-tenant queries continue unmodified.
-  return null;
+export async function resolveTenantContext(supabase, userId) {
+  const normalizedUserId = typeof userId === "string" ? userId.trim() : "";
+  if (!supabase || typeof supabase.from !== "function" || !normalizedUserId) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("organization_users")
+      .select(TENANT_MEMBERSHIP_SELECT)
+      .eq("user_id", normalizedUserId)
+      .eq("status", "active")
+      .eq("organizations.status", "active");
+
+    if (error) {
+      if (isTenantSchemaError(error)) {
+        console.warn("[tenant-context] Organization schema not ready; using single-tenant mode.");
+        return null;
+      }
+      console.error("[tenant-context] Membership lookup failed:", error?.message || error);
+      return null;
+    }
+
+    const membership = selectPreferredMembership(data);
+    if (!membership?.organization_id) return null;
+
+    return {
+      organizationId: membership.organization_id,
+      role: String(membership.role || "member").toLowerCase(),
+      userId: normalizedUserId,
+    };
+  } catch (err) {
+    if (isTenantSchemaError(err)) {
+      console.warn("[tenant-context] Organization schema not ready; using single-tenant mode.");
+      return null;
+    }
+    console.error("[tenant-context] Unexpected resolution failure:", err?.message || err);
+    return null;
+  }
 }
 
 /**

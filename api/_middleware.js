@@ -20,6 +20,8 @@
 //   without requiring any changes to handlers that already adopted it.
 
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { resolveTenantContext } from "./_tenant-context.js";
 
 // ─── Canonical CORS origin list ───────────────────────────────────────────────
 // All admin-facing API endpoints should use this list.
@@ -69,6 +71,76 @@ export function sendError(res, status, message, details = undefined) {
   return res.status(status).json(body);
 }
 
+function extractBearerToken(req) {
+  const authHeader = req.headers?.authorization || req.headers?.Authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return "";
+  return authHeader.slice(7).trim();
+}
+
+function isSupabaseOperatorAuthConfigured() {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function authenticateAdminRequest(req) {
+  const credential = extractAdminSecret(req);
+
+  if (isAdminAuthorized(credential)) {
+    return {
+      kind: "legacy",
+      tenantContext: null,
+      authUser: null,
+      adminAuth: { type: "legacy_admin_secret" },
+    };
+  }
+
+  const bearerToken = extractBearerToken(req);
+  if (!bearerToken) {
+    if (!isAdminConfigured() && !isSupabaseOperatorAuthConfigured()) {
+      return { error: { status: 500, message: "Server configuration error: admin auth is not configured." } };
+    }
+    return { error: { status: 401, message: "Unauthorized" } };
+  }
+
+  if (!isSupabaseOperatorAuthConfigured()) {
+    return { error: { status: 401, message: "Unauthorized" } };
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase?.auth?.getUser) {
+    return { error: { status: 500, message: "Server configuration error: Supabase auth is unavailable." } };
+  }
+
+  const { data, error } = await supabase.auth.getUser(bearerToken);
+  const authUser = data?.user || null;
+  if (error || !authUser?.id) {
+    console.warn("[middleware] Supabase operator auth rejected:", error?.message || "missing user");
+    return { error: { status: 401, message: "Unauthorized" } };
+  }
+
+  const tenantContext = await resolveTenantContext(supabase, authUser.id);
+  if (!tenantContext?.organizationId) {
+    console.warn("[middleware] Supabase operator missing active organization:", authUser.id);
+    return {
+      error: {
+        status: 403,
+        message: "Operator is not assigned to an active organization.",
+      },
+    };
+  }
+
+  return {
+    kind: "supabase_user",
+    tenantContext,
+    authUser,
+    adminAuth: {
+      type: "supabase_user",
+      userId: authUser.id,
+      role: tenantContext.role,
+      organizationId: tenantContext.organizationId,
+    },
+  };
+}
+
 // ─── withAdminAuth wrapper ────────────────────────────────────────────────────
 
 /**
@@ -77,8 +149,8 @@ export function sendError(res, status, message, details = undefined) {
  *   1. CORS headers applied unconditionally
  *   2. OPTIONS preflight handled with 200
  *   3. Non-POST methods rejected with 405
- *   4. Admin secret validated (ADMIN_SECRET env var)
- *   5. req.tenantContext attached (null in Phase 0; populated in Phase 1)
+ *   4. Legacy admin secret/session OR Supabase operator identity validated
+ *   5. req.tenantContext attached when org membership is resolved
  *   6. Unhandled throws caught and returned as structured 500s
  *
  * Usage:
@@ -87,13 +159,10 @@ export function sendError(res, status, message, details = undefined) {
  *     // ...
  *   });
  *
- * Phase 1 note:
- *   req.tenantContext will be populated with { organizationId, role, userId }
- *   once the organizations/organization_users tables are live. All handlers that
- *   already use withAdminAuth() will get tenant context for free — no code changes
- *   needed in individual endpoint files.
+ * req.tenantContext remains null for legacy ADMIN_SECRET/session requests so
+ * existing single-tenant handlers stay compatibility-safe during rollout.
  *
- * @param {(req: import('http').IncomingMessage & { tenantContext: null }, res: import('http').ServerResponse) => Promise<void>} handler
+ * @param {(req: import('http').IncomingMessage & { tenantContext: import('./_tenant-context.js').TenantContext|null, authUser?: object|null, adminAuth?: object|null }, res: import('http').ServerResponse) => Promise<void>} handler
  * @returns {(req: import('http').IncomingMessage, res: import('http').ServerResponse) => Promise<void>}
  */
 export function withAdminAuth(handler) {
@@ -103,21 +172,16 @@ export function withAdminAuth(handler) {
     if (req.method === "OPTIONS") return res.status(200).end();
     if (req.method !== "POST") return sendError(res, 405, "Method Not Allowed");
 
-    if (!isAdminConfigured()) {
-      return sendError(res, 500, "Server configuration error: ADMIN_SECRET is not set.");
-    }
-
-    const adminSecret = extractAdminSecret(req);
-    if (!isAdminAuthorized(adminSecret)) {
-      return sendError(res, 401, "Unauthorized");
-    }
-
-    // Phase 0: tenant context is always null.
-    // Phase 1: this will call resolveTenantContext(supabase, userId) and attach
-    // { organizationId, role, userId } so all downstream queries can be org-scoped.
-    req.tenantContext = null;
-
     try {
+      const authResult = await authenticateAdminRequest(req);
+      if (authResult?.error) {
+        return sendError(res, authResult.error.status, authResult.error.message);
+      }
+
+      req.tenantContext = authResult?.tenantContext ?? null;
+      req.authUser = authResult?.authUser ?? null;
+      req.adminAuth = authResult?.adminAuth ?? null;
+
       return await handler(req, res);
     } catch (err) {
       console.error("[middleware] Unhandled handler error:", err?.message ?? err);
