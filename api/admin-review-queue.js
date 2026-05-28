@@ -24,6 +24,62 @@ import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const RECOVERY_SCAN_LIMIT = 25;
+const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const FLEET_WAITLIST_CAPTURE_PATH = "fleet-waitlist.json";
+const FLEET_WAITLIST_MAX = 200;
+
+function normalizeFleetWaitlistEntry(entry = {}) {
+  return {
+    submissionId: String(entry.submissionId || "").trim(),
+    createdAt: String(entry.createdAt || "").trim(),
+    name: String(entry.name || "").trim(),
+    phone: String(entry.phone || "").trim(),
+    email: String(entry.email || "").trim(),
+    preferredVehicle: String(entry.preferredVehicle || "").trim(),
+    weeklyBudget: String(entry.weeklyBudget || "").trim(),
+    sourcePage: String(entry.sourcePage || "").trim(),
+  };
+}
+
+async function listFleetWaitlistApplications() {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return [];
+
+  const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_WAITLIST_CAPTURE_PATH}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: "Bearer " + token,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`GitHub waitlist fetch failed: ${response.status} ${body}`.slice(0, 500));
+  }
+
+  const file = await response.json();
+  let parsed = null;
+  try {
+    const decoded = Buffer.from(String(file?.content || "").replace(/\n/g, ""), "base64").toString("utf8");
+    parsed = JSON.parse(decoded);
+  } catch {
+    parsed = null;
+  }
+
+  const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+  return entries
+    .map((entry) => normalizeFleetWaitlistEntry(entry))
+    .filter((entry) => entry.submissionId || entry.name || entry.email || entry.phone)
+    .sort((a, b) => {
+      const aTime = Date.parse(a.createdAt || "") || 0;
+      const bTime = Date.parse(b.createdAt || "") || 0;
+      return bTime - aTime;
+    })
+    .slice(0, FLEET_WAITLIST_MAX);
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -113,6 +169,13 @@ export default async function handler(req, res) {
     returned: (result.data || []).length,
   });
 
+  let waitlistApplications = [];
+  try {
+    waitlistApplications = await listFleetWaitlistApplications();
+  } catch (waitlistErr) {
+    console.error("admin-review-queue waitlist fetch:", waitlistErr);
+  }
+
   return res.status(200).json({
     success: true,
     applications: result.data.map((r) => ({
@@ -142,5 +205,6 @@ export default async function handler(req, res) {
     pageSize: result.pageSize,
     summary: result.summary || null,
     filters: result.filters || null,
+    waitlistApplications,
   });
 }
