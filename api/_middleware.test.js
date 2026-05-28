@@ -105,17 +105,19 @@ test("ALLOWED_ORIGINS is a non-empty array", () => {
 });
 
 test("ALLOWED_ORIGINS includes the canonical admin domain", () => {
-  assert.ok(ALLOWED_ORIGINS.includes("https://admin.slycarrentals.com"));
+  assert.ok(new Set(ALLOWED_ORIGINS).has("https://admin.slycarrentals.com"));
 });
 
 test("ALLOWED_ORIGINS includes slycarrentals.com and www variant", () => {
-  assert.ok(ALLOWED_ORIGINS.includes("https://slycarrentals.com"));
-  assert.ok(ALLOWED_ORIGINS.includes("https://www.slycarrentals.com"));
+  const allowedOrigins = new Set(ALLOWED_ORIGINS);
+  assert.ok(allowedOrigins.has("https://slycarrentals.com"));
+  assert.ok(allowedOrigins.has("https://www.slycarrentals.com"));
 });
 
 test("ALLOWED_ORIGINS includes slytrans.com and www variant", () => {
-  assert.ok(ALLOWED_ORIGINS.includes("https://slytrans.com"));
-  assert.ok(ALLOWED_ORIGINS.includes("https://www.slytrans.com"));
+  const allowedOrigins = new Set(ALLOWED_ORIGINS);
+  assert.ok(allowedOrigins.has("https://slytrans.com"));
+  assert.ok(allowedOrigins.has("https://www.slytrans.com"));
 });
 
 test("setCorsHeaders sets Allow-Origin for allowed origin", () => {
