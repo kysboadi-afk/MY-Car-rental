@@ -23,6 +23,7 @@ import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
+import { deriveBookingPaymentLifecycle } from "./_booking-payment-lifecycle.js";
 import { listApplicationLifecycleSnapshot } from "./_renter-applications.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
@@ -120,6 +121,247 @@ export function buildContractTransitionKpiMismatches(input = {}) {
   return mismatches;
 }
 
+function mergeTransitionFrequencyRows(rows = []) {
+  const counts = new Map();
+  rows.forEach((row) => {
+    const key = String(row?.key || "").trim();
+    if (!key) return;
+    const current = counts.get(key) || {
+      key,
+      label: row?.label || key,
+      count: 0,
+      module: row?.module || "",
+      page: row?.page || "",
+      fallback: row?.fallback || null,
+      source: row?.source || null,
+    };
+    current.count += Number(row?.count || 0) || 0;
+    counts.set(key, current);
+  });
+  return [...counts.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+export function buildManageBookingTransitionSummary(bookings = []) {
+  const rows = Array.isArray(bookings) ? bookings : [];
+  const fallbackPathRows = [];
+  const lifecycleMismatches = [];
+  const financialSnapshotDiffs = [];
+  let syntheticEvents = 0;
+  let canonicalEvents = 0;
+
+  rows.forEach((booking) => {
+    const bookingId = booking?.bookingId || booking?.booking_ref || booking?.id || "";
+    const total = roundTransitionMetric(booking?.totalPrice ?? booking?.total_price) || 0;
+    const paid = roundTransitionMetric(booking?.amountPaid ?? booking?.depositPaid ?? booking?.deposit_paid) || 0;
+    const rawBalance = Math.max(0, roundTransitionMetric(booking?.balanceDue ?? booking?.remainingBalance ?? booking?.remaining_balance) || 0);
+    const canonicalBalance = rawBalance === 0 && total > 0 && paid < total
+      ? Math.max(0, roundTransitionMetric(total - paid) || 0)
+      : rawBalance;
+
+    const canonicalLifecycle = deriveBookingPaymentLifecycle({
+      status: booking?.status,
+      paymentStatus: booking?.paymentStatus ?? booking?.payment_status,
+      category: booking?.category,
+      totalAmount: total,
+      amountPaid: paid,
+      remainingBalance: canonicalBalance,
+      paymentPlan: booking?.paymentPlan || null,
+    });
+    const legacyLifecycle = deriveBookingPaymentLifecycle({
+      status: booking?.status,
+      paymentStatus: booking?.paymentStatus ?? booking?.payment_status,
+      category: booking?.category,
+      totalAmount: total,
+      amountPaid: paid,
+      remainingBalance: rawBalance,
+      paymentPlan: booking?.paymentPlan || null,
+    });
+
+    const diffs = {};
+    if (Math.abs(canonicalBalance - rawBalance) > 0.01) {
+      diffs.balance = { canonical: canonicalBalance, legacy: rawBalance };
+      fallbackPathRows.push({
+        key: "remaining_balance_total_minus_paid",
+        label: "remaining_balance_total_minus_paid",
+        count: 1,
+        module: "manage-booking",
+        page: "Manage Booking",
+        source: "effectiveBalanceDue",
+      });
+    }
+    if (Object.keys(diffs).length > 0) {
+      financialSnapshotDiffs.push({
+        bookingId,
+        diffs,
+      });
+    }
+    if (
+      canonicalLifecycle.lifecycleState !== legacyLifecycle.lifecycleState
+      || canonicalLifecycle.canPayRemainingOnline !== legacyLifecycle.canPayRemainingOnline
+    ) {
+      lifecycleMismatches.push({
+        bookingId,
+        canonical: {
+          lifecycleState: canonicalLifecycle.lifecycleState,
+          canPayRemainingOnline: canonicalLifecycle.canPayRemainingOnline,
+        },
+        legacy: {
+          lifecycleState: legacyLifecycle.lifecycleState,
+          canPayRemainingOnline: legacyLifecycle.canPayRemainingOnline,
+        },
+      });
+    }
+
+    if (Object.keys(diffs).length > 0 || lifecycleMismatches.some((item) => item.bookingId === bookingId)) {
+      syntheticEvents += 1;
+    } else {
+      canonicalEvents += 1;
+    }
+  });
+
+  const sampleCount = rows.length;
+  const impactedBookingIds = new Set([
+    ...financialSnapshotDiffs.map((row) => row.bookingId),
+    ...lifecycleMismatches.map((row) => row.bookingId),
+  ]);
+  const adoptedCount = Math.max(0, sampleCount - impactedBookingIds.size);
+  const adoptionPercent = sampleCount > 0
+    ? Math.round((adoptedCount / sampleCount) * 100)
+    : 100;
+
+  return {
+    sampleCount,
+    adoptedCount,
+    adoptionPercent,
+    lifecycleMismatchCount: lifecycleMismatches.length,
+    financialSnapshotDiffCount: financialSnapshotDiffs.length,
+    fallbackPathUsage: mergeTransitionFrequencyRows(fallbackPathRows),
+    legacyDerivedSurfaces: sampleCount > 0 ? [{
+      key: "manage_booking_dashboard",
+      label: "Manage Booking dashboard",
+      count: sampleCount,
+      module: "manage-booking",
+      page: "Manage Booking",
+    }] : [],
+    eventUsage: {
+      synthetic: syntheticEvents,
+      canonical: canonicalEvents,
+    },
+    samples: {
+      lifecycleMismatches: lifecycleMismatches.slice(0, 5),
+      financialSnapshotDiffs: financialSnapshotDiffs.slice(0, 5),
+    },
+  };
+}
+
+export function buildContractTransitionObservabilitySummary(input = {}) {
+  const manageBooking = input.manageBooking || buildManageBookingTransitionSummary(input.manageBookingBookings || []);
+  const dashboardFallbackPathRows = (Array.isArray(input.dashboardFallbackPaths) ? input.dashboardFallbackPaths : [])
+    .map((row) => ({
+      key: String(row?.path || "").trim(),
+      label: String(row?.path || "").trim(),
+      count: 1,
+      module: "dashboard",
+      page: "Dashboard",
+      fallback: row?.fallback || null,
+      source: row?.reason || null,
+    }))
+    .filter((row) => row.key);
+  const dashboardFallbackUsage = mergeTransitionFrequencyRows(dashboardFallbackPathRows);
+  const dashboardLegacyDerivedSurfaces = [];
+  if (input.dashboardUsesLegacyBookingLoop) {
+    dashboardLegacyDerivedSurfaces.push({
+      key: "v2_dashboard_booking_count_loop",
+      label: "Dashboard booking count loop",
+      count: 1,
+      module: "dashboard",
+      page: "Dashboard",
+    });
+  }
+  if (input.dashboardFinancialSource && input.dashboardFinancialSource !== "revenue_reporting_canonical") {
+    dashboardLegacyDerivedSurfaces.push({
+      key: "v2_dashboard_financial_kpis",
+      label: "Dashboard financial KPIs",
+      count: 1,
+      module: "dashboard",
+      page: "Dashboard",
+    });
+  }
+  const dashboardKpiMismatches = Array.isArray(input.kpiMismatches) ? input.kpiMismatches : [];
+  const dashboardSyntheticEvents = dashboardFallbackPathRows.length + dashboardKpiMismatches.length;
+  const dashboardCanonicalEvents = dashboardSyntheticEvents === 0 ? 1 : 0;
+  const dashboardChecks = [
+    dashboardKpiMismatches.length === 0,
+    dashboardFallbackPathRows.length === 0,
+    dashboardLegacyDerivedSurfaces.length === 0,
+  ];
+  const dashboardAdoptedChecks = dashboardChecks.filter(Boolean).length;
+  const dashboardAdoptionPercent = Math.round((dashboardAdoptedChecks / dashboardChecks.length) * 100);
+  const moduleProgress = [
+    {
+      module: "dashboard",
+      page: "Dashboard",
+      adopted: dashboardAdoptedChecks,
+      total: dashboardChecks.length,
+      adoptionPercent: dashboardAdoptionPercent,
+      legacyDependencyCount: dashboardLegacyDerivedSurfaces.length,
+    },
+    {
+      module: "manage-booking",
+      page: "Manage Booking",
+      adopted: manageBooking.adoptedCount,
+      total: manageBooking.sampleCount,
+      adoptionPercent: manageBooking.adoptionPercent,
+      legacyDependencyCount: manageBooking.legacyDerivedSurfaces.length,
+    },
+  ];
+  const fallbackPathUsage = mergeTransitionFrequencyRows([
+    ...dashboardFallbackPathRows,
+    ...(manageBooking.fallbackPathUsage || []),
+  ]);
+  const legacyDerivedSurfaces = mergeTransitionFrequencyRows([
+    ...dashboardLegacyDerivedSurfaces,
+    ...(manageBooking.legacyDerivedSurfaces || []),
+  ]);
+  const totalSignals = moduleProgress.reduce((sum, item) => sum + Math.max(0, Number(item.total || 0)), 0);
+  const adoptedSignals = moduleProgress.reduce((sum, item) => sum + Math.max(0, Number(item.adopted || 0)), 0);
+  const adoptionPercent = totalSignals > 0 ? Math.round((adoptedSignals / totalSignals) * 100) : 100;
+  const syntheticEventCount = dashboardSyntheticEvents + Number(manageBooking.eventUsage?.synthetic || 0);
+  const canonicalEventCount = dashboardCanonicalEvents + Number(manageBooking.eventUsage?.canonical || 0);
+
+  return {
+    summary: {
+      adoptionPercent,
+      adoptedSignals,
+      totalSignals,
+      sampleBookings: manageBooking.sampleCount,
+      openIssues:
+        Number(manageBooking.lifecycleMismatchCount || 0)
+        + Number(manageBooking.financialSnapshotDiffCount || 0)
+        + dashboardKpiMismatches.length,
+      fallbackEvents: fallbackPathUsage.reduce((sum, row) => sum + Number(row.count || 0), 0),
+      remainingLegacySurfaces: legacyDerivedSurfaces.length,
+    },
+    counts: {
+      lifecycleMismatches: Number(manageBooking.lifecycleMismatchCount || 0),
+      financialSnapshotDiffs: Number(manageBooking.financialSnapshotDiffCount || 0),
+      kpiAggregationMismatches: dashboardKpiMismatches.length,
+    },
+    eventUsage: {
+      synthetic: syntheticEventCount,
+      canonical: canonicalEventCount,
+    },
+    fallbackPathUsage: fallbackPathUsage.slice(0, 8),
+    legacyDerivedSurfaces: legacyDerivedSurfaces.slice(0, 8),
+    moduleProgress,
+    highlights: {
+      lifecycleMismatches: manageBooking.samples?.lifecycleMismatches || [],
+      financialSnapshotDiffs: manageBooking.samples?.financialSnapshotDiffs || [],
+      kpiAggregationMismatches: dashboardKpiMismatches.slice(0, 5),
+    },
+  };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -144,6 +386,16 @@ export default async function handler(req, res) {
     const sb = getSupabaseAdmin();
     let bookingKpiSource = sb ? "supabase_bookings" : "bookings_json";
     let financialSource = "uninitialized";
+    const dashboardFallbackPaths = [];
+    const trackDashboardFallback = (details = {}) => {
+      const row = {
+        path: String(details?.path || "").trim(),
+        fallback: details?.fallback || null,
+        reason: details?.reason || null,
+      };
+      if (row.path) dashboardFallbackPaths.push(row);
+      logDashboardContractTransition("fallback_path_used", details);
+    };
 
     // Resolve vehicle IDs dynamically so newly-added vehicles appear in dashboard
     // queries without requiring a code re-deploy.  Falls back to the static list
@@ -175,7 +427,7 @@ export default async function handler(req, res) {
             .select(`
               booking_ref, vehicle_id, status,
               pickup_date, return_date, pickup_time, return_time,
-              deposit_paid, created_at,
+              deposit_paid, remaining_balance, total_price, payment_status, category, created_at,
               customers ( name )
             `)
             .in("vehicle_id", ALLOWED_VEHICLES)
@@ -191,16 +443,20 @@ export default async function handler(req, res) {
             returnDate:  r.return_date  || "",
             returnTime:  r.return_time  || "",
             amountPaid:  Number(r.deposit_paid || 0),
+            totalPrice:  Number(r.total_price || 0),
+            remainingBalance: Number(r.remaining_balance || 0),
+            paymentStatus: r.payment_status || "",
+            category: r.category || "",
             createdAt:   r.created_at,
           }));
         } catch (err) {
           if (isNetworkError(err)) {
-            bookingKpiSource = "bookings_json_network_fallback";
-            logDashboardContractTransition("fallback_path_used", {
-              path: "bookings_kpis",
-              fallback: "bookings_json",
-              reason: "supabase_network_error",
-            });
+           bookingKpiSource = "bookings_json_network_fallback";
+           trackDashboardFallback({
+             path: "bookings_kpis",
+             fallback: "bookings_json",
+             reason: "supabase_network_error",
+           });
             console.error("[FALLBACK] Supabase unreachable in v2-dashboard, using bookings.json:", err.message);
             const { data } = await loadBookings();
             return Object.values(data).flat();
@@ -210,7 +466,7 @@ export default async function handler(req, res) {
       }
       // Supabase not configured — use bookings.json directly
       bookingKpiSource = "bookings_json";
-      logDashboardContractTransition("fallback_path_used", {
+      trackDashboardFallback({
         path: "bookings_kpis",
         fallback: "bookings_json",
         reason: "supabase_unconfigured",
@@ -222,7 +478,7 @@ export default async function handler(req, res) {
     const metricsPromise = sb
       ? sb.from("admin_metrics_v2").select("*").single()
           .then((r) => r, (e) => {
-            logDashboardContractTransition("fallback_path_used", {
+            trackDashboardFallback({
               path: "admin_metrics_v2",
               fallback: "runtime_aggregations",
               reason: e?.message || "query_failed",
@@ -255,7 +511,7 @@ export default async function handler(req, res) {
     const kpiPromise = sb && !normalizedScope
       ? sb.from("total_revenue_kpi_canonical").select("total_revenue").single()
           .then((r) => r, (e) => {
-            logDashboardContractTransition("fallback_path_used", {
+            trackDashboardFallback({
               path: "total_revenue_kpi_canonical",
               fallback: "revenue_aggregation_loop",
               reason: e?.message || "query_failed",
@@ -450,7 +706,7 @@ export default async function handler(req, res) {
 
         if (rrErr) {
           const logFn = isSchemaError(rrErr) ? console.warn : console.error;
-          logDashboardContractTransition("fallback_path_used", {
+          trackDashboardFallback({
             path: "revenue_reporting_canonical",
             fallback: "revenue_records_effective_or_bookings",
             reason: rrErr.message,
@@ -491,7 +747,7 @@ export default async function handler(req, res) {
         }
         // If rrRows is empty (no paid records yet) we fall through to the orphan fallback.
       } catch (rrEx) {
-        logDashboardContractTransition("fallback_path_used", {
+        trackDashboardFallback({
           path: "revenue_reporting_canonical",
           fallback: "revenue_records_effective_or_bookings",
           reason: rrEx.message,
@@ -514,7 +770,7 @@ export default async function handler(req, res) {
         if (!rreErr && (rreRows || []).length > 0) {
           financialsFromRevRecords = true;
           financialSource = "revenue_records_effective";
-          logDashboardContractTransition("fallback_path_used", {
+          trackDashboardFallback({
             path: "revenue_reporting_canonical",
             fallback: "revenue_records_effective",
             reason: "canonical_rows_empty_or_orphaned",
@@ -551,7 +807,7 @@ export default async function handler(req, res) {
     // Mirrors the same fallback used by api/v2-revenue.js.
     if (!financialsFromRevRecords) {
       financialSource = "bookings_derived_financials";
-      logDashboardContractTransition("fallback_path_used", {
+      trackDashboardFallback({
         path: "financial_kpis",
         fallback: "bookings_derived_financials",
         reason: "canonical_reporting_unavailable",
@@ -815,6 +1071,14 @@ export default async function handler(req, res) {
       console.error("v2-dashboard applications:", applicationSnapshot.details);
     }
 
+    const contractTransitionObservability = buildContractTransitionObservabilitySummary({
+      dashboardFallbackPaths,
+      dashboardUsesLegacyBookingLoop: true,
+      dashboardFinancialSource: financialSource,
+      kpiMismatches,
+      manageBookingBookings: allBookings,
+    });
+
     return res.status(200)
       .setHeader("Cache-Control", "no-store")
       .json({
@@ -841,6 +1105,7 @@ export default async function handler(req, res) {
         alerts,
         recentBookings,
         applicationOps: applicationSummary,
+        contractTransitionObservability,
       });
   } catch (err) {
     console.error("v2-dashboard error:", err);

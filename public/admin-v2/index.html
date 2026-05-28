@@ -268,6 +268,43 @@
     .ai-rec-list { display:grid; gap: 9px; }
     .ai-rec-item { font-size: 12px; padding: 9px 10px; border-radius: 8px; background:#f8fafc; border: 1px solid #e2e8f0; }
     .ai-rec-item strong { color: #0f172a; }
+    .migration-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .migration-stat {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: #fafafa;
+    }
+    .migration-stat-label { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .migration-stat-value { font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .migration-stat-sub { font-size: 11px; color: var(--text-sub); }
+    .migration-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .migration-progress-list { display: grid; gap: 10px; }
+    .migration-progress-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: #fafafa; }
+    .migration-progress-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+    .migration-progress-label { font-size: 12px; font-weight: 600; }
+    .migration-progress-meta { font-size: 11px; color: var(--text-sub); }
+    .migration-progress-bar { height: 8px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+    .migration-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #16a34a); }
+    .migration-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .migration-chip {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
 
     /* ── Table ──────────────────────────────────────────────────── */
     .table-wrap { overflow-x: auto; }
@@ -371,6 +408,8 @@
       .app-queue-kpis { grid-template-columns:repeat(2,1fr); }
       .app-filter-bar input { min-width:140px; }
       .app-detail-label { min-width:110px; }
+      .migration-summary-grid,
+      .migration-grid { grid-template-columns:1fr; }
     }
 
     /* ── Vehicles Grid ──────────────────────────────────────────── */
@@ -1372,6 +1411,33 @@
             <div class="card">
               <div class="card-header"><div class="card-title">Recommended Next Steps</div></div>
               <div class="feed-list" id="operator-next-steps-list"></div>
+            </div>
+          </div>
+          <div class="card" id="migration-observability-card" style="margin-bottom:24px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Contract Migration Observability</div>
+                <div class="card-sub">Internal/admin-only rollout progress, mismatch tracking, and legacy dependency summary</div>
+              </div>
+            </div>
+            <div class="migration-summary-grid" id="migration-observability-summary"></div>
+            <div class="migration-grid">
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Open Findings</div>
+                <div class="metric-list" id="migration-observability-findings"></div>
+              </div>
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Fallback Path Frequency</div>
+                <div class="feed-list" id="migration-observability-fallbacks"></div>
+              </div>
+              <div>
+                <div class="card-sub" style="margin-bottom:8px;">Adoption by Module/Page</div>
+                <div class="migration-progress-list" id="migration-module-progress"></div>
+              </div>
+            </div>
+            <div style="margin-top:16px;">
+              <div class="card-sub" style="margin-bottom:8px;">Remaining Legacy-derived Surfaces</div>
+              <div class="migration-chip-row" id="migration-legacy-surfaces"></div>
             </div>
           </div>
           <div class="charts-grid">
@@ -4598,6 +4664,7 @@ function renderDashboard(data) {
 
   const stepPanelEl = document.getElementById('operator-next-steps-list');
   if (stepPanelEl) stepPanelEl.innerHTML = nextSteps.slice(0, 4).map((step) => feedItem(step.title || 'Next action', step.note || '')).join('');
+  renderMigrationObservability(data.contractTransitionObservability || null, { metricRow, feedItem });
 
   const topStepsEl = document.getElementById('dashboard-next-steps');
   if (topStepsEl) topStepsEl.innerHTML = topGuidance;
@@ -4689,6 +4756,97 @@ function renderDashboard(data) {
           <div>${statusBadge(b.status)}</div>
         </div>
       </div>`).join('');
+}
+
+function renderMigrationObservability(report, helpers = {}) {
+  const summaryEl = document.getElementById('migration-observability-summary');
+  const findingsEl = document.getElementById('migration-observability-findings');
+  const fallbackEl = document.getElementById('migration-observability-fallbacks');
+  const progressEl = document.getElementById('migration-module-progress');
+  const surfacesEl = document.getElementById('migration-legacy-surfaces');
+  if (!summaryEl || !findingsEl || !fallbackEl || !progressEl || !surfacesEl) return;
+
+  const metricRow = typeof helpers.metricRow === 'function'
+    ? helpers.metricRow
+    : ((label, value, tone = '') => `<div class="metric-row"><div class="metric-name">${esc(label)}</div><div class="metric-value ${tone}">${esc(String(value))}</div></div>`);
+  const feedItem = typeof helpers.feedItem === 'function'
+    ? helpers.feedItem
+    : ((title, sub = '') => `<div class="feed-item"><div class="feed-title">${esc(title)}</div>${sub ? `<div class="feed-sub">${esc(sub)}</div>` : ''}</div>`);
+
+  const summary = report?.summary || {};
+  const counts = report?.counts || {};
+  const eventUsage = report?.eventUsage || {};
+  const summaryCards = [
+    {
+      label: 'Adoption',
+      value: `${Number(summary.adoptionPercent || 0)}%`,
+      sub: `${Number(summary.adoptedSignals || 0)}/${Number(summary.totalSignals || 0)} tracked signals aligned`,
+    },
+    {
+      label: 'Open Issues',
+      value: Number(summary.openIssues || 0),
+      sub: `${Number(counts.lifecycleMismatches || 0)} lifecycle · ${Number(counts.financialSnapshotDiffs || 0)} financial · ${Number(counts.kpiAggregationMismatches || 0)} KPI`,
+    },
+    {
+      label: 'Fallback Events',
+      value: Number(summary.fallbackEvents || 0),
+      sub: `${Number(summary.sampleBookings || 0)} booking sample${Number(summary.sampleBookings || 0) === 1 ? '' : 's'} inspected`,
+    },
+    {
+      label: 'Event Mix',
+      value: `${Number(eventUsage.canonical || 0)} / ${Number(eventUsage.synthetic || 0)}`,
+      sub: 'Canonical vs synthetic/legacy-driven signals',
+    },
+  ];
+
+  summaryEl.innerHTML = summaryCards.map((card) => `
+    <div class="migration-stat">
+      <div class="migration-stat-label">${esc(card.label)}</div>
+      <div class="migration-stat-value">${esc(String(card.value))}</div>
+      <div class="migration-stat-sub">${esc(card.sub)}</div>
+    </div>
+  `).join('');
+
+  findingsEl.innerHTML = [
+    metricRow('Lifecycle mismatches', Number(counts.lifecycleMismatches || 0), Number(counts.lifecycleMismatches || 0) > 0 ? 'bad' : 'good'),
+    metricRow('Financial snapshot diffs', Number(counts.financialSnapshotDiffs || 0), Number(counts.financialSnapshotDiffs || 0) > 0 ? 'warn' : 'good'),
+    metricRow('KPI aggregation mismatches', Number(counts.kpiAggregationMismatches || 0), Number(counts.kpiAggregationMismatches || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Legacy-derived surfaces', Number(summary.remainingLegacySurfaces || 0), Number(summary.remainingLegacySurfaces || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Synthetic event usage', Number(eventUsage.synthetic || 0), Number(eventUsage.synthetic || 0) > 0 ? 'warn' : 'good'),
+    metricRow('Canonical event usage', Number(eventUsage.canonical || 0), Number(eventUsage.canonical || 0) > 0 ? 'good' : 'warn'),
+  ].join('');
+
+  const fallbackRows = Array.isArray(report?.fallbackPathUsage) ? report.fallbackPathUsage : [];
+  fallbackEl.innerHTML = fallbackRows.length
+    ? fallbackRows.slice(0, 6).map((row) => feedItem(
+        `${row.label || row.key} · ${Number(row.count || 0)}`,
+        `${row.page || row.module || 'Unknown surface'}${row.fallback ? ` → ${row.fallback}` : ''}`,
+      )).join('')
+    : feedItem('No fallback paths observed', 'Current dashboard sample is using canonical paths only.');
+
+  const progressRows = Array.isArray(report?.moduleProgress) ? report.moduleProgress : [];
+  progressEl.innerHTML = progressRows.length
+    ? progressRows.map((row) => {
+        const pct = Math.max(0, Math.min(100, Number(row.adoptionPercent || 0)));
+        return `
+          <div class="migration-progress-item">
+            <div class="migration-progress-head">
+              <div>
+                <div class="migration-progress-label">${esc(row.page || row.module || 'Module')}</div>
+                <div class="migration-progress-meta">${esc((row.module || 'module') + ' · ' + String(row.adopted || 0) + '/' + String(row.total || 0) + ' clean signals')}</div>
+              </div>
+              <div class="migration-progress-label">${esc(String(pct) + '%')}</div>
+            </div>
+            <div class="migration-progress-bar"><div class="migration-progress-fill" style="width:${pct}%;"></div></div>
+          </div>
+        `;
+      }).join('')
+    : '<div class="feed-item"><div class="feed-title">No module samples yet</div><div class="feed-sub">Migration adoption will appear once tracked admin signals are available.</div></div>';
+
+  const surfaces = Array.isArray(report?.legacyDerivedSurfaces) ? report.legacyDerivedSurfaces : [];
+  surfacesEl.innerHTML = surfaces.length
+    ? surfaces.map((row) => `<span class="migration-chip">${esc(`${row.label || row.key} · ${row.page || row.module || 'surface'}${row.count ? ` (${row.count})` : ''}`)}</span>`).join('')
+    : '<span class="migration-chip">No legacy-derived surfaces observed</span>';
 }
 
 // ── Vehicles ───────────────────────────────────────────────────────────────
