@@ -20,13 +20,13 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { withAdminAuth } from "./_middleware.js";
+import { logCompatibilityFallback, logDefaultOrgFallback } from "./_org-rollout-observability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.js";
 import { getAllVehicleIds } from "./_pricing.js";
 import crypto from "crypto";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const RECORDS_FILE    = "revenue-records.json";
 
@@ -84,22 +84,9 @@ async function saveRecordsToGitHub(data, sha, message) {
   }
 }
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
-  if (!isAdminConfigured())
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-
+export default withAdminAuth(async function handler(req, res) {
   const body = req.body || {};
   const { action } = body;
-  const suppliedAdminCredential = extractAdminSecret(req);
-  if (!isAdminAuthorized(suppliedAdminCredential))
-    return res.status(401).json({ error: "Unauthorized" });
 
   const sb = getSupabase();
 
@@ -151,6 +138,12 @@ export default async function handler(req, res) {
         }
       }
       // GitHub fallback
+      logCompatibilityFallback({
+        endpoint: "v2-revenue",
+        action: "list",
+        fallback: "github_records",
+        reason: "supabase_unavailable_or_empty",
+      });
       const { data: ghRecords } = await loadRecordsFromGitHub();
       let records = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
       if (body.vehicleId)  records = records.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
@@ -216,6 +209,7 @@ export default async function handler(req, res) {
         created_at:         new Date().toISOString(),
         updated_at:         new Date().toISOString(),
       };
+      logDefaultOrgFallback(req, { endpoint: "v2-revenue", action: "create", table: "revenue_records" });
 
       if (sb) {
         // Do NOT pass `id` — Supabase generates it via gen_random_uuid()
@@ -223,6 +217,13 @@ export default async function handler(req, res) {
         if (!error) return res.status(201).json({ record: data });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue create: revenue_records table missing, falling back to GitHub");
+        logCompatibilityFallback({
+          endpoint: "v2-revenue",
+          action: "create",
+          fallback: "github_records",
+          reason: "schema_compat",
+          detail: error.message,
+        });
       }
       // GitHub fallback — include a client-generated UUID for the id field
       const ghRecord = { id: crypto.randomUUID(), ...commonFields };
@@ -266,10 +267,18 @@ export default async function handler(req, res) {
       }
 
       if (sb) {
+        logDefaultOrgFallback(req, { endpoint: "v2-revenue", action: "update", table: "revenue_records" });
         const { data, error } = await sb.from("revenue_records").update(updates).eq("id", body.id).select().single();
         if (!error) return res.status(200).json({ record: data });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue update: revenue_records table missing, falling back to GitHub");
+        logCompatibilityFallback({
+          endpoint: "v2-revenue",
+          action: "update",
+          fallback: "github_records",
+          reason: "schema_compat",
+          detail: error.message,
+        });
       }
       // GitHub fallback
       let updated;
@@ -298,6 +307,13 @@ export default async function handler(req, res) {
         if (!error) return res.status(200).json({ success: true });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue delete: revenue_records table missing, falling back to GitHub");
+        logCompatibilityFallback({
+          endpoint: "v2-revenue",
+          action: "delete",
+          fallback: "github_records",
+          reason: "schema_compat",
+          detail: error.message,
+        });
       }
       // GitHub fallback — hard-delete by id
       await updateJsonFileWithRetry({
@@ -786,4 +802,4 @@ export default async function handler(req, res) {
     console.error("v2-revenue error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
-}
+});

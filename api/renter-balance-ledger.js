@@ -6,7 +6,8 @@
 //   - history: get transaction history
 //   - add_transaction: append a ledger transaction
 
-import { isAdminAuthorized } from "./_admin-auth.js";
+import { withAdminAuth } from "./_middleware.js";
+import { logDefaultOrgFallback } from "./_org-rollout-observability.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import {
   getLedgerSummary,
@@ -18,24 +19,9 @@ import {
   updateLedgerTransaction,
 } from "./_renter-balance-ledger.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
-
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
-
+export default withAdminAuth(async function handler(req, res) {
   const body = req.body || {};
-  const { secret, action = "summary" } = body;
-
-  if (!isAdminAuthorized(secret)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  const { action = "summary" } = body;
 
   const sb = getSupabaseAdmin();
   if (!sb) {
@@ -73,6 +59,7 @@ export default async function handler(req, res) {
         });
       }
       case "add_charge": {
+        logDefaultOrgFallback(req, { endpoint: "renter-balance-ledger", action: "add_charge", table: "renter_balance_ledger" });
         const result = await addLedgerCharge(sb, {
           bookingId,
           customerId,
@@ -97,6 +84,7 @@ export default async function handler(req, res) {
         });
       }
       case "add_transaction": {
+        logDefaultOrgFallback(req, { endpoint: "renter-balance-ledger", action: "add_transaction", table: "renter_balance_ledger" });
         const transaction = await insertLedgerTransaction(sb, {
           bookingId,
           customerId,
@@ -152,4 +140,4 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(400).json({ error: err.message || "Request failed" });
   }
-}
+});

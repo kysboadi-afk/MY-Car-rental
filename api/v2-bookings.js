@@ -30,8 +30,8 @@ import nodemailer from "nodemailer";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { withAdminAuth } from "./_middleware.js";
 import { APP_TO_DB_STATUS, isIncompleteCheckoutAppStatus, toAppBookingStatus } from "./_booking-status.js";
 import {
   autoCreateRevenueRecord,
@@ -266,27 +266,9 @@ async function unblockBookedDates(_vehicleId, _from, _to) {
   console.log("v2-bookings: unblockBookedDates() called but writes are disabled (Phase 4)");
 }
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
-  if (!isAdminConfigured()) {
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-  }
-
+export default withAdminAuth(async function handler(req, res) {
   const body   = req.body || {};
   const { action } = body;
-  const adminSecret = extractAdminSecret(req);
-
-  if (!isAdminAuthorized(adminSecret)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
 
   try {
     // Resolve the full set of known vehicle IDs from the DB on each request so
@@ -2520,4 +2502,4 @@ export default async function handler(req, res) {
     console.error("v2-bookings error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
-}
+});

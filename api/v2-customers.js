@@ -21,10 +21,10 @@ import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings, normalizePhone } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { loadExpenses } from "./_expenses.js";
 import { loadVehicles } from "./_vehicles.js";
+import { withAdminAuth } from "./_middleware.js";
 
 /**
  * Compute the number of rental days between two date strings.
@@ -227,21 +227,9 @@ async function saveCustomersToGitHub(data, sha, message) {
   }
 }
 
-export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
-  if (!isAdminConfigured())
-    return res.status(500).json({ error: "ADMIN_SECRET not configured" });
-
+export default withAdminAuth(async function handler(req, res) {
   const body = req.body || {};
-  const { secret, action } = body;
-  if (!isAdminAuthorized(secret))
-    return res.status(401).json({ error: "Unauthorized" });
+  const { action } = body;
 
   const sb = getSupabase();
 
@@ -1172,4 +1160,4 @@ export default async function handler(req, res) {
     console.error("v2-customers error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
-}
+});
