@@ -25,6 +25,8 @@ Follow these steps **in order**. Each links to the full instructions below.
 
 > 💡 After adding **any** new environment variable in Vercel, you must **Redeploy** for it to take effect: go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
 
+> 🧪 For staging rollout and isolation controls, follow **[STAGING_SETUP.md](./STAGING_SETUP.md)** before enabling enforcement-related production changes.
+
 ---
 
 ## Step 0 — Connect Your GitHub Repository to Vercel

@@ -131,6 +131,8 @@ You can also reach the admin from any page on the site — click the small **Adm
 
 See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
 
+Staging rollout/isolation checklist: **[STAGING_SETUP.md](STAGING_SETUP.md)**
+
 For Stripe webhook ownership, signing-secret setup, replay, and reconciliation, start at **[VERCEL_SETUP.md → Step 2b](VERCEL_SETUP.md#step-2b--set-the-canonical-stripe-webhook-endpoint-and-signing-secret)**.
 
 ## ⚠️ Apply flow hardening note (current behavior)
