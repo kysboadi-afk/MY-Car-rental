@@ -82,6 +82,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Please enter a valid email address." });
   }
 
+  const supabaseUrlPresent = Boolean(process.env.SUPABASE_URL);
+  const supabaseServiceRoleKeyPresent = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  console.info("operator-leads Supabase env presence", {
+    supabaseUrlPresent,
+    supabaseServiceRoleKeyPresent,
+    appEnv: process.env.APP_ENV || null,
+  });
+
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return res.status(503).json({
