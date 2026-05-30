@@ -8,13 +8,6 @@ const EXACT_ALLOWED_ORIGINS = new Set([
   "https://admin.slycarrentals.com",
 ]);
 
-const FLEET_SIZE_BUCKETS = {
-  "1-3 vehicles": 1,
-  "4-10 vehicles": 4,
-  "11-25 vehicles": 11,
-  "26+ vehicles": 26,
-};
-
 function normalizeText(value, maxLength = 5000) {
   return String(value || "").trim().slice(0, maxLength);
 }
@@ -44,6 +37,19 @@ function looksLikeEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
+function splitLeadName(name) {
+  const trimmed = normalizeText(name, 160);
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return { firstName: parts[0], lastName: "Lead" };
+  }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
+  };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   setCors(origin, res);
@@ -66,7 +72,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Submission rejected." });
   }
 
-  const normalizedName = normalizeText(name, 160);
+  const { firstName, lastName } = splitLeadName(name);
   const normalizedEmail = normalizeText(email, 320).toLowerCase();
   const normalizedPhone = normalizeText(phone, 64);
   const normalizedFleetSize = normalizeText(fleetSize, 64);
@@ -74,13 +80,21 @@ export default async function handler(req, res) {
   const normalizedMessage = normalizeText(message, 4000);
   const normalizedSource = normalizeText(source, 80) || "fleet_control_early_access";
 
-  if (!normalizedName || !normalizedEmail || !normalizedPhone || !normalizedFleetSize || !normalizedPriority || !normalizedMessage) {
+  if (!firstName || !normalizedEmail || !normalizedPhone || !normalizedFleetSize || !normalizedPriority || !normalizedMessage) {
     return res.status(400).json({ error: "Missing required fields: name, email, phone, fleetSize, priority, message." });
   }
 
   if (!looksLikeEmail(normalizedEmail)) {
     return res.status(400).json({ error: "Please enter a valid email address." });
   }
+
+  const supabaseUrlPresent = Boolean(process.env.SUPABASE_URL);
+  const supabaseServiceRoleKeyPresent = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  console.info("operator-leads Supabase env presence", {
+    supabaseUrlPresent,
+    supabaseServiceRoleKeyPresent,
+    appEnv: process.env.APP_ENV || null,
+  });
 
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -89,19 +103,25 @@ export default async function handler(req, res) {
     });
   }
 
+  const notes = normalizeText(
+    [
+      `priority=${normalizedPriority}`,
+      `message=${normalizedMessage}`,
+      `fleet_size_label=${normalizedFleetSize}`,
+      `origin=${origin || ""}`,
+      `user_agent=${req.headers["user-agent"] || ""}`,
+    ].join(" | "),
+    4000
+  );
+
   const payload = {
-    name: normalizedName,
+    first_name: firstName,
+    last_name: lastName,
     email: normalizedEmail,
     phone: normalizedPhone,
-    fleet_size: FLEET_SIZE_BUCKETS[normalizedFleetSize] ?? null,
+    fleet_size: normalizedFleetSize,
     source: normalizedSource,
-    metadata: {
-      fleet_size_label: normalizedFleetSize,
-      priority: normalizedPriority,
-      message: normalizedMessage,
-      origin: origin || null,
-      user_agent: req.headers["user-agent"] || null,
-    },
+    notes,
   };
 
   const { data, error } = await supabase
@@ -111,7 +131,13 @@ export default async function handler(req, res) {
     .single();
 
   if (error) {
-    console.error("operator-leads insert failed:", error);
+    console.error("operator-leads insert failed:", {
+      code: error.code || null,
+      message: error.message || String(error),
+      details: error.details || null,
+      hint: error.hint || null,
+      payloadKeys: Object.keys(payload),
+    });
     return res.status(500).json({ error: "Failed to store operator lead." });
   }
 
