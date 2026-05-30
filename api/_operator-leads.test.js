@@ -153,11 +153,12 @@ test("stores operator lead in Supabase and returns success metadata", async () =
   assert.equal(res._body.leadId, "lead-123");
   assert.equal(insertCalls.length, 1);
   assert.equal(insertCalls[0].table, "operator_leads");
-  assert.equal(insertCalls[0].payload.name, "Jordan Fleet");
+  assert.equal(insertCalls[0].payload.first_name, "Jordan");
+  assert.equal(insertCalls[0].payload.last_name, "Fleet");
   assert.equal(insertCalls[0].payload.email, "jordan@example.com");
-  assert.equal(insertCalls[0].payload.fleet_size, 4);
+  assert.equal(insertCalls[0].payload.fleet_size, "4-10 vehicles");
   assert.equal(insertCalls[0].payload.source, "fleet_control_early_access");
-  assert.equal(insertCalls[0].payload.metadata.fleet_size_label, "4-10 vehicles");
-  assert.equal(insertCalls[0].payload.metadata.priority, "Booking and renter workflow control");
-  assert.equal(insertCalls[0].payload.metadata.message, "Need a walkthrough for our Uber rental operation.");
+  assert.match(insertCalls[0].payload.notes, /priority=Booking and renter workflow control/);
+  assert.match(insertCalls[0].payload.notes, /message=Need a walkthrough for our Uber rental operation\./);
+  assert.match(insertCalls[0].payload.notes, /fleet_size_label=4-10 vehicles/);
 });
