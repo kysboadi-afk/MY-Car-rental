@@ -15,7 +15,7 @@ FROM (
     (2, 'wave_a_audit_clean', 'Run 0179_backfill_audit.sql and resolve all INVESTIGATE/ACTION REQUIRED results.', 'PENDING', 'Fallback/parity anomalies must be closed first.'),
     (3, 'wave_b_deployed', 'Apply 0180_financial_tenant_wave_b.sql successfully in target environment.', 'PENDING', 'Do not proceed if migration apply is partial.'),
     (4, 'wave_b_audit_clean', 'Run 0181_wave_b_backfill_audit.sql and close mismatch/null-org findings.', 'PENDING', 'No unresolved parity drift before enforcement.'),
-    (5, 'ownership_gaps_closed', 'Run 0182_tenant_ownership_inventory.sql; all tenant-sensitive surfaces must be classified READY.', 'PENDING', 'No unresolved ownership surfaces remain.'),
+    (5, 'ownership_gaps_closed', 'Run 0182_tenant_ownership_inventory.sql; Result Set 3 must be empty for Wave A/B enforcement surfaces.', 'PENDING', 'No unresolved ownership gaps remain on Wave A/B enforcement tables.'),
     (6, 'runtime_observability_active', 'Confirm runtime events are emitting for auth_mismatch, parity_drift, tenant_isolation_gap, financial_consistency_alert.', 'PENDING', 'Instrumentation must be active in production paths.'),
     (7, 'rollback_plan_ready', 'Document rollback SQL and feature-flag rollback actions for each enforcement step.', 'PENDING', 'Rollback must be validated before policy activation.'),
     (8, 'enforcement_dry_run', 'Execute read-only dry-run checks in staging and compare with expected tenant partitions.', 'PENDING', 'No cross-tenant leakage in dry-run results.'),

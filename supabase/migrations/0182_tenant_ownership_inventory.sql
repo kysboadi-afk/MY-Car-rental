@@ -8,7 +8,7 @@
 -- OUTPUTS:
 --   1) Detailed surface inventory with readiness classification
 --   2) Classification summary counts (ready / owned-but-unaudited / unresolved ownership)
---   3) Unresolved ownership surface list (action queue)
+--   3) Wave A/B unresolved ownership surface list (action queue)
 --
 -- SAFETY:
 --   Read-only. No schema/data mutation.
@@ -224,12 +224,14 @@ SELECT
     WHEN s.table_type = 'VIEW' THEN 'derived_reporting_surface'
     ELSE 'financial_table'
   END AS domain,
-  'missing organization_id ownership' AS unresolved_reason
+  'missing organization_id ownership on Wave A/B enforcement surface' AS unresolved_reason
 FROM information_schema.tables s
 LEFT JOIN target_audit_status a
   ON a.surface_name = s.table_name
 WHERE s.table_schema = 'public'
   AND s.table_type IN ('BASE TABLE', 'VIEW')
+  AND a.surface_name IS NOT NULL
+  AND a.expected_domain = 'financial_table'
   AND (
     EXISTS (
       SELECT 1
