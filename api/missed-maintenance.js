@@ -39,6 +39,7 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const OWNER_PHONE = process.env.OWNER_PHONE || "+18445114059";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -126,6 +127,8 @@ export default async function handler(req, res) {
   } else if (req.method !== "GET") {
     return res.status(405).send("Method Not Allowed");
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "missed-maintenance" })) return;
 
   const sb = getSupabaseAdmin();
   if (!sb) {

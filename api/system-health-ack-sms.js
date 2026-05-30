@@ -31,7 +31,7 @@ export default async function handler(req, res) {
   }
 
   const normalizedBookingRef = String(bookingRef || "").trim();
-  if (!/^bk-/i.test(normalizedBookingRef)) {
+  if (!normalizedBookingRef) {
     return res.status(400).json({ error: "bookingRef is required." });
   }
 

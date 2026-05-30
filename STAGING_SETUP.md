@@ -38,6 +38,21 @@ Add each variable from the table below.
 
 Use the `.env.staging.example` file in this repository as a checklist — it lists every variable name with a placeholder value.
 
+### Required staging identity controls
+
+| Variable | Value |
+|---|---|
+| `APP_ENV` | `staging` |
+| `ENABLE_STAGING_AUTOMATION` | Optional; set `true` only if you intentionally want scheduled GET cron jobs to run in staging |
+
+When `APP_ENV=staging` and `ENABLE_STAGING_AUTOMATION` is not `true`, scheduled GET automation endpoints return:
+
+```json
+{"skipped":true,"reason":"staging_automation_disabled"}
+```
+
+Manual POST triggers with `ADMIN_SECRET`/`CRON_SECRET` still work.
+
 ### Core (required for any staging API call)
 
 | Variable | Value |
@@ -105,7 +120,9 @@ After adding all variables click **Save**, then:
 
 ---
 
-## Step 3 — Configure a staging Stripe webhook
+## Step 3 — Configure staging webhooks
+
+### Stripe
 
 1. In Stripe Dashboard, make sure you are in **Test Mode** (toggle in the top-right).
 2. Go to **Developers → Webhooks → Add endpoint**.
@@ -124,7 +141,13 @@ After adding all variables click **Save**, then:
 7. Paste it into the `STRIPE_WEBHOOK_SECRET` variable you set in Step 2.
 8. Redeploy the staging project again so the new value takes effect.
 
-### Validate the webhook
+### Other webhook endpoints to review in staging
+
+- `/api/stripe-identity-webhook`
+- `/api/veriff-webhook`
+- `/api/bouncie-webhook` (if included in staging validation scope)
+
+### Validate Stripe webhook
 
 After redeploy, in Stripe Dashboard → the staging endpoint, send a test delivery for `payment_intent.succeeded`.  
 Confirm Stripe receives **2xx** and that Vercel function logs show **no** `signature verification failed` error.
@@ -149,6 +172,19 @@ The staging Supabase project starts empty. Apply the full schema before testing:
 
 1. Follow the instructions in **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** — Step 3 (SQL migrations).
 2. Use the staging project's connection string, not production.
+3. Validate and retain evidence for migrations `0178`, `0179`, `0181`, `0182`, and readiness gates referenced in `0183` before enabling production enforcement changes.
+
+---
+
+## Decision gate
+
+Do **not**:
+
+- activate RLS enforcement,
+- enable hard org enforcement,
+- retire legacy auth,
+
+until staging validation evidence is reviewed and approved.
 
 ---
 
@@ -157,4 +193,5 @@ The staging Supabase project starts empty. Apply the full schema before testing:
 - **Production Vercel project:** untouched at every step above.
 - **Stripe test keys** (`sk_test_` / `pk_test_`) cannot charge real cards — safe to use freely.
 - Cron jobs run on the staging project against staging Supabase only.
+- Keep staging frontend/backend hostnames separate from production and verify CORS allowlists before running staging QA.
 - GitHub calendar writes via `GITHUB_TOKEN` do write to the repo's `booked-dates.json`. If you do not want staging test bookings to appear on the live calendar, either omit `GITHUB_TOKEN` from the staging project or use a fork for staging.

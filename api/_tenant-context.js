@@ -1,3 +1,5 @@
+import { logTenantIsolationGap } from "./_org-rollout-observability.js";
+
 // api/_tenant-context.js
 // Tenant context resolution for multi-tenant SaaS architecture.
 //
@@ -198,6 +200,15 @@ export function assertTenantOwnership(ctx, rowOrgId) {
   if (!ctx?.organizationId) return true;
   if (!rowOrgId) return true;
   if (ctx.organizationId !== rowOrgId) {
+    logTenantIsolationGap({
+      endpoint: "tenant_context_assert",
+      table: "unknown",
+      recordId: null,
+      requestOrgId: ctx.organizationId,
+      rowOrgId,
+      userId: ctx.userId || null,
+      detail: "assertTenantOwnership detected cross-tenant row access attempt.",
+    });
     const err = new Error(
       `Tenant isolation violation: cross-tenant access attempted ` +
       `(expected org=${ctx.organizationId}, got org=${rowOrgId})`

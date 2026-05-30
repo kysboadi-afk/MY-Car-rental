@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { dispatchSms } from "./_sms-dispatcher.js";
 import { patchRenterApplicationCheckrById } from "./_renter-applications.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const DEFAULT_REMINDER_HOURS = 6;
 const BATCH_LIMIT = 50;
@@ -26,6 +27,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "checkr-invitation-reminder-cron" })) return;
 
   const sb = getSupabaseAdmin();
   if (!sb) {

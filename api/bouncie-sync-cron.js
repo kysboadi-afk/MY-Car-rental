@@ -15,6 +15,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getBouncieVehicles } from "./_bouncie.js";
 import { isSchemaError } from "./_error-helpers.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
@@ -32,6 +33,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "bouncie-sync-cron" })) return;
 
   const startedAt = Date.now();
 

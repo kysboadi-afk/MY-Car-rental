@@ -13,6 +13,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isoDateInLA } from "./_time.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -38,6 +39,8 @@ export default async function handler(req, res) {
   if (!isCronAuthorized(req)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "cleanup-blocked-dates" })) return;
 
   const sb = getSupabaseAdmin();
   if (!sb) {
