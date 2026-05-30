@@ -32,6 +32,7 @@ import { sendSms } from "./_textmagic.js";
 import nodemailer from "nodemailer";
 import { buildServiceUrl } from "./_quick-service-token.js";
 import { render, MAINTENANCE_AVAILABILITY_REQUEST } from "./_sms-templates.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -363,6 +364,8 @@ export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "admin-ai-auto" })) return;
 
   const autoMode = process.env.AUTO_MODE === "true";
 

@@ -26,6 +26,7 @@ import { laHour, isoDateInLA } from "./_time.js";
 import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import { isSchemaError } from "./_error-helpers.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 import { loadNumericSetting } from "./_settings.js";
 import {
   computeSmsScoreWithBreakdown,
@@ -210,6 +211,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "oil-check-cron" })) return;
 
   // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
   // Manual POST bypasses the window to allow out-of-hours testing.

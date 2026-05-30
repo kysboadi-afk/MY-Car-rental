@@ -93,6 +93,7 @@ import {
   mapVehicleId,
 } from "./stripe-webhook.js";
 import { buildRenterPortalLinks } from "./_sms-links.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 // ─── Late-fee amounts ──────────────────────────────────────────────────────────
 // Global rule for all cars: fixed $25 late fee after grace/reset windows.
@@ -2981,6 +2982,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "scheduled-reminders" })) return;
 
   let allBookings;
 

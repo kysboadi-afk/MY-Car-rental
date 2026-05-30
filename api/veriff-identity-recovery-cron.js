@@ -34,6 +34,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { listPendingIdentityRecoveryApplications } from "./_renter-applications.js";
 import { recoverApplicationIdentityFromVeriffDecision } from "./_veriff-identity-recovery.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 // Maximum candidates processed per cron invocation.  Capped to keep each run
 // well within the 60-second Vercel function timeout (each Veriff API call takes
@@ -63,6 +64,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "veriff-identity-recovery-cron" })) return;
 
   const startedAt = Date.now();
 

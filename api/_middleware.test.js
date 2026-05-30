@@ -49,6 +49,12 @@ function configureSupabaseAdmin() {
   process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
 }
 
+function configureLegacyAndSupabaseAdmin() {
+  process.env.ADMIN_SECRET = "test-middleware-secret";
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-key";
+}
+
 function installSupabaseFetch({ user = null, memberships = [], authStatus = user ? 200 : 401 } = {}) {
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -236,6 +242,39 @@ test("withAdminAuth: correct secret via Authorization header passes through", as
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 200);
+  restoreEnv();
+});
+
+test("withAdminAuth: bearer token takes precedence when both credentials are present", async () => {
+  configureLegacyAndSupabaseAdmin();
+  installSupabaseFetch({
+    user: { id: "user-legacy-plus-bearer", email: "ops@example.com" },
+    memberships: [{
+      organization_id: "org-probe",
+      role: "admin",
+      status: "active",
+      organizations: { id: "org-probe", slug: "probe", status: "active" },
+    }],
+  });
+
+  let capturedAdminAuth = null;
+  const handler = withAdminAuth(async (req, res) => {
+    capturedAdminAuth = req.adminAuth;
+    res.status(200).json({ ok: true });
+  });
+  const req = makeReq({ body: { secret: "test-middleware-secret" } });
+  req.headers.authorization = ["Bearer", "supabase-jwt"].join(" ");
+  const res = makeRes();
+
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.deepEqual(capturedAdminAuth, {
+    type: "supabase_user",
+    userId: "user-legacy-plus-bearer",
+    role: "admin",
+    organizationId: "org-probe",
+  });
   restoreEnv();
 });
 

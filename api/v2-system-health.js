@@ -63,6 +63,7 @@ import { autoCreateRevenueRecord, buildBufferedEnd } from "./_booking-automation
 import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 import { buildDateTimeLA, DEFAULT_RETURN_TIME, isoDateInLA } from "./_time.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VALID_SCOPES = new Set(["car", "cars"]);
@@ -2012,6 +2013,8 @@ export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "v2-system-health" })) return;
 
   const sb = getSupabaseAdmin();
   if (!sb) {

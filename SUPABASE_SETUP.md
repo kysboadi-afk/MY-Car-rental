@@ -16,12 +16,15 @@ Confirm the following variables are set in **Vercel → Project Settings → Env
 |---|---|---|
 | `SUPABASE_URL` | ✅ Yes | Your project URL, e.g. `https://kdobrxffhtsigyiwnahs.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ Yes | 🔒 Secret — server-side only, never expose in frontend code |
+| `APP_ENV` | ✅ Yes | Set `production` in prod and `staging` in staging projects to control scheduled side effects |
 | `ADMIN_SECRET` | ✅ Yes | Password used to log into the Admin panels |
 | `GITHUB_TOKEN` | ✅ Yes | Fine-grained PAT with `contents: write` — used as fallback storage when Supabase is unavailable |
 | `GITHUB_REPO` | ⚠️ Optional | Defaults to `kysboadi-afk/SLY-RIDES`; override if you fork the repo |
 | `OPENAI_API_KEY` | ⚠️ Optional | Only needed for the AI assistant panel |
 
 > ⚠️ **This project does NOT use `NEXT_PUBLIC_` prefixed variables.** All Supabase access is server-side via Vercel serverless functions. The frontend never touches Supabase directly.
+
+> 🧪 For complete staging provisioning, environment separation, and validation gates, use **[STAGING_SETUP.md](./STAGING_SETUP.md)** together with this guide.
 
 After adding or changing any variable: **Vercel → Deployments → Redeploy** (required for changes to take effect).
 

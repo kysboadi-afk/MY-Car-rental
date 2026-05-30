@@ -12,6 +12,7 @@
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -154,6 +155,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "revenue-self-heal" })) return;
 
   if (!process.env.STRIPE_SECRET_KEY) {
     return res.status(503).json({ error: "STRIPE_SECRET_KEY is not configured." });

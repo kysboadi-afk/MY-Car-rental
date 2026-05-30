@@ -8,6 +8,7 @@
 //   • Auditable duplicates: duplicate attempts are written to ledger_idempotency_log.
 
 import { normalizeEmailForLinking, normalizePhoneForLinking } from "./_customer-identity.js";
+import { logFinancialConsistencyAlert, logParityDrift } from "./_org-rollout-observability.js";
 
 const DUAL_WRITE_MODES = new Set(["parallel"]);
 
@@ -75,13 +76,14 @@ async function logIdempotencyAttempt(supabase, { sourceType, sourceId, caller, b
 async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdentity = {}) {
   const { data: bookingRow, error: bookingErr } = await supabase
     .from("bookings")
-    .select("customer_id, stripe_customer_id, customer_email, customer_phone")
+    .select("customer_id, stripe_customer_id, customer_email, customer_phone, organization_id")
     .eq("booking_ref", bookingRef)
     .maybeSingle();
 
   if (bookingErr) {
     return {
       customerId: null,
+      bookingOrgId: null,
       reason: `booking_lookup_failed:${bookingErr.message}`,
     };
   }
@@ -89,6 +91,7 @@ async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdenti
   if (!bookingRow) {
     return {
       customerId: null,
+      bookingOrgId: null,
       reason: "booking_not_found",
     };
   }
@@ -96,6 +99,7 @@ async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdenti
   if (bookingRow.customer_id) {
     return {
       customerId: bookingRow.customer_id,
+      bookingOrgId: bookingRow.organization_id || null,
       reason: "booking_customer_id",
     };
   }
@@ -107,9 +111,9 @@ async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdenti
       .select("id")
       .eq("stripe_customer_id", stripeId)
       .maybeSingle();
-    if (byStripe?.id) return { customerId: byStripe.id, reason: "stripe_customer_id" };
+    if (byStripe?.id) return { customerId: byStripe.id, bookingOrgId: bookingRow.organization_id || null, reason: "stripe_customer_id" };
     if (stripeErr?.code === "PGRST116") {
-      return { customerId: null, reason: "ambiguous_stripe_customer_id" };
+      return { customerId: null, bookingOrgId: bookingRow.organization_id || null, reason: "ambiguous_stripe_customer_id" };
     }
   }
 
@@ -120,9 +124,9 @@ async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdenti
       .select("id")
       .eq("normalized_email", normalizedEmail)
       .maybeSingle();
-    if (byEmail?.id) return { customerId: byEmail.id, reason: "normalized_email" };
+    if (byEmail?.id) return { customerId: byEmail.id, bookingOrgId: bookingRow.organization_id || null, reason: "normalized_email" };
     if (emailErr?.code === "PGRST116") {
-      return { customerId: null, reason: "ambiguous_normalized_email" };
+      return { customerId: null, bookingOrgId: bookingRow.organization_id || null, reason: "ambiguous_normalized_email" };
     }
   }
 
@@ -133,14 +137,15 @@ async function resolveCustomerIdFromBooking(supabase, bookingRef, fallbackIdenti
       .select("id")
       .eq("normalized_phone", normalizedPhone)
       .maybeSingle();
-    if (byPhone?.id) return { customerId: byPhone.id, reason: "normalized_phone" };
+    if (byPhone?.id) return { customerId: byPhone.id, bookingOrgId: bookingRow.organization_id || null, reason: "normalized_phone" };
     if (phoneErr?.code === "PGRST116") {
-      return { customerId: null, reason: "ambiguous_normalized_phone" };
+      return { customerId: null, bookingOrgId: bookingRow.organization_id || null, reason: "ambiguous_normalized_phone" };
     }
   }
 
   return {
     customerId: null,
+    bookingOrgId: bookingRow.organization_id || null,
     reason: "no_deterministic_customer_link",
   };
 }
@@ -236,6 +241,37 @@ export async function appendCustomerLedgerShadowEntry(supabase, {
         return { written: false, skipped: true, reason: "duplicate_source" };
       }
       return { written: false, skipped: true, reason: `insert_failed:${insertErr.message}` };
+    }
+
+    const { data: customerOrgLookup } = await supabase
+      .from("customers")
+      .select("organization_id")
+      .eq("id", customerResolution.customerId)
+      .maybeSingle();
+
+    const bookingOrgId = customerResolution.bookingOrgId || null;
+    const customerOrgId = customerOrgLookup?.organization_id || null;
+    const endpoint = "customer-ledger-shadow";
+    const source = "appendCustomerLedgerShadowEntry";
+
+    if (bookingOrgId && customerOrgId && bookingOrgId !== customerOrgId) {
+      logParityDrift({
+        table: "customer_ledger",
+        recordId: null,
+        bookingRef,
+        expectedOrgId: bookingOrgId,
+        actualOrgId: customerOrgId,
+        source,
+        detail: "customer_ledger source org mismatch: booking and customer organizations differ before write",
+      });
+      logFinancialConsistencyAlert({
+        endpoint,
+        table: "customer_ledger",
+        bookingRef,
+        orgId: customerOrgId,
+        inconsistency: "booking_vs_customer_org_mismatch_before_customer_ledger_write",
+        detail: `booking org ${bookingOrgId}, customer org ${customerOrgId}`,
+      });
     }
 
     return { written: true, customerId: customerResolution.customerId };

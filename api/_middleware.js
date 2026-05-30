@@ -20,7 +20,7 @@
 //   without requiring any changes to handlers that already adopted it.
 
 import { extractAdminSecret, isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
-import { logOrgRolloutEvent } from "./_org-rollout-observability.js";
+import { logAuthMismatch, logOrgRolloutEvent } from "./_org-rollout-observability.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { resolveTenantContext } from "./_tenant-context.js";
 
@@ -90,6 +90,7 @@ function resolveEndpointLabel(req) {
 
 async function authenticateAdminRequest(req) {
   const credential = extractAdminSecret(req);
+  const bearerToken = extractBearerToken(req);
 
   if (isAdminAuthorized(credential)) {
     return {
@@ -100,7 +101,6 @@ async function authenticateAdminRequest(req) {
     };
   }
 
-  const bearerToken = extractBearerToken(req);
   if (!bearerToken) {
     if (!isAdminConfigured() && !isSupabaseOperatorAuthConfigured()) {
       return { error: { status: 500, message: "Server configuration error: admin auth is not configured." } };
@@ -138,6 +138,16 @@ async function authenticateAdminRequest(req) {
         message: "Operator is not assigned to an active organization.",
       },
     };
+  }
+
+  if (isAdminConfigured()) {
+    logAuthMismatch({
+      endpoint: resolveEndpointLabel(req),
+      supabaseOrgId: tenantContext.organizationId,
+      legacyOrgId: null,
+      userId: authUser.id,
+      detail: "supabase operator auth resolved scoped tenant while legacy admin-secret path remains unscoped",
+    });
   }
 
   return {

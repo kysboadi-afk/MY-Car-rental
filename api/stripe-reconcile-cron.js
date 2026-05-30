@@ -29,6 +29,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { runSyncRecent } from "./stripe-reconcile.js";
+import { maybeSkipScheduledAutomation } from "./_runtime-environment.js";
 
 // How far back to scan on each cron run.  48 h > 8 h cron interval so
 // consecutive runs always overlap — no PI can slip through the gap.
@@ -50,6 +51,8 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Unauthorized" });
     }
   }
+
+  if (maybeSkipScheduledAutomation(req, res, { endpoint: "stripe-reconcile-cron" })) return;
 
   const startedAt = Date.now();
 
