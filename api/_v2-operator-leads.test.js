@@ -51,6 +51,7 @@ function buildQueryable(sourceRows, transforms = {}) {
     eqFilters: [],
     inFilters: [],
     lteFilters: [],
+    gteFilters: [],
     orders: [],
     limitCount: null,
   };
@@ -69,6 +70,14 @@ function buildQueryable(sourceRows, transforms = {}) {
         const right = new Date(filter.value || "").getTime();
         if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
         return left <= right;
+      });
+    }
+    for (const filter of state.gteFilters) {
+      result = result.filter((row) => {
+        const left = new Date(row?.[filter.field] || "").getTime();
+        const right = new Date(filter.value || "").getTime();
+        if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+        return left >= right;
       });
     }
     for (const order of state.orders) {
@@ -100,6 +109,10 @@ function buildQueryable(sourceRows, transforms = {}) {
     },
     lte(field, value) {
       state.lteFilters.push({ field, value });
+      return query;
+    },
+    gte(field, value) {
+      state.gteFilters.push({ field, value });
       return query;
     },
     order(field, options = {}) {
@@ -756,10 +769,62 @@ test("demo outcome completed maps lead status to onboarding", async () => {
     id: "lead-1",
     demoId,
     outcome: "completed",
+    demoOutcome: "converted",
   }), outcomeRes);
 
   assert.equal(outcomeRes._status, 200);
   assert.equal(outcomeRes._body.lead.status, "onboarding");
   assert.ok(outcomeRes._body.lead.demo_completed_at);
+  assert.equal(outcomeRes._body.lead.demo_completed_outcome, "converted");
   assert.equal(outcomeRes._body.demo.lifecycle_status, "completed");
+  assert.equal(outcomeRes._body.demo.demo_outcome, "converted");
+});
+
+test("demo completed outcome is required when marking completed", async () => {
+  await handler(makeReq({
+    action: "demo_schedule",
+    id: "lead-1",
+    dateTime: "2026-06-02T18:00:00.000Z",
+    timezone: "America/Los_Angeles",
+    durationMinutes: 30,
+    meetingType: "zoom",
+    ownerUserId: "rep-a",
+  }), makeRes());
+  const demoId = demoEvents[0]?.id;
+
+  const res = makeRes();
+  await handler(makeReq({
+    action: "demo_update_outcome",
+    id: "lead-1",
+    demoId,
+    outcome: "completed",
+  }), res);
+  assert.equal(res._status, 400);
+  assert.match(res._body.error, /completed outcome is required/i);
+});
+
+test("demo reporting returns funnel metrics", async () => {
+  rows.push({
+    ...rows[0],
+    id: "lead-2",
+    status: "active_operator",
+    conversion_status: "succeeded",
+    demo_first_scheduled_at: "2026-06-01T10:00:00.000Z",
+    demo_last_scheduled_at: "2026-06-01T10:00:00.000Z",
+    demo_completed_at: "2026-06-01T11:00:00.000Z",
+    demo_completed_outcome: "converted",
+    demo_no_show_at: null,
+    created_at: "2026-06-01T00:00:00.000Z",
+  });
+  rows[0].demo_first_scheduled_at = "2026-06-03T10:00:00.000Z";
+  rows[0].demo_last_scheduled_at = "2026-06-03T10:00:00.000Z";
+
+  const res = makeRes();
+  await handler(makeReq({ action: "demo_reporting" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.metrics.totalLeads, 2);
+  assert.equal(res._body.metrics.demoScheduledCount, 2);
+  assert.equal(res._body.metrics.demoCompletedCount, 1);
+  assert.equal(res._body.metrics.convertedAfterDemoCount, 1);
+  assert.equal(res._body.metrics.completedOutcomes.converted, 1);
 });

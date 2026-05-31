@@ -68,6 +68,13 @@ const DEMO_STATUSES = new Set([
 ]);
 
 const DEMO_MEETING_TYPES = new Set(["zoom", "phone", "in_person"]);
+const DEMO_COMPLETED_OUTCOMES = new Set([
+  "interested",
+  "follow_up_needed",
+  "needs_website_services",
+  "not_qualified",
+  "converted",
+]);
 const DEMO_NOTIFICATION_TYPES = [
   "schedule_confirmation",
   "reminder_24h",
@@ -125,6 +132,11 @@ function normalizeDemoStatus(value, fallback = "scheduled") {
 function normalizeMeetingType(value) {
   const meetingType = String(value || "").trim().toLowerCase().replace("-", "_");
   return DEMO_MEETING_TYPES.has(meetingType) ? meetingType : "";
+}
+
+function normalizeDemoCompletedOutcome(value) {
+  const outcome = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  return DEMO_COMPLETED_OUTCOMES.has(outcome) ? outcome : "";
 }
 
 function normalizeTimezone(value) {
@@ -532,7 +544,7 @@ async function processDueDemoNotifications({ supabase, req, limit = 50 }) {
   for (const row of pendingRows || []) {
     const { data: demo } = await supabase
       .from("operator_lead_demo_events")
-      .select("id, lead_id, owner_email, owner_name, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status")
+      .select("id, lead_id, owner_email, owner_name, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, demo_outcome, demo_outcome_recorded_at")
       .eq("id", row.demo_id)
       .maybeSingle();
     const { data: lead } = await supabase
@@ -846,7 +858,7 @@ export default withAdminAuth(async function handler(req, res) {
     if (!supabase) return res.status(200).json({ leads: [] });
     const { data, error } = await supabase
       .from("operator_leads")
-      .select("id, first_name, last_name, email, phone, fleet_size, status, notes, created_at, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_channel, notification_sent_at, notification_last_attempt_at, notification_error_reason, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, first_name, last_name, email, phone, fleet_size, status, notes, created_at, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_channel, notification_sent_at, notification_last_attempt_at, notification_error_reason, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) {
@@ -914,7 +926,7 @@ export default withAdminAuth(async function handler(req, res) {
       .from("operator_leads")
       .update(updates)
       .eq("id", id)
-      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .maybeSingle();
     if (error) {
       console.error("v2-operator-leads update failed:", error.message || error);
@@ -951,7 +963,7 @@ export default withAdminAuth(async function handler(req, res) {
 
     const { data: lead, error: leadError } = await supabase
       .from("operator_leads")
-      .select("id, first_name, last_name, email, status, funnel_stage, onboarding_progress, metadata, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id")
+      .select("id, first_name, last_name, email, status, funnel_stage, onboarding_progress, metadata, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id")
       .eq("id", leadId)
       .maybeSingle();
     if (leadError) return sendError(res, 500, "Failed to load operator lead.");
@@ -990,7 +1002,7 @@ export default withAdminAuth(async function handler(req, res) {
           requested_status: requestedStatus,
         },
       })
-      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
+      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, demo_outcome, demo_outcome_recorded_at, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
       .maybeSingle();
     if (demoInsertError) {
       return sendError(res, 500, "Failed to schedule demo.", { reason: String(demoInsertError.message || demoInsertError) });
@@ -1029,7 +1041,7 @@ export default withAdminAuth(async function handler(req, res) {
       .from("operator_leads")
       .update(leadPatch)
       .eq("id", leadId)
-      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .maybeSingle();
     if (leadUpdateError) {
       return sendError(res, 500, "Demo created but lead update failed.", { reason: String(leadUpdateError.message || leadUpdateError) });
@@ -1094,7 +1106,7 @@ export default withAdminAuth(async function handler(req, res) {
       })
       .eq("id", demoId)
       .eq("lead_id", leadId)
-      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
+      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, demo_outcome, demo_outcome_recorded_at, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
       .maybeSingle();
     if (demoUpdateError) return sendError(res, 500, "Failed to reschedule demo.");
 
@@ -1112,7 +1124,7 @@ export default withAdminAuth(async function handler(req, res) {
         onboarding_progress: nextProgress,
       })
       .eq("id", leadId)
-      .select("id, status, funnel_stage, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, status, funnel_stage, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .maybeSingle();
     if (leadUpdateError) return sendError(res, 500, "Demo rescheduled but lead update failed.");
 
@@ -1141,10 +1153,14 @@ export default withAdminAuth(async function handler(req, res) {
     if (!supabase) return sendError(res, 503, "Supabase is not configured.");
 
     const now = new Date().toISOString();
+    const completedDemoOutcome = normalizeDemoCompletedOutcome(req.body?.demoOutcome || req.body?.demo_outcome);
+    if (outcome === "completed" && !completedDemoOutcome) {
+      return sendError(res, 400, "Demo completed outcome is required.");
+    }
     const followUpDueAt = normalizeIsoTimestamp(req.body?.followUpDueAt) || new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString();
     const { data: lead, error: leadReadError } = await supabase
       .from("operator_leads")
-      .select("id, status, funnel_stage, onboarding_progress, metadata")
+      .select("id, status, funnel_stage, onboarding_progress, metadata, conversion_status, demo_completed_outcome")
       .eq("id", leadId)
       .maybeSingle();
     if (leadReadError) return sendError(res, 500, "Failed to load lead.");
@@ -1157,7 +1173,11 @@ export default withAdminAuth(async function handler(req, res) {
       updated_by: req.authUser?.id || "legacy_admin",
       updated_at: now,
     };
-    if (outcome === "completed") demoPatch.completed_at = now;
+    if (outcome === "completed") {
+      demoPatch.completed_at = now;
+      demoPatch.demo_outcome = completedDemoOutcome;
+      demoPatch.demo_outcome_recorded_at = now;
+    }
     if (outcome === "no_show") demoPatch.no_show_at = now;
     if (outcome === "cancelled") demoPatch.cancelled_at = now;
     const { data: updatedDemo, error: demoUpdateError } = await supabase
@@ -1165,7 +1185,7 @@ export default withAdminAuth(async function handler(req, res) {
       .update(demoPatch)
       .eq("id", demoId)
       .eq("lead_id", leadId)
-      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
+      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, demo_outcome, demo_outcome_recorded_at, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
       .maybeSingle();
     if (demoUpdateError) return sendError(res, 500, "Failed to update demo outcome.");
     if (!updatedDemo) return sendError(res, 404, "Demo not found.");
@@ -1185,13 +1205,15 @@ export default withAdminAuth(async function handler(req, res) {
           ...normalizeMetadata(normalizeMetadata(lead.metadata).demo),
           latest_demo_id: demoId,
           latest_demo_status: outcome,
+          latest_demo_completed_outcome: outcome === "completed" ? completedDemoOutcome : lead.demo_completed_outcome || null,
           follow_up_due_at: outcome === "completed" ? null : followUpDueAt,
         },
       },
     };
     if (outcome === "completed") {
-      leadPatch.status = "onboarding";
+      leadPatch.status = lead.status === "active_operator" ? "active_operator" : "onboarding";
       leadPatch.demo_completed_at = now;
+      leadPatch.demo_completed_outcome = completedDemoOutcome;
       leadPatch.demo_no_show_at = null;
       leadPatch.demo_follow_up_due_at = null;
     }
@@ -1207,7 +1229,7 @@ export default withAdminAuth(async function handler(req, res) {
       .from("operator_leads")
       .update(leadPatch)
       .eq("id", leadId)
-      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, status, notes, updated_at, funnel_stage, lead_managed_at, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .maybeSingle();
     if (leadUpdateError) return sendError(res, 500, "Demo outcome updated but lead update failed.");
 
@@ -1217,6 +1239,7 @@ export default withAdminAuth(async function handler(req, res) {
       outcome: "success",
       metadata: {
         demoId,
+        demoCompletedOutcome: outcome === "completed" ? completedDemoOutcome : null,
         followUpDueAt: outcome === "completed" ? null : followUpDueAt,
       },
     });
@@ -1292,7 +1315,7 @@ export default withAdminAuth(async function handler(req, res) {
     const overdueHours = Math.max(1, Number(req.body?.overdueHours || 24));
     let query = supabase
       .from("operator_lead_demo_events")
-      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
+      .select("id, lead_id, owner_user_id, owner_email, owner_name, assigned_reason, scheduled_start_at, scheduled_end_at, timezone, duration_minutes, meeting_type, notes, lifecycle_status, demo_outcome, demo_outcome_recorded_at, scheduled_at, proposed_at, last_rescheduled_at, completed_at, no_show_at, cancelled_at, follow_up_due_at, notification_status, notification_attempt_count, notification_last_attempt_at, notification_error_reason, metadata, created_at, updated_at")
       .order("scheduled_start_at", { ascending: true })
       .limit(500);
     if (ownerUserId) query = query.eq("owner_user_id", ownerUserId);
@@ -1320,6 +1343,48 @@ export default withAdminAuth(async function handler(req, res) {
     });
   }
 
+  if (action === "demo_reporting") {
+    if (!supabase) return sendError(res, 503, "Supabase is not configured.");
+    const { data: leads, error } = await supabase
+      .from("operator_leads")
+      .select("id, status, conversion_status, demo_first_scheduled_at, demo_completed_at, demo_completed_outcome")
+      .order("created_at", { ascending: false })
+      .limit(1000);
+    if (error) return sendError(res, 500, "Failed to load demo reporting metrics.");
+    const list = Array.isArray(leads) ? leads : [];
+    const totalLeads = list.length;
+    const demoScheduledCount = list.filter((lead) => !!lead?.demo_first_scheduled_at).length;
+    const demoCompletedCount = list.filter((lead) => !!lead?.demo_completed_at).length;
+    const convertedAfterDemoCount = list.filter((lead) => (
+      !!lead?.demo_completed_at
+      && (
+        String(lead?.status || "").toLowerCase() === "active_operator"
+        || String(lead?.conversion_status || "").toLowerCase() === "succeeded"
+        || String(lead?.demo_completed_outcome || "").toLowerCase() === "converted"
+      )
+    )).length;
+    const outcomes = list.reduce((acc, lead) => {
+      const key = String(lead?.demo_completed_outcome || "").trim().toLowerCase();
+      if (!key) return acc;
+      acc[key] = Number(acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      success: true,
+      metrics: {
+        totalLeads,
+        demoScheduledCount,
+        demoCompletedCount,
+        convertedAfterDemoCount,
+        leadToDemoScheduledRate: totalLeads ? demoScheduledCount / totalLeads : 0,
+        demoScheduledToCompletedRate: demoScheduledCount ? demoCompletedCount / demoScheduledCount : 0,
+        demoCompletedToConvertedRate: demoCompletedCount ? convertedAfterDemoCount / demoCompletedCount : 0,
+        completedOutcomes: outcomes,
+      },
+    });
+  }
+
   if (action === "demo_process_notifications") {
     if (!supabase) return sendError(res, 503, "Supabase is not configured.");
     try {
@@ -1342,7 +1407,7 @@ export default withAdminAuth(async function handler(req, res) {
     const now = new Date().toISOString();
     const { data: lead, error: leadError } = await supabase
       .from("operator_leads")
-      .select("id, first_name, last_name, email, phone, fleet_size, source, status, notes, funnel_stage, onboarding_progress, metadata, organization_id, lead_submitted_at, notification_status, notification_sent_at, lead_managed_at, lead_converted_at, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+      .select("id, first_name, last_name, email, phone, fleet_size, source, status, notes, funnel_stage, onboarding_progress, metadata, organization_id, lead_submitted_at, notification_status, notification_sent_at, lead_managed_at, lead_converted_at, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .eq("id", id)
       .maybeSingle();
 
@@ -1557,7 +1622,7 @@ export default withAdminAuth(async function handler(req, res) {
         .from("operator_leads")
         .update(finalPatch)
         .eq("id", id)
-        .select("id, status, notes, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_sent_at, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
+        .select("id, status, notes, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_sent_at, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
         .maybeSingle();
 
       if (updateError) {
@@ -1614,7 +1679,7 @@ export default withAdminAuth(async function handler(req, res) {
 
     const { data: lead, error: leadError } = await supabase
       .from("operator_leads")
-      .select("id, organization_id, funnel_stage, conversion_status, onboarding_progress, status, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, metadata")
+      .select("id, organization_id, funnel_stage, conversion_status, onboarding_progress, status, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, metadata")
       .eq("id", id)
       .maybeSingle();
     if (leadError) {

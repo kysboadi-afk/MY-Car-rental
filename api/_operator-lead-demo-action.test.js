@@ -50,11 +50,11 @@ function buildClient() {
           update(updates) {
             const filters = [];
             return {
-              eq(field, value) { filters.push({ field, value }); return this; },
-              async maybeSingle() {
+              eq(field, value) {
+                filters.push({ field, value });
                 const row = demoEvents.find((item) => filters.every((f) => item?.[f.field] === f.value));
                 if (row) Object.assign(row, updates);
-                return { data: row || null, error: null };
+                return this;
               },
             };
           },

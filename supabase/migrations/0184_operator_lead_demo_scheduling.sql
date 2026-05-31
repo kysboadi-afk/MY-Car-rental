@@ -7,6 +7,7 @@ ALTER TABLE public.operator_leads
   ADD COLUMN IF NOT EXISTS demo_first_scheduled_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS demo_last_scheduled_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS demo_completed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS demo_completed_outcome TEXT,
   ADD COLUMN IF NOT EXISTS demo_no_show_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS demo_follow_up_due_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS demo_owner_user_id TEXT,
@@ -52,6 +53,8 @@ CREATE TABLE IF NOT EXISTS public.operator_lead_demo_events (
   location_label TEXT,
   notes TEXT,
   lifecycle_status TEXT NOT NULL,
+  demo_outcome TEXT,
+  demo_outcome_recorded_at TIMESTAMPTZ,
   lifecycle_detail TEXT,
   proposed_at TIMESTAMPTZ,
   scheduled_at TIMESTAMPTZ,
@@ -84,8 +87,38 @@ CREATE TABLE IF NOT EXISTS public.operator_lead_demo_events (
   CONSTRAINT operator_lead_demo_events_duration_check CHECK (duration_minutes > 0 AND duration_minutes <= 480),
   CONSTRAINT operator_lead_demo_events_notification_status_check CHECK (
     notification_status IN ('pending', 'partial', 'sent', 'failed')
+  ),
+  CONSTRAINT operator_lead_demo_events_outcome_check CHECK (
+    demo_outcome IS NULL OR demo_outcome IN (
+      'interested',
+      'follow_up_needed',
+      'needs_website_services',
+      'not_qualified',
+      'converted'
+    )
   )
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conname = 'operator_leads_demo_completed_outcome_check'
+  ) THEN
+    ALTER TABLE public.operator_leads
+      ADD CONSTRAINT operator_leads_demo_completed_outcome_check
+      CHECK (
+        demo_completed_outcome IS NULL OR demo_completed_outcome IN (
+          'interested',
+          'follow_up_needed',
+          'needs_website_services',
+          'not_qualified',
+          'converted'
+        )
+      );
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_operator_lead_demo_events_lead
   ON public.operator_lead_demo_events (lead_id, scheduled_start_at DESC);

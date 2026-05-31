@@ -23,7 +23,7 @@
 - [ ] Confirm lead status maps to `demo_scheduled` (unless already converted) and funnel stage stays at least `lead_managed`.
 - [ ] Reschedule demo and confirm `lifecycle_status = rescheduled` plus `last_rescheduled_at` update.
 - [ ] Mark outcomes and validate:
-  - [ ] `completed` writes `demo_completed_at`, lead status transitions to `onboarding`.
+  - [ ] `completed` requires one completed outcome selection (`interested`, `follow_up_needed`, `needs_website_services`, `not_qualified`, `converted`) and writes `demo_completed_at`.
   - [ ] `no_show` writes `demo_no_show_at`, keeps lead in `demo_scheduled`, sets follow-up due.
   - [ ] `cancelled` keeps lead in `demo_scheduled`, sets follow-up due.
 - [ ] Confirm each action writes an audit event in `operator_lead_audit_logs`.
@@ -52,6 +52,7 @@
 - [ ] Weekly KPIs tracked:
   - [ ] Lead -> Demo scheduled rate
   - [ ] Demo scheduled -> Demo completed rate
+  - [ ] Demo completed -> Converted rate
   - [ ] No-show rate
   - [ ] Demo completed -> Conversion start rate
 - [ ] Phase exit decision is based on scheduling reliability, reminder success rate, and conversion lift.
