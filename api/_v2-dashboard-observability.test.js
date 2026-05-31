@@ -2,10 +2,48 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildOperatorLeadPipeline,
   buildContractTransitionKpiMismatches,
   buildManageBookingTransitionSummary,
   buildContractTransitionObservabilitySummary,
 } from "./v2-dashboard.js";
+
+test("buildOperatorLeadPipeline maps lead statuses and computes conversion rate", () => {
+  const summary = buildOperatorLeadPipeline([
+    { status: "new_lead" },
+    { status: "contacted" },
+    { status: "demo_scheduled" },
+    { status: "onboarding" },
+    { status: "active_operator" },
+    { status: "active_operator" },
+    { status: "rejected" },
+    { status: "unknown" },
+  ]);
+
+  assert.deepEqual(summary, {
+    newLeads: 1,
+    contacted: 1,
+    demoScheduled: 1,
+    qualified: 1,
+    converted: 2,
+    closed: 1,
+    totalLeads: 7,
+    conversionRate: 28.6,
+  });
+});
+
+test("buildOperatorLeadPipeline returns zeroed metrics for empty input", () => {
+  assert.deepEqual(buildOperatorLeadPipeline(), {
+    newLeads: 0,
+    contacted: 0,
+    demoScheduled: 0,
+    qualified: 0,
+    converted: 0,
+    closed: 0,
+    totalLeads: 0,
+    conversionRate: 0,
+  });
+});
 
 test("buildContractTransitionKpiMismatches reports available-vehicle and revenue drifts", () => {
   const mismatches = buildContractTransitionKpiMismatches({

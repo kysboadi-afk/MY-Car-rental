@@ -1435,6 +1435,10 @@
               <div class="audit-list" id="consistency-audit-list"></div>
             </div>
             <div class="card">
+              <div class="card-header"><div class="card-title">Lead Pipeline</div><div class="card-sub">Fleet Control onboarding funnel</div></div>
+              <div class="metric-list" id="lead-pipeline-list"></div>
+            </div>
+            <div class="card">
               <div class="card-header"><div class="card-title">Operational Metrics</div></div>
               <div class="metric-list" id="operational-metrics-list"></div>
             </div>
@@ -4823,6 +4827,20 @@ function renderDashboard(data) {
     const icon = status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : '❌';
     return `<div class="audit-item ${status}"><span>${icon}</span><span>${esc(row.text || '')}</span></div>`;
   }).join('');
+
+  const leadPipeline = data.leadPipeline || {};
+  const leadPipelineEl = document.getElementById('lead-pipeline-list');
+  if (leadPipelineEl) {
+    leadPipelineEl.innerHTML = [
+      metricRow('New Leads', Number(leadPipeline.newLeads || 0)),
+      metricRow('Contacted', Number(leadPipeline.contacted || 0)),
+      metricRow('Demo Scheduled', Number(leadPipeline.demoScheduled || 0)),
+      metricRow('Qualified', Number(leadPipeline.qualified || 0)),
+      metricRow('Converted', Number(leadPipeline.converted || 0), Number(leadPipeline.converted || 0) > 0 ? 'good' : ''),
+      metricRow('Closed', Number(leadPipeline.closed || 0), Number(leadPipeline.closed || 0) > 0 ? 'warn' : ''),
+      metricRow('Conversion Rate', toPct(leadPipeline.conversionRate), Number(leadPipeline.conversionRate || 0) >= 20 ? 'good' : Number(leadPipeline.conversionRate || 0) > 0 ? 'warn' : ''),
+    ].join('');
+  }
 
   const opMetricsEl = document.getElementById('operational-metrics-list');
   if (opMetricsEl) opMetricsEl.innerHTML = metricRows.map(([name, value, tone]) => metricRow(name, value, tone)).join('');
@@ -12707,6 +12725,17 @@ async function loadAiInsights() {
       thisWeekRevenue: 1286, monthlyRevenue: 5200, outstandingBalances: 784,
       collectionRate: 88.4, failedPayments: 1, fraudAlerts: 1,
       bookingsLast7Days: 5, bookingsLast30Days: 16,
+      leadConversionRate: 33.3,
+    },
+    leadPipeline: {
+      newLeads: 4,
+      contacted: 3,
+      demoScheduled: 2,
+      qualified: 2,
+      converted: 3,
+      closed: 1,
+      totalLeads: 15,
+      conversionRate: 20,
     },
     revenueChart: revChart,
     bookingsPerVehicle: { camry: 14, civic: 9, rav4: 6, rogue: 2 },
