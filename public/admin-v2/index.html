@@ -2305,6 +2305,7 @@
             </select>
             <button class="btn btn-secondary btn-sm" onclick="loadOperatorLeads()">🔄 Refresh</button>
           </div>
+          <div class="kpi-grid" id="operator-leads-website-kpis" style="margin-bottom:16px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"></div>
           <div class="card">
             <div id="operator-leads-loading" class="loading"><div class="loading-spinner"></div><div>Loading Fleet Control leads…</div></div>
             <div id="operator-leads-table-wrap" style="display:none" class="table-wrap">
@@ -2320,6 +2321,7 @@
                     <th>Lead Status</th>
                     <th>Notification</th>
                     <th>Provisioning</th>
+                    <th>Website Services</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -9582,6 +9584,7 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
 
 // ── Fleet Control Leads ───────────────────────────────────────────────────
 let allOperatorLeads = [];
+let operatorLeadWebsiteKpis = { total: 0, interested: 0, offered: 0, accepted: 0, declined: 0, completed: 0 };
 
 const OPERATOR_LEAD_STATUS_LABELS = {
   new_lead: 'New Lead',
@@ -9672,6 +9675,51 @@ function operatorLeadProvisioningLabel(lead) {
   return funnelLabel;
 }
 
+function normalizeWebsiteServicesState(lead) {
+  const source = lead?.website_services && typeof lead.website_services === 'object' ? lead.website_services : {};
+  return {
+    interest_status: String(source.interest_status || 'not_asked').toLowerCase(),
+    acceptance_status: String(source.acceptance_status || 'not_offered').toLowerCase(),
+    completion_status: String(source.completion_status || 'not_started').toLowerCase(),
+    website_status: String(source.website_status || 'none').toLowerCase(),
+    selected_package_code: source.selected_package_code || null,
+    package_snapshot: source.package_snapshot || null,
+  };
+}
+
+function operatorLeadWebsiteServicesBadgeClass(lead) {
+  const state = normalizeWebsiteServicesState(lead);
+  if (state.completion_status === 'completed') return 'badge-success';
+  if (state.acceptance_status === 'accepted') return 'badge-blue';
+  if (state.acceptance_status === 'declined' || state.interest_status === 'not_interested') return 'badge-danger';
+  if (state.acceptance_status === 'offered' || state.interest_status === 'interested') return 'badge-warning';
+  return 'badge-green';
+}
+
+function operatorLeadWebsiteServicesLabel(lead) {
+  const state = normalizeWebsiteServicesState(lead);
+  const websiteLabelMap = {
+    none: 'None',
+    hosted_booking_page: 'Hosted Booking Page',
+    custom_website: 'Custom Website',
+    external_website: 'External Website',
+  };
+  if (state.completion_status === 'completed') {
+    return `Completed · ${websiteLabelMap[state.website_status] || 'None'}`;
+  }
+  if (state.acceptance_status === 'accepted') {
+    const pkg = state.selected_package_code || state.package_snapshot?.package_code || 'package';
+    return `Accepted · ${pkg}`;
+  }
+  if (state.acceptance_status === 'offered') {
+    return `Offered · ${state.selected_package_code || 'pending package'}`;
+  }
+  if (state.acceptance_status === 'declined') return 'Declined';
+  if (state.interest_status === 'interested') return 'Interested';
+  if (state.interest_status === 'not_interested') return 'Not Interested';
+  return 'Not Asked';
+}
+
 function formatOperatorLeadDate(value) {
   const date = new Date(value || '');
   if (!Number.isFinite(date.getTime())) return '—';
@@ -9694,6 +9742,29 @@ function leadHasContactMethod(lead) {
   return Boolean((lead?.phone || '').trim() || (lead?.email || '').trim());
 }
 
+function renderOperatorLeadWebsiteKpis() {
+  const grid = document.getElementById('operator-leads-website-kpis');
+  if (!grid) return;
+  const totals = operatorLeadWebsiteKpis || {};
+  const cards = [
+    { label: 'Website Leads', value: Number(totals.total || 0), icon: '🌐' },
+    { label: 'Interested', value: Number(totals.interested || 0), icon: '👍' },
+    { label: 'Offered', value: Number(totals.offered || 0), icon: '📦' },
+    { label: 'Accepted', value: Number(totals.accepted || 0), icon: '✅' },
+    { label: 'Declined', value: Number(totals.declined || 0), icon: '❌' },
+    { label: 'Completed', value: Number(totals.completed || 0), icon: '🏁' },
+  ];
+  grid.innerHTML = cards.map((item) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="font-size:18px;min-width:32px;text-align:center;">${item.icon}</div>
+      <div class="kpi-body">
+        <div class="kpi-value">${esc(String(item.value))}</div>
+        <div class="kpi-label">${esc(item.label)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
 function loadOperatorLeads() {
   const loading = document.getElementById('operator-leads-loading');
   const wrap = document.getElementById('operator-leads-table-wrap');
@@ -9708,7 +9779,9 @@ function loadOperatorLeads() {
   apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'list', scope: 'car' })
     .then((data) => {
       allOperatorLeads = Array.isArray(data?.leads) ? data.leads : [];
+      operatorLeadWebsiteKpis = data?.websiteServicesKpis || { total: allOperatorLeads.length };
       if (loading) loading.style.display = 'none';
+      renderOperatorLeadWebsiteKpis();
       applyOperatorLeadFilters();
     })
     .catch((err) => {
@@ -9768,10 +9841,12 @@ function applyOperatorLeadFilters() {
       <td><span class="badge ${operatorLeadBadgeClass(status)}">${esc(statusLabel)}</span></td>
       <td><span class="badge ${operatorLeadNotificationBadgeClass(notificationStatus)}">${esc(operatorLeadNotificationLabel(lead))}</span></td>
       <td><span class="badge ${operatorLeadProvisioningBadgeClass(conversionStatus)}">${esc(operatorLeadProvisioningLabel(lead))}</span></td>
+      <td><span class="badge ${operatorLeadWebsiteServicesBadgeClass(lead)}">${esc(operatorLeadWebsiteServicesLabel(lead))}</span></td>
       <td class="td-actions">
         <button class="btn btn-secondary btn-sm" onclick="viewOperatorLead('${id}')">View Lead</button>
         <button class="btn btn-secondary btn-sm" onclick="editOperatorLeadStatus('${id}')">Edit Status</button>
         <button class="btn btn-secondary btn-sm" onclick="addOperatorLeadNote('${id}')">Add Notes</button>
+        <button class="btn btn-secondary btn-sm" onclick="manageOperatorLeadWebsiteServices('${id}')" ${conversionStatus !== 'succeeded' ? 'disabled' : ''}>Website Services</button>
         <button class="btn btn-primary btn-sm" onclick="convertOperatorLead('${id}')" ${conversionStatus === 'succeeded' ? 'disabled' : ''}>${conversionStatus === 'failed' ? 'Retry Convert' : 'Convert Lead'}</button>
         ${phone ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="tel:${esc(phone)}">Call</a>` : `<button class="btn btn-secondary btn-sm" disabled>Call</button>`}
         ${email ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="mailto:${esc(email)}">Email</a>` : `<button class="btn btn-secondary btn-sm" disabled>Email</button>`}
@@ -9803,6 +9878,7 @@ function viewOperatorLead(id) {
     `<div><strong>Funnel Stage:</strong> ${esc(operatorLeadFunnelLabel(lead?.funnel_stage))}</div>`,
     `<div><strong>Notification:</strong> ${esc(operatorLeadNotificationLabel(lead))}</div>`,
     `<div><strong>Provisioning:</strong> ${esc(operatorLeadProvisioningLabel(lead))}</div>`,
+    `<div><strong>Website Services:</strong> ${esc(operatorLeadWebsiteServicesLabel(lead))}</div>`,
     `<div><strong>Created:</strong> ${esc(formatOperatorLeadDate(lead?.created_at))}</div>`,
     `<div><strong>Notes:</strong> ${esc(lead?.notes || '—')}</div>`,
   ];
@@ -9889,6 +9965,106 @@ async function convertOperatorLead(id) {
     showToast(data?.idempotent ? 'Lead already converted.' : 'Lead converted and workspace provisioned.', 'success');
   } catch (err) {
     showToast('Lead conversion failed: ' + err.message, 'error');
+    loadOperatorLeads();
+  }
+}
+
+async function syncOperatorLeadWebsiteState(id) {
+  const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'website_services_get_state', id, scope: 'car' });
+  updateOperatorLeadInMemory({ id, website_services: data?.website_services || {} });
+  applyOperatorLeadFilters();
+  return data;
+}
+
+async function runOperatorLeadWebsiteAction(id, action, payload, successMessage) {
+  const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action, id, scope: 'car', ...(payload || {}) });
+  updateOperatorLeadInMemory({ id, website_services: data?.website_services || {} });
+  applyOperatorLeadFilters();
+  if (successMessage) showToast(successMessage, 'success');
+  return data;
+}
+
+async function manageOperatorLeadWebsiteServices(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  if (String(lead?.conversion_status || '') !== 'succeeded') {
+    showToast('Convert the lead first to manage Website Services.', 'warning');
+    return;
+  }
+
+  try {
+    const stateData = await syncOperatorLeadWebsiteState(id);
+    const state = normalizeWebsiteServicesState({ website_services: stateData?.website_services || {} });
+    const packageList = Array.isArray(stateData?.packages) ? stateData.packages.map((pkg) => pkg.package_code).join(', ') : 'website_starter, website_growth';
+    const command = window.prompt(
+      `Website Services action for ${operatorLeadName(lead)}:\n` +
+      `interest, offer, accept, decline, status, completion, view\n\n` +
+      `Current: ${operatorLeadWebsiteServicesLabel({ website_services: state })}\n` +
+      `Packages: ${packageList}`,
+      'view'
+    );
+    if (command === null) return;
+    const normalizedCommand = String(command || '').trim().toLowerCase();
+
+    if (normalizedCommand === 'view') {
+      showToast(`Website Services: ${operatorLeadWebsiteServicesLabel({ website_services: state })}`, 'success');
+      return;
+    }
+
+    if (normalizedCommand === 'interest') {
+      const interestStatus = window.prompt('Set interest status: not_asked, interested, not_interested', state.interest_status || 'not_asked');
+      if (interestStatus === null) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_interest', { interestStatus }, 'Website interest updated.');
+      return;
+    }
+
+    if (normalizedCommand === 'offer') {
+      const packageCode = window.prompt('Enter package code to offer:', state.selected_package_code || 'website_starter');
+      if (packageCode === null) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_offer', { packageCode }, 'Website package offered.');
+      return;
+    }
+
+    if (normalizedCommand === 'accept') {
+      const packageCode = window.prompt('Enter accepted package code:', state.selected_package_code || 'website_starter');
+      if (packageCode === null) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_accept', { packageCode }, 'Website package accepted.');
+      return;
+    }
+
+    if (normalizedCommand === 'decline') {
+      const confirmed = window.confirm('Mark Website Services package as declined?');
+      if (!confirmed) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_decline', {}, 'Website package declined.');
+      return;
+    }
+
+    if (normalizedCommand === 'status') {
+      const websiteStatus = window.prompt(
+        'Set website status: none, hosted_booking_page, custom_website, external_website',
+        state.website_status || 'none'
+      );
+      if (websiteStatus === null) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_status', { websiteStatus }, 'Website status updated.');
+      return;
+    }
+
+    if (normalizedCommand === 'completion') {
+      const completionStatus = window.prompt(
+        'Set completion status: not_started, in_progress, completed',
+        state.completion_status || 'not_started'
+      );
+      if (completionStatus === null) return;
+      await runOperatorLeadWebsiteAction(id, 'website_services_completion', { completionStatus }, 'Website completion updated.');
+      return;
+    }
+
+    showToast('Unknown Website Services action.', 'warning');
+  } catch (err) {
+    showToast('Website Services update failed: ' + err.message, 'error');
     loadOperatorLeads();
   }
 }

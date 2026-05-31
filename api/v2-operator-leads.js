@@ -232,6 +232,19 @@ function normalizeStatus(value) {
 }
 
 async function ensureWebsiteUpsellState(supabase, { organizationId, actorId, now, source }) {
+  const { data: existingState, error: existingError } = await supabase
+    .from("organization_service_upsells")
+    .select(WEBSITE_UPSELL_SELECT)
+    .eq("organization_id", organizationId)
+    .eq("service_key", WEBSITE_SERVICE_KEY)
+    .maybeSingle();
+  if (existingError) {
+    throw new Error(existingError.message || "Failed to load website services upsell state.");
+  }
+  if (existingState) {
+    return normalizeWebsiteUpsellState(existingState, organizationId);
+  }
+
   const seedPayload = {
     organization_id: organizationId,
     service_key: WEBSITE_SERVICE_KEY,
@@ -253,16 +266,7 @@ async function ensureWebsiteUpsellState(supabase, { organizationId, actorId, now
     throw new Error(upsertError.message || "Failed to seed website services upsell state.");
   }
 
-  const { data: seededState, error: stateError } = await supabase
-    .from("organization_service_upsells")
-    .select(WEBSITE_UPSELL_SELECT)
-    .eq("organization_id", organizationId)
-    .eq("service_key", WEBSITE_SERVICE_KEY)
-    .maybeSingle();
-  if (stateError) {
-    throw new Error(stateError.message || "Failed to load website services upsell state.");
-  }
-  return normalizeWebsiteUpsellState(seededState, organizationId);
+  return normalizeWebsiteUpsellState(seedPayload, organizationId);
 }
 
 async function syncOrganizationWebsiteOnboardingStep(supabase, { organizationId, leadId, upsell, now, source }) {
