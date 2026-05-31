@@ -110,6 +110,10 @@ function normalizeServiceKey(value) {
   return key || WEBSITE_SERVICE_KEY;
 }
 
+function looksLikeEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
 function defaultWebsiteUpsellState(organizationId) {
   return {
     organization_id: organizationId || null,
@@ -185,6 +189,91 @@ async function fetchActiveWebsitePackages(supabase) {
     return [];
   }
   return Array.isArray(data) ? data : [];
+}
+
+async function fetchLinkedOwnerUserIdByEmail(supabase, email) {
+  if (!email) return null;
+  const { data, error } = await supabase
+    .from("organization_users")
+    .select("user_id, accepted_at, invited_at")
+    .eq("email", email)
+    .order("accepted_at", { ascending: false })
+    .order("invited_at", { ascending: false })
+    .limit(10);
+  if (error) {
+    console.warn("v2-operator-leads owner membership lookup failed:", error.message || error);
+    return null;
+  }
+  for (const row of data || []) {
+    const candidate = normalizeId(row?.user_id);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+async function findAuthUserIdByEmail(supabase, email) {
+  if (!email || !supabase?.auth?.admin?.listUsers) return null;
+  const perPage = 200;
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      console.warn("v2-operator-leads auth user lookup failed:", error.message || error);
+      return null;
+    }
+    const users = Array.isArray(data?.users) ? data.users : [];
+    const matchedUser = users.find((user) => String(user?.email || "").trim().toLowerCase() === email);
+    if (matchedUser?.id) return normalizeId(matchedUser.id);
+    if (users.length < perPage) break;
+  }
+  return null;
+}
+
+async function provisionOwnerAuthUser(supabase, { email, phone, firstName, lastName }) {
+  if (!email || !supabase?.auth?.admin?.createUser) return null;
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    phone: String(phone || "").trim() || undefined,
+    email_confirm: false,
+    user_metadata: {
+      first_name: String(firstName || "").trim() || null,
+      last_name: String(lastName || "").trim() || null,
+      provisioning_source: "operator_lead_conversion",
+    },
+  });
+  if (error) {
+    const message = String(error.message || "").toLowerCase();
+    if (message.includes("already") || message.includes("exists") || message.includes("registered")) {
+      return await findAuthUserIdByEmail(supabase, email);
+    }
+    throw new Error(error.message || "Failed to provision owner account.");
+  }
+  return normalizeId(data?.user?.id);
+}
+
+async function resolveOwnerUserId(supabase, { lead, authUser }) {
+  const leadEmail = String(lead?.email || "").trim().toLowerCase();
+  if (!looksLikeEmail(leadEmail)) {
+    throw new Error("Conversion failed: lead email is invalid for owner account linkage.");
+  }
+  const authUserId = normalizeId(authUser?.id);
+  const authUserEmail = String(authUser?.email || "").trim().toLowerCase();
+  if (authUserId && authUserEmail && authUserEmail === leadEmail) return authUserId;
+
+  const linkedMembershipUserId = await fetchLinkedOwnerUserIdByEmail(supabase, leadEmail);
+  if (linkedMembershipUserId) return linkedMembershipUserId;
+
+  const authLookupUserId = await findAuthUserIdByEmail(supabase, leadEmail);
+  if (authLookupUserId) return authLookupUserId;
+
+  const provisionedUserId = await provisionOwnerAuthUser(supabase, {
+    email: leadEmail,
+    phone: lead?.phone,
+    firstName: lead?.first_name,
+    lastName: lead?.last_name,
+  });
+  if (provisionedUserId) return provisionedUserId;
+
+  throw new Error("Conversion failed: owner account could not be linked.");
 }
 
 function normalizeSlug(value) {
@@ -472,11 +561,10 @@ export default withAdminAuth(async function handler(req, res) {
     const progress = normalizeProgress(lead.onboarding_progress);
     const metadata = normalizeMetadata(lead.metadata);
     const conversionMeta = normalizeMetadata(metadata.conversion);
-    const authUserEmail = String(req.authUser?.email || "").trim().toLowerCase();
-    const leadEmail = String(lead.email || "").trim().toLowerCase();
-    const ownerUserId = (req.authUser?.id && authUserEmail && leadEmail && authUserEmail === leadEmail)
-      ? req.authUser.id
-      : null;
+    const ownerUserId = await resolveOwnerUserId(supabase, {
+      lead,
+      authUser: req.authUser,
+    });
 
     let currentStage = mergeLifecycleStage(lead.funnel_stage || "lead_submitted", "lead_converted");
     let workingProgress = setProgressTimestamp(progress, "lead_converted_at", lead.lead_converted_at || now);

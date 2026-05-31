@@ -10,6 +10,8 @@ let organizationSettings = [];
 let websiteUpsells = [];
 let servicePackages = [];
 let auditLogs = [];
+let authUsers = [];
+let authCreateUserCalls = [];
 let shouldFailWorkspaceProvision = false;
 
 mock.module("./_supabase.js", {
@@ -109,6 +111,33 @@ function buildQueryable(sourceRows, transforms = {}) {
 
 function buildClient() {
   return {
+    auth: {
+      admin: {
+        async listUsers({ page = 1, perPage = 50 } = {}) {
+          const safePerPage = Number(perPage) || 50;
+          const safePage = Number(page) || 1;
+          const start = (safePage - 1) * safePerPage;
+          const users = authUsers.slice(start, start + safePerPage);
+          return { data: { users }, error: null };
+        },
+        async createUser(payload = {}) {
+          authCreateUserCalls.push(payload);
+          const email = String(payload.email || "").trim().toLowerCase();
+          if (!email) return { data: { user: null }, error: { message: "Email is required" } };
+          const existing = authUsers.find((user) => String(user.email || "").trim().toLowerCase() === email);
+          if (existing) {
+            return { data: { user: existing }, error: { message: "User already registered" } };
+          }
+          const user = {
+            id: `auth-user-${authUsers.length + 1}`,
+            email,
+            user_metadata: payload.user_metadata || {},
+          };
+          authUsers.push(user);
+          return { data: { user }, error: null };
+        },
+      },
+    },
     from(table) {
       if (table === "operator_leads") {
         return {
@@ -192,6 +221,9 @@ function buildClient() {
       }
       if (table === "organization_users") {
         return {
+          select() {
+            return buildQueryable(organizationUsers);
+          },
           async upsert(payload) {
             const idx = organizationUsers.findIndex((row) => row.organization_id === payload.organization_id && row.email === payload.email);
             if (idx >= 0) organizationUsers[idx] = { ...organizationUsers[idx], ...payload };
@@ -312,7 +344,12 @@ beforeEach(() => {
       notes: "priority=Operations",
       source: "fleet_control_early_access",
       funnel_stage: "notification_sent",
-      onboarding_progress: {},
+      onboarding_progress: {
+        funnel_timestamps: {
+          lead_submitted_at: "2026-05-31T00:00:00.000Z",
+          notification_sent_at: "2026-05-31T00:01:00.000Z",
+        },
+      },
       metadata: {},
       organization_id: null,
       lead_submitted_at: "2026-05-31T00:00:00.000Z",
@@ -359,6 +396,8 @@ beforeEach(() => {
     },
   ];
   auditLogs = [];
+  authUsers = [];
+  authCreateUserCalls = [];
   shouldFailWorkspaceProvision = false;
   currentClient = buildClient();
 });
@@ -409,6 +448,8 @@ test("convert provisions organization, owner membership, and workspace", async (
   assert.equal(res._body.lead.conversion_status, "succeeded");
   assert.equal(organizations.length, 1);
   assert.equal(organizationUsers.length, 1);
+  assert.ok(organizationUsers[0].user_id);
+  assert.equal(organizationUsers[0].user_id, "user-1");
   assert.equal(organizationSettings.length, 1);
   assert.equal(websiteUpsells.length, 1);
   assert.equal(websiteUpsells[0].service_key, "website_services");
@@ -431,6 +472,24 @@ test("convert remains idempotent when lead already provisioned", async () => {
   assert.equal(organizations.length, 0);
   assert.equal(organizationSettings.length, 0);
   assert.equal(websiteUpsells.length, 0);
+});
+
+test("convert links owner account even when converting admin email differs from lead email", async () => {
+  const res = makeRes();
+  await handler(
+    {
+      ...makeReq({ action: "convert", id: "lead-1" }),
+      authUser: { id: "admin-ops", email: "ops@slycarrentals.com" },
+    },
+    res
+  );
+
+  assert.equal(res._status, 200);
+  assert.equal(organizationUsers.length, 1);
+  assert.ok(organizationUsers[0].user_id);
+  assert.notEqual(organizationUsers[0].user_id, "admin-ops");
+  assert.equal(authUsers.length, 1);
+  assert.equal(authUsers[0].email, "jordan@example.com");
 });
 
 test("convert records failure details for retry when workspace provisioning fails", async () => {
@@ -495,4 +554,41 @@ test("website services completion succeeds after acceptance", async () => {
   assert.equal(completionRes._body.website_services.completion_status, "completed");
   assert.ok(completionRes._body.website_services.completed_at);
   assert.equal(completionRes._body.onboarding.steps.website_services.status, "completed");
+});
+
+test("end-to-end onboarding flow keeps lead stages and links owner account before website acceptance", async () => {
+  assert.equal(rows[0].funnel_stage, "notification_sent");
+  assert.equal(rows[0].lead_submitted_at, "2026-05-31T00:00:00.000Z");
+  assert.equal(rows[0].notification_status, "sent");
+  assert.equal(rows[0].notification_sent_at, "2026-05-31T00:01:00.000Z");
+
+  const convertRes = makeRes();
+  await handler(makeReq({ action: "convert", id: "lead-1" }), convertRes);
+  assert.equal(convertRes._status, 200);
+  assert.equal(convertRes._body.lead.funnel_stage, "workspace_provisioned");
+  assert.ok(convertRes._body.lead.organization_id);
+  assert.ok(convertRes._body.lead.owner_account_created_at);
+  assert.ok(convertRes._body.lead.workspace_provisioned_at);
+  assert.equal(organizationUsers.length, 1);
+  assert.ok(organizationUsers[0].user_id);
+
+  const offerRes = makeRes();
+  await handler(makeReq({ action: "website_services_offer", id: "lead-1", packageCode: "website_starter" }), offerRes);
+  assert.equal(offerRes._status, 200);
+  assert.equal(offerRes._body.website_services.acceptance_status, "offered");
+
+  const acceptRes = makeRes();
+  await handler(makeReq({ action: "website_services_accept", id: "lead-1", packageCode: "website_starter" }), acceptRes);
+  assert.equal(acceptRes._status, 200);
+  assert.equal(acceptRes._body.website_services.acceptance_status, "accepted");
+  assert.equal(acceptRes._body.website_services.selected_package_code, "website_starter");
+  assert.equal(acceptRes._body.onboarding.steps.website_services.status, "in_progress");
+
+  const timestamps = rows[0]?.onboarding_progress?.funnel_timestamps || {};
+  assert.equal(timestamps.lead_submitted_at, "2026-05-31T00:00:00.000Z");
+  assert.equal(timestamps.notification_sent_at, "2026-05-31T00:01:00.000Z");
+  assert.ok(timestamps.lead_converted_at);
+  assert.ok(timestamps.organization_created_at);
+  assert.ok(timestamps.owner_account_created_at);
+  assert.ok(timestamps.workspace_provisioned_at);
 });

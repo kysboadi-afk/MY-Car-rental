@@ -2982,6 +2982,64 @@
   </div>
 </div>
 
+<!-- ── Operator Lead Website Services Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="operator-lead-website-modal">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <div class="modal-title">Website Services</div>
+      <button class="modal-close" onclick="closeOperatorLeadWebsiteServicesModal()">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Current State</label>
+        <div id="operator-lead-website-current" style="font-size:13px;color:var(--text-sub);">Not loaded.</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Package</label>
+        <select class="form-select" id="operator-lead-website-package" onchange="renderOperatorLeadWebsitePackageDetails()">
+          <option value="">Select package…</option>
+        </select>
+        <div id="operator-lead-website-package-details" style="margin-top:8px;font-size:12px;color:var(--text-sub);line-height:1.45;">Select a package to view details.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Interest</label>
+        <select class="form-select" id="operator-lead-website-interest">
+          <option value="not_asked">Not Asked</option>
+          <option value="interested">Interested</option>
+          <option value="not_interested">Not Interested</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Website Status</label>
+        <select class="form-select" id="operator-lead-website-status">
+          <option value="none">None</option>
+          <option value="hosted_booking_page">Hosted Booking Page</option>
+          <option value="custom_website">Custom Website</option>
+          <option value="external_website">External Website</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Completion</label>
+        <select class="form-select" id="operator-lead-website-completion">
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-secondary" id="operator-lead-website-refresh" onclick="refreshOperatorLeadWebsiteServicesModal()">Refresh</button>
+      <button class="btn btn-secondary" id="operator-lead-website-interest-save" onclick="saveOperatorLeadWebsiteInterest()">Save Interest</button>
+      <button class="btn btn-secondary" id="operator-lead-website-offer" onclick="offerOperatorLeadWebsitePackage()">Offer Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-accept" onclick="acceptOperatorLeadWebsitePackage()">Accept Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-decline" onclick="declineOperatorLeadWebsitePackage()">Decline Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-status-save" onclick="saveOperatorLeadWebsiteStatus()">Save Website Status</button>
+      <button class="btn btn-secondary" id="operator-lead-website-completion-save" onclick="saveOperatorLeadWebsiteCompletion()">Save Completion</button>
+      <button class="btn btn-primary" onclick="closeOperatorLeadWebsiteServicesModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Add Ticket Modal ───────────────────────────────────────────────── -->
 <div class="modal-overlay" id="add-ticket-modal">
   <div class="modal" style="max-width:580px;">
@@ -9687,6 +9745,101 @@ function normalizeWebsiteServicesState(lead) {
   };
 }
 
+let operatorLeadWebsiteModalState = {
+  leadId: '',
+  leadName: '',
+  packages: [],
+  websiteState: normalizeWebsiteServicesState({ website_services: {} }),
+};
+
+function normalizeWebsitePackageCode(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function formatWebsitePackagePrice(pkg) {
+  const cents = Number(pkg?.pricing_metadata?.amount_cents);
+  if (!Number.isFinite(cents)) return 'Custom pricing';
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function renderOperatorLeadWebsitePackageDetails() {
+  const detailsEl = document.getElementById('operator-lead-website-package-details');
+  const selectEl = document.getElementById('operator-lead-website-package');
+  if (!detailsEl || !selectEl) return;
+  const selectedCode = normalizeWebsitePackageCode(selectEl.value);
+  const pkg = operatorLeadWebsiteModalState.packages.find((item) => normalizeWebsitePackageCode(item?.package_code) === selectedCode);
+  if (!pkg) {
+    detailsEl.innerHTML = 'Select a package to view details.';
+    return;
+  }
+  const deliverables = Array.isArray(pkg?.deliverables) ? pkg.deliverables.filter(Boolean) : [];
+  const terms = String(pkg?.billing_metadata?.payment_terms || '').trim() || 'Not specified';
+  detailsEl.innerHTML = [
+    `<div><strong>${esc(pkg.package_name || pkg.package_code || 'Package')}</strong></div>`,
+    `<div><strong>Code:</strong> ${esc(pkg.package_code || '—')}</div>`,
+    `<div><strong>Price:</strong> ${esc(formatWebsitePackagePrice(pkg))}</div>`,
+    `<div><strong>Terms:</strong> ${esc(terms)}</div>`,
+    deliverables.length
+      ? `<div><strong>Deliverables:</strong> ${esc(deliverables.join(' • '))}</div>`
+      : '<div><strong>Deliverables:</strong> —</div>',
+  ].join('');
+}
+
+function renderOperatorLeadWebsiteModalState() {
+  const currentEl = document.getElementById('operator-lead-website-current');
+  const packageEl = document.getElementById('operator-lead-website-package');
+  const interestEl = document.getElementById('operator-lead-website-interest');
+  const statusEl = document.getElementById('operator-lead-website-status');
+  const completionEl = document.getElementById('operator-lead-website-completion');
+  if (!currentEl || !packageEl || !interestEl || !statusEl || !completionEl) return;
+
+  const state = normalizeWebsiteServicesState({ website_services: operatorLeadWebsiteModalState.websiteState });
+  const selectedCode = normalizeWebsitePackageCode(
+    state.selected_package_code || state.package_snapshot?.package_code || operatorLeadWebsiteModalState.packages[0]?.package_code || ''
+  );
+
+  currentEl.innerHTML = [
+    `<div><strong>Lead:</strong> ${esc(operatorLeadWebsiteModalState.leadName || '—')}</div>`,
+    `<div><strong>Status:</strong> ${esc(operatorLeadWebsiteServicesLabel({ website_services: state }))}</div>`,
+    `<div><strong>Interest:</strong> ${esc(state.interest_status)}</div>`,
+    `<div><strong>Acceptance:</strong> ${esc(state.acceptance_status)}</div>`,
+    `<div><strong>Completion:</strong> ${esc(state.completion_status)}</div>`,
+  ].join('');
+
+  packageEl.innerHTML = [
+    '<option value="">Select package…</option>',
+    ...operatorLeadWebsiteModalState.packages.map((pkg) => (
+      `<option value="${esc(pkg.package_code || '')}">${esc(pkg.package_code || 'package')} — ${esc(pkg.package_name || 'Website Package')}</option>`
+    )),
+  ].join('');
+
+  packageEl.value = selectedCode;
+  interestEl.value = state.interest_status || 'not_asked';
+  statusEl.value = state.website_status || 'none';
+  completionEl.value = state.completion_status || 'not_started';
+  renderOperatorLeadWebsitePackageDetails();
+}
+
+function setOperatorLeadWebsiteModalBusy(isBusy) {
+  const controlIds = [
+    'operator-lead-website-package',
+    'operator-lead-website-interest',
+    'operator-lead-website-status',
+    'operator-lead-website-completion',
+    'operator-lead-website-refresh',
+    'operator-lead-website-interest-save',
+    'operator-lead-website-offer',
+    'operator-lead-website-accept',
+    'operator-lead-website-decline',
+    'operator-lead-website-status-save',
+    'operator-lead-website-completion-save',
+  ];
+  controlIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = Boolean(isBusy);
+  });
+}
+
 function operatorLeadWebsiteServicesBadgeClass(lead) {
   const state = normalizeWebsiteServicesState(lead);
   if (state.completion_status === 'completed') return 'badge-success';
@@ -9984,6 +10137,114 @@ async function runOperatorLeadWebsiteAction(id, action, payload, successMessage)
   return data;
 }
 
+function closeOperatorLeadWebsiteServicesModal() {
+  closeModal('operator-lead-website-modal');
+  operatorLeadWebsiteModalState = {
+    leadId: '',
+    leadName: '',
+    packages: [],
+    websiteState: normalizeWebsiteServicesState({ website_services: {} }),
+  };
+}
+
+async function refreshOperatorLeadWebsiteServicesModal(id = operatorLeadWebsiteModalState.leadId, opts = {}) {
+  const openAfterLoad = Boolean(opts?.openAfterLoad);
+  if (!id) {
+    showToast('Lead not found.', 'error');
+    return null;
+  }
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return null;
+  }
+  setOperatorLeadWebsiteModalBusy(true);
+  try {
+    const stateData = await syncOperatorLeadWebsiteState(id);
+    operatorLeadWebsiteModalState = {
+      leadId: id,
+      leadName: operatorLeadName(lead),
+      packages: Array.isArray(stateData?.packages) ? stateData.packages : [],
+      websiteState: normalizeWebsiteServicesState({ website_services: stateData?.website_services || {} }),
+    };
+    renderOperatorLeadWebsiteModalState();
+    if (openAfterLoad) openModal('operator-lead-website-modal');
+    return stateData;
+  } catch (err) {
+    showToast('Website Services update failed: ' + err.message, 'error');
+    loadOperatorLeads();
+    return null;
+  } finally {
+    setOperatorLeadWebsiteModalBusy(false);
+  }
+}
+
+function selectedOperatorLeadWebsitePackageCode() {
+  const packageEl = document.getElementById('operator-lead-website-package');
+  return normalizeWebsitePackageCode(packageEl?.value || '');
+}
+
+async function applyOperatorLeadWebsiteModalAction(action, payload, successMessage) {
+  const id = operatorLeadWebsiteModalState.leadId;
+  if (!id) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  setOperatorLeadWebsiteModalBusy(true);
+  try {
+    const data = await runOperatorLeadWebsiteAction(id, action, payload, successMessage);
+    operatorLeadWebsiteModalState.websiteState = normalizeWebsiteServicesState({ website_services: data?.website_services || {} });
+    renderOperatorLeadWebsiteModalState();
+  } catch (err) {
+    showToast('Website Services update failed: ' + err.message, 'error');
+    loadOperatorLeads();
+  } finally {
+    setOperatorLeadWebsiteModalBusy(false);
+  }
+}
+
+async function saveOperatorLeadWebsiteInterest() {
+  const interestEl = document.getElementById('operator-lead-website-interest');
+  const interestStatus = String(interestEl?.value || 'not_asked').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_interest', { interestStatus }, 'Website interest updated.');
+}
+
+async function offerOperatorLeadWebsitePackage() {
+  const packageCode = selectedOperatorLeadWebsitePackageCode();
+  if (!packageCode) {
+    showToast('Select a package before offering.', 'warning');
+    return;
+  }
+  await applyOperatorLeadWebsiteModalAction('website_services_offer', { packageCode }, 'Website package offered.');
+}
+
+async function acceptOperatorLeadWebsitePackage() {
+  const packageCode = selectedOperatorLeadWebsitePackageCode();
+  if (!packageCode) {
+    showToast('Select a package before acceptance.', 'warning');
+    return;
+  }
+  await applyOperatorLeadWebsiteModalAction('website_services_accept', { packageCode }, 'Website package accepted.');
+}
+
+async function declineOperatorLeadWebsitePackage() {
+  const confirmed = window.confirm('Mark Website Services package as declined?');
+  if (!confirmed) return;
+  await applyOperatorLeadWebsiteModalAction('website_services_decline', {}, 'Website package declined.');
+}
+
+async function saveOperatorLeadWebsiteStatus() {
+  const statusEl = document.getElementById('operator-lead-website-status');
+  const websiteStatus = String(statusEl?.value || 'none').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_status', { websiteStatus }, 'Website status updated.');
+}
+
+async function saveOperatorLeadWebsiteCompletion() {
+  const completionEl = document.getElementById('operator-lead-website-completion');
+  const completionStatus = String(completionEl?.value || 'not_started').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_completion', { completionStatus }, 'Website completion updated.');
+}
+
 async function manageOperatorLeadWebsiteServices(id) {
   const lead = findOperatorLeadById(id);
   if (!lead) {
@@ -9994,79 +10255,7 @@ async function manageOperatorLeadWebsiteServices(id) {
     showToast('Convert the lead first to manage Website Services.', 'warning');
     return;
   }
-
-  try {
-    const stateData = await syncOperatorLeadWebsiteState(id);
-    const state = normalizeWebsiteServicesState({ website_services: stateData?.website_services || {} });
-    const packageList = Array.isArray(stateData?.packages) ? stateData.packages.map((pkg) => pkg.package_code).join(', ') : 'website_starter, website_growth';
-    const command = window.prompt(
-      `Website Services action for ${operatorLeadName(lead)}:\n` +
-      `interest, offer, accept, decline, status, completion, view\n\n` +
-      `Current: ${operatorLeadWebsiteServicesLabel({ website_services: state })}\n` +
-      `Packages: ${packageList}`,
-      'view'
-    );
-    if (command === null) return;
-    const normalizedCommand = String(command || '').trim().toLowerCase();
-
-    if (normalizedCommand === 'view') {
-      showToast(`Website Services: ${operatorLeadWebsiteServicesLabel({ website_services: state })}`, 'success');
-      return;
-    }
-
-    if (normalizedCommand === 'interest') {
-      const interestStatus = window.prompt('Set interest status: not_asked, interested, not_interested', state.interest_status || 'not_asked');
-      if (interestStatus === null) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_interest', { interestStatus }, 'Website interest updated.');
-      return;
-    }
-
-    if (normalizedCommand === 'offer') {
-      const packageCode = window.prompt('Enter package code to offer:', state.selected_package_code || 'website_starter');
-      if (packageCode === null) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_offer', { packageCode }, 'Website package offered.');
-      return;
-    }
-
-    if (normalizedCommand === 'accept') {
-      const packageCode = window.prompt('Enter accepted package code:', state.selected_package_code || 'website_starter');
-      if (packageCode === null) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_accept', { packageCode }, 'Website package accepted.');
-      return;
-    }
-
-    if (normalizedCommand === 'decline') {
-      const confirmed = window.confirm('Mark Website Services package as declined?');
-      if (!confirmed) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_decline', {}, 'Website package declined.');
-      return;
-    }
-
-    if (normalizedCommand === 'status') {
-      const websiteStatus = window.prompt(
-        'Set website status: none, hosted_booking_page, custom_website, external_website',
-        state.website_status || 'none'
-      );
-      if (websiteStatus === null) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_status', { websiteStatus }, 'Website status updated.');
-      return;
-    }
-
-    if (normalizedCommand === 'completion') {
-      const completionStatus = window.prompt(
-        'Set completion status: not_started, in_progress, completed',
-        state.completion_status || 'not_started'
-      );
-      if (completionStatus === null) return;
-      await runOperatorLeadWebsiteAction(id, 'website_services_completion', { completionStatus }, 'Website completion updated.');
-      return;
-    }
-
-    showToast('Unknown Website Services action.', 'warning');
-  } catch (err) {
-    showToast('Website Services update failed: ' + err.message, 'error');
-    loadOperatorLeads();
-  }
+  await refreshOperatorLeadWebsiteServicesModal(id, { openAfterLoad: true });
 }
 
 // ── Customers ─────────────────────────────────────────────────────────────
