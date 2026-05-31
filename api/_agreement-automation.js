@@ -3,6 +3,8 @@ import crypto from "crypto";
 const TEMPLATE_KEY_DEFAULT = "rental_standard";
 const AGREEMENT_TYPE_DEFAULT = "rental_initial";
 const POSTGRES_UNDEFINED_TABLE_ERROR = "42P01";
+const DELIVERY_STATUS_DEFAULT = "pending";
+const DELIVERY_STATUS_ALLOWED = new Set(["pending", "sent", "delivered", "failed", "skipped"]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -11,6 +13,41 @@ function nowIso() {
 function normalizeText(value) {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function normalizeDeliveryStatus(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return DELIVERY_STATUS_ALLOWED.has(normalized) ? normalized : DELIVERY_STATUS_DEFAULT;
+}
+
+function normalizeIsoDatetime(value) {
+  const normalized = normalizeText(value);
+  return normalized || null;
+}
+
+function payloadToComparableString(value) {
+  try {
+    return JSON.stringify(value && typeof value === "object" ? value : {});
+  } catch {
+    return "{}";
+  }
+}
+
+function sameAgreementState(existing, next) {
+  if (!existing || !next) return false;
+  return (
+    normalizeText(existing.template_id) === normalizeText(next.template_id) &&
+    normalizeText(existing.agreement_type) === normalizeText(next.agreement_type) &&
+    normalizeText(existing.status) === normalizeText(next.status) &&
+    payloadToComparableString(existing.payload_snapshot) === payloadToComparableString(next.payload_snapshot) &&
+    normalizeText(existing.pdf_storage_path) === normalizeText(next.pdf_storage_path) &&
+    normalizeText(existing.pdf_sha256) === normalizeText(next.pdf_sha256) &&
+    normalizeText(existing.signed_at) === normalizeText(next.signed_at) &&
+    normalizeText(existing.owner_delivery_status) === normalizeText(next.owner_delivery_status) &&
+    normalizeText(existing.renter_delivery_status) === normalizeText(next.renter_delivery_status) &&
+    normalizeText(existing.sent_at) === normalizeText(next.sent_at) &&
+    normalizeText(existing.delivered_at) === normalizeText(next.delivered_at)
+  );
 }
 
 function normalizeSignatureForHash({
@@ -74,7 +111,7 @@ async function loadLatestAgreement(sb, bookingRef) {
   try {
     const { data, error } = await sb
       .from("booking_agreements")
-      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path, template_id")
+      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path, template_id, agreement_type, payload_snapshot, pdf_sha256, owner_delivery_status, renter_delivery_status, sent_at, delivered_at")
       .eq("booking_ref", bookingRef)
       .order("version_number", { ascending: false })
       .limit(1);
@@ -98,6 +135,10 @@ export async function upsertBookingAgreement({
   pdfStoragePath = null,
   pdfBuffer = null,
   signedAt = null,
+  ownerDeliveryStatus = DELIVERY_STATUS_DEFAULT,
+  renterDeliveryStatus = DELIVERY_STATUS_DEFAULT,
+  sentAt = null,
+  deliveredAt = null,
   createdBy = "system",
 }) {
   if (!sb || !bookingRef) return null;
@@ -108,6 +149,11 @@ export async function upsertBookingAgreement({
     const pdfSha = computePdfSha256(pdfBuffer);
     const nextStatus = latest?.status === "signed" && status !== "voided" ? "signed" : status;
 
+    const normalizedOwnerDeliveryStatus = normalizeDeliveryStatus(ownerDeliveryStatus);
+    const normalizedRenterDeliveryStatus = normalizeDeliveryStatus(renterDeliveryStatus);
+    const normalizedSentAt = normalizeIsoDatetime(sentAt);
+    const normalizedDeliveredAt = normalizeIsoDatetime(deliveredAt);
+
     const basePayload = {
       template_id: templateId || latest?.template_id || null,
       agreement_type: agreementType,
@@ -117,25 +163,27 @@ export async function upsertBookingAgreement({
       pdf_storage_path: pdfStoragePath || null,
       pdf_sha256: pdfSha || null,
       signed_at: nextStatus === "signed" ? (signedAt || updatedAt) : signedAt,
+      owner_delivery_status: normalizedOwnerDeliveryStatus,
+      renter_delivery_status: normalizedRenterDeliveryStatus,
+      sent_at: normalizedSentAt,
+      delivered_at: normalizedDeliveredAt,
     };
 
-    if (latest?.id) {
-      const { data, error } = await sb
-        .from("booking_agreements")
-        .update(basePayload)
-        .eq("id", latest.id)
-        .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path")
-        .maybeSingle();
-      if (error) {
-        if (error.code === POSTGRES_UNDEFINED_TABLE_ERROR) return null;
-        throw error;
-      }
-      return data || null;
+    if (latest?.id && sameAgreementState(latest, basePayload)) {
+      return {
+        id: latest.id,
+        booking_ref: latest.booking_ref,
+        version_number: latest.version_number,
+        status: latest.status,
+        signed_at: latest.signed_at,
+        created_at: latest.created_at,
+        pdf_storage_path: latest.pdf_storage_path,
+      };
     }
 
     const insertPayload = {
       booking_ref: bookingRef,
-      version_number: 1,
+      version_number: Number(latest?.version_number || 0) + 1,
       created_at: updatedAt,
       ...basePayload,
     };
@@ -143,7 +191,7 @@ export async function upsertBookingAgreement({
     const { data, error } = await sb
       .from("booking_agreements")
       .insert(insertPayload)
-      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path")
+      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path, owner_delivery_status, renter_delivery_status, sent_at, delivered_at")
       .maybeSingle();
     if (error) {
       if (error.code === POSTGRES_UNDEFINED_TABLE_ERROR) return null;
@@ -193,8 +241,27 @@ export async function upsertBookingAgreementSignature({
     });
     if (!agreement?.id) return null;
 
+    let signatureAgreementId = agreement.id;
+    if (transitionAgreementToSigned) {
+      const signedVersion = await upsertBookingAgreement({
+        sb,
+        bookingRef,
+        templateKey,
+        agreementType,
+        status: "signed",
+        payloadSnapshot,
+        signedAt: signatureTimestamp,
+        ownerDeliveryStatus: agreement.owner_delivery_status || DELIVERY_STATUS_DEFAULT,
+        renterDeliveryStatus: agreement.renter_delivery_status || DELIVERY_STATUS_DEFAULT,
+        sentAt: agreement.sent_at || null,
+        deliveredAt: agreement.delivered_at || null,
+        createdBy,
+      });
+      if (signedVersion?.id) signatureAgreementId = signedVersion.id;
+    }
+
     const signaturePayload = {
-      agreement_id: agreement.id,
+      agreement_id: signatureAgreementId,
       signer_role: normalizeText(signerRole).toLowerCase() || "renter",
       signer_name: normalizeText(signerName) || signatureValue,
       signature_method: normalizeText(signatureMethod) || "typed_name",
@@ -221,21 +288,6 @@ export async function upsertBookingAgreementSignature({
       if (signatureError.code === POSTGRES_UNDEFINED_TABLE_ERROR) return null;
       throw signatureError;
     }
-
-    if (transitionAgreementToSigned) {
-      const { error: agreementUpdateError } = await sb
-        .from("booking_agreements")
-        .update({
-          status: "signed",
-          signed_at: signatureTimestamp,
-          updated_at: nowIso(),
-        })
-        .eq("id", agreement.id);
-      if (agreementUpdateError && agreementUpdateError.code !== POSTGRES_UNDEFINED_TABLE_ERROR) {
-        throw agreementUpdateError;
-      }
-    }
-
     return signaturePayload;
   } catch (err) {
     console.warn("[agreement-automation] signature upsert skipped:", err?.message || err);
@@ -254,6 +306,10 @@ function mapAgreementSummaryRow(row) {
     created_at: row?.created_at || null,
     downloadAvailable: !!row?.pdf_storage_path,
     pdfStoragePath: row?.pdf_storage_path || null,
+    owner_delivery_status: row?.owner_delivery_status || DELIVERY_STATUS_DEFAULT,
+    renter_delivery_status: row?.renter_delivery_status || DELIVERY_STATUS_DEFAULT,
+    sent_at: row?.sent_at || null,
+    delivered_at: row?.delivered_at || null,
   };
 }
 
@@ -264,7 +320,7 @@ export async function loadBookingAgreementSummary(sb, bookingRef) {
   try {
     const { data, error } = await sb
       .from("booking_agreements")
-      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path")
+      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path, owner_delivery_status, renter_delivery_status, sent_at, delivered_at")
       .eq("booking_ref", bookingRef)
       .neq("status", "voided")
       .order("version_number", { ascending: false });
@@ -327,6 +383,55 @@ export async function loadAgreementPathForDownload(sb, bookingRef) {
   };
 }
 
+export async function markBookingAgreementDelivery({
+  sb,
+  bookingRef,
+  ownerDeliveryStatus = null,
+  renterDeliveryStatus = null,
+  sentAt = null,
+  deliveredAt = null,
+  createdBy = "system",
+}) {
+  if (!sb || !bookingRef) return null;
+  const latest = await loadLatestAgreement(sb, bookingRef);
+  if (!latest?.id) return null;
+
+  const nextOwnerStatus = ownerDeliveryStatus
+    ? normalizeDeliveryStatus(ownerDeliveryStatus)
+    : normalizeDeliveryStatus(latest.owner_delivery_status || DELIVERY_STATUS_DEFAULT);
+  const nextRenterStatus = renterDeliveryStatus
+    ? normalizeDeliveryStatus(renterDeliveryStatus)
+    : normalizeDeliveryStatus(latest.renter_delivery_status || DELIVERY_STATUS_DEFAULT);
+  const autoSentAt =
+    sentAt ||
+    latest.sent_at ||
+    ((nextOwnerStatus === "sent" || nextOwnerStatus === "delivered" || nextRenterStatus === "sent" || nextRenterStatus === "delivered")
+      ? nowIso()
+      : null);
+  const autoDeliveredAt =
+    deliveredAt ||
+    latest.delivered_at ||
+    ((nextOwnerStatus === "delivered" || nextRenterStatus === "delivered")
+      ? nowIso()
+      : null);
+
+  return upsertBookingAgreement({
+    sb,
+    bookingRef,
+    templateKey: TEMPLATE_KEY_DEFAULT,
+    agreementType: latest.agreement_type || AGREEMENT_TYPE_DEFAULT,
+    status: latest.status || "issued",
+    payloadSnapshot: latest.payload_snapshot || {},
+    pdfStoragePath: latest.pdf_storage_path || null,
+    signedAt: latest.signed_at || null,
+    ownerDeliveryStatus: nextOwnerStatus,
+    renterDeliveryStatus: nextRenterStatus,
+    sentAt: autoSentAt,
+    deliveredAt: autoDeliveredAt,
+    createdBy,
+  });
+}
+
 export async function loadAgreementSummaryMap(sb, bookingRefs = []) {
   const map = new Map();
   if (!sb || !Array.isArray(bookingRefs) || bookingRefs.length === 0) return map;
@@ -336,7 +441,7 @@ export async function loadAgreementSummaryMap(sb, bookingRefs = []) {
   try {
     const { data, error } = await sb
       .from("booking_agreements")
-      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path")
+      .select("id, booking_ref, version_number, status, signed_at, created_at, pdf_storage_path, owner_delivery_status, renter_delivery_status, sent_at, delivered_at")
       .in("booking_ref", refs)
       .neq("status", "voided")
       .order("version_number", { ascending: false });

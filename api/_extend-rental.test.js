@@ -790,6 +790,30 @@ test("extend-rental: PaymentIntent is created with type=rental_extension metadat
   assert.equal(meta.original_pickup_time, "10:00 AM", "metadata.original_pickup_time must be set from active booking");
   assert.equal(meta.original_return_date, "2026-04-30", "metadata.original_return_date must capture pre-extension return date");
   assert.equal(meta.previous_return_date, "2026-04-30", "metadata.previous_return_date must capture pre-extension return date");
+  assert.equal(meta.extension_reason, "", "metadata.extension_reason defaults to empty string");
+  assert.equal(meta.extension_notes, "", "metadata.extension_notes defaults to empty string");
+});
+
+test("extend-rental: extension reason metadata is forwarded to Stripe PaymentIntent", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId: "camry",
+    email: "alice@example.com",
+    newReturnDate: "2026-05-05",
+    extensionReason: "travel_delay",
+    extensionNotes: "Flight was moved to next day.",
+  }), res);
+
+  assert.equal(res._status, 200);
+  const meta = capturedStripeParams?.metadata;
+  assert.ok(meta, "metadata must be present");
+  assert.equal(meta.extension_reason, "travel_delay");
+  assert.equal(meta.extension_notes, "Flight was moved to next day.");
 });
 
 test("extend-rental: metadata original pickup fields are enriched from Supabase when bookings.json is missing them", async () => {
@@ -1292,5 +1316,4 @@ test("extension-financial-trace: all required trace fields present in response",
     assert.ok(field in trace, `trace must include field: ${field}`);
   }
 });
-
 
