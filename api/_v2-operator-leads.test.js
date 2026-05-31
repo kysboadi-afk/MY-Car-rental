@@ -7,6 +7,9 @@ let lastUpdate = null;
 let organizations = [];
 let organizationUsers = [];
 let organizationSettings = [];
+let websiteUpsells = [];
+let servicePackages = [];
+let auditLogs = [];
 let shouldFailWorkspaceProvision = false;
 
 mock.module("./_supabase.js", {
@@ -35,6 +38,73 @@ function makeRes() {
 
 function makeReq(body = {}) {
   return { method: "POST", headers: {}, body, authUser: { id: "user-1", email: "jordan@example.com" } };
+}
+
+function buildQueryable(sourceRows, transforms = {}) {
+  const state = {
+    rows: sourceRows,
+    eqFilters: [],
+    inFilters: [],
+    orders: [],
+    limitCount: null,
+  };
+
+  function run() {
+    let result = [...state.rows];
+    for (const filter of state.eqFilters) {
+      result = result.filter((row) => row?.[filter.field] === filter.value);
+    }
+    for (const filter of state.inFilters) {
+      result = result.filter((row) => filter.values.includes(row?.[filter.field]));
+    }
+    for (const order of state.orders) {
+      result.sort((a, b) => {
+        const left = a?.[order.field];
+        const right = b?.[order.field];
+        if (left === right) return 0;
+        if (left == null) return 1;
+        if (right == null) return -1;
+        if (left > right) return order.ascending ? 1 : -1;
+        return order.ascending ? -1 : 1;
+      });
+    }
+    if (typeof transforms.mapRows === "function") {
+      result = transforms.mapRows(result);
+    }
+    if (Number.isFinite(state.limitCount)) result = result.slice(0, state.limitCount);
+    return { data: result, error: null };
+  }
+
+  const query = {
+    eq(field, value) {
+      state.eqFilters.push({ field, value });
+      return query;
+    },
+    in(field, values) {
+      state.inFilters.push({ field, values: Array.isArray(values) ? values : [] });
+      return query;
+    },
+    order(field, options = {}) {
+      state.orders.push({ field, ascending: options.ascending !== false });
+      return query;
+    },
+    limit(count) {
+      state.limitCount = Number(count);
+      return query;
+    },
+    async maybeSingle() {
+      const { data } = run();
+      return { data: data[0] || null, error: null };
+    },
+    async single() {
+      const { data } = run();
+      return { data: data[0] || null, error: null };
+    },
+    then(resolve, reject) {
+      return Promise.resolve(run()).then(resolve, reject);
+    },
+  };
+  return query;
 }
 
 function buildClient() {
@@ -132,6 +202,18 @@ function buildClient() {
       }
       if (table === "organization_settings") {
         return {
+          select() {
+            return {
+              eq(_field, organizationId) {
+                const row = organizationSettings.find((item) => item.organization_id === organizationId);
+                return {
+                  async maybeSingle() {
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
           async upsert(payload) {
             if (shouldFailWorkspaceProvision) {
               return { error: { message: "workspace write failed" } };
@@ -143,9 +225,71 @@ function buildClient() {
           },
         };
       }
+      if (table === "organization_service_upsells") {
+        return {
+          select() {
+            return buildQueryable(websiteUpsells);
+          },
+          update(updates) {
+            const filters = [];
+            return {
+              eq(field, value) {
+                filters.push({ field, value });
+                return this;
+              },
+              select() {
+                return {
+                  async maybeSingle() {
+                    const row = websiteUpsells.find((item) => filters.every((f) => item?.[f.field] === f.value));
+                    if (row) {
+                      Object.assign(row, updates, { updated_at: "2026-05-31T01:00:00.000Z" });
+                    }
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
+          async upsert(payload) {
+            const idx = websiteUpsells.findIndex(
+              (row) => row.organization_id === payload.organization_id && row.service_key === payload.service_key
+            );
+            const merged = {
+              interest_status: "not_asked",
+              acceptance_status: "not_offered",
+              completion_status: "not_started",
+              website_status: "none",
+              selected_package_code: null,
+              package_snapshot: null,
+              offered_at: null,
+              accepted_at: null,
+              completed_at: null,
+              updated_by: null,
+              metadata: {},
+              created_at: "2026-05-31T01:00:00.000Z",
+              updated_at: "2026-05-31T01:00:00.000Z",
+              ...payload,
+            };
+            if (idx >= 0) {
+              websiteUpsells[idx] = { ...websiteUpsells[idx], ...merged, updated_at: "2026-05-31T01:00:00.000Z" };
+            } else {
+              websiteUpsells.push(merged);
+            }
+            return { error: null };
+          },
+        };
+      }
+      if (table === "service_package_catalog") {
+        return {
+          select() {
+            return buildQueryable(servicePackages);
+          },
+        };
+      }
       if (table === "operator_lead_audit_logs") {
         return {
-          async insert() {
+          async insert(payload) {
+            auditLogs.push(payload);
             return { error: null };
           },
         };
@@ -189,6 +333,32 @@ beforeEach(() => {
   organizations = [];
   organizationUsers = [];
   organizationSettings = [];
+  websiteUpsells = [];
+  servicePackages = [
+    {
+      service_key: "website_services",
+      package_code: "website_starter",
+      package_name: "Website Starter",
+      deliverables: ["Hosted booking landing page"],
+      pricing_metadata: { currency: "USD", amount_cents: 14900 },
+      billing_metadata: { payment_terms: "due_on_acceptance" },
+      version: 1,
+      is_active: true,
+      metadata: {},
+    },
+    {
+      service_key: "website_services",
+      package_code: "website_growth",
+      package_name: "Website Growth",
+      deliverables: ["Custom multipage website"],
+      pricing_metadata: { currency: "USD", amount_cents: 39900 },
+      billing_metadata: { payment_terms: "50_50_milestone" },
+      version: 1,
+      is_active: true,
+      metadata: {},
+    },
+  ];
+  auditLogs = [];
   shouldFailWorkspaceProvision = false;
   currentClient = buildClient();
 });
@@ -199,6 +369,8 @@ test("list returns operator leads", async () => {
   assert.equal(res._status, 200);
   assert.equal(Array.isArray(res._body.leads), true);
   assert.equal(res._body.leads.length, 1);
+  assert.equal(res._body.leads[0].website_services.website_status, "none");
+  assert.equal(res._body.websiteServicesKpis.total, 1);
 });
 
 test("list returns empty array when Supabase is unavailable", async () => {
@@ -238,6 +410,13 @@ test("convert provisions organization, owner membership, and workspace", async (
   assert.equal(organizations.length, 1);
   assert.equal(organizationUsers.length, 1);
   assert.equal(organizationSettings.length, 1);
+  assert.equal(websiteUpsells.length, 1);
+  assert.equal(websiteUpsells[0].service_key, "website_services");
+  assert.equal(websiteUpsells[0].website_status, "none");
+  assert.equal(
+    organizationSettings[0].settings?.onboarding?.steps?.website_services?.status,
+    "not_started"
+  );
 });
 
 test("convert remains idempotent when lead already provisioned", async () => {
@@ -251,6 +430,7 @@ test("convert remains idempotent when lead already provisioned", async () => {
   assert.equal(res._body.idempotent, true);
   assert.equal(organizations.length, 0);
   assert.equal(organizationSettings.length, 0);
+  assert.equal(websiteUpsells.length, 0);
 });
 
 test("convert records failure details for retry when workspace provisioning fails", async () => {
@@ -264,4 +444,55 @@ test("convert records failure details for retry when workspace provisioning fail
   assert.match(rows[0].conversion_error_reason, /workspace write failed/);
   assert.equal(organizations.length, 1);
   assert.equal(organizationUsers.length, 1);
+});
+
+test("website services completion is blocked before acceptance", async () => {
+  await handler(makeReq({ action: "convert", id: "lead-1" }), makeRes());
+  const res = makeRes();
+  await handler(makeReq({ action: "website_services_completion", id: "lead-1", completionStatus: "completed" }), res);
+
+  assert.equal(res._status, 409);
+  assert.match(res._body.error, /before package acceptance/i);
+});
+
+test("website services acceptance stores immutable package snapshot", async () => {
+  await handler(makeReq({ action: "convert", id: "lead-1" }), makeRes());
+  await handler(makeReq({ action: "website_services_interest", id: "lead-1", interestStatus: "interested" }), makeRes());
+  await handler(makeReq({ action: "website_services_offer", id: "lead-1", packageCode: "website_growth" }), makeRes());
+
+  const acceptRes = makeRes();
+  await handler(makeReq({ action: "website_services_accept", id: "lead-1", packageCode: "website_growth" }), acceptRes);
+
+  assert.equal(acceptRes._status, 200);
+  assert.equal(acceptRes._body.website_services.acceptance_status, "accepted");
+  assert.equal(acceptRes._body.website_services.selected_package_code, "website_growth");
+  assert.equal(acceptRes._body.website_services.package_snapshot.package_code, "website_growth");
+  assert.equal(acceptRes._body.website_services.package_snapshot.package_name, "Website Growth");
+});
+
+test("website services get state returns onboarding + package catalog", async () => {
+  await handler(makeReq({ action: "convert", id: "lead-1" }), makeRes());
+  const res = makeRes();
+  await handler(makeReq({ action: "website_services_get_state", id: "lead-1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.website_services.service_key, "website_services");
+  assert.equal(Array.isArray(res._body.packages), true);
+  assert.equal(res._body.packages.length, 2);
+  assert.equal(res._body.onboarding.steps.website_services.status, "not_started");
+});
+
+test("website services completion succeeds after acceptance", async () => {
+  await handler(makeReq({ action: "convert", id: "lead-1" }), makeRes());
+  await handler(makeReq({ action: "website_services_interest", id: "lead-1", interestStatus: "interested" }), makeRes());
+  await handler(makeReq({ action: "website_services_offer", id: "lead-1", packageCode: "website_starter" }), makeRes());
+  await handler(makeReq({ action: "website_services_accept", id: "lead-1", packageCode: "website_starter" }), makeRes());
+
+  const completionRes = makeRes();
+  await handler(makeReq({ action: "website_services_completion", id: "lead-1", completionStatus: "completed" }), completionRes);
+
+  assert.equal(completionRes._status, 200);
+  assert.equal(completionRes._body.website_services.completion_status, "completed");
+  assert.ok(completionRes._body.website_services.completed_at);
+  assert.equal(completionRes._body.onboarding.steps.website_services.status, "completed");
 });

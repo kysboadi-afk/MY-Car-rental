@@ -15,6 +15,30 @@ const STATUS_INPUT_MAP = {
   closed: "rejected",
 };
 
+const WEBSITE_SERVICE_KEY = "website_services";
+const WEBSITE_INTEREST_STATUSES = new Set(["not_asked", "interested", "not_interested"]);
+const WEBSITE_ACCEPTANCE_STATUSES = new Set(["not_offered", "offered", "accepted", "declined"]);
+const WEBSITE_COMPLETION_STATUSES = new Set(["not_started", "in_progress", "completed"]);
+const WEBSITE_STATUSES = new Set(["none", "hosted_booking_page", "custom_website", "external_website"]);
+
+const WEBSITE_UPSELL_SELECT = [
+  "organization_id",
+  "service_key",
+  "interest_status",
+  "acceptance_status",
+  "completion_status",
+  "website_status",
+  "selected_package_code",
+  "package_snapshot",
+  "offered_at",
+  "accepted_at",
+  "completed_at",
+  "updated_by",
+  "metadata",
+  "created_at",
+  "updated_at",
+].join(", ");
+
 const FUNNEL_STAGE_ORDER = [
   "lead_submitted",
   "notification_sent",
@@ -61,6 +85,108 @@ function normalizeMetadata(value) {
   return { ...value };
 }
 
+function normalizeWebsiteInterestStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return WEBSITE_INTEREST_STATUSES.has(status) ? status : "";
+}
+
+function normalizeWebsiteAcceptanceStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return WEBSITE_ACCEPTANCE_STATUSES.has(status) ? status : "";
+}
+
+function normalizeWebsiteCompletionStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return WEBSITE_COMPLETION_STATUSES.has(status) ? status : "";
+}
+
+function normalizeWebsiteStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return WEBSITE_STATUSES.has(status) ? status : "";
+}
+
+function normalizeServiceKey(value) {
+  const key = String(value || WEBSITE_SERVICE_KEY).trim().toLowerCase();
+  return key || WEBSITE_SERVICE_KEY;
+}
+
+function defaultWebsiteUpsellState(organizationId) {
+  return {
+    organization_id: organizationId || null,
+    service_key: WEBSITE_SERVICE_KEY,
+    interest_status: "not_asked",
+    acceptance_status: "not_offered",
+    completion_status: "not_started",
+    website_status: "none",
+    selected_package_code: null,
+    package_snapshot: null,
+    offered_at: null,
+    accepted_at: null,
+    completed_at: null,
+    updated_by: null,
+    metadata: {},
+    created_at: null,
+    updated_at: null,
+  };
+}
+
+function normalizeWebsiteUpsellState(row, organizationId) {
+  const fallback = defaultWebsiteUpsellState(organizationId);
+  const source = row && typeof row === "object" ? row : {};
+  return {
+    ...fallback,
+    ...source,
+    service_key: normalizeServiceKey(source.service_key || fallback.service_key),
+    interest_status: normalizeWebsiteInterestStatus(source.interest_status) || fallback.interest_status,
+    acceptance_status: normalizeWebsiteAcceptanceStatus(source.acceptance_status) || fallback.acceptance_status,
+    completion_status: normalizeWebsiteCompletionStatus(source.completion_status) || fallback.completion_status,
+    website_status: normalizeWebsiteStatus(source.website_status) || fallback.website_status,
+    metadata: normalizeMetadata(source.metadata),
+  };
+}
+
+function deriveWebsiteOnboardingStepStatus(upsell) {
+  const completion = normalizeWebsiteCompletionStatus(upsell?.completion_status) || "not_started";
+  const acceptance = normalizeWebsiteAcceptanceStatus(upsell?.acceptance_status) || "not_offered";
+  const interest = normalizeWebsiteInterestStatus(upsell?.interest_status) || "not_asked";
+  if (completion === "completed") return "completed";
+  if (completion === "in_progress" || acceptance === "accepted" || acceptance === "offered" || interest === "interested") {
+    return "in_progress";
+  }
+  return "not_started";
+}
+
+async function fetchWebsitePackageByCode(supabase, packageCode) {
+  const code = String(packageCode || "").trim().toLowerCase();
+  if (!code) return null;
+  const { data, error } = await supabase
+    .from("service_package_catalog")
+    .select("service_key, package_code, package_name, deliverables, pricing_metadata, billing_metadata, version, is_active, metadata")
+    .eq("service_key", WEBSITE_SERVICE_KEY)
+    .eq("package_code", code)
+    .eq("is_active", true)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message || "Failed to load service package.");
+  return data || null;
+}
+
+async function fetchActiveWebsitePackages(supabase) {
+  const { data, error } = await supabase
+    .from("service_package_catalog")
+    .select("service_key, package_code, package_name, deliverables, pricing_metadata, billing_metadata, version, is_active, metadata")
+    .eq("service_key", WEBSITE_SERVICE_KEY)
+    .eq("is_active", true)
+    .order("package_code", { ascending: true })
+    .order("version", { ascending: false });
+  if (error) {
+    console.warn("v2-operator-leads package catalog load failed:", error.message || error);
+    return [];
+  }
+  return Array.isArray(data) ? data : [];
+}
+
 function normalizeSlug(value) {
   return String(value || "")
     .toLowerCase()
@@ -105,6 +231,120 @@ function normalizeStatus(value) {
   return STATUS_INPUT_MAP[key] || "";
 }
 
+async function ensureWebsiteUpsellState(supabase, { organizationId, actorId, now, source }) {
+  const seedPayload = {
+    organization_id: organizationId,
+    service_key: WEBSITE_SERVICE_KEY,
+    interest_status: "not_asked",
+    acceptance_status: "not_offered",
+    completion_status: "not_started",
+    website_status: "none",
+    updated_by: actorId || "legacy_admin",
+    metadata: {
+      seed_source: source || "operator_lead_conversion",
+      seeded_at: now,
+    },
+  };
+
+  const { error: upsertError } = await supabase
+    .from("organization_service_upsells")
+    .upsert(seedPayload, { onConflict: "organization_id,service_key" });
+  if (upsertError) {
+    throw new Error(upsertError.message || "Failed to seed website services upsell state.");
+  }
+
+  const { data: seededState, error: stateError } = await supabase
+    .from("organization_service_upsells")
+    .select(WEBSITE_UPSELL_SELECT)
+    .eq("organization_id", organizationId)
+    .eq("service_key", WEBSITE_SERVICE_KEY)
+    .maybeSingle();
+  if (stateError) {
+    throw new Error(stateError.message || "Failed to load website services upsell state.");
+  }
+  return normalizeWebsiteUpsellState(seededState, organizationId);
+}
+
+async function syncOrganizationWebsiteOnboardingStep(supabase, { organizationId, leadId, upsell, now, source }) {
+  const { data: orgSettingsRow, error: settingsReadError } = await supabase
+    .from("organization_settings")
+    .select("settings")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (settingsReadError) {
+    throw new Error(settingsReadError.message || "Failed to read organization settings.");
+  }
+  const currentSettings = normalizeMetadata(orgSettingsRow?.settings);
+  const currentOnboarding = normalizeMetadata(currentSettings.onboarding);
+  const currentSteps = normalizeMetadata(currentOnboarding.steps);
+  const currentWebsiteStep = normalizeMetadata(currentSteps[WEBSITE_SERVICE_KEY]);
+  const stepStatus = deriveWebsiteOnboardingStepStatus(upsell);
+
+  const nextSettings = {
+    ...currentSettings,
+    onboarding: {
+      ...currentOnboarding,
+      bootstrap_state: currentOnboarding.bootstrap_state || "workspace_provisioned",
+      source: currentOnboarding.source || source || "operator_lead_conversion",
+      lead_id: currentOnboarding.lead_id || leadId || null,
+      initialized_at: currentOnboarding.initialized_at || now,
+      steps: {
+        ...currentSteps,
+        [WEBSITE_SERVICE_KEY]: {
+          ...currentWebsiteStep,
+          service_key: WEBSITE_SERVICE_KEY,
+          status: stepStatus,
+          tracked_at: currentWebsiteStep.tracked_at || now,
+          updated_at: now,
+          interest_status: upsell.interest_status,
+          acceptance_status: upsell.acceptance_status,
+          completion_status: upsell.completion_status,
+          website_status: upsell.website_status,
+          selected_package_code: upsell.selected_package_code || null,
+        },
+      },
+    },
+  };
+
+  const { error: settingsWriteError } = await supabase
+    .from("organization_settings")
+    .upsert({
+      organization_id: organizationId,
+      settings: nextSettings,
+    }, { onConflict: "organization_id" });
+  if (settingsWriteError) {
+    throw new Error(settingsWriteError.message || "Failed to update organization onboarding settings.");
+  }
+  return nextSettings;
+}
+
+function buildWebsiteUpsellKpis(leads) {
+  const list = Array.isArray(leads) ? leads : [];
+  let offered = 0;
+  let accepted = 0;
+  let declined = 0;
+  let completed = 0;
+  let interested = 0;
+
+  for (const lead of list) {
+    const state = normalizeWebsiteUpsellState(lead?.website_services, lead?.organization_id || null);
+    if (state.interest_status === "interested") interested += 1;
+    if (state.acceptance_status === "offered") offered += 1;
+    if (state.acceptance_status === "accepted") accepted += 1;
+    if (state.acceptance_status === "declined") declined += 1;
+    if (state.completion_status === "completed") completed += 1;
+  }
+
+  return {
+    total: list.length,
+    interested,
+    offered,
+    accepted,
+    declined,
+    completed,
+  };
+}
+
 export default withAdminAuth(async function handler(req, res) {
   const { action = "list" } = req.body || {};
   const supabase = getSupabaseAdmin();
@@ -120,7 +360,37 @@ export default withAdminAuth(async function handler(req, res) {
       console.error("v2-operator-leads list failed:", error.message || error);
       return sendError(res, 500, "Failed to load operator leads.");
     }
-    return res.status(200).json({ leads: Array.isArray(data) ? data : [] });
+    const leads = Array.isArray(data) ? data : [];
+    const organizationIds = [...new Set(leads.map((lead) => lead?.organization_id).filter(Boolean))];
+    const websiteStateByOrg = new Map();
+    if (organizationIds.length) {
+      const { data: upsellRows, error: upsellError } = await supabase
+        .from("organization_service_upsells")
+        .select(WEBSITE_UPSELL_SELECT)
+        .eq("service_key", WEBSITE_SERVICE_KEY)
+        .in("organization_id", organizationIds);
+      if (upsellError) {
+        console.warn("v2-operator-leads list website upsell load failed:", upsellError.message || upsellError);
+      } else {
+        for (const row of upsellRows || []) {
+          if (!row?.organization_id) continue;
+          websiteStateByOrg.set(
+            row.organization_id,
+            normalizeWebsiteUpsellState(row, row.organization_id)
+          );
+        }
+      }
+    }
+
+    const leadsWithWebsite = leads.map((lead) => ({
+      ...lead,
+      website_services: websiteStateByOrg.get(lead?.organization_id) || defaultWebsiteUpsellState(lead?.organization_id || null),
+    }));
+
+    return res.status(200).json({
+      leads: leadsWithWebsite,
+      websiteServicesKpis: buildWebsiteUpsellKpis(leadsWithWebsite),
+    });
   }
 
   if (action === "update") {
@@ -323,6 +593,19 @@ export default withAdminAuth(async function handler(req, res) {
             source: "operator_lead_conversion",
             lead_id: lead.id,
             initialized_at: now,
+            steps: {
+              [WEBSITE_SERVICE_KEY]: {
+                service_key: WEBSITE_SERVICE_KEY,
+                status: "not_started",
+                tracked_at: now,
+                updated_at: now,
+                interest_status: "not_asked",
+                acceptance_status: "not_offered",
+                completion_status: "not_started",
+                website_status: "none",
+                selected_package_code: null,
+              },
+            },
           },
           operational: {
             timezone: "America/Los_Angeles",
@@ -338,6 +621,21 @@ export default withAdminAuth(async function handler(req, res) {
 
       currentStage = mergeLifecycleStage(currentStage, "workspace_provisioned");
       workingProgress = setProgressTimestamp(workingProgress, "workspace_provisioned_at", lead.workspace_provisioned_at || now);
+      workingProgress = setProgressTimestamp(workingProgress, "website_services_seeded_at", now);
+
+      const seededUpsell = await ensureWebsiteUpsellState(supabase, {
+        organizationId,
+        actorId: req.authUser?.id || "legacy_admin",
+        now,
+        source: "operator_lead_conversion",
+      });
+      await syncOrganizationWebsiteOnboardingStep(supabase, {
+        organizationId,
+        leadId: lead.id,
+        upsell: seededUpsell,
+        now,
+        source: "operator_lead_conversion",
+      });
 
       const finalPatch = {
         status: "active_operator",
@@ -378,6 +676,7 @@ export default withAdminAuth(async function handler(req, res) {
         metadata: {
           organizationId,
           funnelStage: currentStage,
+          websiteUpsellSeeded: true,
         },
       });
       return res.status(200).json({
@@ -404,6 +703,236 @@ export default withAdminAuth(async function handler(req, res) {
       });
       return sendError(res, 500, "Lead conversion failed.", { reason: failureReason });
     }
+  }
+
+  if (
+    action === "website_services_get_state"
+    || action === "website_services_interest"
+    || action === "website_services_offer"
+    || action === "website_services_accept"
+    || action === "website_services_decline"
+    || action === "website_services_status"
+    || action === "website_services_completion"
+  ) {
+    const id = normalizeId(req.body?.id);
+    if (!id) return sendError(res, 400, "Missing lead id.");
+    if (!supabase) return sendError(res, 503, "Supabase is not configured.");
+
+    const { data: lead, error: leadError } = await supabase
+      .from("operator_leads")
+      .select("id, organization_id, funnel_stage, conversion_status, onboarding_progress")
+      .eq("id", id)
+      .maybeSingle();
+    if (leadError) {
+      console.error("v2-operator-leads website state lead lookup failed:", leadError.message || leadError);
+      return sendError(res, 500, "Failed to load operator lead.");
+    }
+    if (!lead) return sendError(res, 404, "Lead not found.");
+    if (!lead.organization_id) {
+      return sendError(res, 400, "Website Services onboarding is available after workspace provisioning.");
+    }
+
+    const now = new Date().toISOString();
+    const actorId = req.authUser?.id || "legacy_admin";
+    let upsellState;
+    try {
+      upsellState = await ensureWebsiteUpsellState(supabase, {
+        organizationId: lead.organization_id,
+        actorId,
+        now,
+        source: "post_conversion_onboarding",
+      });
+    } catch (error) {
+      return sendError(res, 500, "Failed to load Website Services state.", { reason: String(error?.message || error) });
+    }
+
+    if (action === "website_services_get_state") {
+      try {
+        const onboardingSettings = await syncOrganizationWebsiteOnboardingStep(supabase, {
+          organizationId: lead.organization_id,
+          leadId: lead.id,
+          upsell: upsellState,
+          now,
+          source: "post_conversion_onboarding",
+        });
+        const packages = await fetchActiveWebsitePackages(supabase);
+        return res.status(200).json({
+          success: true,
+          leadId: lead.id,
+          organizationId: lead.organization_id,
+          website_services: upsellState,
+          onboarding: onboardingSettings?.onboarding || {},
+          packages,
+        });
+      } catch (error) {
+        return sendError(res, 500, "Failed to load onboarding state.", { reason: String(error?.message || error) });
+      }
+    }
+
+    const updatePatch = {
+      updated_by: actorId,
+    };
+    const metadataPatch = normalizeMetadata(upsellState.metadata);
+    let auditEvent = "";
+
+    if (action === "website_services_interest") {
+      const nextInterestStatus = normalizeWebsiteInterestStatus(req.body?.interestStatus);
+      if (!nextInterestStatus) return sendError(res, 400, "Invalid website interest status.");
+      updatePatch.interest_status = nextInterestStatus;
+      metadataPatch.interest_updated_at = now;
+      metadataPatch.interest_updated_by = actorId;
+      auditEvent = "website_services_interest_recorded";
+    }
+
+    if (action === "website_services_offer") {
+      const currentAcceptance = normalizeWebsiteAcceptanceStatus(upsellState.acceptance_status) || "not_offered";
+      if (currentAcceptance === "accepted") {
+        return sendError(res, 409, "Cannot offer a new package after acceptance.");
+      }
+      if ((normalizeWebsiteInterestStatus(upsellState.interest_status) || "not_asked") === "not_interested") {
+        return sendError(res, 409, "Cannot offer package when lead is marked not interested.");
+      }
+      const requestedPackageCode = String(req.body?.packageCode || "").trim().toLowerCase();
+      if (requestedPackageCode) {
+        try {
+          const selectedPackage = await fetchWebsitePackageByCode(supabase, requestedPackageCode);
+          if (!selectedPackage) return sendError(res, 404, "Package code not found.");
+        } catch (error) {
+          return sendError(res, 500, "Failed to validate package.", { reason: String(error?.message || error) });
+        }
+        updatePatch.selected_package_code = requestedPackageCode;
+      }
+      updatePatch.acceptance_status = "offered";
+      updatePatch.offered_at = upsellState.offered_at || now;
+      metadataPatch.offered_at = upsellState.offered_at || now;
+      metadataPatch.offered_by = actorId;
+      auditEvent = "website_services_package_offered";
+    }
+
+    if (action === "website_services_accept") {
+      const currentAcceptance = normalizeWebsiteAcceptanceStatus(upsellState.acceptance_status) || "not_offered";
+      if (currentAcceptance !== "offered" && currentAcceptance !== "accepted") {
+        return sendError(res, 409, "Cannot accept package before it is offered.");
+      }
+      const packageCode = String(req.body?.packageCode || upsellState.selected_package_code || "").trim().toLowerCase();
+      if (!packageCode) return sendError(res, 400, "Package code is required for acceptance.");
+      let selectedPackage = null;
+      try {
+        selectedPackage = await fetchWebsitePackageByCode(supabase, packageCode);
+      } catch (error) {
+        return sendError(res, 500, "Failed to load package for acceptance.", { reason: String(error?.message || error) });
+      }
+      if (!selectedPackage) return sendError(res, 404, "Selected package is not active.");
+
+      const acceptedAt = upsellState.accepted_at || now;
+      updatePatch.acceptance_status = "accepted";
+      updatePatch.selected_package_code = packageCode;
+      updatePatch.accepted_at = acceptedAt;
+      updatePatch.package_snapshot = {
+        service_key: selectedPackage.service_key,
+        package_code: selectedPackage.package_code,
+        package_name: selectedPackage.package_name,
+        deliverables: selectedPackage.deliverables,
+        pricing_metadata: selectedPackage.pricing_metadata,
+        billing_metadata: selectedPackage.billing_metadata,
+        version: selectedPackage.version,
+        captured_at: acceptedAt,
+      };
+      metadataPatch.accepted_at = acceptedAt;
+      metadataPatch.accepted_by = actorId;
+      auditEvent = "website_services_package_accepted";
+    }
+
+    if (action === "website_services_decline") {
+      const currentAcceptance = normalizeWebsiteAcceptanceStatus(upsellState.acceptance_status) || "not_offered";
+      if (currentAcceptance === "accepted") {
+        return sendError(res, 409, "Cannot decline after package acceptance.");
+      }
+      updatePatch.acceptance_status = "declined";
+      updatePatch.package_snapshot = null;
+      metadataPatch.declined_at = now;
+      metadataPatch.declined_by = actorId;
+      auditEvent = "website_services_package_declined";
+    }
+
+    if (action === "website_services_status") {
+      const nextWebsiteStatus = normalizeWebsiteStatus(req.body?.websiteStatus);
+      if (!nextWebsiteStatus) return sendError(res, 400, "Invalid website status.");
+      updatePatch.website_status = nextWebsiteStatus;
+      metadataPatch.website_status_updated_at = now;
+      metadataPatch.website_status_updated_by = actorId;
+      auditEvent = "website_services_status_updated";
+    }
+
+    if (action === "website_services_completion") {
+      const nextCompletionStatus = normalizeWebsiteCompletionStatus(req.body?.completionStatus || "completed");
+      if (!nextCompletionStatus) return sendError(res, 400, "Invalid completion status.");
+      const currentAcceptance = normalizeWebsiteAcceptanceStatus(upsellState.acceptance_status) || "not_offered";
+      if (nextCompletionStatus === "completed" && currentAcceptance !== "accepted") {
+        return sendError(res, 409, "Cannot mark Website Services complete before package acceptance.");
+      }
+      updatePatch.completion_status = nextCompletionStatus;
+      if (nextCompletionStatus === "completed") {
+        const completedAt = upsellState.completed_at || now;
+        updatePatch.completed_at = completedAt;
+        metadataPatch.completed_at = completedAt;
+        metadataPatch.completed_by = actorId;
+      } else {
+        updatePatch.completed_at = null;
+      }
+      auditEvent = "website_services_completion_updated";
+    }
+
+    updatePatch.metadata = metadataPatch;
+    const { data: updatedStateRaw, error: updateError } = await supabase
+      .from("organization_service_upsells")
+      .update(updatePatch)
+      .eq("organization_id", lead.organization_id)
+      .eq("service_key", WEBSITE_SERVICE_KEY)
+      .select(WEBSITE_UPSELL_SELECT)
+      .maybeSingle();
+    if (updateError) {
+      console.error("v2-operator-leads website state update failed:", updateError.message || updateError);
+      return sendError(res, 500, "Failed to update Website Services state.");
+    }
+
+    const updatedState = normalizeWebsiteUpsellState(updatedStateRaw, lead.organization_id);
+    let onboardingSettings = {};
+    try {
+      onboardingSettings = await syncOrganizationWebsiteOnboardingStep(supabase, {
+        organizationId: lead.organization_id,
+        leadId: lead.id,
+        upsell: updatedState,
+        now,
+        source: "post_conversion_onboarding",
+      });
+    } catch (error) {
+      return sendError(res, 500, "Website Services updated but onboarding sync failed.", { reason: String(error?.message || error) });
+    }
+
+    await insertLeadAuditLog(supabase, {
+      lead_id: lead.id,
+      event: auditEvent || "website_services_updated",
+      outcome: "success",
+      metadata: {
+        organizationId: lead.organization_id,
+        serviceKey: WEBSITE_SERVICE_KEY,
+        interestStatus: updatedState.interest_status,
+        acceptanceStatus: updatedState.acceptance_status,
+        completionStatus: updatedState.completion_status,
+        websiteStatus: updatedState.website_status,
+        selectedPackageCode: updatedState.selected_package_code || null,
+        actorId,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      leadId: lead.id,
+      organizationId: lead.organization_id,
+      website_services: updatedState,
+      onboarding: onboardingSettings?.onboarding || {},
+    });
   }
 
   return sendError(res, 400, "Unsupported action.");
