@@ -27,6 +27,7 @@ import {
   retrySupabaseOperation,
   summarizeSupabaseError,
 } from "./_document-upload.js";
+import { upsertBookingAgreementSignature } from "./_agreement-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
 // Allow large bodies (ID front + back + insurance doc can be several MB base64-encoded).
@@ -165,6 +166,48 @@ export default async function handler(req, res) {
       totalBytes,
       diagnostics,
     });
+
+    if (typeof signature === "string" && signature.trim()) {
+      try {
+        const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+        const ipAddress = forwarded || String(req.socket?.remoteAddress || "").trim() || null;
+        const userAgent = String(req.headers["user-agent"] || "").trim() || null;
+        let identitySessionId = null;
+        try {
+          const { data: bookingRow } = await sb
+            .from("bookings")
+            .select("identity_session_id")
+            .eq("booking_ref", bookingId.trim())
+            .maybeSingle();
+          identitySessionId = bookingRow?.identity_session_id || null;
+        } catch {
+          identitySessionId = null;
+        }
+
+        await upsertBookingAgreementSignature({
+          sb,
+          bookingRef: bookingId.trim(),
+          signatureText: signature,
+          signerRole: "renter",
+          signerName: signature,
+          signatureMethod: "typed_name",
+          ipAddress,
+          userAgent,
+          identitySessionId,
+          agreementStatusBeforeSign: "draft",
+          transitionAgreementToSigned: false,
+          payloadSnapshot: {
+            booking_ref: bookingId.trim(),
+            insurance_coverage_choice: insuranceCoverageChoice || null,
+            source: "store-booking-docs",
+          },
+          createdBy: "api/store-booking-docs",
+        });
+      } catch (agreementErr) {
+        console.warn("store-booking-docs: agreement signature dual-write skipped (non-fatal):", summarizeSupabaseError(agreementErr));
+      }
+    }
+
     return res.status(200).json({ ok: true, stored: true });
   } catch (err) {
     console.error("store-booking-docs: unexpected error:", {

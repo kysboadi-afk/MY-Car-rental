@@ -26,6 +26,12 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 import { loadExtensionRiskSettings, evaluateExtensionRisk } from "./_extension-risk.js";
 import { getLedgerSummary } from "./_renter-balance-ledger.js";
+import {
+  appendBookingTimelineEvent,
+  normalizeExtensionNotes,
+  normalizeExtensionReason,
+  upsertExtensionLifecycleRecord,
+} from "./_extension-lifecycle.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -49,7 +55,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error." });
   }
 
-  const { vehicleId, email, phone, newReturnDate, name, customPaymentAmount } = req.body || {};
+  const { vehicleId, email, phone, newReturnDate, name, customPaymentAmount, extensionReason, extensionNotes } = req.body || {};
 
   // ── Input validation ────────────────────────────────────────────────────────
   const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -650,6 +656,8 @@ export default async function handler(req, res) {
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+    const normalizedExtensionReason = normalizeExtensionReason(extensionReason);
+    const normalizedExtensionNotes = normalizeExtensionNotes(extensionNotes);
     const pi = await stripe.paymentIntents.create({
       amount:   Math.round(amountPaidNow * 100),
       currency: "usd",
@@ -701,6 +709,8 @@ export default async function handler(req, res) {
          extension_amount_paid:      amountPaidNow.toFixed(2),
          extension_remaining_balance: extensionRemainingBalance.toFixed(2),
          extension_payment_status:    extensionPaymentStatus,
+         extension_reason:            normalizedExtensionReason,
+         extension_notes:             normalizedExtensionNotes,
       },
     });
 
@@ -721,6 +731,8 @@ export default async function handler(req, res) {
              paymentStatus:       extensionPaymentStatus,
              lateFeeIncluded,
              deferredLateFee:     sbDeferredLateFee,
+             extensionReason:     normalizedExtensionReason || null,
+             extensionNotes:      normalizedExtensionNotes || null,
              newReturnDate,
             newReturnTime:       resolvedReturnTime,
             paymentIntentId:     pi.id,
@@ -731,6 +743,44 @@ export default async function handler(req, res) {
         // Non-fatal: the webhook can fall back to PI metadata if the booking
         // record was not updated.
         console.warn("extend-rental: could not update extensionPendingPayment (non-fatal):", updateErr.message);
+      }
+
+      const resolvedBookingRefForLifecycle = sbActiveBookingRef ||
+        (activeBooking.bookingId && !String(activeBooking.bookingId).startsWith("pi_")
+          ? activeBooking.bookingId
+          : null);
+      if (sb && resolvedBookingRefForLifecycle) {
+        await upsertExtensionLifecycleRecord({
+          sb,
+          bookingRef: resolvedBookingRefForLifecycle,
+          paymentIntentId: pi.id,
+          requestedReturnDate: newReturnDate,
+          requestedReturnTime: resolvedReturnTime,
+          extensionReason: normalizedExtensionReason,
+          extensionNotes: normalizedExtensionNotes,
+          paymentStatus: "pending",
+          signatureStatus: "pending",
+          signatureRequired: false,
+          lifecycleStatus: "payment_pending",
+        });
+        await appendBookingTimelineEvent({
+          sb,
+          bookingRef: resolvedBookingRefForLifecycle,
+          eventType: "extension_request_created",
+          eventKey: `${resolvedBookingRefForLifecycle}:extension_request_created:${pi.id}`,
+          actor: "renter",
+          payload: {
+            paymentIntentId: pi.id,
+            requestedReturnDate: newReturnDate,
+            requestedReturnTime: resolvedReturnTime,
+            extensionReason: normalizedExtensionReason || null,
+            extensionNotes: normalizedExtensionNotes || null,
+            amountPaidNow,
+            extensionTotal,
+            extensionRemainingBalance,
+            extensionPaymentStatus,
+          },
+        });
       }
     }
 

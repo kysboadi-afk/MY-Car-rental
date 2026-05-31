@@ -2,7 +2,24 @@ import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 let currentClient = null;
-const insertCalls = [];
+let nextSendMailError = null;
+let sentNotifications = [];
+let insertCalls = [];
+let auditRows = [];
+let duplicateLead = null;
+let leadCounter = 0;
+
+mock.module("nodemailer", {
+  defaultExport: {
+    createTransport: () => ({
+      sendMail: async (payload) => {
+        sentNotifications.push(payload);
+        if (nextSendMailError) throw nextSendMailError;
+        return { accepted: [payload?.to] };
+      },
+    }),
+  },
+});
 
 mock.module("./_supabase.js", {
   namedExports: {
@@ -50,31 +67,88 @@ function validBody(overrides = {}) {
   };
 }
 
-beforeEach(() => {
-  insertCalls.length = 0;
-  currentClient = {
+function createSupabaseClient() {
+  const leads = [];
+  return {
     from(table) {
-      return {
-        insert(payload) {
-          insertCalls.push({ table, payload });
-          return {
-            select() {
-              return {
-                single: async () => ({
-                  data: {
-                    id: "lead-123",
-                    status: "new_lead",
-                    created_at: "2026-05-30T08:30:00.000Z",
+      if (table === "operator_leads") {
+        return {
+          select() {
+            return {
+              eq() { return this; },
+              gte() { return this; },
+              order() { return this; },
+              limit() { return this; },
+              async maybeSingle() {
+                return { data: duplicateLead, error: null };
+              },
+            };
+          },
+          insert(payload) {
+            insertCalls.push({ table, payload });
+            const row = {
+              id: `lead-${++leadCounter}`,
+              status: "new_lead",
+              created_at: "2026-05-30T08:30:00.000Z",
+              notification_attempt_count: 0,
+              ...payload,
+            };
+            leads.push(row);
+            return {
+              select() {
+                return {
+                  async single() {
+                    return { data: row, error: null };
                   },
-                  error: null,
-                }),
-              };
-            },
-          };
-        },
-      };
+                };
+              },
+            };
+          },
+          update(patch) {
+            return {
+              eq(_field, id) {
+                const row = leads.find((item) => item.id === id) || duplicateLead;
+                if (row) Object.assign(row, patch);
+                return {
+                  select() {
+                    return {
+                      async maybeSingle() {
+                        return { data: row || null, error: null };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "operator_lead_audit_logs") {
+        return {
+          async insert(payload) {
+            auditRows.push(payload);
+            return { data: payload, error: null };
+          },
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
     },
   };
+}
+
+beforeEach(() => {
+  insertCalls = [];
+  auditRows = [];
+  duplicateLead = null;
+  sentNotifications = [];
+  nextSendMailError = null;
+  leadCounter = 0;
+  process.env.SMTP_HOST = "smtp.example.test";
+  process.env.SMTP_PORT = "587";
+  process.env.SMTP_USER = "notify@example.test";
+  process.env.SMTP_PASS = "secret";
+  process.env.FLEET_CONTROL_LEAD_NOTIFY_EMAIL = "ops@example.test";
+  currentClient = createSupabaseClient();
 });
 
 test("OPTIONS returns 200", async () => {
@@ -144,13 +218,14 @@ test("logs Supabase env presence booleans without secrets", async (t) => {
   ]);
 });
 
-test("stores operator lead in Supabase and returns success metadata", async () => {
+test("stores operator lead, dispatches notification, and returns status metadata", async () => {
   const res = makeRes();
   await handler(makeReq("POST", validBody()), res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
-  assert.equal(res._body.leadId, "lead-123");
+  assert.equal(res._body.leadId, "lead-1");
+  assert.equal(res._body.notification.status, "sent");
   assert.equal(insertCalls.length, 1);
   assert.equal(insertCalls[0].table, "operator_leads");
   assert.equal(insertCalls[0].payload.first_name, "Jordan");
@@ -161,4 +236,65 @@ test("stores operator lead in Supabase and returns success metadata", async () =
   assert.match(insertCalls[0].payload.notes, /priority=Booking and renter workflow control/);
   assert.match(insertCalls[0].payload.notes, /message=Need a walkthrough for our Uber rental operation\./);
   assert.match(insertCalls[0].payload.notes, /fleet_size_label=4-10 vehicles/);
+  assert.equal(sentNotifications.length, 1);
+  assert.equal(auditRows.length >= 2, true);
+});
+
+test("persists failed notification outcome when dispatch fails", async () => {
+  nextSendMailError = new Error("SMTP rejected message");
+  const res = makeRes();
+  await handler(makeReq("POST", validBody()), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.notification.status, "failed");
+  assert.match(res._body.notification.errorReason, /SMTP rejected message/);
+});
+
+test("duplicate retry does not send duplicate notifications after sent", async () => {
+  duplicateLead = {
+    id: "lead-existing",
+    status: "new_lead",
+    created_at: "2026-05-30T08:30:00.000Z",
+    funnel_stage: "notification_sent",
+    notification_status: "sent",
+    notification_channel: "email",
+    notification_sent_at: "2026-05-30T08:35:00.000Z",
+    notification_error_reason: null,
+    notification_attempt_count: 1,
+    onboarding_progress: {},
+  };
+
+  const res = makeRes();
+  await handler(makeReq("POST", validBody()), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.duplicate, true);
+  assert.equal(res._body.leadId, "lead-existing");
+  assert.equal(sentNotifications.length, 0);
+  assert.equal(insertCalls.length, 0);
+});
+
+test("duplicate failed notification is retried without creating a new lead", async () => {
+  duplicateLead = {
+    id: "lead-existing",
+    status: "new_lead",
+    created_at: "2026-05-30T08:30:00.000Z",
+    funnel_stage: "lead_submitted",
+    notification_status: "failed",
+    notification_channel: "email",
+    notification_sent_at: null,
+    notification_error_reason: "SMTP timeout",
+    notification_attempt_count: 1,
+    onboarding_progress: {},
+  };
+
+  const res = makeRes();
+  await handler(makeReq("POST", validBody()), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.duplicate, true);
+  assert.equal(res._body.retried, true);
+  assert.equal(res._body.leadId, "lead-existing");
+  assert.equal(sentNotifications.length, 1);
+  assert.equal(insertCalls.length, 0);
 });

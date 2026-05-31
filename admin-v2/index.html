@@ -1268,6 +1268,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
       </a>
+      <a class="nav-item" data-page="fleet-control-leads" href="#" onclick="navigate('fleet-control-leads');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        Fleet Control Leads
+      </a>
       <a class="nav-item" data-page="protection-plans" href="#" onclick="navigate('protection-plans');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
@@ -1429,6 +1433,10 @@
             <div class="card">
               <div class="card-header"><div class="card-title">Data Consistency Audit</div><div class="card-sub">Operational integrity checks</div></div>
               <div class="audit-list" id="consistency-audit-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Lead Pipeline</div><div class="card-sub">Fleet Control onboarding funnel</div></div>
+              <div class="metric-list" id="lead-pipeline-list"></div>
             </div>
             <div class="card">
               <div class="card-header"><div class="card-title">Operational Metrics</div></div>
@@ -2281,6 +2289,51 @@
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>⟳ Recompute Totals</strong> to compute customer KPIs from revenue records.</p>
           </div>
         </div>
+
+        <!-- FLEET CONTROL LEADS PAGE -->
+        <div class="page" id="page-fleet-control-leads">
+          <div class="filters-row">
+            <input type="text" class="filter-input" id="lead-search" placeholder="Search name, email, phone…" oninput="applyOperatorLeadFilters()">
+            <select class="filter-select" id="lead-filter-status" onchange="applyOperatorLeadFilters()">
+              <option value="">All Statuses</option>
+              <option value="new_lead">New Lead</option>
+              <option value="contacted">Contacted</option>
+              <option value="demo_scheduled">Demo Scheduled</option>
+              <option value="onboarding">Qualified</option>
+              <option value="active_operator">Converted</option>
+              <option value="rejected">Closed</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadOperatorLeads()">🔄 Refresh</button>
+          </div>
+          <div class="kpi-grid" id="operator-leads-website-kpis" style="margin-bottom:16px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"></div>
+          <div class="card">
+            <div id="operator-leads-loading" class="loading"><div class="loading-spinner"></div><div>Loading Fleet Control leads…</div></div>
+            <div id="operator-leads-table-wrap" style="display:none" class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Fleet Size</th>
+                    <th>Need Most Help With</th>
+                    <th>Created Date</th>
+                    <th>Lead Status</th>
+                    <th>Notification</th>
+                    <th>Provisioning</th>
+                    <th>Website Services</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="operator-leads-tbody"></tbody>
+              </table>
+            </div>
+            <div id="operator-leads-empty" class="empty-state" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <p>No Fleet Control leads yet.</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PROTECTION PLANS PAGE -->
@@ -2914,6 +2967,78 @@
   </nav>
 
 </div><!-- /app -->
+
+<!-- ── Operator Lead Detail Modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="operator-lead-detail-modal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <div class="modal-title">Fleet Control Lead</div>
+      <button class="modal-close" onclick="closeModal('operator-lead-detail-modal')">✕</button>
+    </div>
+    <div id="operator-lead-detail-body" style="font-size:13px;line-height:1.5;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('operator-lead-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Operator Lead Website Services Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="operator-lead-website-modal">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <div class="modal-title">Website Services</div>
+      <button class="modal-close" onclick="closeOperatorLeadWebsiteServicesModal()">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Current State</label>
+        <div id="operator-lead-website-current" style="font-size:13px;color:var(--text-sub);">Not loaded.</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Package</label>
+        <select class="form-select" id="operator-lead-website-package" onchange="renderOperatorLeadWebsitePackageDetails()">
+          <option value="">Select package…</option>
+        </select>
+        <div id="operator-lead-website-package-details" style="margin-top:8px;font-size:12px;color:var(--text-sub);line-height:1.45;">Select a package to view details.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Interest</label>
+        <select class="form-select" id="operator-lead-website-interest">
+          <option value="not_asked">Not Asked</option>
+          <option value="interested">Interested</option>
+          <option value="not_interested">Not Interested</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Website Status</label>
+        <select class="form-select" id="operator-lead-website-status">
+          <option value="none">None</option>
+          <option value="hosted_booking_page">Hosted Booking Page</option>
+          <option value="custom_website">Custom Website</option>
+          <option value="external_website">External Website</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Completion</label>
+        <select class="form-select" id="operator-lead-website-completion">
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-secondary" id="operator-lead-website-refresh" onclick="refreshOperatorLeadWebsiteServicesModal()">Refresh</button>
+      <button class="btn btn-secondary" id="operator-lead-website-interest-save" onclick="saveOperatorLeadWebsiteInterest()">Save Interest</button>
+      <button class="btn btn-secondary" id="operator-lead-website-offer" onclick="offerOperatorLeadWebsitePackage()">Offer Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-accept" onclick="acceptOperatorLeadWebsitePackage()">Accept Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-decline" onclick="declineOperatorLeadWebsitePackage()">Decline Package</button>
+      <button class="btn btn-secondary" id="operator-lead-website-status-save" onclick="saveOperatorLeadWebsiteStatus()">Save Website Status</button>
+      <button class="btn btn-secondary" id="operator-lead-website-completion-save" onclick="saveOperatorLeadWebsiteCompletion()">Save Completion</button>
+      <button class="btn btn-primary" onclick="closeOperatorLeadWebsiteServicesModal()">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Add Ticket Modal ───────────────────────────────────────────────── -->
 <div class="modal-overlay" id="add-ticket-modal">
@@ -4369,6 +4494,7 @@ function navigate(page) {
     revenue:            'Revenue Tracker',
     analytics:          'Fleet Analytics',
     customers:          'Customer Management',
+    'fleet-control-leads': 'Fleet Control Leads',
     'protection-plans': 'Protection Plans',
     'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
@@ -4402,6 +4528,7 @@ function navigate(page) {
   else if (page === 'revenue') loadRevenue();
   else if (page === 'analytics') loadAnalytics();
   else if (page === 'customers') loadCustomers();
+  else if (page === 'fleet-control-leads') loadOperatorLeads();
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'vehicle-pricing') loadVehiclePricing();
   else if (page === 'system-settings') loadSystemSettings();
@@ -4441,6 +4568,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
   else if (currentPage === 'customers') loadCustomers();
+  else if (currentPage === 'fleet-control-leads') loadOperatorLeads();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'vehicle-pricing') loadVehiclePricing();
   else if (currentPage === 'system-settings') loadSystemSettings();
@@ -4761,6 +4889,22 @@ function renderDashboard(data) {
     const icon = status === 'pass' ? '✅' : status === 'warn' ? '⚠️' : '❌';
     return `<div class="audit-item ${status}"><span>${icon}</span><span>${esc(row.text || '')}</span></div>`;
   }).join('');
+
+  const leadPipeline = data.leadPipeline || {};
+  const leadPipelineEl = document.getElementById('lead-pipeline-list');
+  if (leadPipelineEl) {
+    leadPipelineEl.innerHTML = [
+      metricRow('Lead Submitted', Number(leadPipeline.leadSubmitted ?? leadPipeline.newLeads ?? 0)),
+      metricRow('Notification Sent', Number(leadPipeline.notificationSent ?? leadPipeline.contacted ?? 0)),
+      metricRow('Lead Managed', Number(leadPipeline.leadManaged ?? leadPipeline.qualified ?? 0)),
+      metricRow('Lead Converted', Number(leadPipeline.leadConverted ?? leadPipeline.converted ?? 0)),
+      metricRow('Organization Created', Number(leadPipeline.organizationCreated || 0)),
+      metricRow('Owner Account Created', Number(leadPipeline.ownerAccountCreated || 0)),
+      metricRow('Workspace Provisioned', Number(leadPipeline.workspaceProvisioned ?? leadPipeline.converted ?? 0), Number(leadPipeline.workspaceProvisioned ?? leadPipeline.converted ?? 0) > 0 ? 'good' : ''),
+      metricRow('Closed', Number(leadPipeline.closed || 0), Number(leadPipeline.closed || 0) > 0 ? 'warn' : ''),
+      metricRow('Conversion Rate', toPct(leadPipeline.conversionRate), Number(leadPipeline.conversionRate || 0) >= 20 ? 'good' : Number(leadPipeline.conversionRate || 0) > 0 ? 'warn' : ''),
+    ].join('');
+  }
 
   const opMetricsEl = document.getElementById('operational-metrics-list');
   if (opMetricsEl) opMetricsEl.innerHTML = metricRows.map(([name, value, tone]) => metricRow(name, value, tone)).join('');
@@ -9496,6 +9640,686 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
   }
 }
 
+// ── Fleet Control Leads ───────────────────────────────────────────────────
+let allOperatorLeads = [];
+let operatorLeadWebsiteKpis = { total: 0, interested: 0, offered: 0, accepted: 0, declined: 0, completed: 0 };
+
+const OPERATOR_LEAD_STATUS_LABELS = {
+  new_lead: 'New Lead',
+  contacted: 'Contacted',
+  demo_scheduled: 'Demo Scheduled',
+  onboarding: 'Qualified',
+  active_operator: 'Converted',
+  rejected: 'Closed',
+};
+
+const OPERATOR_LEAD_FUNNEL_LABELS = {
+  lead_submitted: 'Lead Submitted',
+  notification_sent: 'Notification Sent',
+  lead_managed: 'Lead Managed',
+  lead_converted: 'Lead Converted',
+  organization_created: 'Organization Created',
+  owner_account_created: 'Owner Account Created',
+  workspace_provisioned: 'Workspace Provisioned',
+};
+
+const OPERATOR_LEAD_STATUS_INPUT_MAP = {
+  new_lead: 'new_lead',
+  'new lead': 'new_lead',
+  contacted: 'contacted',
+  demo_scheduled: 'demo_scheduled',
+  'demo scheduled': 'demo_scheduled',
+  onboarding: 'onboarding',
+  qualified: 'onboarding',
+  active_operator: 'active_operator',
+  converted: 'active_operator',
+  rejected: 'rejected',
+  closed: 'rejected',
+};
+
+function operatorLeadStatusLabel(status) {
+  const key = String(status || '').trim().toLowerCase();
+  return OPERATOR_LEAD_STATUS_LABELS[key] || 'New Lead';
+}
+
+function normalizeOperatorLeadStatusInput(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return OPERATOR_LEAD_STATUS_INPUT_MAP[key] || '';
+}
+
+function operatorLeadBadgeClass(status) {
+  if (status === 'active_operator') return 'badge-success';
+  if (status === 'rejected') return 'badge-danger';
+  if (status === 'demo_scheduled') return 'badge-blue';
+  if (status === 'contacted' || status === 'onboarding') return 'badge-warning';
+  return 'badge-green';
+}
+
+function operatorLeadFunnelLabel(stage) {
+  const key = String(stage || '').trim().toLowerCase();
+  return OPERATOR_LEAD_FUNNEL_LABELS[key] || OPERATOR_LEAD_FUNNEL_LABELS.lead_submitted;
+}
+
+function operatorLeadNotificationBadgeClass(status) {
+  if (status === 'sent') return 'badge-success';
+  if (status === 'failed') return 'badge-danger';
+  return 'badge-warning';
+}
+
+function operatorLeadNotificationLabel(lead) {
+  const status = String(lead?.notification_status || 'queued').trim().toLowerCase();
+  const sentAt = formatOperatorLeadDate(lead?.notification_sent_at);
+  if (status === 'sent') return sentAt === '—' ? 'Sent' : `Sent · ${sentAt}`;
+  if (status === 'failed') return lead?.notification_error_reason ? `Failed · ${lead.notification_error_reason}` : 'Failed';
+  return 'Queued';
+}
+
+function operatorLeadProvisioningBadgeClass(status) {
+  if (status === 'succeeded') return 'badge-success';
+  if (status === 'failed') return 'badge-danger';
+  if (status === 'in_progress') return 'badge-blue';
+  return 'badge-warning';
+}
+
+function operatorLeadProvisioningLabel(lead) {
+  const conversionStatus = String(lead?.conversion_status || 'not_started').trim().toLowerCase();
+  const funnelLabel = operatorLeadFunnelLabel(lead?.funnel_stage);
+  if (conversionStatus === 'succeeded') return `Provisioned · ${funnelLabel}`;
+  if (conversionStatus === 'failed') {
+    const reason = String(lead?.conversion_error_reason || '').trim();
+    return reason ? `Failed · ${reason}` : 'Failed';
+  }
+  if (conversionStatus === 'in_progress') return `In Progress · ${funnelLabel}`;
+  return funnelLabel;
+}
+
+function normalizeWebsiteServicesState(lead) {
+  const source = lead?.website_services && typeof lead.website_services === 'object' ? lead.website_services : {};
+  return {
+    interest_status: String(source.interest_status || 'not_asked').toLowerCase(),
+    acceptance_status: String(source.acceptance_status || 'not_offered').toLowerCase(),
+    completion_status: String(source.completion_status || 'not_started').toLowerCase(),
+    website_status: String(source.website_status || 'none').toLowerCase(),
+    selected_package_code: source.selected_package_code || null,
+    package_snapshot: source.package_snapshot || null,
+  };
+}
+
+let operatorLeadWebsiteModalState = {
+  leadId: '',
+  leadName: '',
+  packages: [],
+  websiteState: normalizeWebsiteServicesState({ website_services: {} }),
+};
+
+function normalizeWebsitePackageCode(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function formatWebsitePackagePrice(pkg) {
+  const cents = Number(pkg?.pricing_metadata?.amount_cents);
+  if (!Number.isFinite(cents)) return 'Custom pricing';
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function renderOperatorLeadWebsitePackageDetails() {
+  const detailsEl = document.getElementById('operator-lead-website-package-details');
+  const selectEl = document.getElementById('operator-lead-website-package');
+  if (!detailsEl || !selectEl) return;
+  const selectedCode = normalizeWebsitePackageCode(selectEl.value);
+  const pkg = operatorLeadWebsiteModalState.packages.find((item) => normalizeWebsitePackageCode(item?.package_code) === selectedCode);
+  if (!pkg) {
+    detailsEl.innerHTML = 'Select a package to view details.';
+    return;
+  }
+  const deliverables = Array.isArray(pkg?.deliverables) ? pkg.deliverables.filter(Boolean) : [];
+  const terms = String(pkg?.billing_metadata?.payment_terms || '').trim() || 'Not specified';
+  detailsEl.innerHTML = [
+    `<div><strong>${esc(pkg.package_name || pkg.package_code || 'Package')}</strong></div>`,
+    `<div><strong>Code:</strong> ${esc(pkg.package_code || '—')}</div>`,
+    `<div><strong>Price:</strong> ${esc(formatWebsitePackagePrice(pkg))}</div>`,
+    `<div><strong>Terms:</strong> ${esc(terms)}</div>`,
+    deliverables.length
+      ? `<div><strong>Deliverables:</strong> ${esc(deliverables.join(' • '))}</div>`
+      : '<div><strong>Deliverables:</strong> —</div>',
+  ].join('');
+}
+
+function renderOperatorLeadWebsiteModalState() {
+  const currentEl = document.getElementById('operator-lead-website-current');
+  const packageEl = document.getElementById('operator-lead-website-package');
+  const interestEl = document.getElementById('operator-lead-website-interest');
+  const statusEl = document.getElementById('operator-lead-website-status');
+  const completionEl = document.getElementById('operator-lead-website-completion');
+  if (!currentEl || !packageEl || !interestEl || !statusEl || !completionEl) return;
+
+  const state = normalizeWebsiteServicesState({ website_services: operatorLeadWebsiteModalState.websiteState });
+  const selectedCode = normalizeWebsitePackageCode(
+    state.selected_package_code || state.package_snapshot?.package_code || operatorLeadWebsiteModalState.packages[0]?.package_code || ''
+  );
+
+  currentEl.innerHTML = [
+    `<div><strong>Lead:</strong> ${esc(operatorLeadWebsiteModalState.leadName || '—')}</div>`,
+    `<div><strong>Status:</strong> ${esc(operatorLeadWebsiteServicesLabel({ website_services: state }))}</div>`,
+    `<div><strong>Interest:</strong> ${esc(state.interest_status)}</div>`,
+    `<div><strong>Acceptance:</strong> ${esc(state.acceptance_status)}</div>`,
+    `<div><strong>Completion:</strong> ${esc(state.completion_status)}</div>`,
+  ].join('');
+
+  packageEl.innerHTML = [
+    '<option value="">Select package…</option>',
+    ...operatorLeadWebsiteModalState.packages.map((pkg) => (
+      `<option value="${esc(pkg.package_code || '')}">${esc(pkg.package_code || 'package')} — ${esc(pkg.package_name || 'Website Package')}</option>`
+    )),
+  ].join('');
+
+  packageEl.value = selectedCode;
+  interestEl.value = state.interest_status || 'not_asked';
+  statusEl.value = state.website_status || 'none';
+  completionEl.value = state.completion_status || 'not_started';
+  renderOperatorLeadWebsitePackageDetails();
+}
+
+function setOperatorLeadWebsiteModalBusy(isBusy) {
+  const controlIds = [
+    'operator-lead-website-package',
+    'operator-lead-website-interest',
+    'operator-lead-website-status',
+    'operator-lead-website-completion',
+    'operator-lead-website-refresh',
+    'operator-lead-website-interest-save',
+    'operator-lead-website-offer',
+    'operator-lead-website-accept',
+    'operator-lead-website-decline',
+    'operator-lead-website-status-save',
+    'operator-lead-website-completion-save',
+  ];
+  controlIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = Boolean(isBusy);
+  });
+}
+
+function operatorLeadWebsiteServicesBadgeClass(lead) {
+  const state = normalizeWebsiteServicesState(lead);
+  if (state.completion_status === 'completed') return 'badge-success';
+  if (state.acceptance_status === 'accepted') return 'badge-blue';
+  if (state.acceptance_status === 'declined' || state.interest_status === 'not_interested') return 'badge-danger';
+  if (state.acceptance_status === 'offered' || state.interest_status === 'interested') return 'badge-warning';
+  return 'badge-green';
+}
+
+function operatorLeadWebsiteServicesLabel(lead) {
+  const state = normalizeWebsiteServicesState(lead);
+  const websiteLabelMap = {
+    none: 'None',
+    hosted_booking_page: 'Hosted Booking Page',
+    custom_website: 'Custom Website',
+    external_website: 'External Website',
+  };
+  if (state.completion_status === 'completed') {
+    return `Completed · ${websiteLabelMap[state.website_status] || 'None'}`;
+  }
+  if (state.acceptance_status === 'accepted') {
+    const pkg = state.selected_package_code || state.package_snapshot?.package_code || 'package';
+    return `Accepted · ${pkg}`;
+  }
+  if (state.acceptance_status === 'offered') {
+    return `Offered · ${state.selected_package_code || 'pending package'}`;
+  }
+  if (state.acceptance_status === 'declined') return 'Declined';
+  if (state.interest_status === 'interested') return 'Interested';
+  if (state.interest_status === 'not_interested') return 'Not Interested';
+  return 'Not Asked';
+}
+
+function formatOperatorLeadDate(value) {
+  const date = new Date(value || '');
+  if (!Number.isFinite(date.getTime())) return '—';
+  return date.toLocaleString();
+}
+
+function operatorLeadName(lead) {
+  const fullName = [lead?.first_name, lead?.last_name].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+  return fullName || 'Unknown Lead';
+}
+
+function operatorLeadHelpText(lead) {
+  const notes = String(lead?.notes || '');
+  const match = notes.match(/priority=([^|]+)/i);
+  if (match && match[1]) return match[1].trim();
+  return notes ? notes.slice(0, 120) : '—';
+}
+
+function leadHasContactMethod(lead) {
+  return Boolean((lead?.phone || '').trim() || (lead?.email || '').trim());
+}
+
+function renderOperatorLeadWebsiteKpis() {
+  const grid = document.getElementById('operator-leads-website-kpis');
+  if (!grid) return;
+  const totals = operatorLeadWebsiteKpis || {};
+  const cards = [
+    { label: 'Website Leads', value: Number(totals.total || 0), icon: '🌐' },
+    { label: 'Interested', value: Number(totals.interested || 0), icon: '👍' },
+    { label: 'Offered', value: Number(totals.offered || 0), icon: '📦' },
+    { label: 'Accepted', value: Number(totals.accepted || 0), icon: '✅' },
+    { label: 'Declined', value: Number(totals.declined || 0), icon: '❌' },
+    { label: 'Completed', value: Number(totals.completed || 0), icon: '🏁' },
+  ];
+  grid.innerHTML = cards.map((item) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="font-size:18px;min-width:32px;text-align:center;">${item.icon}</div>
+      <div class="kpi-body">
+        <div class="kpi-value">${esc(String(item.value))}</div>
+        <div class="kpi-label">${esc(item.label)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function loadOperatorLeads() {
+  const loading = document.getElementById('operator-leads-loading');
+  const wrap = document.getElementById('operator-leads-table-wrap');
+  const empty = document.getElementById('operator-leads-empty');
+  if (loading) {
+    loading.style.display = '';
+    loading.innerHTML = '<div class="loading-spinner"></div><div>Loading Fleet Control leads…</div>';
+  }
+  if (wrap) wrap.style.display = 'none';
+  if (empty) empty.style.display = 'none';
+
+  apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'list', scope: 'car' })
+    .then((data) => {
+      allOperatorLeads = Array.isArray(data?.leads) ? data.leads : [];
+      operatorLeadWebsiteKpis = data?.websiteServicesKpis || { total: allOperatorLeads.length };
+      if (loading) loading.style.display = 'none';
+      renderOperatorLeadWebsiteKpis();
+      applyOperatorLeadFilters();
+    })
+    .catch((err) => {
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+      showToast('Fleet Control leads error: ' + err.message, 'error');
+    });
+}
+
+function applyOperatorLeadFilters() {
+  const search = (document.getElementById('lead-search')?.value || '').trim().toLowerCase();
+  const statusFilter = document.getElementById('lead-filter-status')?.value || '';
+
+  const filtered = allOperatorLeads.filter((lead) => {
+    if (statusFilter && String(lead?.status || '') !== statusFilter) return false;
+    if (!search) return true;
+    const haystack = [
+      operatorLeadName(lead),
+      lead?.email || '',
+      lead?.phone || '',
+      lead?.fleet_size || '',
+      operatorLeadHelpText(lead),
+    ].join(' ').toLowerCase();
+    return haystack.includes(search);
+  });
+
+  const wrap = document.getElementById('operator-leads-table-wrap');
+  const empty = document.getElementById('operator-leads-empty');
+  const tbody = document.getElementById('operator-leads-tbody');
+
+  if (!filtered.length) {
+    if (wrap) wrap.style.display = 'none';
+    if (empty) empty.style.display = '';
+    if (tbody) tbody.innerHTML = '';
+    return;
+  }
+
+  if (wrap) wrap.style.display = '';
+  if (empty) empty.style.display = 'none';
+  if (!tbody) return;
+
+  tbody.innerHTML = filtered.map((lead) => {
+    const id = esc(lead?.id || '');
+    const phone = String(lead?.phone || '').trim();
+    const email = String(lead?.email || '').trim();
+    const canContact = leadHasContactMethod(lead);
+    const status = String(lead?.status || 'new_lead');
+    const statusLabel = operatorLeadStatusLabel(status);
+    const notificationStatus = String(lead?.notification_status || 'queued').toLowerCase();
+    const conversionStatus = String(lead?.conversion_status || 'not_started').toLowerCase();
+    return `<tr>
+      <td style="font-weight:600;">${esc(operatorLeadName(lead))}</td>
+      <td>${email ? `<a href="mailto:${esc(email)}" style="color:var(--primary);text-decoration:none;">${esc(email)}</a>` : '—'}</td>
+      <td>${phone ? `<a href="tel:${esc(phone)}" style="color:var(--primary);text-decoration:none;">${esc(phone)}</a>` : '—'}</td>
+      <td>${esc(lead?.fleet_size || '—')}</td>
+      <td>${esc(operatorLeadHelpText(lead))}</td>
+      <td>${esc(formatOperatorLeadDate(lead?.created_at))}</td>
+      <td><span class="badge ${operatorLeadBadgeClass(status)}">${esc(statusLabel)}</span></td>
+      <td><span class="badge ${operatorLeadNotificationBadgeClass(notificationStatus)}">${esc(operatorLeadNotificationLabel(lead))}</span></td>
+      <td><span class="badge ${operatorLeadProvisioningBadgeClass(conversionStatus)}">${esc(operatorLeadProvisioningLabel(lead))}</span></td>
+      <td><span class="badge ${operatorLeadWebsiteServicesBadgeClass(lead)}">${esc(operatorLeadWebsiteServicesLabel(lead))}</span></td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="viewOperatorLead('${id}')">View Lead</button>
+        <button class="btn btn-secondary btn-sm" onclick="scheduleOperatorLeadDemo('${id}')">Schedule Demo</button>
+        <button class="btn btn-secondary btn-sm" onclick="editOperatorLeadStatus('${id}')">Edit Status</button>
+        <button class="btn btn-secondary btn-sm" onclick="addOperatorLeadNote('${id}')">Add Notes</button>
+        <button class="btn btn-secondary btn-sm" onclick="manageOperatorLeadWebsiteServices('${id}')" ${conversionStatus !== 'succeeded' ? 'disabled' : ''}>Website Services</button>
+        <button class="btn btn-primary btn-sm" onclick="convertOperatorLead('${id}')" ${conversionStatus === 'succeeded' ? 'disabled' : ''}>${conversionStatus === 'failed' ? 'Retry Convert' : 'Convert Lead'}</button>
+        ${phone ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="tel:${esc(phone)}">Call</a>` : `<button class="btn btn-secondary btn-sm" disabled>Call</button>`}
+        ${email ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="mailto:${esc(email)}">Email</a>` : `<button class="btn btn-secondary btn-sm" disabled>Email</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function findOperatorLeadById(id) {
+  return allOperatorLeads.find((lead) => String(lead?.id || '') === String(id || ''));
+}
+
+function viewOperatorLead(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const status = String(lead?.status || 'new_lead');
+  const phone = String(lead?.phone || '').trim();
+  const email = String(lead?.email || '').trim();
+  const details = [
+    `<div><strong>Name:</strong> ${esc(operatorLeadName(lead))}</div>`,
+    `<div><strong>Email:</strong> ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : '—'}</div>`,
+    `<div><strong>Phone:</strong> ${phone ? `<a href="tel:${esc(phone)}">${esc(phone)}</a>` : '—'}</div>`,
+    `<div><strong>Fleet Size:</strong> ${esc(lead?.fleet_size || '—')}</div>`,
+    `<div><strong>Need Most Help With:</strong> ${esc(operatorLeadHelpText(lead))}</div>`,
+    `<div><strong>Status:</strong> ${esc(operatorLeadStatusLabel(status))}</div>`,
+    `<div><strong>Funnel Stage:</strong> ${esc(operatorLeadFunnelLabel(lead?.funnel_stage))}</div>`,
+    `<div><strong>Notification:</strong> ${esc(operatorLeadNotificationLabel(lead))}</div>`,
+    `<div><strong>Provisioning:</strong> ${esc(operatorLeadProvisioningLabel(lead))}</div>`,
+    `<div><strong>Website Services:</strong> ${esc(operatorLeadWebsiteServicesLabel(lead))}</div>`,
+    `<div><strong>Created:</strong> ${esc(formatOperatorLeadDate(lead?.created_at))}</div>`,
+    `<div><strong>Notes:</strong> ${esc(lead?.notes || '—')}</div>`,
+  ];
+  const body = details.join('<div style="margin-bottom:8px;"></div>');
+  const modalBody = document.getElementById('operator-lead-detail-body');
+  if (!modalBody) return;
+  modalBody.innerHTML = body;
+  openModal('operator-lead-detail-modal');
+}
+
+function updateOperatorLeadInMemory(updatedLead) {
+  if (!updatedLead?.id) return;
+  allOperatorLeads = allOperatorLeads.map((lead) => (
+    String(lead?.id || '') === String(updatedLead.id)
+      ? { ...lead, ...updatedLead }
+      : lead
+  ));
+}
+
+async function saveOperatorLeadChanges(id, updates, successMessage) {
+  const lead = findOperatorLeadById(id) || {};
+  const payload = { secret: adminSessionToken, action: 'update', id, scope: 'car', currentFunnelStage: lead?.funnel_stage || '', ...updates };
+  const data = await apiPost('/api/v2-operator-leads', payload);
+  updateOperatorLeadInMemory(data?.lead || {});
+  applyOperatorLeadFilters();
+  showToast(successMessage, 'success');
+}
+
+async function editOperatorLeadStatus(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const options = [
+    'New Lead',
+    'Contacted',
+    'Demo Scheduled',
+    'Qualified',
+    'Converted',
+    'Closed',
+  ];
+  const nextLabel = window.prompt(`Set status (${options.join(', ')}):`, operatorLeadStatusLabel(lead.status));
+  if (nextLabel === null) return;
+  const status = normalizeOperatorLeadStatusInput(nextLabel);
+  if (!status) {
+    showToast('Please choose a valid lead status.', 'warning');
+    return;
+  }
+  try {
+    await saveOperatorLeadChanges(id, { status }, 'Lead status updated.');
+  } catch (err) {
+    showToast('Unable to update lead status: ' + err.message, 'error');
+  }
+}
+
+async function addOperatorLeadNote(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const nextNotes = window.prompt('Add or edit notes for this lead:', lead.notes || '');
+  if (nextNotes === null) return;
+  try {
+    await saveOperatorLeadChanges(id, { notes: nextNotes }, 'Lead notes saved.');
+  } catch (err) {
+    showToast('Unable to save lead notes: ' + err.message, 'error');
+  }
+}
+
+async function scheduleOperatorLeadDemo(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const ownerInput = window.prompt(
+    'Assign owner user id/email (leave blank for default lead owner or round-robin):',
+    lead.demo_owner_user_id || ''
+  );
+  if (ownerInput === null) return;
+  const dateInput = window.prompt('Demo date and time (ISO or local date string):', new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString().slice(0, 16));
+  if (dateInput === null) return;
+  const parsedDate = new Date(dateInput);
+  if (!Number.isFinite(parsedDate.getTime())) {
+    showToast('Please enter a valid demo date/time.', 'warning');
+    return;
+  }
+  const timezone = window.prompt('Timezone (IANA, e.g. America/Los_Angeles):', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  if (timezone === null) return;
+  const durationRaw = window.prompt('Duration minutes:', '30');
+  if (durationRaw === null) return;
+  const meetingTypeRaw = window.prompt('Meeting type (zoom / phone / in_person):', 'zoom');
+  if (meetingTypeRaw === null) return;
+  const notes = window.prompt('Notes (optional):', lead.notes || '');
+  if (notes === null) return;
+
+  const meetingType = String(meetingTypeRaw || '').trim().toLowerCase().replace('-', '_');
+  if (!['zoom', 'phone', 'in_person'].includes(meetingType)) {
+    showToast('Meeting type must be zoom, phone, or in_person.', 'warning');
+    return;
+  }
+  const durationMinutes = Number(durationRaw);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    showToast('Duration must be a positive number of minutes.', 'warning');
+    return;
+  }
+
+  const owner = String(ownerInput || '').trim();
+  const ownerField = owner.includes('@') ? { ownerEmail: owner } : { ownerUserId: owner };
+  try {
+    const data = await apiPost('/api/v2-operator-leads', {
+      secret: adminSessionToken,
+      action: 'demo_schedule',
+      id,
+      scope: 'car',
+      scheduledAt: parsedDate.toISOString(),
+      timezone: String(timezone || '').trim() || 'UTC',
+      durationMinutes: Math.round(durationMinutes),
+      meetingType,
+      notes,
+      ...ownerField,
+    });
+    updateOperatorLeadInMemory(data?.lead || {});
+    applyOperatorLeadFilters();
+    showToast('Demo scheduled successfully.', 'success');
+  } catch (err) {
+    showToast('Unable to schedule demo: ' + err.message, 'error');
+  }
+}
+
+async function convertOperatorLead(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const confirmConvert = window.confirm(`Convert ${operatorLeadName(lead)} into an active Fleet Control workspace?`);
+  if (!confirmConvert) return;
+  try {
+    const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'convert', id, scope: 'car' });
+    updateOperatorLeadInMemory(data?.lead || {});
+    applyOperatorLeadFilters();
+    showToast(data?.idempotent ? 'Lead already converted.' : 'Lead converted and workspace provisioned.', 'success');
+  } catch (err) {
+    showToast('Lead conversion failed: ' + err.message, 'error');
+    loadOperatorLeads();
+  }
+}
+
+async function syncOperatorLeadWebsiteState(id) {
+  const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'website_services_get_state', id, scope: 'car' });
+  updateOperatorLeadInMemory({ id, website_services: data?.website_services || {} });
+  applyOperatorLeadFilters();
+  return data;
+}
+
+async function runOperatorLeadWebsiteAction(id, action, payload, successMessage) {
+  const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action, id, scope: 'car', ...(payload || {}) });
+  updateOperatorLeadInMemory({ id, website_services: data?.website_services || {} });
+  applyOperatorLeadFilters();
+  if (successMessage) showToast(successMessage, 'success');
+  return data;
+}
+
+function closeOperatorLeadWebsiteServicesModal() {
+  closeModal('operator-lead-website-modal');
+  operatorLeadWebsiteModalState = {
+    leadId: '',
+    leadName: '',
+    packages: [],
+    websiteState: normalizeWebsiteServicesState({ website_services: {} }),
+  };
+}
+
+async function refreshOperatorLeadWebsiteServicesModal(id = operatorLeadWebsiteModalState.leadId, opts = {}) {
+  const openAfterLoad = Boolean(opts?.openAfterLoad);
+  if (!id) {
+    showToast('Lead not found.', 'error');
+    return null;
+  }
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return null;
+  }
+  setOperatorLeadWebsiteModalBusy(true);
+  try {
+    const stateData = await syncOperatorLeadWebsiteState(id);
+    operatorLeadWebsiteModalState = {
+      leadId: id,
+      leadName: operatorLeadName(lead),
+      packages: Array.isArray(stateData?.packages) ? stateData.packages : [],
+      websiteState: normalizeWebsiteServicesState({ website_services: stateData?.website_services || {} }),
+    };
+    renderOperatorLeadWebsiteModalState();
+    if (openAfterLoad) openModal('operator-lead-website-modal');
+    return stateData;
+  } catch (err) {
+    showToast('Website Services update failed: ' + err.message, 'error');
+    loadOperatorLeads();
+    return null;
+  } finally {
+    setOperatorLeadWebsiteModalBusy(false);
+  }
+}
+
+function selectedOperatorLeadWebsitePackageCode() {
+  const packageEl = document.getElementById('operator-lead-website-package');
+  return normalizeWebsitePackageCode(packageEl?.value || '');
+}
+
+async function applyOperatorLeadWebsiteModalAction(action, payload, successMessage) {
+  const id = operatorLeadWebsiteModalState.leadId;
+  if (!id) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  setOperatorLeadWebsiteModalBusy(true);
+  try {
+    const data = await runOperatorLeadWebsiteAction(id, action, payload, successMessage);
+    operatorLeadWebsiteModalState.websiteState = normalizeWebsiteServicesState({ website_services: data?.website_services || {} });
+    renderOperatorLeadWebsiteModalState();
+  } catch (err) {
+    showToast('Website Services update failed: ' + err.message, 'error');
+    loadOperatorLeads();
+  } finally {
+    setOperatorLeadWebsiteModalBusy(false);
+  }
+}
+
+async function saveOperatorLeadWebsiteInterest() {
+  const interestEl = document.getElementById('operator-lead-website-interest');
+  const interestStatus = String(interestEl?.value || 'not_asked').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_interest', { interestStatus }, 'Website interest updated.');
+}
+
+async function offerOperatorLeadWebsitePackage() {
+  const packageCode = selectedOperatorLeadWebsitePackageCode();
+  if (!packageCode) {
+    showToast('Select a package before offering.', 'warning');
+    return;
+  }
+  await applyOperatorLeadWebsiteModalAction('website_services_offer', { packageCode }, 'Website package offered.');
+}
+
+async function acceptOperatorLeadWebsitePackage() {
+  const packageCode = selectedOperatorLeadWebsitePackageCode();
+  if (!packageCode) {
+    showToast('Select a package before acceptance.', 'warning');
+    return;
+  }
+  await applyOperatorLeadWebsiteModalAction('website_services_accept', { packageCode }, 'Website package accepted.');
+}
+
+async function declineOperatorLeadWebsitePackage() {
+  const confirmed = window.confirm('Mark Website Services package as declined?');
+  if (!confirmed) return;
+  await applyOperatorLeadWebsiteModalAction('website_services_decline', {}, 'Website package declined.');
+}
+
+async function saveOperatorLeadWebsiteStatus() {
+  const statusEl = document.getElementById('operator-lead-website-status');
+  const websiteStatus = String(statusEl?.value || 'none').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_status', { websiteStatus }, 'Website status updated.');
+}
+
+async function saveOperatorLeadWebsiteCompletion() {
+  const completionEl = document.getElementById('operator-lead-website-completion');
+  const completionStatus = String(completionEl?.value || 'not_started').trim().toLowerCase();
+  await applyOperatorLeadWebsiteModalAction('website_services_completion', { completionStatus }, 'Website completion updated.');
+}
+
+async function manageOperatorLeadWebsiteServices(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  if (String(lead?.conversion_status || '') !== 'succeeded') {
+    showToast('Convert the lead first to manage Website Services.', 'warning');
+    return;
+  }
+  await refreshOperatorLeadWebsiteServicesModal(id, { openAfterLoad: true });
+}
+
 // ── Customers ─────────────────────────────────────────────────────────────
 let allCustomers = [];
 
@@ -12408,6 +13232,17 @@ async function loadAiInsights() {
       thisWeekRevenue: 1286, monthlyRevenue: 5200, outstandingBalances: 784,
       collectionRate: 88.4, failedPayments: 1, fraudAlerts: 1,
       bookingsLast7Days: 5, bookingsLast30Days: 16,
+      leadConversionRate: 33.3,
+    },
+    leadPipeline: {
+      newLeads: 4,
+      contacted: 3,
+      demoScheduled: 2,
+      qualified: 2,
+      converted: 3,
+      closed: 1,
+      totalLeads: 15,
+      conversionRate: 20,
     },
     revenueChart: revChart,
     bookingsPerVehicle: { camry: 14, civic: 9, rav4: 6, rogue: 2 },

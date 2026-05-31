@@ -58,6 +58,7 @@ import { resolvePickupLocation } from "./_pickup-location.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { computePaymentPlanProgress } from "./_payment-plan-reconcile.js";
 import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
+import { loadAgreementPathForDownload, loadAgreementSummaryMap } from "./_agreement-automation.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 const VEHICLE_NAMES    = {
@@ -555,6 +556,22 @@ export default withAdminAuth(async function handler(req, res) {
               _source:         "supabase",
             };
           });
+          try {
+            const summaryMap = await loadAgreementSummaryMap(
+              sb,
+              bookings.map((booking) => booking.bookingId)
+            );
+            for (const booking of bookings) {
+              const history = summaryMap.get(booking.bookingId) || [];
+              booking.currentAgreement = history[0] || null;
+              booking.agreements = history;
+            }
+          } catch {
+            for (const booking of bookings) {
+              booking.currentAgreement = null;
+              booking.agreements = [];
+            }
+          }
           const adminVisibleBookings = bookings.filter((b) => !isIncompleteCheckoutAppStatus(b.status));
           return res.status(200).json({ bookings: adminVisibleBookings });
         }
@@ -581,6 +598,11 @@ export default withAdminAuth(async function handler(req, res) {
 
       // Newest first
       result.sort((a, b) => (b.createdAt || b.pickupDate || "") > (a.createdAt || a.pickupDate || "") ? 1 : -1);
+      result = result.map((booking) => ({
+        ...booking,
+        currentAgreement: booking.currentAgreement || null,
+        agreements: Array.isArray(booking.agreements) ? booking.agreements : [],
+      }));
 
       return res.status(200).json({ bookings: result });
     }
@@ -2466,25 +2488,26 @@ export default withAdminAuth(async function handler(req, res) {
 
       const sbAg = getSupabaseAdmin();
       if (!sbAg) return res.status(503).json({ error: "Database not configured" });
-
-      // Look up the stored path from pending_booking_docs.
-      const { data: agDocsRow, error: agDocsErr } = await sbAg
-        .from("pending_booking_docs")
-        .select("agreement_pdf_url, booking_type")
-        .eq("booking_id", bookingId)
-        .maybeSingle();
-
-      if (agDocsErr) {
-        return res.status(500).json({ error: `Failed to fetch agreement record: ${agDocsErr.message}` });
-      }
-      if (!agDocsRow?.agreement_pdf_url) {
+      const agreementDetails = await loadAgreementPathForDownload(sbAg, bookingId);
+      if (!agreementDetails?.path) {
         return res.status(404).json({ error: "No agreement PDF found for this booking." });
+      }
+      let bookingType = null;
+      try {
+        const { data: legacyDoc } = await sbAg
+          .from("pending_booking_docs")
+          .select("booking_type")
+          .eq("booking_id", bookingId)
+          .maybeSingle();
+        bookingType = legacyDoc?.booking_type || null;
+      } catch {
+        bookingType = null;
       }
 
       // Generate a signed URL valid for 60 minutes.
       const { data: signedData, error: signedErr } = await sbAg.storage
         .from("rental-agreements")
-        .createSignedUrl(agDocsRow.agreement_pdf_url, 3600);
+        .createSignedUrl(agreementDetails.path, 3600);
 
       if (signedErr) {
         return res.status(500).json({ error: `Failed to generate signed URL: ${signedErr.message}` });
@@ -2492,8 +2515,10 @@ export default withAdminAuth(async function handler(req, res) {
 
       return res.status(200).json({
         url:         signedData.signedUrl,
-        bookingType: agDocsRow.booking_type || null,
-        path:        agDocsRow.agreement_pdf_url,
+        bookingType,
+        path:        agreementDetails.path,
+        currentAgreement: agreementDetails.currentAgreement || null,
+        agreements: agreementDetails.agreements || [],
       });
     }
 

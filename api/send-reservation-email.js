@@ -26,6 +26,7 @@ import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agree
 import { normalizeClockTime, deriveReturnTime, formatTime12h, isoDateInLA } from "./_time.js";
 import { sendDedupedSms } from "./_sms-log.js";
 import { shouldSendBookingLifecycleSms } from "./_sms-rollout.js";
+import { markBookingAgreementDelivery } from "./_agreement-automation.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -877,6 +878,7 @@ export default async function handler(req, res) {
 
     let ownerEmailErr = null;
     let ownerEmailSent = false;
+    let customerEmailSent = false;
     if (webhookAlreadySentOwnerEmail) {
       console.log(`[send-reservation-email] webhook already sent owner email for booking ${bookingId} — skipping duplicate owner email`);
     } else {
@@ -1173,6 +1175,7 @@ export default async function handler(req, res) {
       };
       try {
         await transporter.sendMail(customerEmailOpts);
+        customerEmailSent = true;
       } catch (custErr) {
         console.error("Customer confirmation email failed:", custErr);
         if (customerAttachments.length > 0 && isLikelyAttachmentDeliveryError(custErr)) {
@@ -1191,6 +1194,7 @@ export default async function handler(req, res) {
                 <p>⚠️ Your agreement PDF could not be attached due to an attachment delivery error. Your booking is still confirmed.</p>
               `,
             });
+            customerEmailSent = true;
             console.warn("Customer confirmation email sent without agreement attachment after attachment delivery failure.");
           } catch (retryErr) {
             console.error("Customer confirmation email retry without attachment failed:", retryErr);
@@ -1199,6 +1203,30 @@ export default async function handler(req, res) {
         } else {
           customerEmailErr = custErr;
         }
+      }
+    }
+
+    if (isConfirmed && bookingId) {
+      try {
+        const sbDelivery = getSupabaseAdmin();
+        if (sbDelivery) {
+          await markBookingAgreementDelivery({
+            sb: sbDelivery,
+            bookingRef: bookingId,
+            ownerDeliveryStatus: webhookAlreadySentOwnerEmail
+              ? "sent"
+              : (ownerEmailSent ? "sent" : "failed"),
+            renterDeliveryStatus: email
+              ? (customerEmailSent ? "sent" : "failed")
+              : "skipped",
+            sentAt: ownerEmailSent || customerEmailSent || webhookAlreadySentOwnerEmail
+              ? new Date().toISOString()
+              : null,
+            createdBy: "api/send-reservation-email",
+          });
+        }
+      } catch (deliveryErr) {
+        console.warn("[send-reservation-email] agreement delivery tracking skipped (non-fatal):", deliveryErr?.message || deliveryErr);
       }
     }
 

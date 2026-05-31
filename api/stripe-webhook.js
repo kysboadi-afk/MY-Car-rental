@@ -56,6 +56,14 @@ import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booki
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeLifecycleEvent, buildLifecycleTemplateSequence, SMS_LIFECYCLE_EVENT } from "./_sms-lifecycle.js";
 import { logWebhookOrgFallback } from "./_org-rollout-observability.js";
+import { markBookingAgreementDelivery, upsertBookingAgreement, upsertBookingAgreementSignature } from "./_agreement-automation.js";
+import {
+  appendBookingTimelineEvent,
+  canApplyBookingUpdateFromLifecycle,
+  normalizeExtensionNotes,
+  normalizeExtensionReason,
+  upsertExtensionLifecycleRecord,
+} from "./_extension-lifecycle.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1055,7 +1063,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       try {
         const sbPdf = getSupabaseAdmin();
         if (sbPdf) {
-          const storagePath = `${booking_id}/${pdfFilename}`;
+          const agreementVersion = 1;
+          const storagePath = `bookings/${booking_id}/agreements/v${agreementVersion}/agreement.pdf`;
           const { error: uploadErr } = await sbPdf.storage
             .from("rental-agreements")
             .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
@@ -1066,6 +1075,40 @@ async function sendWebhookNotificationEmails(paymentIntent) {
               { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
               { onConflict: "booking_id" }
             );
+            const agreementSnapshot = {
+              ...pdfBody,
+              booking_ref: booking_id,
+              payment_intent_id: paymentIntent.id,
+              agreement_generated_at: new Date().toISOString(),
+            };
+            await upsertBookingAgreement({
+              sb: sbPdf,
+              bookingRef: booking_id,
+              templateKey: "rental_standard",
+              agreementType: "rental_initial",
+              status: storedDocs?.signature ? "issued" : "issued",
+              payloadSnapshot: agreementSnapshot,
+              pdfStoragePath: storagePath,
+              pdfBuffer,
+              createdBy: "api/stripe-webhook",
+            });
+            if (storedDocs?.signature) {
+              await upsertBookingAgreementSignature({
+                sb: sbPdf,
+                bookingRef: booking_id,
+                signatureText: storedDocs.signature,
+                signerRole: "renter",
+                signerName: renter_name || storedDocs.signature,
+                signatureMethod: "typed_name",
+                ipAddress: null,
+                userAgent: null,
+                identitySessionId: meta.identity_session_id || null,
+                agreementStatusBeforeSign: "issued",
+                transitionAgreementToSigned: true,
+                payloadSnapshot: agreementSnapshot,
+                createdBy: "api/stripe-webhook",
+              });
+            }
             console.log(`stripe-webhook: PDF stored at ${storagePath} for booking_id ${booking_id}`);
           }
         }
@@ -1226,6 +1269,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   });
 
   let ownerEmailSent = false;
+  let customerEmailSent = false;
   try {
     await transporter.sendMail({
       from:        `"Sly Car Rentals LLC Bookings" <${process.env.SMTP_USER}>`,
@@ -1319,8 +1363,27 @@ async function sendWebhookNotificationEmails(paymentIntent) {
         html:    customerEmail.html,
       });
       console.log(`stripe-webhook: customer email sent to ${email} for PI ${paymentIntent.id}`);
+      customerEmailSent = true;
     } catch (custErr) {
       console.error("stripe-webhook: customer email failed:", custErr.message);
+    }
+  }
+
+  if (booking_id) {
+    try {
+      const sbDelivery = getSupabaseAdmin();
+      if (sbDelivery) {
+        await markBookingAgreementDelivery({
+          sb: sbDelivery,
+          bookingRef: booking_id,
+          ownerDeliveryStatus: ownerEmailSent ? "sent" : "failed",
+          renterDeliveryStatus: email ? (customerEmailSent ? "sent" : "failed") : "skipped",
+          sentAt: ownerEmailSent || customerEmailSent ? new Date().toISOString() : null,
+          createdBy: "api/stripe-webhook",
+        });
+      }
+    } catch (deliveryErr) {
+      console.warn("stripe-webhook: agreement delivery tracking skipped (non-fatal):", deliveryErr?.message || deliveryErr);
     }
   }
 }
@@ -2083,6 +2146,8 @@ export default async function handler(req, res) {
         extension_amount_paid,
         extension_remaining_balance,
         extension_payment_status,
+        extension_reason,
+        extension_notes,
       } = paymentIntent.metadata || {};
 
       // Use canonical booking_id; fall back to original_booking_id for PIs
@@ -2232,6 +2297,45 @@ export default async function handler(req, res) {
             (typeof extension_payment_status === "string" && extension_payment_status.trim())
               ? extension_payment_status.trim().toLowerCase()
               : (extensionRemainingBalance > 0 ? "partially_paid" : "paid");
+          const normalizedExtensionReason = normalizeExtensionReason(extension_reason);
+          const normalizedExtensionNotes = normalizeExtensionNotes(extension_notes);
+          const extensionLifecyclePaymentStatus = "completed";
+          const extensionLifecycleSignatureStatus = "waived";
+          const extensionLifecycleSignatureRequired = false;
+          const canApplyBookingUpdate = canApplyBookingUpdateFromLifecycle({
+            paymentStatus: extensionLifecyclePaymentStatus,
+            signatureStatus: extensionLifecycleSignatureStatus,
+            signatureRequired: extensionLifecycleSignatureRequired,
+          });
+
+          await upsertExtensionLifecycleRecord({
+            sb: sbExtClient,
+            bookingRef,
+            paymentIntentId: paymentIntent.id,
+            requestedReturnDate: new_return_date,
+            requestedReturnTime: new_return_time || resolvedReturnTime,
+            extensionReason: normalizedExtensionReason,
+            extensionNotes: normalizedExtensionNotes,
+            paymentStatus: extensionLifecyclePaymentStatus,
+            signatureStatus: extensionLifecycleSignatureStatus,
+            signatureRequired: extensionLifecycleSignatureRequired,
+          });
+          await appendBookingTimelineEvent({
+            sb: sbExtClient,
+            bookingRef,
+            eventType: "extension_payment_captured",
+            eventKey: `${bookingRef}:extension_payment_captured:${paymentIntent.id}`,
+            actor: "stripe_webhook",
+            payload: {
+              paymentIntentId: paymentIntent.id,
+              extensionTotalAmount,
+              extensionAmountPaid,
+              extensionRemainingBalance,
+              extensionPaymentStatus: extensionPaymentStatusResolved,
+              extensionReason: normalizedExtensionReason || null,
+              extensionNotes: normalizedExtensionNotes || null,
+            },
+          });
 
           // Build normalized booking snapshot for downstream reuse.
           // Preserve the current DB status so autoUpsertBooking does not
@@ -2333,6 +2437,8 @@ export default async function handler(req, res) {
                         amount:            Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                         new_return_date:   new_return_date,
                         new_return_time:   updatedBooking.returnTime || null,
+                        extension_reason:  normalizedExtensionReason || null,
+                        extension_notes:   normalizedExtensionNotes || null,
                       },
                       { onConflict: "payment_intent_id", ignoreDuplicates: true }
                     );
@@ -2466,6 +2572,8 @@ export default async function handler(req, res) {
                     amount:                      extensionAmountDollars,
                     new_return_date:             new_return_date,
                     new_return_time:             updatedBooking.returnTime || null,
+                    extension_reason:            normalizedExtensionReason || null,
+                    extension_notes:             normalizedExtensionNotes || null,
                     // Phase 2 risk-gating fields — track partial vs full payments
                     // and remaining balance so evaluateExtensionRisk can cap exposure.
                     payment_type:                extensionRemainingBalance > 0 ? "partial" : "full",
@@ -2479,6 +2587,21 @@ export default async function handler(req, res) {
                 throw beUpsertErr;
               } else {
                 console.log("stripe-webhook: booking_extensions upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beData?.length ?? "(no data)" });
+                await appendBookingTimelineEvent({
+                  sb: sbBE,
+                  bookingRef: resolvedBookingId,
+                  eventType: "extension_applied",
+                  eventKey: `${resolvedBookingId}:extension_applied:${paymentIntent.id}`,
+                  actor: "stripe_webhook",
+                  payload: {
+                    paymentIntentId: paymentIntent.id,
+                    newReturnDate: new_return_date,
+                    newReturnTime: updatedBooking.returnTime || null,
+                    extensionReason: normalizedExtensionReason || null,
+                    extensionNotes: normalizedExtensionNotes || null,
+                    amountPaid: extensionAmountDollars,
+                  },
+                });
               }
             } else {
               console.warn("stripe-webhook: booking_extensions upsert skipped — missing sbBE, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
@@ -2535,6 +2658,20 @@ export default async function handler(req, res) {
               error: `extension revenue persistence failed for ${paymentIntent.id}`,
             });
           }
+
+          await upsertExtensionLifecycleRecord({
+            sb: sbExtClient,
+            bookingRef,
+            paymentIntentId: paymentIntent.id,
+            requestedReturnDate: new_return_date,
+            requestedReturnTime: new_return_time || updatedBooking.returnTime || null,
+            extensionReason: normalizedExtensionReason,
+            extensionNotes: normalizedExtensionNotes,
+            paymentStatus: "completed",
+            signatureStatus: "waived",
+            signatureRequired: false,
+            lifecycleStatus: "applied",
+          });
 
           // Update public booked-dates.json availability.
           if (updatedBooking.pickupDate && updatedBooking.returnDate) {

@@ -9,18 +9,10 @@ CREATE TABLE IF NOT EXISTS public.operator_leads (
   first_name          TEXT        NOT NULL,
   last_name           TEXT        NOT NULL,
   email               TEXT        NOT NULL,
-  phone               TEXT,
-  fleet_size          TEXT,
-  source              TEXT,
-  status              TEXT        NOT NULL DEFAULT 'new_lead'
-                        CHECK (status IN (
-                          'new_lead',
-                          'contacted',
-                          'demo_scheduled',
-                          'onboarding',
-                          'active_operator',
-                          'rejected'
-                        )),
+  phone               TEXT        NOT NULL,
+  fleet_size          TEXT        NOT NULL,
+  source              TEXT        NOT NULL DEFAULT 'fleet_control_early_access',
+  status              TEXT        NOT NULL DEFAULT 'new_lead',
   notes               TEXT,
   onboarding_progress JSONB       NOT NULL DEFAULT '{}'::jsonb,
   stripe_status       TEXT,
@@ -124,14 +116,47 @@ BEGIN
 END $$;
 
 ALTER TABLE public.operator_leads
+  ALTER COLUMN source SET DEFAULT 'fleet_control_early_access',
   ALTER COLUMN status SET DEFAULT 'new_lead',
   ALTER COLUMN onboarding_progress SET DEFAULT '{}'::jsonb,
   ALTER COLUMN created_at SET DEFAULT NOW(),
   ALTER COLUMN updated_at SET DEFAULT NOW();
 
 UPDATE public.operator_leads
+   SET first_name = 'Lead'
+ WHERE COALESCE(BTRIM(first_name), '') = '';
+
+UPDATE public.operator_leads
+   SET last_name = 'Lead'
+ WHERE COALESCE(BTRIM(last_name), '') = '';
+
+UPDATE public.operator_leads
+   SET email = CONCAT('unknown+', id::text, '@invalid.local')
+ WHERE COALESCE(BTRIM(email), '') = '';
+
+UPDATE public.operator_leads
+   SET phone = 'unknown'
+ WHERE COALESCE(BTRIM(phone), '') = '';
+
+UPDATE public.operator_leads
+   SET fleet_size = 'unknown'
+ WHERE COALESCE(BTRIM(fleet_size), '') = '';
+
+UPDATE public.operator_leads
+   SET source = 'fleet_control_early_access'
+ WHERE COALESCE(BTRIM(source), '') = '';
+
+UPDATE public.operator_leads
    SET status = 'new_lead'
- WHERE status IS NULL;
+ WHERE status IS NULL
+    OR status NOT IN (
+      'new_lead',
+      'contacted',
+      'demo_scheduled',
+      'onboarding',
+      'active_operator',
+      'rejected'
+    );
 
 UPDATE public.operator_leads
    SET onboarding_progress = '{}'::jsonb
@@ -144,6 +169,65 @@ UPDATE public.operator_leads
 UPDATE public.operator_leads
    SET updated_at = NOW()
  WHERE updated_at IS NULL;
+
+ALTER TABLE public.operator_leads
+  ALTER COLUMN first_name SET NOT NULL,
+  ALTER COLUMN last_name SET NOT NULL,
+  ALTER COLUMN email SET NOT NULL,
+  ALTER COLUMN phone SET NOT NULL,
+  ALTER COLUMN fleet_size SET NOT NULL,
+  ALTER COLUMN source SET NOT NULL,
+  ALTER COLUMN status SET NOT NULL,
+  ALTER COLUMN onboarding_progress SET NOT NULL,
+  ALTER COLUMN created_at SET NOT NULL,
+  ALTER COLUMN updated_at SET NOT NULL;
+
+DO $$
+DECLARE
+  v_constraint_name text;
+BEGIN
+  FOR v_constraint_name IN
+    SELECT c.conname
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'public'
+       AND t.relname = 'operator_leads'
+       AND c.contype = 'c'
+       AND pg_get_constraintdef(c.oid) ILIKE '%status%'
+  LOOP
+    IF v_constraint_name <> 'operator_leads_status_check' THEN
+      EXECUTE format(
+        'ALTER TABLE public.operator_leads DROP CONSTRAINT %I',
+        v_constraint_name
+      );
+    END IF;
+  END LOOP;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'public'
+       AND t.relname = 'operator_leads'
+       AND c.contype = 'c'
+       AND c.conname = 'operator_leads_status_check'
+  ) THEN
+    ALTER TABLE public.operator_leads
+      ADD CONSTRAINT operator_leads_status_check
+      CHECK (
+        status IN (
+          'new_lead',
+          'contacted',
+          'demo_scheduled',
+          'onboarding',
+          'active_operator',
+          'rejected'
+        )
+      );
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_operator_leads_status
   ON public.operator_leads (status);
@@ -190,6 +274,26 @@ BEGIN
       FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
   END IF;
 END $$;
+
+ALTER TABLE public.operator_leads ENABLE ROW LEVEL SECURITY;
+
+GRANT INSERT ON TABLE public.operator_leads TO anon;
+GRANT ALL ON TABLE public.operator_leads TO service_role;
+
+DROP POLICY IF EXISTS operator_leads_anon_insert ON public.operator_leads;
+CREATE POLICY operator_leads_anon_insert
+  ON public.operator_leads
+  FOR INSERT
+  TO anon
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS operator_leads_service_role_all ON public.operator_leads;
+CREATE POLICY operator_leads_service_role_all
+  ON public.operator_leads
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 NOTIFY pgrst, 'reload schema';
 

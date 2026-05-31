@@ -90,6 +90,60 @@ function logDashboardContractTransition(eventName, fields = {}, level = "info") 
   });
 }
 
+const OPERATOR_LEAD_PIPELINE_STATUSES = {
+  new_lead: "leadSubmitted",
+  contacted: "leadManaged",
+  demo_scheduled: "leadManaged",
+  onboarding: "leadManaged",
+  active_operator: "workspaceProvisioned",
+  rejected: "closed",
+  lead_submitted: "leadSubmitted",
+  notification_sent: "notificationSent",
+  lead_managed: "leadManaged",
+  lead_converted: "leadConverted",
+  organization_created: "organizationCreated",
+  owner_account_created: "ownerAccountCreated",
+  workspace_provisioned: "workspaceProvisioned",
+};
+
+export function buildOperatorLeadPipeline(rows = []) {
+  const pipeline = {
+    leadSubmitted: 0,
+    notificationSent: 0,
+    leadManaged: 0,
+    leadConverted: 0,
+    organizationCreated: 0,
+    ownerAccountCreated: 0,
+    workspaceProvisioned: 0,
+    closed: 0,
+    totalLeads: 0,
+    conversionRate: 0,
+    // Compatibility keys retained for existing dashboard render paths.
+    newLeads: 0,
+    contacted: 0,
+    demoScheduled: 0,
+    qualified: 0,
+    converted: 0,
+  };
+  const list = Array.isArray(rows) ? rows : [];
+  list.forEach((row) => {
+    const status = String(row?.funnel_stage || row?.status || "").trim().toLowerCase();
+    const key = OPERATOR_LEAD_PIPELINE_STATUSES[status];
+    if (!key) return;
+    pipeline[key] += 1;
+    pipeline.totalLeads += 1;
+  });
+  pipeline.newLeads = pipeline.leadSubmitted;
+  pipeline.contacted = pipeline.notificationSent;
+  pipeline.demoScheduled = 0;
+  pipeline.qualified = pipeline.leadManaged;
+  pipeline.converted = pipeline.workspaceProvisioned;
+  pipeline.conversionRate = pipeline.totalLeads > 0
+    ? Math.round(((pipeline.workspaceProvisioned / pipeline.totalLeads) * 100) * 10) / 10
+    : 0;
+  return pipeline;
+}
+
 export function buildContractTransitionKpiMismatches(input = {}) {
   const tolerance = Number.isFinite(Number(input.tolerance)) ? Number(input.tolerance) : 0.01;
   const mismatches = [];
@@ -1052,6 +1106,22 @@ export default withAdminAuth(async function handler(req, res) {
     if (!applicationSnapshot.ok && applicationSnapshot.details) {
       console.error("v2-dashboard applications:", applicationSnapshot.details);
     }
+    let leadPipeline = buildOperatorLeadPipeline();
+    if (sb) {
+      try {
+        const { data: leadRows, error: leadError } = await sb
+          .from("operator_leads")
+          .select("status, funnel_stage")
+          .limit(5000);
+        if (leadError) {
+          console.error("v2-dashboard operator leads:", leadError.message || leadError);
+        } else {
+          leadPipeline = buildOperatorLeadPipeline(leadRows);
+        }
+      } catch (err) {
+        console.error("v2-dashboard operator leads:", err?.message || err);
+      }
+    }
 
     const contractTransitionObservability = buildContractTransitionObservabilitySummary({
       dashboardFallbackPaths,
@@ -1080,7 +1150,9 @@ export default withAdminAuth(async function handler(req, res) {
           returnsTodayCount,
           pickupsTodayCount,
           newApplications: applicationSummary?.newApplications || 0,
+          leadConversionRate: leadPipeline.conversionRate,
         },
+        leadPipeline,
         revenueChart,
         bookingsPerVehicle,
         vehicleStats,
