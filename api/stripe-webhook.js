@@ -56,6 +56,7 @@ import { CHECKOUT_PENDING_PREPAY_DB_STATUSES, toDbBookingStatus } from "./_booki
 import { upsertBookingPrewrite } from "./_booking-prewrite.js";
 import { normalizeLifecycleEvent, buildLifecycleTemplateSequence, SMS_LIFECYCLE_EVENT } from "./_sms-lifecycle.js";
 import { logWebhookOrgFallback } from "./_org-rollout-observability.js";
+import { upsertBookingAgreement, upsertBookingAgreementSignature } from "./_agreement-automation.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1055,7 +1056,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       try {
         const sbPdf = getSupabaseAdmin();
         if (sbPdf) {
-          const storagePath = `${booking_id}/${pdfFilename}`;
+          const agreementVersion = 1;
+          const storagePath = `bookings/${booking_id}/agreements/v${agreementVersion}/agreement.pdf`;
           const { error: uploadErr } = await sbPdf.storage
             .from("rental-agreements")
             .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
@@ -1066,6 +1068,40 @@ async function sendWebhookNotificationEmails(paymentIntent) {
               { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
               { onConflict: "booking_id" }
             );
+            const agreementSnapshot = {
+              ...pdfBody,
+              booking_ref: booking_id,
+              payment_intent_id: paymentIntent.id,
+              agreement_generated_at: new Date().toISOString(),
+            };
+            await upsertBookingAgreement({
+              sb: sbPdf,
+              bookingRef: booking_id,
+              templateKey: "rental_standard",
+              agreementType: "rental_initial",
+              status: storedDocs?.signature ? "issued" : "issued",
+              payloadSnapshot: agreementSnapshot,
+              pdfStoragePath: storagePath,
+              pdfBuffer,
+              createdBy: "api/stripe-webhook",
+            });
+            if (storedDocs?.signature) {
+              await upsertBookingAgreementSignature({
+                sb: sbPdf,
+                bookingRef: booking_id,
+                signatureText: storedDocs.signature,
+                signerRole: "renter",
+                signerName: renter_name || storedDocs.signature,
+                signatureMethod: "typed_name",
+                ipAddress: null,
+                userAgent: null,
+                identitySessionId: meta.identity_session_id || null,
+                agreementStatusBeforeSign: "issued",
+                transitionAgreementToSigned: true,
+                payloadSnapshot: agreementSnapshot,
+                createdBy: "api/stripe-webhook",
+              });
+            }
             console.log(`stripe-webhook: PDF stored at ${storagePath} for booking_id ${booking_id}`);
           }
         }

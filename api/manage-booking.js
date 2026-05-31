@@ -43,6 +43,7 @@ import {
   extractBearerToken,
   verifyRenterSessionToken,
 } from "./_renter-auth.js";
+import { loadAgreementPathForDownload, loadBookingAgreementSummary } from "./_agreement-automation.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com", "https://sly-rides.vercel.app"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -667,6 +668,7 @@ export default async function handler(req, res) {
       booking_id: bookingId,
       surfaces: contractTransitionObservability.surfacesUsingLegacyDerivations,
     });
+    const agreementSummary = await loadBookingAgreementSummary(getSupabaseAdmin(), bookingId);
 
     return res.status(200).json({
       bookingId,
@@ -704,6 +706,8 @@ export default async function handler(req, res) {
       lateFeeStatus: row.late_fee_status || null,
       lateFeeAmount: Number(row.late_fee_amount || 0) > 0 ? Number(row.late_fee_amount) : null,
       extensionRiskOverride: row.extension_risk_override || null,
+      currentAgreement: agreementSummary.currentAgreement,
+      agreements: agreementSummary.agreements,
       contractTransitionObservability,
     });
   }
@@ -824,22 +828,8 @@ export default async function handler(req, res) {
   if (action === "get_agreement_url") {
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable" });
-
-    const { data: docRow, error: docErr } = await sb
-      .from("pending_booking_docs")
-      .select("agreement_pdf_url")
-      .eq("booking_id", bookingId)
-      .maybeSingle();
-
-    if (docErr) {
-      if (docErr.code === POSTGRES_UNDEFINED_TABLE_ERROR) {
-        return res.status(404).json({ error: "No agreement PDF found for this booking." });
-      }
-      console.error("manage-booking agreement lookup error:", docErr.message);
-      return res.status(500).json({ error: "Could not load the agreement right now." });
-    }
-
-    if (!docRow?.agreement_pdf_url) {
+    const agreementDetails = await loadAgreementPathForDownload(sb, bookingId);
+    if (!agreementDetails?.path) {
       return res.status(404).json({ error: "No agreement PDF found for this booking." });
     }
 
@@ -848,7 +838,7 @@ export default async function handler(req, res) {
       return res.status(503).json({ error: "Document storage is unavailable right now." });
     }
 
-    const { data: signedData, error: signedErr } = await storage.createSignedUrl(docRow.agreement_pdf_url, 3600);
+    const { data: signedData, error: signedErr } = await storage.createSignedUrl(agreementDetails.path, 3600);
     if (signedErr) {
       console.error("manage-booking agreement signed-url error:", signedErr.message);
       return res.status(500).json({ error: "Could not load the agreement right now." });
@@ -856,7 +846,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       url: signedData?.signedUrl || null,
-      path: docRow.agreement_pdf_url,
+      path: agreementDetails.path,
+      currentAgreement: agreementDetails.currentAgreement || null,
+      agreements: agreementDetails.agreements || [],
     });
   }
 
