@@ -1,4 +1,6 @@
 import { getSupabaseAdmin } from "./_supabase.js";
+import nodemailer from "nodemailer";
+import crypto from "node:crypto";
 
 const EXACT_ALLOWED_ORIGINS = new Set([
   "https://www.slytrans.com",
@@ -48,6 +50,126 @@ function splitLeadName(name) {
     firstName: parts[0],
     lastName: parts.slice(1).join(" "),
   };
+}
+
+function buildSubmissionHash(parts = []) {
+  return crypto.createHash("sha256")
+    .update(parts.map((item) => String(item || "")).join("|"))
+    .digest("hex");
+}
+
+function isMissingColumnError(error, columnName) {
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes(String(columnName || "").toLowerCase()) || message.includes("schema cache");
+}
+
+function normalizeProgress(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...value };
+}
+
+function normalizeFunnelTimestamps(progress) {
+  const source = progress?.funnel_timestamps;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  return { ...source };
+}
+
+function withFunnelTimestamp(progress, key, value) {
+  const next = normalizeProgress(progress);
+  const timestamps = normalizeFunnelTimestamps(next);
+  if (!timestamps[key]) timestamps[key] = value;
+  next.funnel_timestamps = timestamps;
+  return next;
+}
+
+function withNotificationSnapshot(progress, details) {
+  const next = normalizeProgress(progress);
+  next.notification = {
+    ...(next.notification && typeof next.notification === "object" ? next.notification : {}),
+    ...details,
+  };
+  return next;
+}
+
+function buildNotificationTransport() {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    return null;
+  }
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || "587", 10),
+    secure: process.env.SMTP_PORT === "465",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+async function dispatchLeadNotification({ leadId, firstName, lastName, email, phone, fleetSize, priority, message, source }) {
+  const channel = "email";
+  const sentAt = new Date().toISOString();
+  const notifyTo = process.env.FLEET_CONTROL_LEAD_NOTIFY_EMAIL || process.env.OWNER_EMAIL || process.env.SMTP_USER || "";
+  const transporter = buildNotificationTransport();
+  if (!notifyTo || !transporter) {
+    return {
+      channel,
+      status: "failed",
+      sentAt: null,
+      errorReason: "Notification email transport is not configured.",
+    };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: `"Fleet Control Leads" <${process.env.SMTP_USER}>`,
+      to: notifyTo,
+      subject: `🚘 Fleet Control lead submitted [${leadId}]`,
+      replyTo: email,
+      text: [
+        "New Fleet Control lead submitted.",
+        "",
+        `Lead ID     : ${leadId}`,
+        `Name        : ${[firstName, lastName].filter(Boolean).join(" ") || "Unknown"}`,
+        `Email       : ${email}`,
+        `Phone       : ${phone}`,
+        `Fleet Size  : ${fleetSize}`,
+        `Priority    : ${priority}`,
+        `Source      : ${source}`,
+        `Message     : ${message}`,
+      ].join("\n"),
+    });
+    return {
+      channel,
+      status: "sent",
+      sentAt,
+      errorReason: null,
+    };
+  } catch (err) {
+    return {
+      channel,
+      status: "failed",
+      sentAt: null,
+      errorReason: String(err?.message || "Unknown notification dispatch error").slice(0, 500),
+    };
+  }
+}
+
+async function writeLeadAuditLog(supabase, { leadId, event, outcome = "success", channel = null, detail = null, metadata = {} }) {
+  try {
+    await supabase
+      .from("operator_lead_audit_logs")
+      .insert({
+        lead_id: leadId,
+        event,
+        outcome,
+        channel,
+        detail,
+        metadata,
+      });
+  } catch (error) {
+    console.warn("operator-leads audit insert skipped:", error?.message || error);
+  }
 }
 
 export default async function handler(req, res) {
@@ -113,6 +235,128 @@ export default async function handler(req, res) {
     ].join(" | "),
     4000
   );
+  const submissionHash = buildSubmissionHash([
+    normalizedEmail,
+    normalizedPhone,
+    normalizedFleetSize,
+    normalizedPriority,
+    normalizedMessage,
+    normalizedSource,
+  ]);
+  const leadSubmittedAt = new Date().toISOString();
+  const duplicateWindow = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+  let duplicateLead = null;
+  const duplicateLookup = await supabase
+    .from("operator_leads")
+    .select("id, status, created_at, funnel_stage, onboarding_progress, notification_status, notification_channel, notification_sent_at, notification_error_reason, notification_attempt_count")
+    .eq("submission_hash", submissionHash)
+    .gte("created_at", duplicateWindow)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (duplicateLookup.error && !isMissingColumnError(duplicateLookup.error, "submission_hash")) {
+    console.error("operator-leads duplicate lookup failed:", duplicateLookup.error.message || duplicateLookup.error);
+  } else {
+    duplicateLead = duplicateLookup.data || null;
+  }
+
+  if (duplicateLead) {
+    if (duplicateLead.notification_status === "sent" || duplicateLead.notification_status === "queued") {
+      await writeLeadAuditLog(supabase, {
+        leadId: duplicateLead.id,
+        event: "notification_dispatch_skipped_duplicate",
+        outcome: "success",
+        channel: duplicateLead.notification_channel || "email",
+        detail: "Submission retry detected; duplicate notification avoided.",
+        metadata: { submissionHash },
+      });
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        leadId: duplicateLead.id,
+        status: duplicateLead.status || "new_lead",
+        funnelStage: duplicateLead.funnel_stage || "lead_submitted",
+        createdAt: duplicateLead.created_at || null,
+        notification: {
+          status: duplicateLead.notification_status || "queued",
+          channel: duplicateLead.notification_channel || "email",
+          sentAt: duplicateLead.notification_sent_at || null,
+          errorReason: duplicateLead.notification_error_reason || null,
+        },
+        message: "Lead already received. Existing notification outcome returned.",
+      });
+    }
+
+    const retryNotification = await dispatchLeadNotification({
+      leadId: duplicateLead.id,
+      firstName,
+      lastName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      fleetSize: normalizedFleetSize,
+      priority: normalizedPriority,
+      message: normalizedMessage,
+      source: normalizedSource,
+    });
+    const retryAttemptAt = new Date().toISOString();
+    const retryProgress = withNotificationSnapshot(
+      retryNotification.status === "sent"
+        ? withFunnelTimestamp(duplicateLead.onboarding_progress, "notification_sent_at", retryNotification.sentAt)
+        : normalizeProgress(duplicateLead.onboarding_progress),
+      {
+        status: retryNotification.status,
+        channel: retryNotification.channel,
+        errorReason: retryNotification.errorReason,
+        attemptedAt: retryAttemptAt,
+        sentAt: retryNotification.sentAt || null,
+      }
+    );
+    const retryPatch = {
+      notification_status: retryNotification.status,
+      notification_channel: retryNotification.channel,
+      notification_last_attempt_at: retryAttemptAt,
+      notification_sent_at: retryNotification.sentAt || null,
+      notification_error_reason: retryNotification.errorReason,
+      notification_attempt_count: Number(duplicateLead.notification_attempt_count || 0) + 1,
+      onboarding_progress: retryProgress,
+    };
+    if (retryNotification.status === "sent") {
+      retryPatch.funnel_stage = "notification_sent";
+    }
+    const { data: retriedLead } = await supabase
+      .from("operator_leads")
+      .update(retryPatch)
+      .eq("id", duplicateLead.id)
+      .select("id, status, created_at, funnel_stage, notification_status, notification_channel, notification_sent_at, notification_error_reason")
+      .maybeSingle();
+    await writeLeadAuditLog(supabase, {
+      leadId: duplicateLead.id,
+      event: "notification_dispatch_retry",
+      outcome: retryNotification.status === "sent" ? "success" : "failed",
+      channel: retryNotification.channel,
+      detail: retryNotification.errorReason,
+      metadata: { submissionHash, attemptAt: retryAttemptAt },
+    });
+    const retryResponseLead = retriedLead || duplicateLead;
+    return res.status(200).json({
+      success: true,
+      duplicate: true,
+      retried: true,
+      leadId: retryResponseLead.id,
+      status: retryResponseLead.status || "new_lead",
+      funnelStage: retryResponseLead.funnel_stage || "lead_submitted",
+      createdAt: retryResponseLead.created_at || null,
+      notification: {
+        status: retryResponseLead.notification_status || retryNotification.status,
+        channel: retryResponseLead.notification_channel || retryNotification.channel || "email",
+        sentAt: retryResponseLead.notification_sent_at || retryNotification.sentAt || null,
+        errorReason: retryResponseLead.notification_error_reason || retryNotification.errorReason || null,
+      },
+      message: "Lead already exists. Notification outcome updated.",
+    });
+  }
 
   const payload = {
     first_name: firstName,
@@ -122,12 +366,20 @@ export default async function handler(req, res) {
     fleet_size: normalizedFleetSize,
     source: normalizedSource,
     notes,
+    submission_hash: submissionHash,
+    funnel_stage: "lead_submitted",
+    lead_submitted_at: leadSubmittedAt,
+    notification_status: "queued",
+    notification_channel: "email",
+    notification_attempt_count: 0,
+    conversion_status: "not_started",
+    onboarding_progress: withFunnelTimestamp({}, "lead_submitted_at", leadSubmittedAt),
   };
 
   const { data, error } = await supabase
     .from("operator_leads")
     .insert(payload)
-    .select("id, status, created_at")
+    .select("id, status, created_at, funnel_stage, onboarding_progress, notification_status, notification_channel, notification_sent_at, notification_error_reason, notification_attempt_count")
     .single();
 
   if (error) {
@@ -141,11 +393,90 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Failed to store operator lead." });
   }
 
+  await writeLeadAuditLog(supabase, {
+    leadId: data.id,
+    event: "lead_submitted",
+    outcome: "success",
+    metadata: {
+      source: normalizedSource,
+      submissionHash,
+    },
+  });
+
+  const notification = await dispatchLeadNotification({
+    leadId: data.id,
+    firstName,
+    lastName,
+    email: normalizedEmail,
+    phone: normalizedPhone,
+    fleetSize: normalizedFleetSize,
+    priority: normalizedPriority,
+    message: normalizedMessage,
+    source: normalizedSource,
+  });
+
+  const notificationAttemptAt = new Date().toISOString();
+  const nextProgress = withNotificationSnapshot(
+    notification.status === "sent"
+      ? withFunnelTimestamp(data.onboarding_progress, "notification_sent_at", notification.sentAt)
+      : normalizeProgress(data.onboarding_progress),
+    {
+      status: notification.status,
+      channel: notification.channel,
+      errorReason: notification.errorReason,
+      attemptedAt: notificationAttemptAt,
+      sentAt: notification.sentAt || null,
+    }
+  );
+  const notificationPatch = {
+    notification_status: notification.status,
+    notification_channel: notification.channel,
+    notification_last_attempt_at: notificationAttemptAt,
+    notification_sent_at: notification.sentAt || null,
+    notification_error_reason: notification.errorReason,
+    notification_attempt_count: Number(data.notification_attempt_count || 0) + 1,
+    onboarding_progress: nextProgress,
+  };
+  if (notification.status === "sent") {
+    notificationPatch.funnel_stage = "notification_sent";
+  }
+
+  const { data: updatedLead, error: updateError } = await supabase
+    .from("operator_leads")
+    .update(notificationPatch)
+    .eq("id", data.id)
+    .select("id, status, created_at, funnel_stage, notification_status, notification_channel, notification_sent_at, notification_error_reason")
+    .maybeSingle();
+
+  if (updateError) {
+    console.error("operator-leads notification update failed:", updateError.message || updateError);
+  }
+
+  await writeLeadAuditLog(supabase, {
+    leadId: data.id,
+    event: "notification_dispatch",
+    outcome: notification.status === "sent" ? "success" : "failed",
+    channel: notification.channel,
+    detail: notification.errorReason,
+    metadata: {
+      submissionHash,
+      attemptAt: notificationAttemptAt,
+    },
+  });
+
+  const responseLead = updatedLead || data;
   return res.status(200).json({
     success: true,
-    leadId: data?.id || null,
-    status: data?.status || "new_lead",
-    createdAt: data?.created_at || null,
+    leadId: responseLead?.id || null,
+    status: responseLead?.status || "new_lead",
+    funnelStage: responseLead?.funnel_stage || "lead_submitted",
+    createdAt: responseLead?.created_at || null,
+    notification: {
+      status: responseLead?.notification_status || notification.status || "queued",
+      channel: responseLead?.notification_channel || notification.channel || "email",
+      sentAt: responseLead?.notification_sent_at || notification.sentAt || null,
+      errorReason: responseLead?.notification_error_reason || notification.errorReason || null,
+    },
     message: "Thanks — your request was received. We will reach out shortly with the next step.",
   });
 }

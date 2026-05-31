@@ -10,38 +10,53 @@ import {
 
 test("buildOperatorLeadPipeline maps lead statuses and computes conversion rate", () => {
   const summary = buildOperatorLeadPipeline([
-    { status: "new_lead" },
-    { status: "contacted" },
-    { status: "demo_scheduled" },
-    { status: "onboarding" },
-    { status: "active_operator" },
-    { status: "active_operator" },
+    { funnel_stage: "lead_submitted" },
+    { funnel_stage: "notification_sent" },
+    { funnel_stage: "lead_managed" },
+    { funnel_stage: "lead_converted" },
+    { funnel_stage: "organization_created" },
+    { funnel_stage: "owner_account_created" },
+    { funnel_stage: "workspace_provisioned" },
     { status: "rejected" },
     { status: "unknown" },
   ]);
 
   assert.deepEqual(summary, {
+    leadSubmitted: 1,
+    notificationSent: 1,
+    leadManaged: 1,
+    leadConverted: 1,
+    organizationCreated: 1,
+    ownerAccountCreated: 1,
+    workspaceProvisioned: 1,
+    closed: 1,
+    totalLeads: 8,
+    conversionRate: 12.5,
     newLeads: 1,
     contacted: 1,
-    demoScheduled: 1,
+    demoScheduled: 0,
     qualified: 1,
-    converted: 2,
-    closed: 1,
-    totalLeads: 7,
-    conversionRate: 28.6,
+    converted: 1,
   });
 });
 
 test("buildOperatorLeadPipeline returns zeroed metrics for empty input", () => {
   assert.deepEqual(buildOperatorLeadPipeline(), {
+    leadSubmitted: 0,
+    notificationSent: 0,
+    leadManaged: 0,
+    leadConverted: 0,
+    organizationCreated: 0,
+    ownerAccountCreated: 0,
+    workspaceProvisioned: 0,
+    closed: 0,
+    totalLeads: 0,
+    conversionRate: 0,
     newLeads: 0,
     contacted: 0,
     demoScheduled: 0,
     qualified: 0,
     converted: 0,
-    closed: 0,
-    totalLeads: 0,
-    conversionRate: 0,
   });
 });
 

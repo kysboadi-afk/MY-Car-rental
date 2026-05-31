@@ -2317,7 +2317,9 @@
                     <th>Fleet Size</th>
                     <th>Need Most Help With</th>
                     <th>Created Date</th>
-                    <th>Status</th>
+                    <th>Lead Status</th>
+                    <th>Notification</th>
+                    <th>Provisioning</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -4832,11 +4834,13 @@ function renderDashboard(data) {
   const leadPipelineEl = document.getElementById('lead-pipeline-list');
   if (leadPipelineEl) {
     leadPipelineEl.innerHTML = [
-      metricRow('New Leads', Number(leadPipeline.newLeads || 0)),
-      metricRow('Contacted', Number(leadPipeline.contacted || 0)),
-      metricRow('Demo Scheduled', Number(leadPipeline.demoScheduled || 0)),
-      metricRow('Qualified', Number(leadPipeline.qualified || 0)),
-      metricRow('Converted', Number(leadPipeline.converted || 0), Number(leadPipeline.converted || 0) > 0 ? 'good' : ''),
+      metricRow('Lead Submitted', Number(leadPipeline.leadSubmitted ?? leadPipeline.newLeads ?? 0)),
+      metricRow('Notification Sent', Number(leadPipeline.notificationSent ?? leadPipeline.contacted ?? 0)),
+      metricRow('Lead Managed', Number(leadPipeline.leadManaged ?? leadPipeline.qualified ?? 0)),
+      metricRow('Lead Converted', Number(leadPipeline.leadConverted ?? leadPipeline.converted ?? 0)),
+      metricRow('Organization Created', Number(leadPipeline.organizationCreated || 0)),
+      metricRow('Owner Account Created', Number(leadPipeline.ownerAccountCreated || 0)),
+      metricRow('Workspace Provisioned', Number(leadPipeline.workspaceProvisioned ?? leadPipeline.converted ?? 0), Number(leadPipeline.workspaceProvisioned ?? leadPipeline.converted ?? 0) > 0 ? 'good' : ''),
       metricRow('Closed', Number(leadPipeline.closed || 0), Number(leadPipeline.closed || 0) > 0 ? 'warn' : ''),
       metricRow('Conversion Rate', toPct(leadPipeline.conversionRate), Number(leadPipeline.conversionRate || 0) >= 20 ? 'good' : Number(leadPipeline.conversionRate || 0) > 0 ? 'warn' : ''),
     ].join('');
@@ -9588,6 +9592,16 @@ const OPERATOR_LEAD_STATUS_LABELS = {
   rejected: 'Closed',
 };
 
+const OPERATOR_LEAD_FUNNEL_LABELS = {
+  lead_submitted: 'Lead Submitted',
+  notification_sent: 'Notification Sent',
+  lead_managed: 'Lead Managed',
+  lead_converted: 'Lead Converted',
+  organization_created: 'Organization Created',
+  owner_account_created: 'Owner Account Created',
+  workspace_provisioned: 'Workspace Provisioned',
+};
+
 const OPERATOR_LEAD_STATUS_INPUT_MAP = {
   new_lead: 'new_lead',
   'new lead': 'new_lead',
@@ -9618,6 +9632,44 @@ function operatorLeadBadgeClass(status) {
   if (status === 'demo_scheduled') return 'badge-blue';
   if (status === 'contacted' || status === 'onboarding') return 'badge-warning';
   return 'badge-green';
+}
+
+function operatorLeadFunnelLabel(stage) {
+  const key = String(stage || '').trim().toLowerCase();
+  return OPERATOR_LEAD_FUNNEL_LABELS[key] || OPERATOR_LEAD_FUNNEL_LABELS.lead_submitted;
+}
+
+function operatorLeadNotificationBadgeClass(status) {
+  if (status === 'sent') return 'badge-success';
+  if (status === 'failed') return 'badge-danger';
+  return 'badge-warning';
+}
+
+function operatorLeadNotificationLabel(lead) {
+  const status = String(lead?.notification_status || 'queued').trim().toLowerCase();
+  const sentAt = formatOperatorLeadDate(lead?.notification_sent_at);
+  if (status === 'sent') return sentAt === '—' ? 'Sent' : `Sent · ${sentAt}`;
+  if (status === 'failed') return lead?.notification_error_reason ? `Failed · ${lead.notification_error_reason}` : 'Failed';
+  return 'Queued';
+}
+
+function operatorLeadProvisioningBadgeClass(status) {
+  if (status === 'succeeded') return 'badge-success';
+  if (status === 'failed') return 'badge-danger';
+  if (status === 'in_progress') return 'badge-blue';
+  return 'badge-warning';
+}
+
+function operatorLeadProvisioningLabel(lead) {
+  const conversionStatus = String(lead?.conversion_status || 'not_started').trim().toLowerCase();
+  const funnelLabel = operatorLeadFunnelLabel(lead?.funnel_stage);
+  if (conversionStatus === 'succeeded') return `Provisioned · ${funnelLabel}`;
+  if (conversionStatus === 'failed') {
+    const reason = String(lead?.conversion_error_reason || '').trim();
+    return reason ? `Failed · ${reason}` : 'Failed';
+  }
+  if (conversionStatus === 'in_progress') return `In Progress · ${funnelLabel}`;
+  return funnelLabel;
 }
 
 function formatOperatorLeadDate(value) {
@@ -9704,6 +9756,8 @@ function applyOperatorLeadFilters() {
     const canContact = leadHasContactMethod(lead);
     const status = String(lead?.status || 'new_lead');
     const statusLabel = operatorLeadStatusLabel(status);
+    const notificationStatus = String(lead?.notification_status || 'queued').toLowerCase();
+    const conversionStatus = String(lead?.conversion_status || 'not_started').toLowerCase();
     return `<tr>
       <td style="font-weight:600;">${esc(operatorLeadName(lead))}</td>
       <td>${email ? `<a href="mailto:${esc(email)}" style="color:var(--primary);text-decoration:none;">${esc(email)}</a>` : '—'}</td>
@@ -9712,10 +9766,13 @@ function applyOperatorLeadFilters() {
       <td>${esc(operatorLeadHelpText(lead))}</td>
       <td>${esc(formatOperatorLeadDate(lead?.created_at))}</td>
       <td><span class="badge ${operatorLeadBadgeClass(status)}">${esc(statusLabel)}</span></td>
+      <td><span class="badge ${operatorLeadNotificationBadgeClass(notificationStatus)}">${esc(operatorLeadNotificationLabel(lead))}</span></td>
+      <td><span class="badge ${operatorLeadProvisioningBadgeClass(conversionStatus)}">${esc(operatorLeadProvisioningLabel(lead))}</span></td>
       <td class="td-actions">
         <button class="btn btn-secondary btn-sm" onclick="viewOperatorLead('${id}')">View Lead</button>
         <button class="btn btn-secondary btn-sm" onclick="editOperatorLeadStatus('${id}')">Edit Status</button>
         <button class="btn btn-secondary btn-sm" onclick="addOperatorLeadNote('${id}')">Add Notes</button>
+        <button class="btn btn-primary btn-sm" onclick="convertOperatorLead('${id}')" ${conversionStatus === 'succeeded' ? 'disabled' : ''}>${conversionStatus === 'failed' ? 'Retry Convert' : 'Convert Lead'}</button>
         ${phone ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="tel:${esc(phone)}">Call</a>` : `<button class="btn btn-secondary btn-sm" disabled>Call</button>`}
         ${email ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="mailto:${esc(email)}">Email</a>` : `<button class="btn btn-secondary btn-sm" disabled>Email</button>`}
       </td>
@@ -9743,6 +9800,9 @@ function viewOperatorLead(id) {
     `<div><strong>Fleet Size:</strong> ${esc(lead?.fleet_size || '—')}</div>`,
     `<div><strong>Need Most Help With:</strong> ${esc(operatorLeadHelpText(lead))}</div>`,
     `<div><strong>Status:</strong> ${esc(operatorLeadStatusLabel(status))}</div>`,
+    `<div><strong>Funnel Stage:</strong> ${esc(operatorLeadFunnelLabel(lead?.funnel_stage))}</div>`,
+    `<div><strong>Notification:</strong> ${esc(operatorLeadNotificationLabel(lead))}</div>`,
+    `<div><strong>Provisioning:</strong> ${esc(operatorLeadProvisioningLabel(lead))}</div>`,
     `<div><strong>Created:</strong> ${esc(formatOperatorLeadDate(lead?.created_at))}</div>`,
     `<div><strong>Notes:</strong> ${esc(lead?.notes || '—')}</div>`,
   ];
@@ -9763,7 +9823,8 @@ function updateOperatorLeadInMemory(updatedLead) {
 }
 
 async function saveOperatorLeadChanges(id, updates, successMessage) {
-  const payload = { secret: adminSessionToken, action: 'update', id, scope: 'car', ...updates };
+  const lead = findOperatorLeadById(id) || {};
+  const payload = { secret: adminSessionToken, action: 'update', id, scope: 'car', currentFunnelStage: lead?.funnel_stage || '', ...updates };
   const data = await apiPost('/api/v2-operator-leads', payload);
   updateOperatorLeadInMemory(data?.lead || {});
   applyOperatorLeadFilters();
@@ -9810,6 +9871,25 @@ async function addOperatorLeadNote(id) {
     await saveOperatorLeadChanges(id, { notes: nextNotes }, 'Lead notes saved.');
   } catch (err) {
     showToast('Unable to save lead notes: ' + err.message, 'error');
+  }
+}
+
+async function convertOperatorLead(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const confirmConvert = window.confirm(`Convert ${operatorLeadName(lead)} into an active Fleet Control workspace?`);
+  if (!confirmConvert) return;
+  try {
+    const data = await apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'convert', id, scope: 'car' });
+    updateOperatorLeadInMemory(data?.lead || {});
+    applyOperatorLeadFilters();
+    showToast(data?.idempotent ? 'Lead already converted.' : 'Lead converted and workspace provisioned.', 'success');
+  } catch (err) {
+    showToast('Lead conversion failed: ' + err.message, 'error');
+    loadOperatorLeads();
   }
 }
 
