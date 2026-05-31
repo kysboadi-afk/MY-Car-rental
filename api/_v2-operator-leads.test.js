@@ -13,6 +13,9 @@ let auditLogs = [];
 let authUsers = [];
 let authCreateUserCalls = [];
 let shouldFailWorkspaceProvision = false;
+let demoEvents = [];
+let demoNotifications = [];
+let demoReps = [];
 
 mock.module("./_supabase.js", {
   namedExports: {
@@ -47,6 +50,7 @@ function buildQueryable(sourceRows, transforms = {}) {
     rows: sourceRows,
     eqFilters: [],
     inFilters: [],
+    lteFilters: [],
     orders: [],
     limitCount: null,
   };
@@ -58,6 +62,14 @@ function buildQueryable(sourceRows, transforms = {}) {
     }
     for (const filter of state.inFilters) {
       result = result.filter((row) => filter.values.includes(row?.[filter.field]));
+    }
+    for (const filter of state.lteFilters) {
+      result = result.filter((row) => {
+        const left = new Date(row?.[filter.field] || "").getTime();
+        const right = new Date(filter.value || "").getTime();
+        if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+        return left <= right;
+      });
     }
     for (const order of state.orders) {
       result.sort((a, b) => {
@@ -84,6 +96,10 @@ function buildQueryable(sourceRows, transforms = {}) {
     },
     in(field, values) {
       state.inFilters.push({ field, values: Array.isArray(values) ? values : [] });
+      return query;
+    },
+    lte(field, value) {
+      state.lteFilters.push({ field, value });
       return query;
     },
     order(field, options = {}) {
@@ -326,6 +342,105 @@ function buildClient() {
           },
         };
       }
+      if (table === "operator_demo_reps") {
+        return {
+          select() {
+            return buildQueryable(demoReps);
+          },
+          update(updates) {
+            return {
+              eq(field, value) {
+                const row = demoReps.find((item) => item?.[field] === value);
+                if (row) Object.assign(row, updates);
+                return {
+                  async maybeSingle() {
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "operator_lead_demo_events") {
+        return {
+          select() {
+            return buildQueryable(demoEvents);
+          },
+          insert(payload) {
+            const row = {
+              id: `demo-${demoEvents.length + 1}`,
+              created_at: "2026-05-31T01:00:00.000Z",
+              updated_at: "2026-05-31T01:00:00.000Z",
+              ...payload,
+            };
+            demoEvents.push(row);
+            return {
+              select() {
+                return {
+                  async maybeSingle() {
+                    return { data: row, error: null };
+                  },
+                };
+              },
+            };
+          },
+          update(updates) {
+            const filters = [];
+            return {
+              eq(field, value) {
+                filters.push({ field, value });
+                return this;
+              },
+              select() {
+                return {
+                  async maybeSingle() {
+                    const row = demoEvents.find((item) => filters.every((f) => item?.[f.field] === f.value));
+                    if (row) Object.assign(row, updates, { updated_at: "2026-05-31T01:00:00.000Z" });
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      if (table === "operator_lead_demo_notifications") {
+        return {
+          select() {
+            return buildQueryable(demoNotifications);
+          },
+          async upsert(payload) {
+            const idx = demoNotifications.findIndex(
+              (item) => item.demo_id === payload.demo_id
+                && item.notification_type === payload.notification_type
+                && item.channel === payload.channel
+            );
+            const next = {
+              id: idx >= 0 ? demoNotifications[idx].id : `demo-note-${demoNotifications.length + 1}`,
+              created_at: "2026-05-31T01:00:00.000Z",
+              updated_at: "2026-05-31T01:00:00.000Z",
+              ...payload,
+            };
+            if (idx >= 0) demoNotifications[idx] = { ...demoNotifications[idx], ...next };
+            else demoNotifications.push(next);
+            return { error: null };
+          },
+          update(updates) {
+            return {
+              eq(field, value) {
+                const row = demoNotifications.find((item) => item?.[field] === value);
+                if (row) Object.assign(row, updates, { updated_at: "2026-05-31T01:00:00.000Z" });
+                return {
+                  async maybeSingle() {
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
       throw new Error(`Unexpected table ${table}`);
     },
   };
@@ -399,6 +514,9 @@ beforeEach(() => {
   authUsers = [];
   authCreateUserCalls = [];
   shouldFailWorkspaceProvision = false;
+  demoEvents = [];
+  demoNotifications = [];
+  demoReps = [];
   currentClient = buildClient();
 });
 
@@ -591,4 +709,57 @@ test("end-to-end onboarding flow keeps lead stages and links owner account befor
   assert.ok(timestamps.organization_created_at);
   assert.ok(timestamps.owner_account_created_at);
   assert.ok(timestamps.workspace_provisioned_at);
+});
+
+test("demo scheduling sets lead timestamps and queues reminder notifications", async () => {
+  demoReps = [
+    { id: "rep-1", user_id: "rep-user-1", email: "rep1@example.com", display_name: "Rep One", active: true, assignment_rank: 1, last_assigned_at: null },
+  ];
+  const res = makeRes();
+  await handler(makeReq({
+    action: "demo_schedule",
+    id: "lead-1",
+    dateTime: "2026-06-02T18:00:00.000Z",
+    timezone: "America/Los_Angeles",
+    durationMinutes: 45,
+    meetingType: "zoom",
+    notes: "Initial demo",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.lead.status, "demo_scheduled");
+  assert.equal(res._body.lead.funnel_stage, "lead_managed");
+  assert.ok(res._body.lead.demo_first_scheduled_at);
+  assert.ok(res._body.lead.demo_last_scheduled_at);
+  assert.equal(demoEvents.length, 1);
+  assert.equal(demoEvents[0].owner_user_id, "rep-user-1");
+  assert.equal(demoNotifications.length, 4);
+  assert.equal(demoNotifications.some((item) => item.notification_type === "schedule_confirmation"), true);
+});
+
+test("demo outcome completed maps lead status to onboarding", async () => {
+  await handler(makeReq({
+    action: "demo_schedule",
+    id: "lead-1",
+    dateTime: "2026-06-02T18:00:00.000Z",
+    timezone: "America/Los_Angeles",
+    durationMinutes: 30,
+    meetingType: "phone",
+    notes: "",
+    ownerUserId: "rep-a",
+  }), makeRes());
+  const demoId = demoEvents[0]?.id;
+  const outcomeRes = makeRes();
+  await handler(makeReq({
+    action: "demo_update_outcome",
+    id: "lead-1",
+    demoId,
+    outcome: "completed",
+  }), outcomeRes);
+
+  assert.equal(outcomeRes._status, 200);
+  assert.equal(outcomeRes._body.lead.status, "onboarding");
+  assert.ok(outcomeRes._body.lead.demo_completed_at);
+  assert.equal(outcomeRes._body.demo.lifecycle_status, "completed");
 });

@@ -9997,6 +9997,7 @@ function applyOperatorLeadFilters() {
       <td><span class="badge ${operatorLeadWebsiteServicesBadgeClass(lead)}">${esc(operatorLeadWebsiteServicesLabel(lead))}</span></td>
       <td class="td-actions">
         <button class="btn btn-secondary btn-sm" onclick="viewOperatorLead('${id}')">View Lead</button>
+        <button class="btn btn-secondary btn-sm" onclick="scheduleOperatorLeadDemo('${id}')">Schedule Demo</button>
         <button class="btn btn-secondary btn-sm" onclick="editOperatorLeadStatus('${id}')">Edit Status</button>
         <button class="btn btn-secondary btn-sm" onclick="addOperatorLeadNote('${id}')">Add Notes</button>
         <button class="btn btn-secondary btn-sm" onclick="manageOperatorLeadWebsiteServices('${id}')" ${conversionStatus !== 'succeeded' ? 'disabled' : ''}>Website Services</button>
@@ -10100,6 +10101,67 @@ async function addOperatorLeadNote(id) {
     await saveOperatorLeadChanges(id, { notes: nextNotes }, 'Lead notes saved.');
   } catch (err) {
     showToast('Unable to save lead notes: ' + err.message, 'error');
+  }
+}
+
+async function scheduleOperatorLeadDemo(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const ownerInput = window.prompt(
+    'Assign owner user id/email (leave blank for default lead owner or round-robin):',
+    lead.demo_owner_user_id || ''
+  );
+  if (ownerInput === null) return;
+  const dateInput = window.prompt('Demo date and time (ISO or local date string):', new Date(Date.now() + (24 * 60 * 60 * 1000)).toISOString().slice(0, 16));
+  if (dateInput === null) return;
+  const parsedDate = new Date(dateInput);
+  if (!Number.isFinite(parsedDate.getTime())) {
+    showToast('Please enter a valid demo date/time.', 'warning');
+    return;
+  }
+  const timezone = window.prompt('Timezone (IANA, e.g. America/Los_Angeles):', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  if (timezone === null) return;
+  const durationRaw = window.prompt('Duration minutes:', '30');
+  if (durationRaw === null) return;
+  const meetingTypeRaw = window.prompt('Meeting type (zoom / phone / in_person):', 'zoom');
+  if (meetingTypeRaw === null) return;
+  const notes = window.prompt('Notes (optional):', lead.notes || '');
+  if (notes === null) return;
+
+  const meetingType = String(meetingTypeRaw || '').trim().toLowerCase().replace('-', '_');
+  if (!['zoom', 'phone', 'in_person'].includes(meetingType)) {
+    showToast('Meeting type must be zoom, phone, or in_person.', 'warning');
+    return;
+  }
+  const durationMinutes = Number(durationRaw);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    showToast('Duration must be a positive number of minutes.', 'warning');
+    return;
+  }
+
+  const owner = String(ownerInput || '').trim();
+  const ownerField = owner.includes('@') ? { ownerEmail: owner } : { ownerUserId: owner };
+  try {
+    const data = await apiPost('/api/v2-operator-leads', {
+      secret: adminSessionToken,
+      action: 'demo_schedule',
+      id,
+      scope: 'car',
+      scheduledAt: parsedDate.toISOString(),
+      timezone: String(timezone || '').trim() || 'UTC',
+      durationMinutes: Math.round(durationMinutes),
+      meetingType,
+      notes,
+      ...ownerField,
+    });
+    updateOperatorLeadInMemory(data?.lead || {});
+    applyOperatorLeadFilters();
+    showToast('Demo scheduled successfully.', 'success');
+  } catch (err) {
+    showToast('Unable to schedule demo: ' + err.message, 'error');
   }
 }
 
