@@ -22,6 +22,7 @@
 //   500  Supabase not configured / unexpected error
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com", "https://slycarrentals.com", "https://www.slycarrentals.com", "https://admin.slycarrentals.com"];
 
@@ -35,7 +36,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     console.error("return-booking: ADMIN_SECRET environment variable is not set");
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
@@ -44,7 +45,7 @@ export default async function handler(req, res) {
     req.headers["x-admin-secret"] ||
     req.body?.secret ||
     "";
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
