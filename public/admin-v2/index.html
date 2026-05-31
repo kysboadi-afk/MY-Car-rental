@@ -1268,6 +1268,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         Customers
       </a>
+      <a class="nav-item" data-page="fleet-control-leads" href="#" onclick="navigate('fleet-control-leads');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+        Fleet Control Leads
+      </a>
       <a class="nav-item" data-page="protection-plans" href="#" onclick="navigate('protection-plans');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
@@ -2281,6 +2285,47 @@
             <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>⟳ Recompute Totals</strong> to compute customer KPIs from revenue records.</p>
           </div>
         </div>
+
+        <!-- FLEET CONTROL LEADS PAGE -->
+        <div class="page" id="page-fleet-control-leads">
+          <div class="filters-row">
+            <input type="text" class="filter-input" id="lead-search" placeholder="Search name, email, phone…" oninput="applyOperatorLeadFilters()">
+            <select class="filter-select" id="lead-filter-status" onchange="applyOperatorLeadFilters()">
+              <option value="">All Statuses</option>
+              <option value="new_lead">New Lead</option>
+              <option value="contacted">Contacted</option>
+              <option value="demo_scheduled">Demo Scheduled</option>
+              <option value="onboarding">Qualified</option>
+              <option value="active_operator">Converted</option>
+              <option value="rejected">Closed</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadOperatorLeads()">🔄 Refresh</button>
+          </div>
+          <div class="card">
+            <div id="operator-leads-loading" class="loading"><div class="loading-spinner"></div><div>Loading Fleet Control leads…</div></div>
+            <div id="operator-leads-table-wrap" style="display:none" class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Fleet Size</th>
+                    <th>Need Most Help With</th>
+                    <th>Created Date</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="operator-leads-tbody"></tbody>
+              </table>
+            </div>
+            <div id="operator-leads-empty" class="empty-state" style="display:none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <p>No Fleet Control leads yet.</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PROTECTION PLANS PAGE -->
@@ -2914,6 +2959,20 @@
   </nav>
 
 </div><!-- /app -->
+
+<!-- ── Operator Lead Detail Modal ───────────────────────────────────────── -->
+<div class="modal-overlay" id="operator-lead-detail-modal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <div class="modal-title">Fleet Control Lead</div>
+      <button class="modal-close" onclick="closeModal('operator-lead-detail-modal')">✕</button>
+    </div>
+    <div id="operator-lead-detail-body" style="font-size:13px;line-height:1.5;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('operator-lead-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Add Ticket Modal ───────────────────────────────────────────────── -->
 <div class="modal-overlay" id="add-ticket-modal">
@@ -4369,6 +4428,7 @@ function navigate(page) {
     revenue:            'Revenue Tracker',
     analytics:          'Fleet Analytics',
     customers:          'Customer Management',
+    'fleet-control-leads': 'Fleet Control Leads',
     'protection-plans': 'Protection Plans',
     'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
@@ -4402,6 +4462,7 @@ function navigate(page) {
   else if (page === 'revenue') loadRevenue();
   else if (page === 'analytics') loadAnalytics();
   else if (page === 'customers') loadCustomers();
+  else if (page === 'fleet-control-leads') loadOperatorLeads();
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'vehicle-pricing') loadVehiclePricing();
   else if (page === 'system-settings') loadSystemSettings();
@@ -4441,6 +4502,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'revenue') loadRevenue();
   else if (currentPage === 'analytics') loadAnalytics();
   else if (currentPage === 'customers') loadCustomers();
+  else if (currentPage === 'fleet-control-leads') loadOperatorLeads();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'vehicle-pricing') loadVehiclePricing();
   else if (currentPage === 'system-settings') loadSystemSettings();
@@ -9493,6 +9555,243 @@ function renderAnalytics(fleet, trend, kpiTotalRevenue, expenses) {
         <td>${rowWarnings.length ? `<span class="badge badge-orange">${esc(rowWarnings.join(' · '))}</span>` : '<span class="badge badge-green">OK</span>'}</td>
       </tr>`;
     }).join('');
+  }
+}
+
+// ── Fleet Control Leads ───────────────────────────────────────────────────
+let allOperatorLeads = [];
+
+const OPERATOR_LEAD_STATUS_LABELS = {
+  new_lead: 'New Lead',
+  contacted: 'Contacted',
+  demo_scheduled: 'Demo Scheduled',
+  onboarding: 'Qualified',
+  active_operator: 'Converted',
+  rejected: 'Closed',
+};
+
+const OPERATOR_LEAD_STATUS_INPUT_MAP = {
+  new_lead: 'new_lead',
+  'new lead': 'new_lead',
+  contacted: 'contacted',
+  demo_scheduled: 'demo_scheduled',
+  'demo scheduled': 'demo_scheduled',
+  onboarding: 'onboarding',
+  qualified: 'onboarding',
+  active_operator: 'active_operator',
+  converted: 'active_operator',
+  rejected: 'rejected',
+  closed: 'rejected',
+};
+
+function operatorLeadStatusLabel(status) {
+  const key = String(status || '').trim().toLowerCase();
+  return OPERATOR_LEAD_STATUS_LABELS[key] || 'New Lead';
+}
+
+function normalizeOperatorLeadStatusInput(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return OPERATOR_LEAD_STATUS_INPUT_MAP[key] || '';
+}
+
+function operatorLeadBadgeClass(status) {
+  if (status === 'active_operator') return 'badge-success';
+  if (status === 'rejected') return 'badge-danger';
+  if (status === 'demo_scheduled') return 'badge-blue';
+  if (status === 'contacted' || status === 'onboarding') return 'badge-warning';
+  return 'badge-green';
+}
+
+function formatOperatorLeadDate(value) {
+  const date = new Date(value || '');
+  if (!Number.isFinite(date.getTime())) return '—';
+  return date.toLocaleString();
+}
+
+function operatorLeadName(lead) {
+  const fullName = [lead?.first_name, lead?.last_name].map((part) => String(part || '').trim()).filter(Boolean).join(' ');
+  return fullName || 'Unknown Lead';
+}
+
+function operatorLeadHelpText(lead) {
+  const notes = String(lead?.notes || '');
+  const match = notes.match(/priority=([^|]+)/i);
+  if (match && match[1]) return match[1].trim();
+  return notes ? notes.slice(0, 120) : '—';
+}
+
+function leadHasContactMethod(lead) {
+  return Boolean((lead?.phone || '').trim() || (lead?.email || '').trim());
+}
+
+function loadOperatorLeads() {
+  const loading = document.getElementById('operator-leads-loading');
+  const wrap = document.getElementById('operator-leads-table-wrap');
+  const empty = document.getElementById('operator-leads-empty');
+  if (loading) {
+    loading.style.display = '';
+    loading.innerHTML = '<div class="loading-spinner"></div><div>Loading Fleet Control leads…</div>';
+  }
+  if (wrap) wrap.style.display = 'none';
+  if (empty) empty.style.display = 'none';
+
+  apiPost('/api/v2-operator-leads', { secret: adminSessionToken, action: 'list', scope: 'car' })
+    .then((data) => {
+      allOperatorLeads = Array.isArray(data?.leads) ? data.leads : [];
+      if (loading) loading.style.display = 'none';
+      applyOperatorLeadFilters();
+    })
+    .catch((err) => {
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+      showToast('Fleet Control leads error: ' + err.message, 'error');
+    });
+}
+
+function applyOperatorLeadFilters() {
+  const search = (document.getElementById('lead-search')?.value || '').trim().toLowerCase();
+  const statusFilter = document.getElementById('lead-filter-status')?.value || '';
+
+  const filtered = allOperatorLeads.filter((lead) => {
+    if (statusFilter && String(lead?.status || '') !== statusFilter) return false;
+    if (!search) return true;
+    const haystack = [
+      operatorLeadName(lead),
+      lead?.email || '',
+      lead?.phone || '',
+      lead?.fleet_size || '',
+      operatorLeadHelpText(lead),
+    ].join(' ').toLowerCase();
+    return haystack.includes(search);
+  });
+
+  const wrap = document.getElementById('operator-leads-table-wrap');
+  const empty = document.getElementById('operator-leads-empty');
+  const tbody = document.getElementById('operator-leads-tbody');
+
+  if (!filtered.length) {
+    if (wrap) wrap.style.display = 'none';
+    if (empty) empty.style.display = '';
+    if (tbody) tbody.innerHTML = '';
+    return;
+  }
+
+  if (wrap) wrap.style.display = '';
+  if (empty) empty.style.display = 'none';
+  if (!tbody) return;
+
+  tbody.innerHTML = filtered.map((lead) => {
+    const id = esc(lead?.id || '');
+    const phone = String(lead?.phone || '').trim();
+    const email = String(lead?.email || '').trim();
+    const canContact = leadHasContactMethod(lead);
+    const status = String(lead?.status || 'new_lead');
+    const statusLabel = operatorLeadStatusLabel(status);
+    return `<tr>
+      <td style="font-weight:600;">${esc(operatorLeadName(lead))}</td>
+      <td>${email ? `<a href="mailto:${esc(email)}" style="color:var(--primary);text-decoration:none;">${esc(email)}</a>` : '—'}</td>
+      <td>${phone ? `<a href="tel:${esc(phone)}" style="color:var(--primary);text-decoration:none;">${esc(phone)}</a>` : '—'}</td>
+      <td>${esc(lead?.fleet_size || '—')}</td>
+      <td>${esc(operatorLeadHelpText(lead))}</td>
+      <td>${esc(formatOperatorLeadDate(lead?.created_at))}</td>
+      <td><span class="badge ${operatorLeadBadgeClass(status)}">${esc(statusLabel)}</span></td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="viewOperatorLead('${id}')">View Lead</button>
+        <button class="btn btn-secondary btn-sm" onclick="editOperatorLeadStatus('${id}')">Edit Status</button>
+        <button class="btn btn-secondary btn-sm" onclick="addOperatorLeadNote('${id}')">Add Notes</button>
+        ${phone ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="tel:${esc(phone)}">Call</a>` : `<button class="btn btn-secondary btn-sm" disabled>Call</button>`}
+        ${email ? `<a class="btn btn-secondary btn-sm" style="text-decoration:none;" href="mailto:${esc(email)}">Email</a>` : `<button class="btn btn-secondary btn-sm" disabled>Email</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function findOperatorLeadById(id) {
+  return allOperatorLeads.find((lead) => String(lead?.id || '') === String(id || ''));
+}
+
+function viewOperatorLead(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const status = String(lead?.status || 'new_lead');
+  const phone = String(lead?.phone || '').trim();
+  const email = String(lead?.email || '').trim();
+  const details = [
+    `<div><strong>Name:</strong> ${esc(operatorLeadName(lead))}</div>`,
+    `<div><strong>Email:</strong> ${email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : '—'}</div>`,
+    `<div><strong>Phone:</strong> ${phone ? `<a href="tel:${esc(phone)}">${esc(phone)}</a>` : '—'}</div>`,
+    `<div><strong>Fleet Size:</strong> ${esc(lead?.fleet_size || '—')}</div>`,
+    `<div><strong>Need Most Help With:</strong> ${esc(operatorLeadHelpText(lead))}</div>`,
+    `<div><strong>Status:</strong> ${esc(operatorLeadStatusLabel(status))}</div>`,
+    `<div><strong>Created:</strong> ${esc(formatOperatorLeadDate(lead?.created_at))}</div>`,
+    `<div><strong>Notes:</strong> ${esc(lead?.notes || '—')}</div>`,
+  ];
+  const body = details.join('<div style="margin-bottom:8px;"></div>');
+  const modalBody = document.getElementById('operator-lead-detail-body');
+  if (!modalBody) return;
+  modalBody.innerHTML = body;
+  openModal('operator-lead-detail-modal');
+}
+
+function updateOperatorLeadInMemory(updatedLead) {
+  if (!updatedLead?.id) return;
+  allOperatorLeads = allOperatorLeads.map((lead) => (
+    String(lead?.id || '') === String(updatedLead.id)
+      ? { ...lead, ...updatedLead }
+      : lead
+  ));
+}
+
+async function saveOperatorLeadChanges(id, updates, successMessage) {
+  const payload = { secret: adminSessionToken, action: 'update', id, scope: 'car', ...updates };
+  const data = await apiPost('/api/v2-operator-leads', payload);
+  updateOperatorLeadInMemory(data?.lead || {});
+  applyOperatorLeadFilters();
+  showToast(successMessage, 'success');
+}
+
+async function editOperatorLeadStatus(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const options = [
+    'New Lead',
+    'Contacted',
+    'Demo Scheduled',
+    'Qualified',
+    'Converted',
+    'Closed',
+  ];
+  const nextLabel = window.prompt(`Set status (${options.join(', ')}):`, operatorLeadStatusLabel(lead.status));
+  if (nextLabel === null) return;
+  const status = normalizeOperatorLeadStatusInput(nextLabel);
+  if (!status) {
+    showToast('Please choose a valid lead status.', 'warning');
+    return;
+  }
+  try {
+    await saveOperatorLeadChanges(id, { status }, 'Lead status updated.');
+  } catch (err) {
+    showToast('Unable to update lead status: ' + err.message, 'error');
+  }
+}
+
+async function addOperatorLeadNote(id) {
+  const lead = findOperatorLeadById(id);
+  if (!lead) {
+    showToast('Lead not found.', 'error');
+    return;
+  }
+  const nextNotes = window.prompt('Add or edit notes for this lead:', lead.notes || '');
+  if (nextNotes === null) return;
+  try {
+    await saveOperatorLeadChanges(id, { notes: nextNotes }, 'Lead notes saved.');
+  } catch (err) {
+    showToast('Unable to save lead notes: ' + err.message, 'error');
   }
 }
 
