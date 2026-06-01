@@ -30,6 +30,15 @@ const BUSINESS_TZ = "America/Los_Angeles";
 
 // Must match BOOKING_BUFFER_HOURS in _booking-automation.js and _availability.js.
 const BOOKING_BUFFER_HOURS = 2;
+const AUTO_COMPLETE_HOURS = 24;
+const AUTO_COMPLETE_MS = AUTO_COMPLETE_HOURS * 60 * 60 * 1000;
+const PENDING_EXTENSION_HOLD_STATUSES = new Set([
+  "pending",
+  "processing",
+  "requires_payment_method",
+  "requires_action",
+  "requires_confirmation",
+]);
 
 // Active booking statuses that keep a vehicle blocked.
 // "reserved" is a confirmed deposit/partial-payment reservation and must block.
@@ -213,6 +222,14 @@ function computeLatestBlockByVehicle(rows) {
   return latest;
 }
 
+function hasPendingExtensionHold(row) {
+  if (row?.extend_pending === true) return true;
+  const extPending = row?.extension_pending_payment;
+  if (!extPending || typeof extPending !== "object") return false;
+  const status = String(extPending.status || "").toLowerCase();
+  return PENDING_EXTENSION_HOLD_STATUSES.has(status);
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -320,32 +337,83 @@ export default async function handler(req, res) {
 
       if (vehiclesMissingBlockedDatesRow.length > 0) {
         try {
-          const { data: activeBookings, error: activeError } = await sb
+          const ACTIVE_BOOKINGS_SELECT =
+            "vehicle_id, booking_ref, pickup_date, return_date, return_time, status, extend_pending, extension_pending_payment";
+          const ACTIVE_BOOKINGS_SELECT_FALLBACK =
+            "vehicle_id, booking_ref, pickup_date, return_date, return_time, status";
+
+          let { data: activeBookings, error: activeError } = await sb
             .from("bookings")
-            .select("vehicle_id, booking_ref, pickup_date, return_date, return_time")
+            .select(ACTIVE_BOOKINGS_SELECT)
             .in("vehicle_id", vehiclesMissingBlockedDatesRow)
             .in("status", ACTIVE_BOOKING_STATUSES);
 
+          if (activeError && String(activeError.message || "").toLowerCase().includes("column bookings.extension_pending_payment does not exist")) {
+            ({ data: activeBookings, error: activeError } = await sb
+              .from("bookings")
+              .select(ACTIVE_BOOKINGS_SELECT_FALLBACK)
+              .in("vehicle_id", vehiclesMissingBlockedDatesRow)
+              .in("status", ACTIVE_BOOKING_STATUSES));
+          }
+
           if (!activeError && activeBookings && activeBookings.length > 0) {
-            // Group by vehicle_id; pick the booking with the latest return_date.
+            // Group by vehicle_id; pick the booking with the latest effective
+            // block end so overdue/pending rentals stay unavailable.
             const latestBookingByVehicle = {};
             for (const bk of activeBookings) {
               const vid = bk.vehicle_id;
               const rd  = bk.return_date ? String(bk.return_date).split("T")[0] : null;
               if (!rd) continue;
-              const existing = latestBookingByVehicle[vid];
-              if (!existing || rd > existing.return_date) {
-                latestBookingByVehicle[vid] = {
+              const rt = bk.return_time ? String(bk.return_time).substring(0, 5) : null;
+              const returnDt = rt ? buildDateTimeLA(rd, rt) : new Date(NaN);
+              const returnMs = returnDt.getTime();
+              const overdueMs = Number.isFinite(returnMs) ? (Date.now() - returnMs) : -1;
+              const pendingHold = hasPendingExtensionHold(bk);
+
+              let candidate;
+              if (pendingHold || (overdueMs > 0 && overdueMs < AUTO_COMPLETE_MS)) {
+                const rollingEnd = new Date(Date.now() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
+                const rollingIso = formatDateTimeLA(rollingEnd);
+                const rollingEndDate = rollingIso.split("T")[0];
+                const rollingEndTime = rollingIso.split("T")[1]?.substring(0, 5) || null;
+                candidate = {
                   booking_ref: bk.booking_ref,
                   pickup_date: bk.pickup_date ? String(bk.pickup_date).split("T")[0] : rd,
                   return_date: rd,
-                  return_time: bk.return_time ? String(bk.return_time).substring(0, 5) : null,
+                  return_time: rt,
+                  end_date: rollingEndDate,
+                  end_time: rollingEndTime,
                 };
+              } else {
+                const buffered = computeBufferedBlock(rd, rt);
+                candidate = {
+                  booking_ref: bk.booking_ref,
+                  pickup_date: bk.pickup_date ? String(bk.pickup_date).split("T")[0] : rd,
+                  return_date: rd,
+                  return_time: rt,
+                  end_date: buffered.end_date,
+                  end_time: buffered.end_time,
+                };
+              }
+
+              const existing = latestBookingByVehicle[vid];
+              if (!existing) {
+                latestBookingByVehicle[vid] = candidate;
+                continue;
+              }
+              if (candidate.end_date > existing.end_date) {
+                latestBookingByVehicle[vid] = candidate;
+                continue;
+              }
+              if (candidate.end_date === existing.end_date) {
+                const newMins  = candidate.end_time ? parseInt(candidate.end_time.replace(":", ""), 10) : -1;
+                const oldMins  = existing.end_time ? parseInt(existing.end_time.replace(":", ""), 10) : -1;
+                if (newMins > oldMins) latestBookingByVehicle[vid] = candidate;
               }
             }
 
             for (const [vid, bk] of Object.entries(latestBookingByVehicle)) {
-              const { end_date, end_time } = computeBufferedBlock(bk.return_date, bk.return_time);
+              const { end_date, end_time } = bk;
 
               // Only apply the override when the computed block hasn't already expired.
               const blockExpired = end_time && end_date === today

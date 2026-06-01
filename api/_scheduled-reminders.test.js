@@ -249,6 +249,27 @@ test("processAutoCompletions: does not touch bookings that are 23.9 hours overdu
   assert.equal(updatedBookings.length, 0, "23.9 hours overdue — still below 24h threshold");
 });
 
+test("processAutoCompletions: skips auto-complete when extension payment is pending", async () => {
+  reset();
+  const now = new Date("2026-03-23T11:05:00-07:00"); // 25h past return
+  const allBookings = {
+    camry: [makeBooking({
+      extendPending: true,
+      extensionPendingPayment: {
+        status: "pending",
+        requestedReturnDate: "2026-03-24",
+      },
+      extensionRequestStatus: "pending_payment",
+    })],
+  };
+
+  await processAutoCompletions(allBookings, now);
+
+  assert.equal(updatedBookings.length, 0, "Pending extension-payment holds must prevent auto-complete");
+  assert.equal(customerCalls.length, 0, "No completion side effects while extension payment is pending");
+  assert.equal(bookingCalls.length, 0, "No completion sync while extension payment is pending");
+});
+
 test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
   reset();
   const now = new Date("2026-03-22T04:30:00-07:00"); // before 10:00:00 return
@@ -751,6 +772,42 @@ test("processActiveRentals: does not send mid-rental EXTEND invitation", async (
   assert.equal(smsCalls.length, 0, "No SMS should be sent 6 hours before return");
 });
 
+test("processActiveRentals: skips cancelled rentals even when return time window matches", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      status: "cancelled_rental",
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.length, 0, "cancelled rentals must not emit active-rental reminder marks");
+  assert.equal(smsCalls.length, 0, "cancelled rentals must not send SMS reminders");
+});
+
+test("processActiveRentals: skips completed rentals even when return time window matches", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      status: "completed_rental",
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.length, 0, "completed rentals must not emit active-rental reminder marks");
+  assert.equal(smsCalls.length, 0, "completed rentals must not send SMS reminders");
+});
+
 test("processActiveRentals: extension awareness — fires return-time SMS for new return_date after extension", async () => {
   reset();
   // Booking was extended: new returnDate is 2026-06-16 (one day later).
@@ -1090,6 +1147,27 @@ test("processCompleted: sends post_thank_you within 30 min of completion", async
     sentMarks.some((m) => m.key === "post_thank_you"),
     true,
     "post_thank_you should fire within 30 min of completion"
+  );
+});
+
+test("processCompleted: sends post_thank_you for completed status within 30 min", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z");
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      status: "completed",
+      completedAt: completedAt.toISOString(),
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    true,
+    "post_thank_you should fire for completed status within 30 min of completion"
   );
 });
 
