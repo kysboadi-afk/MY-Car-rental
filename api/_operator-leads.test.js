@@ -8,6 +8,7 @@ let insertCalls = [];
 let auditRows = [];
 let duplicateLead = null;
 let leadCounter = 0;
+let forcedInsertError = null;
 
 mock.module("nodemailer", {
   defaultExport: {
@@ -98,6 +99,9 @@ function createSupabaseClient() {
               select() {
                 return {
                   async single() {
+                    if (forcedInsertError) {
+                      return { data: null, error: forcedInsertError };
+                    }
                     return { data: row, error: null };
                   },
                 };
@@ -143,6 +147,7 @@ beforeEach(() => {
   sentNotifications = [];
   nextSendMailError = null;
   leadCounter = 0;
+  forcedInsertError = null;
   process.env.SMTP_HOST = "smtp.example.test";
   process.env.SMTP_PORT = "587";
   process.env.SMTP_USER = "notify@example.test";
@@ -248,6 +253,24 @@ test("persists failed notification outcome when dispatch fails", async () => {
   assert.equal(res._status, 200);
   assert.equal(res._body.notification.status, "failed");
   assert.match(res._body.notification.errorReason, /SMTP rejected message/);
+});
+
+test("returns insert error details when lead persistence fails", async () => {
+  forcedInsertError = {
+    message: 'column "submission_hash" of relation "operator_leads" does not exist',
+    code: "42703",
+    hint: "Run migrations 0183+",
+  };
+  const res = makeRes();
+  await handler(makeReq("POST", validBody()), res);
+
+  assert.equal(res._status, 500);
+  assert.deepEqual(res._body, {
+    error: "Failed to store operator lead",
+    details: 'column "submission_hash" of relation "operator_leads" does not exist',
+    code: "42703",
+    hint: "Run migrations 0183+",
+  });
 });
 
 test("duplicate retry does not send duplicate notifications after sent", async () => {
