@@ -922,22 +922,6 @@ export default withAdminAuth(async function handler(req, res) {
 
   if (action === "list") {
     if (!supabase) return res.status(200).json({ leads: [] });
-    const { count: leadCount, error: leadCountError } = await logSupabaseCall("lead_count", supabase
-      .from("operator_leads")
-      .select("id", { count: "exact", head: true }), {
-      table: "operator_leads",
-      mode: "count_only",
-      supabaseUrlHost,
-    });
-    if (leadCountError) {
-      console.warn("v2-operator-leads count failed:", leadCountError.message || leadCountError);
-    } else {
-      console.log("[v2-operator-leads] operator_leads exact count", {
-        count: leadCount ?? null,
-        supabaseUrlHost,
-      });
-    }
-
     const { data, error } = await logSupabaseCall("lead_list", supabase
       .from("operator_leads")
       .select("id, first_name, last_name, email, phone, fleet_size, status, notes, created_at, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_channel, notification_sent_at, notification_last_attempt_at, notification_error_reason, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
