@@ -1173,20 +1173,13 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
   const { repairMode = false } = options;
   // Per-run dedup: max 1 SMS per phone number per cron invocation.
   const phonesContactedThisRun = new Set();
-  const todayStr = isoDateInLA(now); // YYYY-MM-DD (LA)
   const activeRentals = Object.values(allBookings)
     .flat()
-    .filter((b) => {
-      const isActiveStatus = b.status === "active_rental" || b.status === "active" || b.status === "overdue";
-      const hasFutureReturn = b.returnDate && b.returnDate >= todayStr;
-      return isActiveStatus || hasFutureReturn;
-    });
+    .filter((b) => ACTIVE_RENTER_STATUSES.has(String(b?.status || "").trim()));
   console.log("active rentals:", activeRentals.length);
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      const isActiveStatus = booking.status === "active_rental" || booking.status === "active" || booking.status === "overdue";
-      const hasFutureReturn = booking.returnDate && booking.returnDate >= todayStr;
-      if (!isActiveStatus && !hasFutureReturn) continue;
+      if (!ACTIVE_RENTER_STATUSES.has(String(booking?.status || "").trim())) continue;
       if (!booking.phone) {
         console.log(`[SMS SKIPPED — NO PHONE] ${booking.bookingId || booking.paymentIntentId || "?"}: status=${booking.status} vehicle=${vehicleId}`);
         continue;

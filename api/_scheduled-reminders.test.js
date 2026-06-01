@@ -751,6 +751,42 @@ test("processActiveRentals: does not send mid-rental EXTEND invitation", async (
   assert.equal(smsCalls.length, 0, "No SMS should be sent 6 hours before return");
 });
 
+test("processActiveRentals: skips cancelled rentals even when return time window matches", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      status: "cancelled_rental",
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.length, 0, "cancelled rentals must not emit active-rental reminder marks");
+  assert.equal(smsCalls.length, 0, "cancelled rentals must not send SMS reminders");
+});
+
+test("processActiveRentals: skips completed rentals even when return time window matches", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      status: "completed_rental",
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.length, 0, "completed rentals must not emit active-rental reminder marks");
+  assert.equal(smsCalls.length, 0, "completed rentals must not send SMS reminders");
+});
+
 test("processActiveRentals: extension awareness — fires return-time SMS for new return_date after extension", async () => {
   reset();
   // Booking was extended: new returnDate is 2026-06-16 (one day later).
