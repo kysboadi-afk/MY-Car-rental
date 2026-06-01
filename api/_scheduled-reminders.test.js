@@ -1129,6 +1129,27 @@ test("processCompleted: sends post_thank_you within 30 min of completion", async
   );
 });
 
+test("processCompleted: sends post_thank_you for completed status within 30 min", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z");
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      status: "completed",
+      completedAt: completedAt.toISOString(),
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    true,
+    "post_thank_you should fire for completed status within 30 min of completion"
+  );
+});
+
 test("processCompleted: does NOT send post_thank_you if 31 min have passed (window closed)", async () => {
   reset();
   const now         = new Date("2026-06-15T17:40:00Z");

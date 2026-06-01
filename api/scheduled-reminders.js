@@ -818,6 +818,7 @@ async function processUnpaid(allBookings, now, sentMarks) {
 }
 
 const ACTIVE_RENTER_STATUSES = new Set(["active_rental", "active", "overdue"]);
+const COMPLETED_RENTER_STATUSES = new Set(["completed_rental", "completed"]);
 
 function normalizeRenterContactInfo(booking) {
   return {
@@ -1603,7 +1604,7 @@ export async function processCompleted(allBookings, now, sentMarks) {
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      if (booking.status !== "completed_rental") continue;
+      if (!COMPLETED_RENTER_STATUSES.has(String(booking?.status || "").trim())) continue;
       if (!booking.phone || !booking.completedAt) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
