@@ -91,6 +91,58 @@ function withNotificationSnapshot(progress, details) {
   return next;
 }
 
+function formatSupabaseError(error) {
+  if (!error) return null;
+  return {
+    code: error.code || null,
+    message: error.message || String(error),
+    details: error.details || null,
+    hint: error.hint || null,
+  };
+}
+
+function summarizeSupabaseData(data) {
+  if (Array.isArray(data)) return { kind: "array", count: data.length };
+  if (data && typeof data === "object") {
+    const keys = Object.keys(data);
+    return {
+      kind: "object",
+      keys: keys.slice(0, 12),
+      keyCount: keys.length,
+      id: data.id || null,
+    };
+  }
+  return { kind: typeof data, value: data ?? null };
+}
+
+async function logSupabaseCall(label, operation, context = {}) {
+  console.log(`[operator-leads] ${label} start`, context);
+  try {
+    const result = await operation;
+    if (result?.error) {
+      console.error(`[operator-leads] ${label} failed`, {
+        ...context,
+        error: formatSupabaseError(result.error),
+      });
+    } else {
+      console.log(`[operator-leads] ${label} success`, {
+        ...context,
+        status: result?.status ?? null,
+        statusText: result?.statusText ?? null,
+        count: result?.count ?? null,
+        data: summarizeSupabaseData(result?.data),
+      });
+    }
+    return result;
+  } catch (error) {
+    console.error(`[operator-leads] ${label} threw`, {
+      ...context,
+      error: formatSupabaseError(error),
+    });
+    throw error;
+  }
+}
+
 function buildNotificationTransport() {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return null;
@@ -157,7 +209,7 @@ async function dispatchLeadNotification({ leadId, firstName, lastName, email, ph
 
 async function writeLeadAuditLog(supabase, { leadId, event, outcome = "success", channel = null, detail = null, metadata = {} }) {
   try {
-    await supabase
+    const result = await logSupabaseCall("audit_log_insert", supabase
       .from("operator_lead_audit_logs")
       .insert({
         lead_id: leadId,
@@ -166,7 +218,15 @@ async function writeLeadAuditLog(supabase, { leadId, event, outcome = "success",
         channel,
         detail,
         metadata,
-      });
+      }), {
+      table: "operator_lead_audit_logs",
+      leadId,
+      event,
+      outcome,
+    });
+    if (result?.error) {
+      console.warn("operator-leads audit insert skipped:", result.error.message || result.error);
+    }
   } catch (error) {
     console.warn("operator-leads audit insert skipped:", error?.message || error);
   }
@@ -247,14 +307,18 @@ export default async function handler(req, res) {
   const duplicateWindow = new Date(Date.now() - 15 * 60 * 1000).toISOString();
 
   let duplicateLead = null;
-  const duplicateLookup = await supabase
+  const duplicateLookup = await logSupabaseCall("duplicate_lookup", supabase
     .from("operator_leads")
     .select("id, status, created_at, funnel_stage, onboarding_progress, notification_status, notification_channel, notification_sent_at, notification_error_reason, notification_attempt_count")
     .eq("submission_hash", submissionHash)
     .gte("created_at", duplicateWindow)
     .order("created_at", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle(), {
+    table: "operator_leads",
+    submissionHash,
+    duplicateWindow,
+  });
 
   if (duplicateLookup.error && !isMissingColumnError(duplicateLookup.error, "submission_hash")) {
     console.error("operator-leads duplicate lookup failed:", duplicateLookup.error.message || duplicateLookup.error);
@@ -325,12 +389,16 @@ export default async function handler(req, res) {
     if (retryNotification.status === "sent") {
       retryPatch.funnel_stage = "notification_sent";
     }
-    const { data: retriedLead } = await supabase
+    const { data: retriedLead } = await logSupabaseCall("duplicate_notification_update", supabase
       .from("operator_leads")
       .update(retryPatch)
       .eq("id", duplicateLead.id)
       .select("id, status, created_at, funnel_stage, notification_status, notification_channel, notification_sent_at, notification_error_reason")
-      .maybeSingle();
+      .maybeSingle(), {
+      table: "operator_leads",
+      leadId: duplicateLead.id,
+      patchKeys: Object.keys(retryPatch),
+    });
     await writeLeadAuditLog(supabase, {
       leadId: duplicateLead.id,
       event: "notification_dispatch_retry",
@@ -376,11 +444,16 @@ export default async function handler(req, res) {
     onboarding_progress: withFunnelTimestamp({}, "lead_submitted_at", leadSubmittedAt),
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await logSupabaseCall("lead_insert", supabase
     .from("operator_leads")
     .insert(payload)
     .select("id, status, created_at, funnel_stage, onboarding_progress, notification_status, notification_channel, notification_sent_at, notification_error_reason, notification_attempt_count")
-    .single();
+    .single(), {
+    table: "operator_leads",
+    payloadKeys: Object.keys(payload),
+    source: normalizedSource,
+    submissionHash,
+  });
 
   if (error) {
     console.error("operator-leads insert failed:", {
@@ -446,12 +519,17 @@ export default async function handler(req, res) {
     notificationPatch.funnel_stage = "notification_sent";
   }
 
-  const { data: updatedLead, error: updateError } = await supabase
+  const { data: updatedLead, error: updateError } = await logSupabaseCall("notification_update", supabase
     .from("operator_leads")
     .update(notificationPatch)
     .eq("id", data.id)
     .select("id, status, created_at, funnel_stage, notification_status, notification_channel, notification_sent_at, notification_error_reason")
-    .maybeSingle();
+    .maybeSingle(), {
+    table: "operator_leads",
+    leadId: data.id,
+    patchKeys: Object.keys(notificationPatch),
+    notificationStatus: notification.status,
+  });
 
   if (updateError) {
     console.error("operator-leads notification update failed:", updateError.message || updateError);
