@@ -390,7 +390,12 @@ export default async function handler(req, res) {
       hint: error.hint || null,
       payloadKeys: Object.keys(payload),
     });
-    return res.status(500).json({ error: "Failed to store operator lead." });
+    return res.status(500).json({
+      error: "Failed to store operator lead",
+      details: error?.message || null,
+      code: error?.code || null,
+      hint: error?.hint || null,
+    });
   }
 
   await writeLeadAuditLog(supabase, {
