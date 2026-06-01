@@ -124,6 +124,58 @@ function normalizeMetadata(value) {
   return { ...value };
 }
 
+function formatSupabaseError(error) {
+  if (!error) return null;
+  return {
+    code: error.code || null,
+    message: error.message || String(error),
+    details: error.details || null,
+    hint: error.hint || null,
+  };
+}
+
+function summarizeSupabaseData(data) {
+  if (Array.isArray(data)) return { kind: "array", count: data.length };
+  if (data && typeof data === "object") {
+    const keys = Object.keys(data);
+    return {
+      kind: "object",
+      keys: keys.slice(0, 12),
+      keyCount: keys.length,
+      id: data.id || null,
+    };
+  }
+  return { kind: typeof data, value: data ?? null };
+}
+
+async function logSupabaseCall(label, operation, context = {}) {
+  console.log(`[v2-operator-leads] ${label} start`, context);
+  try {
+    const result = await operation;
+    if (result?.error) {
+      console.error(`[v2-operator-leads] ${label} failed`, {
+        ...context,
+        error: formatSupabaseError(result.error),
+      });
+    } else {
+      console.log(`[v2-operator-leads] ${label} success`, {
+        ...context,
+        status: result?.status ?? null,
+        statusText: result?.statusText ?? null,
+        count: result?.count ?? null,
+        data: summarizeSupabaseData(result?.data),
+      });
+    }
+    return result;
+  } catch (error) {
+    console.error(`[v2-operator-leads] ${label} threw`, {
+      ...context,
+      error: formatSupabaseError(error),
+    });
+    throw error;
+  }
+}
+
 function normalizeDemoStatus(value, fallback = "scheduled") {
   const status = String(value || fallback).trim().toLowerCase();
   return DEMO_STATUSES.has(status) ? status : fallback;
@@ -853,14 +905,48 @@ function buildWebsiteUpsellKpis(leads) {
 export default withAdminAuth(async function handler(req, res) {
   const { action = "list" } = req.body || {};
   const supabase = getSupabaseAdmin();
+  const supabaseUrlHost = (() => {
+    try {
+      return new URL(process.env.SUPABASE_URL || "").host || null;
+    } catch {
+      return null;
+    }
+  })();
+
+  console.log("[v2-operator-leads] request context", {
+    action,
+    supabaseUrlHost,
+    supabaseUrlPresent: Boolean(process.env.SUPABASE_URL),
+    supabaseServiceRoleKeyPresent: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+  });
 
   if (action === "list") {
     if (!supabase) return res.status(200).json({ leads: [] });
-    const { data, error } = await supabase
+    const { count: leadCount, error: leadCountError } = await logSupabaseCall("lead_count", supabase
+      .from("operator_leads")
+      .select("id", { count: "exact", head: true }), {
+      table: "operator_leads",
+      mode: "count_only",
+      supabaseUrlHost,
+    });
+    if (leadCountError) {
+      console.warn("v2-operator-leads count failed:", leadCountError.message || leadCountError);
+    } else {
+      console.log("[v2-operator-leads] operator_leads exact count", {
+        count: leadCount ?? null,
+        supabaseUrlHost,
+      });
+    }
+
+    const { data, error } = await logSupabaseCall("lead_list", supabase
       .from("operator_leads")
       .select("id, first_name, last_name, email, phone, fleet_size, status, notes, created_at, updated_at, funnel_stage, lead_submitted_at, notification_status, notification_channel, notification_sent_at, notification_last_attempt_at, notification_error_reason, lead_managed_at, lead_converted_at, organization_id, organization_created_at, owner_account_created_at, workspace_provisioned_at, conversion_status, conversion_error_reason, demo_first_scheduled_at, demo_last_scheduled_at, demo_completed_at, demo_completed_outcome, demo_no_show_at, demo_follow_up_due_at, demo_owner_user_id, demo_owner_reason")
       .order("created_at", { ascending: false })
-      .limit(500);
+      .limit(500), {
+      table: "operator_leads",
+      limit: 500,
+      supabaseUrlHost,
+    });
     if (error) {
       console.error("v2-operator-leads list failed:", error.message || error);
       return sendError(res, 500, "Failed to load operator leads.");
@@ -869,11 +955,16 @@ export default withAdminAuth(async function handler(req, res) {
     const organizationIds = [...new Set(leads.map((lead) => lead?.organization_id).filter(Boolean))];
     const websiteStateByOrg = new Map();
     if (organizationIds.length) {
-      const { data: upsellRows, error: upsellError } = await supabase
+      const { data: upsellRows, error: upsellError } = await logSupabaseCall("website_upsell_list", supabase
         .from("organization_service_upsells")
         .select(WEBSITE_UPSELL_SELECT)
         .eq("service_key", WEBSITE_SERVICE_KEY)
-        .in("organization_id", organizationIds);
+        .in("organization_id", organizationIds), {
+        table: "organization_service_upsells",
+        organizationCount: organizationIds.length,
+        serviceKey: WEBSITE_SERVICE_KEY,
+        supabaseUrlHost,
+      });
       if (upsellError) {
         console.warn("v2-operator-leads list website upsell load failed:", upsellError.message || upsellError);
       } else {
