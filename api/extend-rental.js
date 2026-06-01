@@ -720,6 +720,7 @@ export default async function handler(req, res) {
     const bookingId = activeBooking.bookingId || activeBooking.paymentIntentId;
     if (bookingId) {
       try {
+        const nowIso = new Date().toISOString();
         await updateBooking(vehicleId, bookingId, {
           ...(needsReturnTimePersist ? { returnTime: resolvedReturnTime } : {}),
            extensionPendingPayment: {
@@ -736,9 +737,55 @@ export default async function handler(req, res) {
              newReturnDate,
             newReturnTime:       resolvedReturnTime,
             paymentIntentId:     pi.id,
-            createdAt:           new Date().toISOString(),
+            status:              "pending",
+            createdAt:           nowIso,
+            updatedAt:           nowIso,
           },
+          extensionPaymentPending: true,
+          extensionPaymentStatus: "pending",
+          extensionPaymentIntentId: pi.id,
+          extensionPaymentCreatedAt: nowIso,
+          extensionPaymentUpdatedAt: nowIso,
+          extensionPaymentResolvedAt: null,
+          extensionPaymentFailedAt: null,
+          extensionRequestStatus: "pending_payment",
+          extensionRequestUpdatedAt: nowIso,
         });
+
+        // Dual-write pending extension state to Supabase so fleet-status and
+        // reminder automation can keep the vehicle unavailable until payment
+        // resolves or booking is manually returned.
+        const bookingRefForPending = sbActiveBookingRef ||
+          (activeBooking.bookingId && !String(activeBooking.bookingId).startsWith("pi_")
+            ? activeBooking.bookingId
+            : null);
+        if (sb && bookingRefForPending) {
+          const pendingPayload = {
+            status:            "pending",
+            paymentStatus:     extensionPaymentStatus,
+            paymentIntentId:   pi.id,
+            requestedReturnDate: newReturnDate,
+            requestedReturnTime: resolvedReturnTime,
+            amountCents:       Math.round(amountPaidNow * 100),
+            extensionTotal:    extensionTotal,
+            amountPaid:        amountPaidNow,
+            remainingBalance:  extensionRemainingBalance,
+            createdAt:         nowIso,
+            updatedAt:         nowIso,
+          };
+          try {
+            await sb
+              .from("bookings")
+              .update({
+                extend_pending:            true,
+                extension_pending_payment: pendingPayload,
+                updated_at:                nowIso,
+              })
+              .eq("booking_ref", bookingRefForPending);
+          } catch (sbPendingErr) {
+            console.warn("extend-rental: could not persist pending extension state to Supabase (non-fatal):", sbPendingErr?.message || sbPendingErr);
+          }
+        }
       } catch (updateErr) {
         // Non-fatal: the webhook can fall back to PI metadata if the booking
         // record was not updated.

@@ -249,6 +249,27 @@ test("processAutoCompletions: does not touch bookings that are 23.9 hours overdu
   assert.equal(updatedBookings.length, 0, "23.9 hours overdue — still below 24h threshold");
 });
 
+test("processAutoCompletions: skips auto-complete when extension payment is pending", async () => {
+  reset();
+  const now = new Date("2026-03-23T11:05:00-07:00"); // 25h past return
+  const allBookings = {
+    camry: [makeBooking({
+      extendPending: true,
+      extensionPendingPayment: {
+        status: "pending",
+        requestedReturnDate: "2026-03-24",
+      },
+      extensionRequestStatus: "pending_payment",
+    })],
+  };
+
+  await processAutoCompletions(allBookings, now);
+
+  assert.equal(updatedBookings.length, 0, "Pending extension-payment holds must prevent auto-complete");
+  assert.equal(customerCalls.length, 0, "No completion side effects while extension payment is pending");
+  assert.equal(bookingCalls.length, 0, "No completion sync while extension payment is pending");
+});
+
 test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
   reset();
   const now = new Date("2026-03-22T04:30:00-07:00"); // before 10:00:00 return

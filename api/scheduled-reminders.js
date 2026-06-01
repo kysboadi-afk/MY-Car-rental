@@ -182,6 +182,23 @@ const SMS_WINDOW_END_HOUR   = 22; // 10:00 PM LA (PDT, exclusive)
 const ONBOARDING_CATCHUP_WINDOW_HOURS = 24;
 const ONBOARDING_CATCHUP_EXTENSION_MIN_DELAY_MIN = 30;
 const ONBOARDING_CATCHUP_STATUSES = new Set(["active_rental", "active", "overdue"]);
+const PENDING_EXTENSION_HOLD_STATUSES = new Set([
+  "pending",
+  "processing",
+  "requires_payment_method",
+  "requires_action",
+  "requires_confirmation",
+]);
+
+function hasPendingExtensionHold(booking = {}) {
+  if (booking.extendPending === true) return true;
+  if (booking.extensionPaymentPending === true) return true;
+  if (String(booking.extensionRequestStatus || "").toLowerCase() === "pending_payment") return true;
+  const ext = booking.extensionPendingPayment;
+  if (!ext || typeof ext !== "object") return false;
+  const extStatus = String(ext.status || "").toLowerCase();
+  return PENDING_EXTENSION_HOLD_STATUSES.has(extStatus);
+}
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
@@ -1692,7 +1709,8 @@ export async function loadBookingsFromSupabase(sb) {
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, remaining_balance, " +
-      "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, balance_payment_link, updated_at, created_at";
+      "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, balance_payment_link, " +
+      "extend_pending, extension_pending_payment, updated_at, created_at";
 
     const SELECT_COLS_FALLBACK =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
@@ -1797,6 +1815,11 @@ export async function loadBookingsFromSupabase(sb) {
         lateFeeStatus:  row.late_fee_status || null,
         balanceDue:     Number(row.balance_due || 0),
         balanceDueSetAt: row.balance_due_set_at || null,
+        extendPending:  !!row.extend_pending,
+        extensionPendingPayment:
+          row.extension_pending_payment && typeof row.extension_pending_payment === "object"
+            ? row.extension_pending_payment
+            : null,
         paymentLink:    row.balance_payment_link || buildVehicleExtendLink({ vehicleId }),
         smsSentAt:      {},   // populated below from sms_logs
         createdAt:      row.created_at || null,
@@ -1968,6 +1991,7 @@ export async function processAutoCompletions(allBookings, now) {
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental" && booking.status !== "active" && booking.status !== "overdue") continue;
+      if (hasPendingExtensionHold(booking)) continue;
 
       // Compute the final return date/time from vehicle_blocking_ranges so
       // auto-completion fires against the renter's true (possibly extended)

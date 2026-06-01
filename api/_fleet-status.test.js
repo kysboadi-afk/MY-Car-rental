@@ -37,6 +37,8 @@ const sbMock = {
   vehiclesError: null,
   blockedDateRows: [],
   blockedError: null,
+  bookingRows: [],
+  bookingError: null,
 };
 
 function buildSbClient() {
@@ -57,6 +59,9 @@ function buildSbClient() {
           }
           if (table === "blocked_dates") {
             return resolve({ data: sbMock.blockedDateRows, error: sbMock.blockedError });
+          }
+          if (table === "bookings") {
+            return resolve({ data: sbMock.bookingRows, error: sbMock.bookingError });
           }
           return resolve({ data: [], error: null });
         },
@@ -86,6 +91,8 @@ function resetMock() {
   sbMock.vehiclesError  = null;
   sbMock.blockedDateRows = [];
   sbMock.blockedError   = null;
+  sbMock.bookingRows = [];
+  sbMock.bookingError = null;
   sbMock.client = buildSbClient();
 }
 
@@ -295,4 +302,56 @@ test("latest block wins by end_time when end_dates are equal", async () => {
   // next_available_display is built from end_time directly, so the highest end_time
   // here (17:00 = 5:00 PM) is what visitors see as the earliest pickup slot.
   assert.ok(res._body.camry?.next_available_display?.includes("5:00 PM"), "should reflect buffered availability 17:00 → 5:00 PM");
+});
+
+test("active-booking fallback keeps vehicle unavailable when overdue is within 24h", async () => {
+  resetMock();
+  const todayLA = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  sbMock.blockedDateRows = []; // force fallback path
+  sbMock.bookingRows = [{
+    vehicle_id: "camry",
+    booking_ref: "bk-active-fallback",
+    pickup_date: todayLA,
+    return_date: todayLA,
+    return_time: "00:00",
+    status: "overdue",
+    extend_pending: false,
+    extension_pending_payment: null,
+  }];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.camry?.available, false, "active-booking fallback should keep overdue rental unavailable");
+});
+
+test("active-booking fallback keeps vehicle unavailable when extension payment is pending past 24h", async () => {
+  resetMock();
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const ymdYesterdayLA = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(yesterday);
+  sbMock.blockedDateRows = []; // force fallback path
+  sbMock.bookingRows = [{
+    vehicle_id: "camry",
+    booking_ref: "bk-pending-hold",
+    pickup_date: ymdYesterdayLA,
+    return_date: ymdYesterdayLA,
+    return_time: "00:00",
+    status: "overdue",
+    extend_pending: true,
+    extension_pending_payment: { status: "pending" },
+  }];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.camry?.available, false, "pending extension-payment hold should keep vehicle unavailable");
 });
